@@ -12,7 +12,6 @@ async function call(path) {
 }
 
 export async function getNotebooks() {
-  // Un unico endpoint che restituisce sia personali che condivisi
   const d = await call('/me/onenote/notebooks?includePersonalNotebooks=true&$orderby=displayName');
   return d.value;
 }
@@ -24,5 +23,17 @@ export async function getSections(notebookId) {
 
 export async function getPages(sectionId) {
   const d = await call(`/me/onenote/sections/${sectionId}/pages?$orderby=lastModifiedDateTime desc&$top=8`);
+  return d.value;
+}
+
+// ── ToDo ──
+
+export async function getTodoLists() {
+  const d = await call('/me/todo/lists');
+  return d.value;
+}
+
+export async function getTodoTasks(listId) {
+  const d = await call(`/me/todo/lists/${listId}/tasks?$filter=status ne 'completed'&$orderby=importance desc,createdDateTime desc&$top=20`);
   return d.value;
 }

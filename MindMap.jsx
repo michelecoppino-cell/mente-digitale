@@ -1,33 +1,47 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import * as d3 from 'd3';
 
 const FONT = 'Outfit, sans-serif';
+const APP_KEYS = ['OneNote', 'OneDrive', 'ToDo'];
 
 export default function MindMap({
-  notebooks, sectionsMap,
-  onSelectNotebook, onSelectSection, onExpandNotebook,
+  notebooks, sectionsMap, todoListsMap,
+  onSelectSection, onExpandNotebook,
   externalZoom, onZoomChange
 }) {
   const svgRef = useRef();
   const zoomRef = useRef();
-  const posRef = useRef({});
+  const simRef = useRef();
+  const gRef = useRef();
+  const stateRef = useRef({ nodes: [], links: [], activeSection: null });
+  const activeSectionRef = useRef(null);
 
-  // Zoom esterno dai pulsanti header
-  useEffect(() => {
-    if (!zoomRef.current || !svgRef.current) return;
-    const svg = d3.select(svgRef.current);
-    svg.transition().duration(220).call(zoomRef.current.scaleTo, externalZoom);
-  }, [externalZoom]);
-
-  // Ricostruisce il grafo quando cambiano notebooks o sezioni
+  // Carica sezioni all'avvio
   useEffect(() => {
     if (!notebooks.length) return;
+    notebooks.forEach(nb => onExpandNotebook(nb));
+  }, [notebooks]);
+
+  // Costruisce il grafo la prima volta che tutte le sezioni sono caricate
+  useEffect(() => {
+    if (!notebooks.length) return;
+    const allLoaded = notebooks.every(nb => sectionsMap[nb.id]);
+    if (!allLoaded) return;
     buildGraph();
   }, [notebooks, sectionsMap]);
 
-  // Ridimensionamento finestra
+  // Zoom esterno
   useEffect(() => {
-    const onResize = () => { if (notebooks.length) buildGraph(); };
+    if (!zoomRef.current || !svgRef.current) return;
+    d3.select(svgRef.current).transition().duration(220)
+      .call(zoomRef.current.scaleTo, externalZoom);
+  }, [externalZoom]);
+
+  useEffect(() => {
+    const onResize = () => {
+      const allLoaded = notebooks.length && notebooks.every(nb => sectionsMap[nb.id]);
+      if (allLoaded) buildGraph();
+    };
     window.addEventListener('resize', onResize);
     return () => window.removeEventListener('resize', onResize);
   }, [notebooks, sectionsMap]);
@@ -37,44 +51,50 @@ export default function MindMap({
     if (!container) return;
     const W = container.offsetWidth;
     const H = container.offsetHeight;
+    const cx = W / 2, cy = H / 2;
+
+    if (simRef.current) simRef.current.stop();
 
     const svg = d3.select(svgRef.current).attr('width', W).attr('height', H);
     svg.selectAll('*').remove();
 
     const g = svg.append('g');
+    gRef.current = g;
 
-    // ── Zoom & Pan ──
-    const zoom = d3.zoom()
-      .scaleExtent([0.1, 5])
-      .on('zoom', e => {
-        g.attr('transform', e.transform);
-        onZoomChange(Math.round(e.transform.k * 100) / 100);
-      });
+    // Zoom & Pan
+    const zoom = d3.zoom().scaleExtent([0.1, 5]).on('zoom', e => {
+      g.attr('transform', e.transform);
+      onZoomChange(Math.round(e.transform.k * 100) / 100);
+    });
     zoomRef.current = zoom;
     svg.call(zoom).on('dblclick.zoom', null);
+    svg.on('click', () => toggleAppNodes(null));
 
-    // ── Costruzione nodi e link ──
+    // Layer ordinati
+    g.append('g').attr('class', 'hulls');
+    g.append('g').attr('class', 'links');
+    g.append('g').attr('class', 'nodes');
+
+    // Nodi base: taccuini + sezioni
     const nodes = [];
     const links = [];
+    const nbSpread = Math.min(W, H) * 0.11;
 
     notebooks.forEach((nb, i) => {
       const angle = (i / notebooks.length) * 2 * Math.PI - Math.PI / 2;
-      const spread = Math.min(W, H) * 0.28;
-      const saved = posRef.current['nb_' + nb.id];
-
       nodes.push({
         id: 'nb_' + nb.id,
         type: 'notebook',
         label: nb.displayName,
         color: nb._color,
         nb,
-        r: 38,
-        x: saved?.x ?? W / 2 + spread * Math.cos(angle),
-        y: saved?.y ?? H / 2 + spread * Math.sin(angle),
+        r: 46,
+        shape: 'circle',
+        fx: cx + nbSpread * Math.cos(angle),
+        fy: cy + nbSpread * Math.sin(angle),
       });
 
       (sectionsMap[nb.id] || []).forEach(s => {
-        const savedS = posRef.current['sec_' + s.id];
         nodes.push({
           id: 'sec_' + s.id,
           type: 'section',
@@ -82,148 +102,327 @@ export default function MindMap({
           color: nb._color,
           section: s,
           nb,
-          r: 20,
-          x: savedS?.x,
-          y: savedS?.y,
+          shape: 'rect',
+          rw: 56, rh: 24, // larghezza e altezza rettangolo
         });
-        links.push({ source: 'nb_' + nb.id, target: 'sec_' + s.id });
+        links.push({ source: 'nb_' + nb.id, target: 'sec_' + s.id, type: 'nb-sec' });
       });
     });
 
-    // ── Simulazione forze ──
+    stateRef.current = { nodes, links, activeSection: null };
+
+    // Simulazione
     const sim = d3.forceSimulation(nodes)
-      .force('link', d3.forceLink(links).id(d => d.id).distance(85).strength(0.7))
-      .force('charge', d3.forceManyBody().strength(d => d.type === 'notebook' ? -600 : -180))
-      .force('collision', d3.forceCollide(d => d.r + 16))
-      .force('center', d3.forceCenter(W / 2, H / 2).strength(0.04));
+      .force('link', d3.forceLink(links).id(d => d.id).distance(100).strength(0.6))
+      .force('charge', d3.forceManyBody().strength(d => d.type === 'notebook' ? -900 : -220))
+      .force('collision', d3.forceCollide(d => d.type === 'notebook' ? d.r + 30 : (d.shape === 'rect' ? Math.max(d.rw / 2, d.rh / 2) + 10 : d.r + 10)))
+      .alphaDecay(0.022);
+    simRef.current = sim;
 
-    // ── Hull (nuvola) ──
-    const hullG = g.append('g');
+    sim.on('tick', () => tick());
+    renderAll();
+  }
 
-    function drawHulls() {
-      const hullData = notebooks.flatMap(nb => {
-        const nbNode = nodes.find(n => n.id === 'nb_' + nb.id);
-        const secNodes = nodes.filter(n => n.type === 'section' && n.nb.id === nb.id);
-        if (!secNodes.length || !nbNode) return [];
-        const pts = [];
-        const pad = (node, r) => {
-          for (let a = 0; a < 2 * Math.PI; a += Math.PI / 8)
-            pts.push([node.x + (r + 22) * Math.cos(a), node.y + (r + 22) * Math.sin(a)]);
-        };
-        pad(nbNode, nbNode.r);
-        secNodes.forEach(n => pad(n, n.r));
-        try {
-          const hull = d3.polygonHull(pts);
-          return hull ? [{ nb, hull }] : [];
-        } catch { return []; }
-      });
+  // Aggiunge o rimuove nodi app senza ricostruire tutto
+  function toggleAppNodes(sectionId) {
+    const todoListsMapRef = todoListsMap;
+    const st = stateRef.current;
+    const prevActive = activeSectionRef.current;
+    if (prevActive === sectionId) return;
+    activeSectionRef.current = sectionId;
 
-      const sel = hullG.selectAll('.hull').data(hullData, d => d.nb.id);
-      sel.enter().append('path').attr('class', 'hull')
-        .merge(sel)
-        .attr('fill', d => d.nb._color + '09')
-        .attr('stroke', d => d.nb._color + '22')
-        .attr('stroke-width', 2)
-        .attr('stroke-linejoin', 'round')
-        .attr('d', d => `M${d.hull.join('L')}Z`);
-      sel.exit().remove();
+    // Rimuovi vecchi nodi app
+    st.nodes = st.nodes.filter(n => n.type !== 'app');
+    st.links = st.links.filter(l => {
+      const tid = typeof l.target === 'object' ? l.target.id : l.target;
+      return !tid?.startsWith('app_');
+    });
+
+    // Marca sezioni come attive/non attive
+    st.nodes.forEach(n => { if (n.type === 'section') n.active = false; });
+
+    if (sectionId) {
+      const secNode = st.nodes.find(n => n.id === 'sec_' + sectionId);
+      if (secNode) {
+        secNode.active = true;
+        APP_KEYS.forEach((key, i) => {
+          const appId = `app_${key}_${sectionId}`;
+          // Posizione iniziale vicino alla sezione
+          const angle = (i / APP_KEYS.length) * 2 * Math.PI;
+          const node = {
+            id: appId,
+            type: 'app',
+            key,
+            label: key,
+            color: secNode.color, // stesso colore della sezione padre
+            enabled: key === 'OneNote' || (key === 'ToDo' && !!(todoListsMapRef && todoListsMapRef[secNode.section.displayName.toLowerCase()])),
+            section: secNode.section,
+            nb: secNode.nb,
+            shape: 'circle',
+            r: 18,
+            x: (secNode.x || 0) + 22 * Math.cos(angle),
+            y: (secNode.y || 0) + 22 * Math.sin(angle),
+            opacity: key === 'OneNote' ? 1 : 0.35,
+          };
+          st.nodes.push(node);
+          st.links.push({ source: 'sec_' + sectionId, target: appId, type: 'sec-app' });
+        });
+      }
     }
 
-    // ── Link ──
-    const linkSel = g.append('g').selectAll('line')
-      .data(links).join('line')
+    // Aggiorna simulazione con nuovi nodi
+    const sim = simRef.current;
+    sim.nodes(st.nodes);
+    sim.force('link').links(st.links);
+    sim.force('collision').radius(d => d.type === 'notebook' ? d.r + 30 : (d.shape === 'rect' ? Math.max(d.rw / 2, d.rh / 2) + 10 : d.r + 10));
+    sim.alpha(0.15).restart(); // ripartenza leggera — solo una piccola risistemazione
+    renderAll();
+  }
+
+  function renderAll() {
+    const st = stateRef.current;
+    const g = gRef.current;
+    if (!g) return;
+
+    // ── Links ──
+    const linkSel = g.select('.links').selectAll('line')
+      .data(st.links, d => {
+        const s = typeof d.source === 'object' ? d.source.id : d.source;
+        const t = typeof d.target === 'object' ? d.target.id : d.target;
+        return s + '-' + t;
+      });
+
+    linkSel.enter().append('line')
       .attr('stroke', d => {
-        const t = nodes.find(n => n.id === (typeof d.target === 'object' ? d.target.id : d.target));
-        return t?.color || '#ffffff';
+        const tid = typeof d.target === 'object' ? d.target.id : d.target;
+        const tn = st.nodes.find(n => n.id === tid);
+        return tn?.color || '#888';
       })
-      .attr('stroke-width', 1)
-      .attr('stroke-dasharray', '3 5')
-      .attr('stroke-opacity', 0.28);
+      .attr('stroke-width', d => d.type === 'sec-app' ? 0.8 : 1.2)
+      .attr('stroke-dasharray', d => d.type === 'sec-app' ? '3 4' : '4 6')
+      .attr('stroke-opacity', d => d.type === 'sec-app' ? 0.45 : 0.3)
+      .style('opacity', 0)
+      .transition().duration(300).style('opacity', 1);
 
-    // ── Nodi ──
-    const nodeSel = g.append('g').selectAll('g.node')
-      .data(nodes).join('g')
+    linkSel.exit().transition().duration(200).style('opacity', 0).remove();
+
+    // ── Nodes ──
+    const nodeSel = g.select('.nodes').selectAll('g.node')
+      .data(st.nodes, d => d.id);
+
+    const nodeEnter = nodeSel.enter().append('g')
       .attr('class', 'node')
-      .style('cursor', 'pointer')
-      .call(
-        d3.drag()
-          .on('start', (e, d) => { if (!e.active) sim.alphaTarget(0.3).restart(); d.fx = d.x; d.fy = d.y; })
-          .on('drag', (e, d) => { d.fx = e.x; d.fy = e.y; })
-          .on('end', (e, d) => { if (!e.active) sim.alphaTarget(0); d.fx = null; d.fy = null; })
-      );
+      .style('cursor', d => {
+        if (d.type === 'notebook') return 'default';
+        if (d.type === 'app' && !d.enabled) return 'not-allowed';
+        return 'pointer';
+      })
+      .style('opacity', 0);
 
-    // Alone esterno
-    nodeSel.append('circle')
-      .attr('r', d => d.r + 15)
+    // Alone
+    nodeEnter.append('circle').attr('class', 'halo')
       .attr('fill', d => d.color + '07')
       .attr('stroke', 'none');
 
-    // Anello (solo notebook)
-    nodeSel.filter(d => d.type === 'notebook')
-      .append('circle')
-      .attr('r', d => d.r + 6)
-      .attr('fill', 'none')
-      .attr('stroke', d => d.color + '28')
-      .attr('stroke-width', 1);
-
-    // Cerchio principale
-    nodeSel.append('circle')
-      .attr('r', d => d.r)
-      .attr('fill', '#0c0e14')
-      .attr('stroke', d => d.color)
-      .attr('stroke-width', d => d.type === 'notebook' ? 1.8 : 1);
-
-    // Testo
-    nodeSel.each(function (d) {
+    // Forma principale (cerchio o rettangolo)
+    nodeEnter.each(function(d) {
       const el = d3.select(this);
-      const words = d.label.split(' ');
-      const maxLen = d.type === 'notebook' ? 13 : 11;
-      if (d.type === 'notebook' && words.length > 1 && d.label.length > 10) {
-        const mid = Math.ceil(words.length / 2);
-        [words.slice(0, mid).join(' '), words.slice(mid).join(' ')].forEach((line, i) => {
-          el.append('text')
-            .attr('y', i === 0 ? -7 : 8)
-            .attr('text-anchor', 'middle').attr('dominant-baseline', 'central')
-            .attr('font-family', FONT).attr('font-size', 11).attr('font-weight', 500)
-            .attr('fill', d.color).attr('pointer-events', 'none')
-            .text(line);
-        });
+      if (d.shape === 'rect') {
+        el.append('rect').attr('class', 'main-shape')
+          .attr('rx', 8).attr('ry', 8)
+          .attr('fill', '#0c0e14');
       } else {
-        const short = d.label.length > maxLen ? d.label.slice(0, maxLen - 1) + '…' : d.label;
-        el.append('text')
-          .attr('text-anchor', 'middle').attr('dominant-baseline', 'central')
-          .attr('font-family', FONT)
-          .attr('font-size', d.type === 'notebook' ? 12 : 10)
-          .attr('font-weight', d.type === 'notebook' ? 500 : 400)
-          .attr('fill', d.color).attr('pointer-events', 'none')
-          .text(short);
+        el.append('circle').attr('class', 'main-shape')
+          .attr('fill', d => (d.type === 'app' && !d.enabled) ? '#111418' : '#0c0e14');
       }
     });
 
-    // Click
-    nodeSel.on('click', (e, d) => {
-      e.stopPropagation();
-      if (d.type === 'notebook') {
-        onSelectNotebook(d.nb);
-        onExpandNotebook(d.nb);
+    // Anello (notebook e sezioni attive)
+    nodeEnter.filter(d => d.type === 'notebook')
+      .append('circle').attr('class', 'ring')
+      .attr('fill', 'none')
+      .attr('stroke-width', 1);
+
+    // Testo
+    nodeEnter.each(function(d) {
+      const el = d3.select(this);
+      const opacity = (d.type === 'app' && !d.enabled) ? 0.4 : 1;
+      const words = d.label.split(' ');
+
+      if (d.shape === 'rect') {
+        // Testo sempre su rettangolo, non troncato
+        if (words.length > 1 && d.label.length > 10) {
+          const mid = Math.ceil(words.length / 2);
+          [words.slice(0, mid).join(' '), words.slice(mid).join(' ')].forEach((line, i) => {
+            el.append('text')
+              .attr('y', i === 0 ? -6 : 7)
+              .attr('text-anchor', 'middle').attr('dominant-baseline', 'central')
+              .attr('font-family', FONT).attr('font-size', 9).attr('font-weight', 400)
+              .attr('fill', d.color).attr('opacity', opacity).attr('pointer-events', 'none')
+              .text(line);
+          });
+        } else {
+          el.append('text')
+            .attr('text-anchor', 'middle').attr('dominant-baseline', 'central')
+            .attr('font-family', FONT).attr('font-size', 10).attr('font-weight', 400)
+            .attr('fill', d.color).attr('opacity', opacity).attr('pointer-events', 'none')
+            .text(d.label);
+        }
+      } else if (d.type === 'notebook') {
+        if (words.length > 1 && d.label.length > 10) {
+          const mid = Math.ceil(words.length / 2);
+          [words.slice(0, mid).join(' '), words.slice(mid).join(' ')].forEach((line, i) => {
+            el.append('text')
+              .attr('y', i === 0 ? -7 : 8)
+              .attr('text-anchor', 'middle').attr('dominant-baseline', 'central')
+              .attr('font-family', FONT).attr('font-size', 12).attr('font-weight', 500)
+              .attr('fill', d.color).attr('opacity', opacity).attr('pointer-events', 'none')
+              .text(line);
+          });
+        } else {
+          el.append('text')
+            .attr('text-anchor', 'middle').attr('dominant-baseline', 'central')
+            .attr('font-family', FONT).attr('font-size', 12).attr('font-weight', 500)
+            .attr('fill', d.color).attr('opacity', opacity).attr('pointer-events', 'none')
+            .text(d.label);
+        }
       } else {
+        // App nodes
+        el.append('text')
+          .attr('text-anchor', 'middle').attr('dominant-baseline', 'central')
+          .attr('font-family', FONT).attr('font-size', 9).attr('font-weight', 400)
+          .attr('fill', d.color).attr('opacity', opacity).attr('pointer-events', 'none')
+          .text(d.label);
+      }
+    });
+
+    // Drag (solo non-notebook)
+    nodeEnter.filter(d => d.type !== 'notebook')
+      .call(d3.drag()
+        .on('start', (e, d) => { if (!e.active) simRef.current.alphaTarget(0.15).restart(); d.fx = d.x; d.fy = d.y; })
+        .on('drag', (e, d) => { d.fx = e.x; d.fy = e.y; })
+        .on('end', (e, d) => { if (!e.active) simRef.current.alphaTarget(0); d.fx = null; d.fy = null; })
+      );
+
+    // Click
+    nodeEnter.on('click', (e, d) => {
+      e.stopPropagation();
+      if (d.type === 'section') {
+        toggleAppNodes(activeSectionRef.current === d.section.id ? null : d.section.id);
+      }
+      if (d.type === 'app' && d.enabled && d.key === 'OneNote') {
         onSelectSection(d.section, d.nb);
       }
     });
 
-    // Tick — aggiorna posizioni
-    sim.on('tick', () => {
-      linkSel
-        .attr('x1', d => d.source.x).attr('y1', d => d.source.y)
-        .attr('x2', d => d.target.x).attr('y2', d => d.target.y);
-      nodeSel.attr('transform', d => `translate(${d.x},${d.y})`);
-      drawHulls();
+    // Fade in nuovi nodi
+    nodeEnter.transition().duration(300).style('opacity', 1);
+
+    // Rimuovi nodi uscenti
+    nodeSel.exit().transition().duration(200).style('opacity', 0).remove();
+
+    // Merge per aggiornare dimensioni forme
+    const merged = nodeEnter.merge(nodeSel);
+    updateShapes(merged);
+  }
+
+  function updateShapes(sel) {
+    sel.each(function(d) {
+      const el = d3.select(this);
+
+      // Halo
+      const haloR = d.shape === 'rect'
+        ? Math.max(d.rw / 2, d.rh / 2) + 6
+        : d.r + (d.type === 'notebook' ? 18 : 10);
+      el.select('.halo').attr('r', haloR);
+
+      // Forma principale
+      if (d.shape === 'rect') {
+        // Calcola larghezza dinamica in base al testo
+        const words2 = d.label.split(' ');
+        const multiline = words2.length > 1 && d.label.length > 10;
+        const mid2 = Math.ceil(words2.length / 2);
+        const l1 = words2.slice(0, mid2).join(' ');
+        const l2 = words2.slice(mid2).join(' ');
+        const longest = multiline ? Math.max(l1.length, l2.length) : d.label.length;
+        const w = Math.max(32, longest * 5.8 + 10);
+        const h = multiline ? 26 : 16;
+        d.rw = w; d.rh = h;
+        el.select('.main-shape')
+          .attr('x', -w / 2).attr('y', -h / 2)
+          .attr('width', w).attr('height', h)
+          .attr('stroke', d.active ? d.color : d.color + '88')
+          .attr('stroke-width', d.active ? 1.8 : 1);
+      } else {
+        el.select('.main-shape')
+          .attr('r', d.r || 18)
+          .attr('stroke', d.color + (d.type === 'app' && !d.enabled ? '33' : ''))
+          .attr('stroke-width', d.type === 'notebook' ? 2 : 1.2);
+      }
+
+      // Anello notebook
+      if (d.type === 'notebook') {
+        el.select('.ring')
+          .attr('r', d.r + 7)
+          .attr('stroke', d.color + '25');
+      }
+    });
+  }
+
+  function tick() {
+    const g = gRef.current;
+    if (!g) return;
+    const st = stateRef.current;
+
+    // Aggiorna link
+    g.select('.links').selectAll('line')
+      .attr('x1', d => (typeof d.source === 'object' ? d.source : st.nodes.find(n => n.id === d.source))?.x || 0)
+      .attr('y1', d => (typeof d.source === 'object' ? d.source : st.nodes.find(n => n.id === d.source))?.y || 0)
+      .attr('x2', d => (typeof d.target === 'object' ? d.target : st.nodes.find(n => n.id === d.target))?.x || 0)
+      .attr('y2', d => (typeof d.target === 'object' ? d.target : st.nodes.find(n => n.id === d.target))?.y || 0);
+
+    // Aggiorna nodi
+    g.select('.nodes').selectAll('g.node')
+      .attr('transform', d => `translate(${d.x ?? 0},${d.y ?? 0})`);
+
+    // Hull
+    drawHulls();
+  }
+
+  function drawHulls() {
+    const g = gRef.current;
+    if (!g) return;
+    const st = stateRef.current;
+
+    const hullData = notebooks.flatMap(nb => {
+      const nbNode = st.nodes.find(n => n.id === 'nb_' + nb.id);
+      const secNodes = st.nodes.filter(n => n.type === 'section' && n.nb.id === nb.id);
+      if (!secNodes.length || !nbNode) return [];
+      const pts = [];
+      const addPts = (node, pad) => {
+        const sz = node.shape === 'rect' ? Math.max(node.rw / 2, node.rh / 2) : (node.r || 18);
+        for (let a = 0; a < 2 * Math.PI; a += Math.PI / 10)
+          pts.push([(node.x || 0) + (sz + pad) * Math.cos(a), (node.y || 0) + (sz + pad) * Math.sin(a)]);
+      };
+      addPts(nbNode, 24);
+      secNodes.forEach(n => addPts(n, 16));
+      st.nodes.filter(n => n.type === 'app' && n.nb.id === nb.id)
+        .forEach(n => addPts(n, 10));
+      try {
+        const hull = d3.polygonHull(pts);
+        return hull ? [{ nb, hull }] : [];
+      } catch { return []; }
     });
 
-    // Salva posizioni alla fine della simulazione
-    sim.on('end', () => {
-      nodes.forEach(n => { posRef.current[n.id] = { x: n.x, y: n.y }; });
-    });
+    const sel = g.select('.hulls').selectAll('.hull').data(hullData, d => d.nb.id);
+    sel.enter().append('path').attr('class', 'hull')
+      .merge(sel)
+      .attr('fill', d => d.nb._color + '09')
+      .attr('stroke', d => d.nb._color + '1a')
+      .attr('stroke-width', 2.5)
+      .attr('stroke-linejoin', 'round')
+      .attr('d', d => `M${d.hull.join('L')}Z`);
+    sel.exit().remove();
   }
 
   return <svg ref={svgRef} style={{ width: '100%', height: '100%' }} />;

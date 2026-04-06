@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
 import { initAuth, getAccount, login } from './auth';
-import { getNotebooks, getSections } from './api';
+import { getNotebooks, getSections, getTodoLists } from './api';
 import MindMap from './MindMap';
 import Panel from './Panel';
+import SchedulePanel from './SchedulePanel';
 import { COLORS } from './config';
 import './App.css';
 
@@ -11,9 +12,11 @@ export default function App() {
   const [account, setAccount] = useState(null);
   const [notebooks, setNotebooks] = useState([]);
   const [sectionsMap, setSectionsMap] = useState({});
+  const [todoListsMap, setTodoListsMap] = useState({}); // { sectionName_lower: { id, displayName } }
   const [selected, setSelected] = useState(null);
   const [sync, setSync] = useState({ state: 'idle', label: 'Non connesso' });
   const [zoom, setZoom] = useState(1);
+  const [scheduleOpen, setScheduleOpen] = useState(false);
 
   useEffect(() => {
     initAuth().then(() => {
@@ -35,16 +38,28 @@ export default function App() {
   async function load() {
     setSync({ state: 'loading', label: 'Caricamento…' });
     try {
-      const nbs = await getNotebooks();
+      const [nbs, todoLists] = await Promise.all([
+        getNotebooks(),
+        getTodoLists()
+      ]);
       nbs.forEach((nb, i) => nb._color = COLORS[i % COLORS.length]);
       setNotebooks(nbs);
+
+      // Mappa liste ToDo per nome (lowercase) per matching con sezioni
+      const map = {};
+      console.log('Liste ToDo caricate:', todoLists.map(l => l.displayName));
+      todoLists.forEach(l => {
+        map[l.displayName.toLowerCase()] = { id: l.id, displayName: l.displayName };
+      });
+      console.log('TodoListsMap keys:', Object.keys(map));
+      setTodoListsMap(map);
+
       setSync({ state: 'ok', label: `${nbs.length} taccuini` });
     } catch {
       setSync({ state: 'error', label: 'Errore caricamento' });
     }
   }
 
-  // Carica sezioni per un taccuino (chiamato da MindMap all'avvio)
   async function handleExpandNotebook(nb) {
     if (sectionsMap[nb.id]) return;
     try {
@@ -56,14 +71,37 @@ export default function App() {
     }
   }
 
+  // Trova lista ToDo corrispondente a una sezione per nome
+  function findTodoList(sectionName) {
+    return todoListsMap[sectionName.toLowerCase()] || null;
+  }
+
+  function handleSelectSection(section, nb, appKey = 'onenote') {
+    const todoList = findTodoList(section.displayName);
+    setSelected({
+      type: 'section',
+      data: section,
+      nb,
+      listId: todoList?.id || null,
+      listName: todoList?.displayName || null,
+      initialTab: appKey.toLowerCase(),
+    });
+  }
+
   if (!ready) return null;
 
   return (
     <div className="app">
       <header className="header">
         <div className="header-left">
+          <button
+            className={`schedule-toggle-btn ${scheduleOpen ? 'active' : ''}`}
+            onClick={() => setScheduleOpen(o => !o)}
+            title="Scadenze">
+            ⏰
+          </button>
           <h1 className="logo">Mente Digitale</h1>
-          <span className="header-sub">OneNote · fase 1</span>
+          <span className="header-sub">OneNote · ToDo · fase 1</span>
         </div>
         <div className="header-right">
           <div className="zoom-controls">
@@ -103,10 +141,12 @@ export default function App() {
         </div>
       ) : (
         <div className="canvas-area">
+          <SchedulePanel open={scheduleOpen} onClose={() => setScheduleOpen(false)} />
           <MindMap
             notebooks={notebooks}
             sectionsMap={sectionsMap}
-            onSelectSection={(s, nb) => setSelected({ type: 'section', data: s, nb })}
+            todoListsMap={todoListsMap}
+            onSelectSection={handleSelectSection}
             onExpandNotebook={handleExpandNotebook}
             externalZoom={zoom}
             onZoomChange={setZoom}
@@ -114,6 +154,7 @@ export default function App() {
           <Panel
             selected={selected}
             sectionsMap={sectionsMap}
+            todoListsMap={todoListsMap}
             onClose={() => setSelected(null)}
           />
         </div>

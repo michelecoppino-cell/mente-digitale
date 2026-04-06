@@ -5,7 +5,7 @@ const FONT = 'Outfit, sans-serif';
 const APP_KEYS = ['OneNote', 'OneDrive', 'ToDo'];
 
 export default function MindMap({
-  notebooks, sectionsMap,
+  notebooks, sectionsMap, todoListsMap,
   onSelectSection, onExpandNotebook,
   externalZoom, onZoomChange
 }) {
@@ -121,10 +121,35 @@ export default function MindMap({
 
     sim.on('tick', () => tick());
     renderAll();
+
+    // Auto-fit dopo 1.5s — aspetta che la sim si stabilizzi
+    setTimeout(() => {
+      const allNodes = stateRef.current.nodes.filter(n => n.type !== 'app');
+      if (!allNodes.length || !zoomRef.current || !svgRef.current) return;
+      const xs = allNodes.map(n => n.x).filter(v => v != null);
+      const ys = allNodes.map(n => n.y).filter(v => v != null);
+      if (!xs.length) return;
+      const pad = 60;
+      const minX = Math.min(...xs) - pad;
+      const maxX = Math.max(...xs) + pad;
+      const minY = Math.min(...ys) - pad;
+      const maxY = Math.max(...ys) + pad;
+      const graphW = maxX - minX;
+      const graphH = maxY - minY;
+      const scaleX = W / graphW;
+      const scaleY = H / graphH;
+      const scale = Math.min(scaleX, scaleY, 3);
+      const tx = (W - graphW * scale) / 2 - minX * scale;
+      const ty = (H - graphH * scale) / 2 - minY * scale;
+      d3.select(svgRef.current).transition().duration(700)
+        .call(zoomRef.current.transform, d3.zoomIdentity.translate(tx, ty).scale(scale));
+      onZoomChange(Math.round(scale * 100) / 100);
+    }, 1500);
   }
 
   // Aggiunge o rimuove nodi app senza ricostruire tutto
   function toggleAppNodes(sectionId) {
+    const todoListsMapRef = todoListsMap;
     const st = stateRef.current;
     const prevActive = activeSectionRef.current;
     if (prevActive === sectionId) return;
@@ -154,7 +179,7 @@ export default function MindMap({
             key,
             label: key,
             color: secNode.color, // stesso colore della sezione padre
-            enabled: key === 'OneNote',
+            enabled: key === 'OneNote' || (key === 'ToDo' && !!(todoListsMapRef && todoListsMapRef[secNode.section.displayName.toLowerCase()])),
             section: secNode.section,
             nb: secNode.nb,
             shape: 'circle',
@@ -249,24 +274,12 @@ export default function MindMap({
       const words = d.label.split(' ');
 
       if (d.shape === 'rect') {
-        // Testo sempre su rettangolo, non troncato
-        if (words.length > 1 && d.label.length > 10) {
-          const mid = Math.ceil(words.length / 2);
-          [words.slice(0, mid).join(' '), words.slice(mid).join(' ')].forEach((line, i) => {
-            el.append('text')
-              .attr('y', i === 0 ? -6 : 7)
-              .attr('text-anchor', 'middle').attr('dominant-baseline', 'central')
-              .attr('font-family', FONT).attr('font-size', 9).attr('font-weight', 400)
-              .attr('fill', d.color).attr('opacity', opacity).attr('pointer-events', 'none')
-              .text(line);
-          });
-        } else {
-          el.append('text')
-            .attr('text-anchor', 'middle').attr('dominant-baseline', 'central')
-            .attr('font-family', FONT).attr('font-size', 10).attr('font-weight', 400)
-            .attr('fill', d.color).attr('opacity', opacity).attr('pointer-events', 'none')
-            .text(d.label);
-        }
+        const truncated = d.label.length > 10 ? d.label.slice(0, 9) + '…' : d.label;
+        el.append('text')
+          .attr('text-anchor', 'middle').attr('dominant-baseline', 'central')
+          .attr('font-family', FONT).attr('font-size', 10).attr('font-weight', 400)
+          .attr('fill', d.color).attr('opacity', opacity).attr('pointer-events', 'none')
+          .text(truncated);
       } else if (d.type === 'notebook') {
         if (words.length > 1 && d.label.length > 10) {
           const mid = Math.ceil(words.length / 2);
@@ -309,8 +322,8 @@ export default function MindMap({
       if (d.type === 'section') {
         toggleAppNodes(activeSectionRef.current === d.section.id ? null : d.section.id);
       }
-      if (d.type === 'app' && d.enabled && d.key === 'OneNote') {
-        onSelectSection(d.section, d.nb);
+      if (d.type === 'app' && d.enabled) {
+        onSelectSection(d.section, d.nb, d.key);
       }
     });
 
