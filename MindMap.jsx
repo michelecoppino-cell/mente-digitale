@@ -62,7 +62,10 @@ export default function MindMap({
     gRef.current = g;
 
     // Zoom & Pan
-    const zoom = d3.zoom().scaleExtent([0.1, 5]).on('zoom', e => {
+    const zoom = d3.zoom()
+      .scaleExtent([0.1, 5])
+      .wheelDelta(e => -e.deltaY * (e.deltaMode === 1 ? 0.05 : e.deltaMode ? 1 : 0.004))
+      .on('zoom', e => {
       g.attr('transform', e.transform);
       onZoomChange(Math.round(e.transform.k * 100) / 100);
     });
@@ -78,7 +81,7 @@ export default function MindMap({
     // Nodi base: taccuini + sezioni
     const nodes = [];
     const links = [];
-    const nbSpread = Math.min(W, H) * 0.11;
+    const nbSpread = Math.min(W, H) * 0.10;
 
     notebooks.forEach((nb, i) => {
       const angle = (i / notebooks.length) * 2 * Math.PI - Math.PI / 2;
@@ -94,7 +97,10 @@ export default function MindMap({
         fy: cy + nbSpread * Math.sin(angle),
       });
 
-      (sectionsMap[nb.id] || []).forEach(s => {
+      (sectionsMap[nb.id] || []).forEach((s, si) => {
+        const nbAngle = (i / notebooks.length) * 2 * Math.PI - Math.PI / 2;
+        const secStartR = Math.min(W, H) * 0.30;
+        const secAngle = nbAngle + (si - sects.length / 2) * 0.3;
         nodes.push({
           id: 'sec_' + s.id,
           type: 'section',
@@ -103,7 +109,9 @@ export default function MindMap({
           section: s,
           nb,
           shape: 'rect',
-          rw: 56, rh: 24, // larghezza e altezza rettangolo
+          rw: 56, rh: 24,
+          x: cx + secStartR * Math.cos(secAngle),
+          y: cy + secStartR * Math.sin(secAngle),
         });
         links.push({ source: 'nb_' + nb.id, target: 'sec_' + s.id, type: 'nb-sec' });
       });
@@ -115,12 +123,20 @@ export default function MindMap({
     const sim = d3.forceSimulation(nodes)
       .force('link', d3.forceLink(links).id(d => d.id).distance(100).strength(0.6))
       .force('charge', d3.forceManyBody().strength(d => d.type === 'notebook' ? -900 : -220))
-      .force('collision', d3.forceCollide(d => d.type === 'notebook' ? d.r + 30 : (d.shape === 'rect' ? Math.max(d.rw / 2, d.rh / 2) + 10 : d.r + 10)))
+      .force('collision', d3.forceCollide(d => d.type === 'notebook' ? d.r + 30 : d.type === 'app' ? d.r + 4 : (d.shape === 'rect' ? Math.max(d.rw / 2, d.rh / 2) + 10 : d.r + 10)))
       .alphaDecay(0.022);
     simRef.current = sim;
 
     sim.on('tick', () => tick());
     renderAll();
+
+    // Zoom iniziale 140% — applicato subito
+    const initScale = 1.4;
+    const initTx = (W - W * initScale) / 2;
+    const initTy = (H - H * initScale) / 2;
+    d3.select(svgRef.current)
+      .call(zoomRef.current.transform, d3.zoomIdentity.translate(initTx, initTy).scale(initScale));
+    onZoomChange(initScale);
   }
 
   // Aggiunge o rimuove nodi app senza ricostruire tutto
@@ -145,10 +161,11 @@ export default function MindMap({
       const secNode = st.nodes.find(n => n.id === 'sec_' + sectionId);
       if (secNode) {
         secNode.active = true;
+        const secAngleFromCenter = Math.atan2((secNode.y||0) - cy, (secNode.x||0) - cx);
         APP_KEYS.forEach((key, i) => {
           const appId = `app_${key}_${sectionId}`;
-          // Posizione iniziale vicino alla sezione
-          const angle = (i / APP_KEYS.length) * 2 * Math.PI;
+          const spread = 0.4;
+          const angle = secAngleFromCenter + (i - 1) * spread;
           const node = {
             id: appId,
             type: 'app',
@@ -160,8 +177,8 @@ export default function MindMap({
             nb: secNode.nb,
             shape: 'circle',
             r: 18,
-            x: (secNode.x || 0) + 22 * Math.cos(angle),
-            y: (secNode.y || 0) + 22 * Math.sin(angle),
+            x: (secNode.x || 0) + 15 * Math.cos(angle),
+            y: (secNode.y || 0) + 15 * Math.sin(angle),
             opacity: key === 'OneNote' ? 1 : 0.35,
           };
           st.nodes.push(node);
@@ -174,7 +191,7 @@ export default function MindMap({
     const sim = simRef.current;
     sim.nodes(st.nodes);
     sim.force('link').links(st.links);
-    sim.force('collision').radius(d => d.type === 'notebook' ? d.r + 30 : (d.shape === 'rect' ? Math.max(d.rw / 2, d.rh / 2) + 10 : d.r + 10));
+    sim.force('collision').radius(d => d.type === 'notebook' ? d.r + 30 : d.type === 'app' ? d.r + 4 : (d.shape === 'rect' ? Math.max(d.rw / 2, d.rh / 2) + 10 : d.r + 10));
     sim.alpha(0.15).restart(); // ripartenza leggera — solo una piccola risistemazione
     renderAll();
   }
@@ -250,24 +267,12 @@ export default function MindMap({
       const words = d.label.split(' ');
 
       if (d.shape === 'rect') {
-        // Testo sempre su rettangolo, non troncato
-        if (words.length > 1 && d.label.length > 10) {
-          const mid = Math.ceil(words.length / 2);
-          [words.slice(0, mid).join(' '), words.slice(mid).join(' ')].forEach((line, i) => {
-            el.append('text')
-              .attr('y', i === 0 ? -6 : 7)
-              .attr('text-anchor', 'middle').attr('dominant-baseline', 'central')
-              .attr('font-family', FONT).attr('font-size', 9).attr('font-weight', 400)
-              .attr('fill', d.color).attr('opacity', opacity).attr('pointer-events', 'none')
-              .text(line);
-          });
-        } else {
-          el.append('text')
-            .attr('text-anchor', 'middle').attr('dominant-baseline', 'central')
-            .attr('font-family', FONT).attr('font-size', 10).attr('font-weight', 400)
-            .attr('fill', d.color).attr('opacity', opacity).attr('pointer-events', 'none')
-            .text(d.label);
-        }
+        const truncated = d.label.length > 10 ? d.label.slice(0, 9) + '…' : d.label;
+        el.append('text')
+          .attr('text-anchor', 'middle').attr('dominant-baseline', 'central')
+          .attr('font-family', FONT).attr('font-size', 10).attr('font-weight', 400)
+          .attr('fill', d.color).attr('opacity', opacity).attr('pointer-events', 'none')
+          .text(truncated);
       } else if (d.type === 'notebook') {
         if (words.length > 1 && d.label.length > 10) {
           const mid = Math.ceil(words.length / 2);
@@ -308,10 +313,12 @@ export default function MindMap({
     nodeEnter.on('click', (e, d) => {
       e.stopPropagation();
       if (d.type === 'section') {
-        toggleAppNodes(activeSectionRef.current === d.section.id ? null : d.section.id);
+        const isActive = activeSectionRef.current === d.section.id;
+        toggleAppNodes(isActive ? null : d.section.id);
+        if (!isActive) onSelectSection(d.section, d.nb, 'onenote');
       }
-      if (d.type === 'app' && d.enabled && d.key === 'OneNote') {
-        onSelectSection(d.section, d.nb);
+      if (d.type === 'app' && d.enabled) {
+        onSelectSection(d.section, d.nb, d.key);
       }
     });
 
