@@ -63,13 +63,17 @@ function formatDate(dateStr) {
   return d.toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit' });
 }
 
-export default function SchedulePanel({ open, onClose }) {
+export default function SchedulePanel({ open, onClose, preloadedTasks }) {
   const [tasks, setTasks] = useState([]);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
+    if (preloadedTasks) {
+      setTasks(preloadedTasks);
+      return;
+    }
     if (open && !tasks.length) load();
-  }, [open]);
+  }, [open, preloadedTasks]);
 
   async function load() {
     setLoading(true);

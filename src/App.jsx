@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { initAuth, getAccount, login } from './auth';
-import { getNotebooks, getSections, getTodoLists } from './api';
+import { getNotebooks, getSections, getTodoLists, getPages } from './api';
 import MindMap from './MindMap';
 import Panel from './Panel';
 import SchedulePanel from './SchedulePanel';
@@ -17,6 +17,9 @@ export default function App() {
   const [sync, setSync] = useState({ state: 'idle', label: 'Non connesso' });
   const [zoom, setZoom] = useState(1);
   const [scheduleOpen, setScheduleOpen] = useState(false);
+  const pagesCache = useRef({});   // { sectionId: [pages] }
+  const tasksCache = useRef({});   // { listId: [tasks] }
+  const [scheduledTasks, setScheduledTasks] = useState(null); // precaricati per SchedulePanel
 
   useEffect(() => {
     initAuth().then(() => {
@@ -55,9 +58,30 @@ export default function App() {
       setTodoListsMap(map);
 
       setSync({ state: 'ok', label: `${nbs.length} taccuini` });
+      // Precarica task con scadenza per SchedulePanel in background
+      setTimeout(() => preloadSchedule(todoLists), 1000);
     } catch {
       setSync({ state: 'error', label: 'Errore caricamento' });
     }
+  }
+
+  async function preloadSchedule(lists) {
+    try {
+      const allTasks = [];
+      for (const l of lists) {
+        const token = await import('./auth').then(m => m.getToken());
+        const r = await fetch(
+          `https://graph.microsoft.com/v1.0/me/todo/lists/${l.id}/tasks?$filter=status ne 'completed' and dueDateTime/dateTime ne null&$top=50`,
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
+        if (r.ok) {
+          const d = await r.json();
+          allTasks.push(...(d.value || []).map(t => ({ ...t, _listName: l.displayName })));
+        }
+        await new Promise(r => setTimeout(r, 150));
+      }
+      setScheduledTasks(allTasks);
+    } catch(e) { console.error('Preload schedule error', e); }
   }
 
   async function handleExpandNotebook(nb) {
@@ -65,10 +89,37 @@ export default function App() {
     try {
       const sects = await getSections(nb.id);
       setSectionsMap(prev => ({ ...prev, [nb.id]: sects }));
+      // Preload pagine OneNote in background con piccolo ritardo
+      setTimeout(() => preloadSections(sects, nb), 500);
     } catch (e) {
       console.error('Errore sezioni', nb.displayName, e);
       setSectionsMap(prev => ({ ...prev, [nb.id]: [] }));
     }
+  }
+
+  async function preloadSections(sects, nb) {
+    for (const s of sects) {
+      if (pagesCache.current[s.id]) continue;
+      try {
+        const pages = await getPages(s.id);
+        pagesCache.current[s.id] = pages;
+      } catch(e) {}
+      await new Promise(r => setTimeout(r, 200)); // evita 429
+      // Preload task ToDo se c'è matching
+      const todoList = todoListsMap[s.displayName.toLowerCase()];
+      if (todoList && !tasksCache.current[todoList.id]) {
+        try {
+          const tasks = await getTodoTasksCached(todoList.id);
+          tasksCache.current[todoList.id] = tasks;
+        } catch(e) {}
+        await new Promise(r => setTimeout(r, 200));
+      }
+    }
+  }
+
+  async function getTodoTasksCached(listId) {
+    const { getTodoTasks } = await import('./api');
+    return getTodoTasks(listId);
   }
 
   // Trova lista ToDo corrispondente a una sezione per nome
@@ -141,7 +192,7 @@ export default function App() {
         </div>
       ) : (
         <div className="canvas-area">
-          <SchedulePanel open={scheduleOpen} onClose={() => setScheduleOpen(false)} />
+          <SchedulePanel open={scheduleOpen} onClose={() => setScheduleOpen(false)} preloadedTasks={scheduledTasks} />
           <MindMap
             notebooks={notebooks}
             sectionsMap={sectionsMap}
@@ -155,6 +206,8 @@ export default function App() {
             selected={selected}
             sectionsMap={sectionsMap}
             todoListsMap={todoListsMap}
+            pagesCache={pagesCache}
+            tasksCache={tasksCache}
             onClose={() => setSelected(null)}
           />
         </div>

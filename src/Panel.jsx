@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { getPages, getTodoTasks } from './api';
 
-export default function Panel({ selected, sectionsMap, todoListsMap, onClose }) {
+export default function Panel({ selected, sectionsMap, todoListsMap, pagesCache, tasksCache, onClose }) {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(false);
   const [activeTab, setActiveTab] = useState('onenote');
@@ -11,23 +11,41 @@ export default function Panel({ selected, sectionsMap, todoListsMap, onClose }) 
     if (!selected) return;
     const tab = selected.initialTab || 'onenote';
     setActiveTab(tab);
-    if (tab === 'todo' && selected.listId) loadTodo(selected.listId);
-    else if (selected.type === 'section') loadOneNote(selected.data.id);
-    if (selected.type === 'todo') loadTodo(selected.listId);
+    if (tab === 'todo' && selected.listId) {
+      loadTodo(selected.listId);
+    } else {
+      loadOneNote(selected.data.id);
+    }
   }, [selected]);
 
   async function loadOneNote(sectionId) {
+    // Usa cache se disponibile
+    if (pagesCache?.current?.[sectionId]) {
+      setItems(pagesCache.current[sectionId]);
+      return;
+    }
     setLoading(true);
-    setActiveTab('onenote');
-    try { setItems(await getPages(sectionId)); }
+    try {
+      const pages = await getPages(sectionId);
+      if (pagesCache?.current) pagesCache.current[sectionId] = pages;
+      setItems(pages);
+    }
     catch (e) { console.error(e); }
     setLoading(false);
   }
 
   async function loadTodo(listId) {
+    // Usa cache se disponibile
+    if (tasksCache?.current?.[listId]) {
+      setItems(tasksCache.current[listId]);
+      return;
+    }
     setLoading(true);
-    setActiveTab('todo');
-    try { setItems(await getTodoTasks(listId)); }
+    try {
+      const tasks = await getTodoTasks(listId);
+      if (tasksCache?.current) tasksCache.current[listId] = tasks;
+      setItems(tasks);
+    }
     catch (e) { console.error(e); }
     setLoading(false);
   }
@@ -95,7 +113,7 @@ export default function Panel({ selected, sectionsMap, todoListsMap, onClose }) 
           <PanelSection title={`Attività aperte`}>
             {loading && <div className="panel-loading">Caricamento…</div>}
             {items.map(t => (
-              <TaskRow key={t.id} task={t} color={color} />
+              <TaskRow key={t.id} task={t} color={color} listId={listId} />
             ))}
             {!loading && !items.length && <div className="panel-loading">Nessuna attività aperta</div>}
           </PanelSection>
@@ -115,14 +133,26 @@ function PanelSection({ title, children }) {
   );
 }
 
-function TaskRow({ task, color }) {
+function TaskRow({ task, color, listId }) {
   const isImportant = task.importance === 'high';
   const due = task.dueDateTime?.dateTime
-    ? new Date(task.dueDateTime.dateTime).toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit' })
+    ? (() => {
+        const d = new Date(task.dueDateTime.dateTime.endsWith('Z') ? task.dueDateTime.dateTime : task.dueDateTime.dateTime + 'Z');
+        return new Date(d.getFullYear(), d.getMonth(), d.getDate())
+          .toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit' });
+      })()
     : null;
 
+  const appUrl = `ms-to-do://tasks/id/${task.id}`;
+  const webUrl = `https://to-do.live.com/tasks/id/${task.id}/details`;
+
+  function openTask() {
+    window.location.href = appUrl;
+    setTimeout(() => window.open(webUrl, '_blank'), 800);
+  }
+
   return (
-    <div className="task-row">
+    <div className="task-row" onClick={openTask} style={{ cursor: 'pointer' }}>
       <div className="task-check" style={{ borderColor: color + '66' }} />
       <div className="task-content">
         <div className="task-title" style={{ color: isImportant ? color : 'var(--text)' }}>
@@ -133,6 +163,10 @@ function TaskRow({ task, color }) {
         {task.body?.content && task.body.contentType === 'text' && task.body.content.trim() && (
           <div className="task-note">{task.body.content.trim().slice(0, 80)}{task.body.content.length > 80 ? '…' : ''}</div>
         )}
+      </div>
+      <div className="link-btns">
+        <button className="link-btn primary" onClick={e => { e.stopPropagation(); window.location.href = appUrl; }} title="Apri in ToDo">App</button>
+        <button className="link-btn" onClick={e => { e.stopPropagation(); window.open(`https://to-do.live.com/tasks/id/${task.id}/details`, '_blank'); }} title="Apri nel browser">Web</button>
       </div>
     </div>
   );
