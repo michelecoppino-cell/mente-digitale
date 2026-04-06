@@ -10,7 +10,7 @@ export async function initAuth() {
       authority: 'https://login.microsoftonline.com/common',
       redirectUri: REDIRECT_URI,
     },
-    cache: { cacheLocation: 'localStorage' }
+    cache: { cacheLocation: 'localStorage', storeAuthStateInCookie: true }
   });
   await msal.initialize();
   try {
