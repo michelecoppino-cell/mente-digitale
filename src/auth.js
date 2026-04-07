@@ -9,12 +9,23 @@ export async function initAuth() {
       clientId: CLIENT_ID,
       authority: 'https://login.microsoftonline.com/common',
       redirectUri: REDIRECT_URI,
+      navigateToLoginRequestUrl: true,
     },
-    cache: { cacheLocation: 'localStorage', storeAuthStateInCookie: true }
+    cache: {
+      cacheLocation: 'localStorage',
+      storeAuthStateInCookie: true,  // fondamentale per Safari iOS
+    },
+    system: {
+      allowNativeBroker: false,
+    }
   });
   await msal.initialize();
   try {
-    await msal.handleRedirectPromise();
+    const result = await msal.handleRedirectPromise();
+    if (result) {
+      // Salva token appena ricevuto
+      console.log('Login completato:', result.account?.username);
+    }
   } catch(e) {
     console.error('Redirect error:', e);
   }
