@@ -59,7 +59,7 @@ export default function App() {
 
       setSync({ state: 'ok', label: `${nbs.length} taccuini` });
       // Precarica task con scadenza per SchedulePanel in background
-      setTimeout(() => preloadSchedule(todoLists), 1000);
+      setTimeout(() => preloadSchedule(todoLists), 3000);
     } catch {
       setSync({ state: 'error', label: 'Errore caricamento' });
     }
@@ -90,7 +90,7 @@ export default function App() {
       const sects = await getSections(nb.id);
       setSectionsMap(prev => ({ ...prev, [nb.id]: sects }));
       // Preload pagine OneNote in background con piccolo ritardo
-      setTimeout(() => preloadSections(sects, nb), 500);
+      setTimeout(() => preloadSections(sects, nb), 2000);
     } catch (e) {
       console.error('Errore sezioni', nb.displayName, e);
       setSectionsMap(prev => ({ ...prev, [nb.id]: [] }));
@@ -98,21 +98,15 @@ export default function App() {
   }
 
   async function preloadSections(sects, nb) {
+    // Precarica solo i task ToDo (leggeri), non le pagine OneNote (troppo aggressivo)
     for (const s of sects) {
-      if (pagesCache.current[s.id]) continue;
-      try {
-        const pages = await getPages(s.id);
-        pagesCache.current[s.id] = pages;
-      } catch(e) {}
-      await new Promise(r => setTimeout(r, 200)); // evita 429
-      // Preload task ToDo se c'è matching
       const todoList = todoListsMap[s.displayName.toLowerCase()];
       if (todoList && !tasksCache.current[todoList.id]) {
         try {
           const tasks = await getTodoTasksCached(todoList.id);
           tasksCache.current[todoList.id] = tasks;
         } catch(e) {}
-        await new Promise(r => setTimeout(r, 200));
+        await new Promise(r => setTimeout(r, 400)); // ritardo più lungo
       }
     }
   }

@@ -15,6 +15,7 @@ export default function MindMap({
   const gRef = useRef();
   const stateRef = useRef({ nodes: [], links: [], activeSection: null });
   const activeSectionRef = useRef(null);
+  const savedTransformRef = useRef(null);
 
   // Carica sezioni all'avvio
   useEffect(() => {
@@ -152,13 +153,16 @@ export default function MindMap({
     if (prevActive === sectionId) return;
     activeSectionRef.current = sectionId;
 
-    // Rimuovi vecchi nodi app
-    st.nodes = st.nodes.filter(n => n.type !== 'app');
-    st.links = st.links.filter(l => {
-      const tid = typeof l.target === 'object' ? l.target.id : l.target;
-      return !tid?.startsWith('app_');
-    });
-
+    // Ripristina vista e rimuovi riferimenti
+    st.activeSecNode = null;
+    st.activeSecId = null;
+    st.needsFocus = false;
+    if (savedTransformRef.current && svgRef.current && zoomRef.current) {
+      d3.select(svgRef.current).transition().duration(500)
+        .call(zoomRef.current.transform, savedTransformRef.current);
+      onZoomChange(Math.round(savedTransformRef.current.k*100)/100);
+      savedTransformRef.current = null;
+    }
     // Marca sezioni come attive/non attive
     st.nodes.forEach(n => { if (n.type === 'section') n.active = false; });
 
@@ -166,43 +170,24 @@ export default function MindMap({
       const secNode = st.nodes.find(n => n.id === 'sec_' + sectionId);
       if (secNode) {
         secNode.active = true;
-        const container = svgRef.current?.parentElement;
-        const cxLocal = (container?.offsetWidth || 800) / 2;
-        const cyLocal = (container?.offsetHeight || 600) / 2;
-        const secAngleFromCenter = Math.atan2((secNode.y||0) - cyLocal, (secNode.x||0) - cxLocal);
-        APP_KEYS.forEach((key, i) => {
-          const appId = `app_${key}_${sectionId}`;
-          const spread = 0.28;
-          const angle = secAngleFromCenter + (i - 1) * spread;
-          const node = {
-            id: appId,
-            type: 'app',
-            key,
-            label: key,
-            color: secNode.color, // stesso colore della sezione padre
-            enabled: key === 'OneNote' || (key === 'ToDo' && !!(todoListsMapRef && todoListsMapRef[secNode.section.displayName.toLowerCase()])),
-            section: secNode.section,
-            nb: secNode.nb,
-            shape: 'circle',
-            r: 18,
-            x: (secNode.x || 0) + 8 * Math.cos(angle),
-            y: (secNode.y || 0) + 8 * Math.sin(angle),
-            opacity: key === 'OneNote' ? 1 : 0.35,
-          };
-          st.nodes.push(node);
-          st.links.push({ source: 'sec_' + sectionId, target: appId, type: 'sec-app' });
-        });
+        // Salva transform e segna per focus
+        savedTransformRef.current = d3.zoomTransform(svgRef.current);
+        st.activeSecNode = secNode;
+        st.activeSecId = sectionId;
+        st.todoListsMap = todoListsMapRef;
+        st.needsFocus = true;
       }
     }
 
-    // Aggiorna simulazione con nuovi nodi
+    // Aggiorna simulazione (solo nodi esistenti, no app nodes)
     const sim = simRef.current;
     sim.nodes(st.nodes);
     sim.force('link').links(st.links);
-    sim.force('collision').radius(d => d.type === 'notebook' ? d.r + 30 : d.type === 'app' ? d.r + 1 : (d.shape === 'rect' ? Math.max(d.rw / 2, d.rh / 2) + 10 : d.r + 10));
-    sim.alpha(0.15).restart(); // ripartenza leggera — solo una piccola risistemazione
+    sim.alpha(0.08).restart();
     renderAll();
   }
+
+
 
   function renderAll() {
     const st = stateRef.current;
@@ -436,6 +421,99 @@ export default function MindMap({
 
     // Hull
     drawHulls();
+    // Nodi app geometrici
+    drawAppNodes();
+  }
+
+  function drawAppNodes() {
+    const g = gRef.current;
+    if (!g) return;
+    const st = stateRef.current;
+    const sec = st.activeSecNode;
+
+    // Rimuovi layer precedente
+    g.select('.app-nodes').remove();
+
+    if (!sec || !sec.x) return;
+
+    const container = svgRef.current?.parentElement;
+    const W = container?.offsetWidth || 800;
+    const H = container?.offsetHeight || 600;
+    const cxL = W/2, cyL = H/2;
+    const baseAngle = Math.atan2(sec.y - cyL, sec.x - cxL);
+    const appR = 60;
+    const spread = 0.35;
+
+    const appLayer = g.append('g').attr('class', 'app-nodes');
+
+    APP_KEYS.forEach((key, i) => {
+      const angle = baseAngle + (i - 1) * spread;
+      const ax = sec.x + appR * Math.cos(angle);
+      const ay = sec.y + appR * Math.sin(angle);
+      const color = sec.color;
+      const enabled = key === 'OneNote' || (key === 'ToDo' && !!(st.todoListsMap && st.todoListsMap[sec.section.displayName.toLowerCase()]));
+      const opacity = enabled ? 1 : 0.35;
+
+      // Linea
+      appLayer.append('line')
+        .attr('x1', sec.x).attr('y1', sec.y)
+        .attr('x2', ax).attr('y2', ay)
+        .attr('stroke', color).attr('stroke-width', 0.8)
+        .attr('stroke-dasharray', '3 4').attr('stroke-opacity', 0.4);
+
+      // Alone
+      appLayer.append('circle')
+        .attr('cx', ax).attr('cy', ay).attr('r', 16)
+        .attr('fill', color + '07').attr('stroke', 'none');
+
+      // Cerchio
+      appLayer.append('circle')
+        .attr('cx', ax).attr('cy', ay).attr('r', 10)
+        .attr('fill', '#0c0e14')
+        .attr('stroke', enabled ? color : color + '33')
+        .attr('stroke-width', 1.2)
+        .attr('opacity', opacity);
+
+      // Icona
+      const icons = { OneNote: {l:'N',s:13,w:700}, OneDrive: {l:'☁',s:11,w:400}, ToDo: {l:'✓',s:13,w:700} };
+      const ic = icons[key];
+      appLayer.append('text')
+        .attr('x', ax).attr('y', ay)
+        .attr('text-anchor', 'middle').attr('dominant-baseline', 'central')
+        .attr('font-family', 'Outfit,sans-serif')
+        .attr('font-size', ic.s - 1).attr('font-weight', ic.w)
+        .attr('fill', color).attr('opacity', opacity)
+        .attr('pointer-events', 'none')
+        .text(ic.l);
+
+      // Click area
+      if (enabled) {
+        appLayer.append('circle')
+          .attr('cx', ax).attr('cy', ay).attr('r', 14)
+          .attr('fill', 'transparent').attr('cursor', 'pointer')
+          .on('click', (e) => {
+            e.stopPropagation();
+            onSelectSection(sec.section, sec.nb, key);
+          });
+      }
+    });
+
+    // Zoom-focus immediato (posizioni già stabili)
+    if (st.needsFocus) {
+      st.needsFocus = false;
+      const xs = APP_KEYS.map((_, i) => sec.x + appR * Math.cos(baseAngle + (i-1)*spread));
+      const ys = APP_KEYS.map((_, i) => sec.y + appR * Math.sin(baseAngle + (i-1)*spread));
+      xs.push(sec.x); ys.push(sec.y);
+      const pad = 70;
+      const minX = Math.min(...xs)-pad, maxX = Math.max(...xs)+pad;
+      const minY = Math.min(...ys)-pad, maxY = Math.max(...ys)+pad;
+      const scale = Math.min(W/(maxX-minX), H/(maxY-minY), 3.5);
+      const tx = (W-(maxX-minX)*scale)/2 - minX*scale;
+      const ty = (H-(maxY-minY)*scale)/2 - minY*scale;
+      d3.select(svgRef.current).transition().duration(500)
+        .call(zoomRef.current.transform, d3.zoomIdentity.translate(tx,ty).scale(scale));
+      onZoomChange(Math.round(scale*100)/100);
+    }
   }
 
   function drawHulls() {
