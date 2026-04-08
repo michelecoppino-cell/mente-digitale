@@ -4,7 +4,6 @@ import { getNotebooks, getSections, getTodoLists, getPages } from './api';
 import MindMap from './MindMap';
 import Panel from './Panel';
 import SchedulePanel from './SchedulePanel';
-import CalendarBar from './CalendarBar';
 import { COLORS } from './config';
 import './App.css';
 
@@ -18,7 +17,6 @@ export default function App() {
   const [sync, setSync] = useState({ state: 'idle', label: 'Non connesso' });
   const [zoom, setZoom] = useState(1);
   const [scheduleOpen, setScheduleOpen] = useState(false);
-  const [calendarOpen, setCalendarOpen] = useState(false);
   const pagesCache = useRef({});   // { sectionId: [pages] }
   const tasksCache = useRef({});   // { listId: [tasks] }
   const [scheduledTasks, setScheduledTasks] = useState(null); // precaricati per SchedulePanel
@@ -73,12 +71,12 @@ export default function App() {
       for (const l of lists) {
         const token = await import('./auth').then(m => m.getToken());
         const r = await fetch(
-          `https://graph.microsoft.com/v1.0/me/todo/lists/${l.id}/tasks?$filter=status ne 'completed' and dueDateTime/dateTime ne null&$top=50`,
+          `https://graph.microsoft.com/v1.0/me/todo/lists/${l.id}/tasks?$filter=status ne 'completed'&$top=50`,
           { headers: { Authorization: `Bearer ${token}` } }
         );
         if (r.ok) {
           const d = await r.json();
-          allTasks.push(...(d.value || []).map(t => ({ ...t, _listName: l.displayName })));
+          allTasks.push(...(d.value || []).map(t => ({ ...t, _listName: l.displayName, _listId: l.id })));
         }
         await new Promise(r => setTimeout(r, 150));
       }
@@ -212,7 +210,6 @@ export default function App() {
             tasksCache={tasksCache}
             onClose={() => setSelected(null)}
           />
-        <CalendarBar open={calendarOpen} onToggle={() => setCalendarOpen(o => !o)} />
         </div>
       )}
     </div>

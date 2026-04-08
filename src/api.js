@@ -2,15 +2,28 @@ import { getToken } from './auth';
 
 const GRAPH = 'https://graph.microsoft.com/v1.0';
 
-async function call(path, options = {}) {
+async function call(path, options = {}, retries = 3) {
   const token = await getToken();
-  const r = await fetch(GRAPH + path, {
-    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-    ...options
-  });
-  if (!r.ok) throw new Error(`Graph error ${r.status}`);
-  if (r.status === 204) return null;
-  return r.json();
+  for (let attempt = 0; attempt < retries; attempt++) {
+    try {
+      const r = await fetch(GRAPH + path, {
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        ...options
+      });
+      if (r.status === 204) return null;
+      if (r.status === 429 || r.status === 503 || r.status === 504) {
+        // Retry con backoff
+        const wait = (attempt + 1) * 800;
+        await new Promise(r => setTimeout(r, wait));
+        continue;
+      }
+      if (!r.ok) throw new Error(`Graph error ${r.status}`);
+      return r.json();
+    } catch(e) {
+      if (attempt === retries - 1) throw e;
+      await new Promise(r => setTimeout(r, (attempt + 1) * 800));
+    }
+  }
 }
 
 // ── OneNote ──
