@@ -4,6 +4,7 @@ import { getNotebooks, getSections, getTodoLists, getPages } from './api';
 import MindMap from './MindMap';
 import Panel from './Panel';
 import SchedulePanel from './SchedulePanel';
+import CalendarBar from './CalendarBar';
 import { COLORS } from './config';
 import './App.css';
 
@@ -17,6 +18,7 @@ export default function App() {
   const [sync, setSync] = useState({ state: 'idle', label: 'Non connesso' });
   const [zoom, setZoom] = useState(1);
   const [scheduleOpen, setScheduleOpen] = useState(false);
+  const [calendarOpen, setCalendarOpen] = useState(false);
   const pagesCache = useRef({});   // { sectionId: [pages] }
   const tasksCache = useRef({});   // { listId: [tasks] }
   const [scheduledTasks, setScheduledTasks] = useState(null); // precaricati per SchedulePanel
@@ -152,7 +154,7 @@ export default function App() {
             ⏰
           </button>
           <h1 className="logo">Mente Digitale</h1>
-          <span className="header-sub">OneNote · ToDo · fase 1</span>
+          <span className="header-sub">OneNote · ToDo · Calendario</span>
         </div>
         <div className="header-right">
           <div className="zoom-controls">
@@ -210,6 +212,7 @@ export default function App() {
             tasksCache={tasksCache}
             onClose={() => setSelected(null)}
           />
+        <CalendarBar open={calendarOpen} onToggle={() => setCalendarOpen(o => !o)} />
         </div>
       )}
     </div>
