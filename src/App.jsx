@@ -1,6 +1,7 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { initAuth, getAccount, login } from './auth';
 import { getNotebooks, getSections, getTodoLists, getTodoTasks, getPages } from './api';
+import { cacheGet, cacheSet, cacheClear, TTL } from './cache';
 import MindMap from './MindMap';
 import Panel from './Panel';
 import SchedulePanel from './SchedulePanel';
@@ -14,7 +15,7 @@ export default function App() {
   const [notebooks, setNotebooks] = useState([]);
   const [sectionsMap, setSectionsMap] = useState({});
   const [todoListsMap, setTodoListsMap] = useState({});
-  const [todoCountMap, setTodoCountMap] = useState({}); // { sectionName_lower: count }
+  const [todoCountMap, setTodoCountMap] = useState({});
   const [selected, setSelected] = useState(null);
   const [sync, setSync] = useState({ state: 'idle', label: 'Non connesso' });
   const [zoom, setZoom] = useState(1);
@@ -25,67 +26,96 @@ export default function App() {
   const [scheduledTasks, setScheduledTasks] = useState(null);
   const preloadQueueRef = useRef([]);
   const preloadRunningRef = useRef(false);
+  const todoListsRef = useRef([]);
 
   useEffect(() => {
     initAuth().then(() => {
       const acc = getAccount();
       setAccount(acc);
       setReady(true);
-      if (acc) load();
+      if (acc) load(false);
     });
   }, []);
 
-  async function handleLogin() {
-    try { await login(); setAccount(getAccount()); load(); }
-    catch (e) { console.error(e); }
-  }
-
-  async function load() {
+  async function load(forceRefresh = false) {
     setSync({ state: 'loading', label: 'Caricamento…' });
+
+    // Svuota cache in memoria se forceRefresh
+    if (forceRefresh) {
+      cacheClear();
+      pagesCache.current = {};
+      tasksCache.current = {};
+    }
+
     try {
-      const [nbs, todoLists] = await Promise.all([getNotebooks(), getTodoLists()]);
+      // Taccuini
+      let nbs = forceRefresh ? null : cacheGet('notebooks');
+      if (!nbs) {
+        nbs = await getNotebooks();
+        cacheSet('notebooks', nbs, TTL.NOTEBOOKS);
+      }
       nbs.forEach((nb, i) => nb._color = COLORS[i % COLORS.length]);
       setNotebooks(nbs);
+
+      // Liste ToDo
+      let todoLists = forceRefresh ? null : cacheGet('todolists');
+      if (!todoLists) {
+        todoLists = await getTodoLists();
+        cacheSet('todolists', todoLists, TTL.TODOLISTS);
+      }
+      todoListsRef.current = todoLists;
       const map = {};
       todoLists.forEach(l => { map[l.displayName.toLowerCase()] = { id: l.id, displayName: l.displayName }; });
       setTodoListsMap(map);
+
+      // Sezioni — carica da cache subito, poi espandi
+      const sectMap = {};
+      for (const nb of nbs) {
+        const cached = forceRefresh ? null : cacheGet(`sections_${nb.id}`);
+        if (cached) sectMap[nb.id] = cached;
+      }
+      if (Object.keys(sectMap).length > 0) setSectionsMap(sectMap);
+
       setSync({ state: 'ok', label: `${nbs.length} taccuini` });
-      // Precarica task in background dopo 2s
-      setTimeout(() => preloadAllTasks(todoLists), 2000);
+
+      // Precarica task in background
+      setTimeout(() => preloadAllTasks(todoLists, forceRefresh), 1000);
+
+      // Precarica pagine in background
+      setTimeout(() => {
+        Object.entries(sectMap).forEach(([, sects]) =>
+          sects.forEach(s => enqueuePagePreload(s.id, forceRefresh))
+        );
+      }, 2000);
+
     } catch {
       setSync({ state: 'error', label: 'Errore caricamento' });
     }
   }
 
-  // Precarica tutti i task ToDo in background (sequenziale per evitare 429)
-  async function preloadAllTasks(lists) {
+  async function preloadAllTasks(lists, forceRefresh = false) {
     const allTasks = [];
+    const counts = {};
     for (const l of lists) {
       try {
-        if (!tasksCache.current[l.id]) {
-          const tasks = await getTodoTasks(l.id);
-          tasksCache.current[l.id] = tasks;
-          tasks.forEach(t => allTasks.push({ ...t, _listName: l.displayName, _listId: l.id }));
-        } else {
-          tasksCache.current[l.id].forEach(t => allTasks.push({ ...t, _listName: l.displayName, _listId: l.id }));
+        let tasks = forceRefresh ? null : cacheGet(`tasks_${l.id}`);
+        if (!tasks) {
+          tasks = await getTodoTasks(l.id);
+          cacheSet(`tasks_${l.id}`, tasks, TTL.TASKS);
         }
-        await new Promise(r => setTimeout(r, 300));
+        tasksCache.current[l.id] = tasks;
+        tasks.forEach(t => allTasks.push({ ...t, _listName: l.displayName, _listId: l.id }));
+        if (tasks.length > 0) counts[l.displayName.toLowerCase()] = tasks.length;
+        await new Promise(r => setTimeout(r, 200));
       } catch(e) {}
     }
     setScheduledTasks(allTasks);
-    // Calcola badge counts per sezione
-    const counts = {};
-    lists.forEach(l => {
-      const tasks = tasksCache.current[l.id] || [];
-      if (tasks.length > 0) counts[l.displayName.toLowerCase()] = tasks.length;
-    });
     setTodoCountMap(counts);
   }
 
-  // Precarica pagine OneNote in background (coda sequenziale)
-  function enqueuePagePreload(sectionId) {
-    if (pagesCache.current[sectionId]) return;
-    preloadQueueRef.current.push(sectionId);
+  function enqueuePagePreload(sectionId, forceRefresh = false) {
+    if (!forceRefresh && pagesCache.current[sectionId]) return;
+    preloadQueueRef.current.push({ sectionId, forceRefresh });
     runPreloadQueue();
   }
 
@@ -93,12 +123,16 @@ export default function App() {
     if (preloadRunningRef.current) return;
     preloadRunningRef.current = true;
     while (preloadQueueRef.current.length > 0) {
-      const id = preloadQueueRef.current.shift();
-      if (pagesCache.current[id]) continue;
+      const { sectionId, forceRefresh } = preloadQueueRef.current.shift();
+      if (!forceRefresh && pagesCache.current[sectionId]) continue;
       try {
-        const pages = await getPages(id);
-        pagesCache.current[id] = pages;
-        await new Promise(r => setTimeout(r, 500));
+        let cached = forceRefresh ? null : cacheGet(`pages_${sectionId}`);
+        if (!cached) {
+          cached = await getPages(sectionId);
+          cacheSet(`pages_${sectionId}`, cached, TTL.PAGES);
+        }
+        pagesCache.current[sectionId] = cached;
+        await new Promise(r => setTimeout(r, 400));
       } catch(e) {}
     }
     preloadRunningRef.current = false;
@@ -107,10 +141,13 @@ export default function App() {
   async function handleExpandNotebook(nb) {
     if (sectionsMap[nb.id]) return;
     try {
-      const sects = await getSections(nb.id);
+      let sects = cacheGet(`sections_${nb.id}`);
+      if (!sects) {
+        sects = await getSections(nb.id);
+        cacheSet(`sections_${nb.id}`, sects, TTL.SECTIONS);
+      }
       setSectionsMap(prev => ({ ...prev, [nb.id]: sects }));
-      // Accoda preload pagine per ogni sezione
-      setTimeout(() => sects.forEach(s => enqueuePagePreload(s.id)), 1000);
+      setTimeout(() => sects.forEach(s => enqueuePagePreload(s.id)), 1500);
     } catch (e) {
       console.error('Errore sezioni', nb.displayName, e);
       setSectionsMap(prev => ({ ...prev, [nb.id]: [] }));
@@ -124,6 +161,15 @@ export default function App() {
   function handleSelectSection(section, nb, appKey = 'onenote') {
     const todoList = findTodoList(section.displayName);
     setSelected({ type: 'section', data: section, nb, listId: todoList?.id || null, listName: todoList?.displayName || null, initialTab: appKey.toLowerCase() });
+  }
+
+  async function handleRefresh() {
+    setSelected(null);
+    setNotebooks([]);
+    setSectionsMap({});
+    setScheduledTasks(null);
+    setTodoCountMap({});
+    await load(true);
   }
 
   if (!ready) return null;
@@ -144,7 +190,7 @@ export default function App() {
             <button className="zoom-btn" onClick={() => setZoom(z => Math.min(5, +(z + 0.2).toFixed(2)))}>+</button>
             <button className="zoom-btn" style={{fontSize:11,padding:'0 8px',width:'auto'}} onClick={() => setZoom(1)}>↺</button>
           </div>
-          <div className="sync-status">
+          <div className="sync-status" style={{cursor:'pointer'}} onClick={handleRefresh} title="Aggiorna tutto">
             <div className={`sync-dot ${sync.state}`} />
             <span>{sync.label}</span>
           </div>

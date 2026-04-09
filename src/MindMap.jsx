@@ -5,7 +5,7 @@ const FONT = 'Outfit, sans-serif';
 const APP_KEYS = ['OneNote', 'OneDrive', 'ToDo'];
 
 export default function MindMap({
-  notebooks, sectionsMap, todoListsMap,
+  notebooks, sectionsMap, todoListsMap, todoCountMap,
   onSelectSection, onExpandNotebook,
   externalZoom, onZoomChange
 }) {
@@ -16,6 +16,7 @@ export default function MindMap({
   const stateRef = useRef({ nodes: [], links: [], activeSection: null });
   const activeSectionRef = useRef(null);
   const todoCountMapRef = useRef({});
+  const lastAppSecIdRef = useRef(null);
 
   // Carica sezioni all'avvio
   useEffect(() => {
@@ -393,28 +394,33 @@ export default function MindMap({
     });
   }
 
+  const tickCountRef = { current: 0 };
+
   function tick() {
     const g = gRef.current;
     if (!g) return;
     const st = stateRef.current;
+    tickCountRef.current++;
 
-    // Aggiorna link
+    // Aggiorna posizioni link
     g.select('.links').selectAll('line')
       .attr('x1', d => (typeof d.source === 'object' ? d.source : st.nodes.find(n => n.id === d.source))?.x || 0)
       .attr('y1', d => (typeof d.source === 'object' ? d.source : st.nodes.find(n => n.id === d.source))?.y || 0)
       .attr('x2', d => (typeof d.target === 'object' ? d.target : st.nodes.find(n => n.id === d.target))?.x || 0)
       .attr('y2', d => (typeof d.target === 'object' ? d.target : st.nodes.find(n => n.id === d.target))?.y || 0);
 
-    // Aggiorna nodi
+    // Aggiorna posizioni nodi
     g.select('.nodes').selectAll('g.node')
       .attr('transform', d => `translate(${d.x ?? 0},${d.y ?? 0})`);
 
-    // Hull
-    drawHulls();
-    // Nodi app geometrici
-    drawAppNodes();
-    // Badge ToDo
-    drawBadges();
+    // Hull: solo ogni 3 tick (costoso)
+    if (tickCountRef.current % 3 === 0) drawHulls();
+
+    // App nodes: solo se c'è sezione attiva (riusa layer esistente se posizione invariata)
+    if (st.activeSecNode) drawAppNodes();
+
+    // Badge: solo al primo tick e poi staticamente (non cambiano con le posizioni)
+    if (tickCountRef.current === 1) drawBadgesStatic();
   }
 
   function drawAppNodes() {
@@ -423,10 +429,44 @@ export default function MindMap({
     const st = stateRef.current;
     const sec = st.activeSecNode;
 
-    // Rimuovi layer precedente
-    g.select('.app-nodes').remove();
+    if (!sec || !sec.x) {
+      g.select('.app-nodes').remove();
+      lastAppSecIdRef.current = null;
+      return;
+    }
 
-    if (!sec || !sec.x) return;
+    // Ricostruisci solo se sezione cambiata
+    if (lastAppSecIdRef.current === sec.section?.id) {
+      // Aggiorna solo posizioni esistenti
+      const container = svgRef.current?.parentElement;
+      const W = container?.offsetWidth || 800;
+      const H = container?.offsetHeight || 600;
+      const baseAngle = Math.atan2(sec.y - H/2, sec.x - W/2);
+      const appR = 60;
+      const spread = 0.35;
+      g.select('.app-nodes').selectAll('line')
+        .each(function(_, i) {
+          d3.select(this)
+            .attr('x1', sec.x).attr('y1', sec.y)
+            .attr('x2', sec.x + appR * Math.cos(baseAngle + (i-1)*spread))
+            .attr('y2', sec.y + appR * Math.sin(baseAngle + (i-1)*spread));
+        });
+      g.select('.app-nodes').selectAll('circle, text')
+        .each(function(_, i) {
+          const nodeIdx = Math.floor(i / 4);
+          const angle = baseAngle + (nodeIdx - 1) * spread;
+          const ax = sec.x + appR * Math.cos(angle);
+          const ay = sec.y + appR * Math.sin(angle);
+          const el = d3.select(this);
+          if (this.tagName === 'circle') { el.attr('cx', ax).attr('cy', ay); }
+          else { el.attr('x', ax).attr('y', ay); }
+        });
+      return;
+    }
+
+    lastAppSecIdRef.current = sec.section?.id;
+    // Rimuovi layer precedente e ricostruisci
+    g.select('.app-nodes').remove();
 
     const container = svgRef.current?.parentElement;
     const W = container?.offsetWidth || 800;
@@ -506,16 +546,16 @@ export default function MindMap({
     }
   }
 
-  function drawBadges() {
+  function drawBadgesStatic() {
     const g = gRef.current;
     if (!g) return;
     const st = stateRef.current;
     const counts = todoCountMapRef.current;
-    // Rimuovi layer precedente
+    // Ricrea solo se ci sono dati
     g.select('.badges').remove();
+    if (!Object.keys(counts).length) return;
     const badgeLayer = g.append('g').attr('class', 'badges');
-    st.nodes.filter(n => n.type === 'section').forEach(n => {
-      if (!n.x || !n.y) return;
+    st.nodes.filter(n => n.type === 'section' && n.x && n.y).forEach(n => {
       const count = counts[n.label.toLowerCase()];
       if (!count) return;
       const bx = (n.x + (n.rw || 52) / 2) - 4;
