@@ -157,12 +157,7 @@ export default function MindMap({
     st.activeSecNode = null;
     st.activeSecId = null;
     st.needsFocus = false;
-    if (savedTransformRef.current && svgRef.current && zoomRef.current) {
-      d3.select(svgRef.current).transition().duration(500)
-        .call(zoomRef.current.transform, savedTransformRef.current);
-      onZoomChange(Math.round(savedTransformRef.current.k*100)/100);
-      savedTransformRef.current = null;
-    }
+    savedTransformRef.current = null;
     // Marca sezioni come attive/non attive
     st.nodes.forEach(n => { if (n.type === 'section') n.active = false; });
 
@@ -510,9 +505,7 @@ export default function MindMap({
       const scale = Math.min(W/(maxX-minX), H/(maxY-minY), 3.5);
       const tx = (W-(maxX-minX)*scale)/2 - minX*scale;
       const ty = (H-(maxY-minY)*scale)/2 - minY*scale;
-      d3.select(svgRef.current).transition().duration(500)
-        .call(zoomRef.current.transform, d3.zoomIdentity.translate(tx,ty).scale(scale));
-      onZoomChange(Math.round(scale*100)/100);
+      // zoom-focus rimosso
     }
   }
 
