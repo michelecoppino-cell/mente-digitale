@@ -16,8 +16,11 @@ export default function Panel({ selected, sectionsMap, todoListsMap, pagesCache,
     if (!selected) return;
     const tab = selected.initialTab || 'onenote';
     setActiveTab(tab);
-    if (tab === 'todo' && selected.listId) loadTodo(selected.listId);
-    else loadOneNote(selected.data.id);
+    // Carica in background senza bloccare UI
+    setTimeout(() => {
+      if (tab === 'todo' && selected.listId) loadTodo(selected.listId);
+      else loadOneNote(selected.data.id);
+    }, 0);
   }, [selected]);
 
   async function loadOneNote(sectionId) {

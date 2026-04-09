@@ -15,7 +15,6 @@ export default function MindMap({
   const gRef = useRef();
   const stateRef = useRef({ nodes: [], links: [], activeSection: null });
   const activeSectionRef = useRef(null);
-  const savedTransformRef = useRef(null);
 
   // Carica sezioni all'avvio
   useEffect(() => {
@@ -153,11 +152,8 @@ export default function MindMap({
     if (prevActive === sectionId) return;
     activeSectionRef.current = sectionId;
 
-    // Ripristina vista e rimuovi riferimenti
     st.activeSecNode = null;
     st.activeSecId = null;
-    st.needsFocus = false;
-    savedTransformRef.current = null;
     // Marca sezioni come attive/non attive
     st.nodes.forEach(n => { if (n.type === 'section') n.active = false; });
 
@@ -165,12 +161,9 @@ export default function MindMap({
       const secNode = st.nodes.find(n => n.id === 'sec_' + sectionId);
       if (secNode) {
         secNode.active = true;
-        // Salva transform e segna per focus
-        savedTransformRef.current = d3.zoomTransform(svgRef.current);
         st.activeSecNode = secNode;
         st.activeSecId = sectionId;
         st.todoListsMap = todoListsMapRef;
-        st.needsFocus = true;
       }
     }
 
@@ -178,7 +171,8 @@ export default function MindMap({
     const sim = simRef.current;
     sim.nodes(st.nodes);
     sim.force('link').links(st.links);
-    sim.alpha(0.08).restart();
+    // Non riavviare la sim al click sezione — risparmia CPU su mobile
+    // sim.alpha(0.08).restart();
     renderAll();
   }
 
