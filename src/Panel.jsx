@@ -1,61 +1,73 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { getPages, getTodoTasks, createTask, completeTask } from './api';
 
-export default function Panel({ selected, sectionsMap, todoListsMap, pagesCache, tasksCache, onClose }) {
-  const [items, setItems] = useState([]);
-  const [noDeadlineItems, setNoDeadlineItems] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState('onenote');
+const ONEDRIVE_KEY = 'onedrive_links_v2';
+
+function loadODLinks() {
+  try { return JSON.parse(localStorage.getItem(ONEDRIVE_KEY) || '{}'); } catch { return {}; }
+}
+function saveODLinks(obj) {
+  localStorage.setItem(ONEDRIVE_KEY, JSON.stringify(obj));
+}
+
+export default function Panel({ selected, pagesCache, tasksCache, onClose }) {
+  const [pages, setPages] = useState([]);
+  const [tasks, setTasks] = useState([]);
+  const [noDeadlineTasks, setNoDeadlineTasks] = useState([]);
+  const [loadingPages, setLoadingPages] = useState(false);
+  const [loadingTasks, setLoadingTasks] = useState(false);
   const [newTask, setNewTask] = useState('');
   const [adding, setAdding] = useState(false);
+  const [odLinks, setOdLinks] = useState(loadODLinks());
+  const [addingOD, setAddingOD] = useState(false);
+  const [newODName, setNewODName] = useState('');
+  const [newODUrl, setNewODUrl] = useState('');
 
   useEffect(() => {
-    setItems([]);
-    setNoDeadlineItems([]);
+    setPages([]);
+    setTasks([]);
+    setNoDeadlineTasks([]);
     setNewTask('');
     if (!selected) return;
-    const tab = selected.initialTab || 'onenote';
-    setActiveTab(tab);
-    // Carica in background senza bloccare UI
     setTimeout(() => {
-      if (tab === 'todo' && selected.listId) loadTodo(selected.listId);
-      else loadOneNote(selected.data.id);
+      loadPages(selected.data.id);
+      if (selected.listId) loadTasks(selected.listId);
     }, 0);
   }, [selected]);
 
-  async function loadOneNote(sectionId) {
-    if (pagesCache?.current?.[sectionId]) { setItems(pagesCache.current[sectionId]); return; }
-    setLoading(true);
+  async function loadPages(sectionId) {
+    if (pagesCache?.current?.[sectionId]) { setPages(pagesCache.current[sectionId]); return; }
+    setLoadingPages(true);
     try {
-      const pages = await getPages(sectionId);
-      if (pagesCache?.current) pagesCache.current[sectionId] = pages;
-      setItems(pages);
+      const p = await getPages(sectionId);
+      if (pagesCache?.current) pagesCache.current[sectionId] = p;
+      setPages(p);
     } catch(e) { console.error(e); }
-    setLoading(false);
+    setLoadingPages(false);
   }
 
-  async function loadTodo(listId) {
-    setLoading(true);
+  async function loadTasks(listId) {
+    if (tasksCache?.current?.[listId]) {
+      splitTasks(tasksCache.current[listId]);
+      return;
+    }
+    setLoadingTasks(true);
     try {
-      let all;
-      if (tasksCache?.current?.[listId]) {
-        all = tasksCache.current[listId];
-      } else {
-        all = await getTodoTasks(listId);
-        if (tasksCache?.current) tasksCache.current[listId] = all;
-      }
-      // Separa con scadenza e senza
-      const withDue = all.filter(t => t.dueDateTime?.dateTime);
-      const noDue = all.filter(t => !t.dueDateTime?.dateTime);
-      // Senza scadenza: stellati prima, max 10
-      const noDueSorted = [
-        ...noDue.filter(t => t.importance === 'high'),
-        ...noDue.filter(t => t.importance !== 'high'),
-      ].slice(0, 10);
-      setItems(withDue);
-      setNoDeadlineItems(noDueSorted);
+      const all = await getTodoTasks(listId);
+      if (tasksCache?.current) tasksCache.current[listId] = all;
+      splitTasks(all);
     } catch(e) { console.error(e); }
-    setLoading(false);
+    setLoadingTasks(false);
+  }
+
+  function splitTasks(all) {
+    const withDue = all.filter(t => t.dueDateTime?.dateTime);
+    const noDue = [
+      ...all.filter(t => !t.dueDateTime?.dateTime && t.importance === 'high'),
+      ...all.filter(t => !t.dueDateTime?.dateTime && t.importance !== 'high'),
+    ];
+    setTasks(withDue);
+    setNoDeadlineTasks(noDue);
   }
 
   async function handleAddTask() {
@@ -63,11 +75,9 @@ export default function Panel({ selected, sectionsMap, todoListsMap, pagesCache,
     setAdding(true);
     try {
       const task = await createTask(selected.listId, newTask.trim());
-      // Aggiunge ai task senza scadenza (è nuovo, non ha scadenza)
-      setNoDeadlineItems(prev => [task, ...prev].slice(0, 10));
-      if (tasksCache?.current?.[selected.listId]) {
+      setNoDeadlineTasks(prev => [task, ...prev]);
+      if (tasksCache?.current?.[selected.listId])
         tasksCache.current[selected.listId] = [task, ...tasksCache.current[selected.listId]];
-      }
       setNewTask('');
     } catch(e) { console.error(e); }
     setAdding(false);
@@ -77,112 +87,139 @@ export default function Panel({ selected, sectionsMap, todoListsMap, pagesCache,
     if (!selected?.listId) return;
     try {
       await completeTask(selected.listId, task.id);
-      setItems(prev => prev.filter(t => t.id !== task.id));
-      setNoDeadlineItems(prev => prev.filter(t => t.id !== task.id));
-      if (tasksCache?.current?.[selected.listId]) {
+      setTasks(prev => prev.filter(t => t.id !== task.id));
+      setNoDeadlineTasks(prev => prev.filter(t => t.id !== task.id));
+      if (tasksCache?.current?.[selected.listId])
         tasksCache.current[selected.listId] = tasksCache.current[selected.listId].filter(t => t.id !== task.id);
-      }
     } catch(e) { console.error(e); }
+  }
+
+  function handleAddODLink() {
+    if (!newODName.trim() || !newODUrl.trim() || !selected) return;
+    const key = selected.data.id;
+    const existing = odLinks[key] || [];
+    const updated = [...existing, { name: newODName.trim(), url: newODUrl.trim() }];
+    const next = { ...odLinks, [key]: updated };
+    setOdLinks(next);
+    saveODLinks(next);
+    setNewODName('');
+    setNewODUrl('');
+    setAddingOD(false);
+  }
+
+  function handleRemoveODLink(sectionId, idx) {
+    const existing = odLinks[sectionId] || [];
+    const updated = existing.filter((_, i) => i !== idx);
+    const next = { ...odLinks, [sectionId]: updated };
+    setOdLinks(next);
+    saveODLinks(next);
   }
 
   if (!selected) return <div className="panel" />;
 
-  const { data, nb, listId, listName } = selected;
+  const { data, nb, listId } = selected;
   const color = nb?._color || '#c8a96e';
-  const allTasks = [...items, ...noDeadlineItems];
+  const sectionODLinks = odLinks[data.id] || [];
+  const allTasks = [...tasks, ...noDeadlineTasks];
 
   return (
     <div className="panel open">
       <div className="panel-head">
-        <div>
-          <div className="panel-label">{activeTab === 'todo' ? 'ToDo' : 'Sezione'}</div>
-          <div className="panel-title" style={{ color }}>
-            {activeTab === 'todo' ? (listName || data?.displayName) : data?.displayName}
-          </div>
-        </div>
+        <div className="panel-label">Sezione</div>
+        <div className="panel-title" style={{ color }}>{data.displayName}</div>
         <button className="panel-close" onClick={onClose}>✕</button>
       </div>
 
-      {listId && (
-        <div className="panel-tabs">
-          <button className={`panel-tab ${activeTab==='onenote'?'active':''}`}
-            style={{'--tab-color':color}}
-            onClick={() => { setActiveTab('onenote'); loadOneNote(data.id); }}>
-            OneNote
-          </button>
-          <button className={`panel-tab ${activeTab==='todo'?'active':''}`}
-            style={{'--tab-color':color}}
-            onClick={() => { setActiveTab('todo'); loadTodo(listId); }}>
-            ToDo
-          </button>
+      <div className="panel-body panel-3col">
+
+        {/* ── ToDo ── */}
+        <div className="panel-col">
+          <div className="panel-col-header" style={{ color }}>
+            <span>ToDo</span>
+            {allTasks.length > 0 && <span className="panel-col-count">{allTasks.length}</span>}
+          </div>
+          {listId ? (
+            <>
+              <div className="add-task-row">
+                <input className="add-task-input" placeholder="Nuova attività…"
+                  value={newTask} onChange={e => setNewTask(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && handleAddTask()}
+                  style={{ borderColor: color + '33' }} />
+                <button className="add-task-btn" onClick={handleAddTask}
+                  disabled={adding || !newTask.trim()} style={{ color, borderColor: color + '33' }}>
+                  {adding ? '…' : '+'}
+                </button>
+              </div>
+              {loadingTasks && <div className="panel-loading">Caricamento…</div>}
+              <div className="panel-col-body">
+                {tasks.map(t => <TaskRow key={t.id} task={t} color={color} onComplete={handleComplete} />)}
+                {noDeadlineTasks.map(t => <TaskRow key={t.id} task={t} color={color} onComplete={handleComplete} />)}
+                {!loadingTasks && !allTasks.length && <div className="panel-empty">Nessuna attività</div>}
+              </div>
+            </>
+          ) : (
+            <div className="panel-empty">Nessuna lista ToDo collegata</div>
+          )}
         </div>
-      )}
 
-      <div className="panel-body">
-        {activeTab === 'onenote' && (
-          <>
-            <div className="panel-section">
-              <div className="panel-section-title">Apri sezione</div>
-              <LinkRow color={color} label={data.displayName}
-                appUrl={data.links?.oneNoteClientUrl?.href}
-                webUrl={data.links?.oneNoteWebUrl?.href} />
+        {/* ── OneNote ── */}
+        <div className="panel-col">
+          <div className="panel-col-header" style={{ color }}>
+            <span>OneNote</span>
+            {pages.length > 0 && <span className="panel-col-count">{pages.length}</span>}
+          </div>
+          {/* Link apri sezione */}
+          {data.links?.oneNoteClientUrl?.href && (
+            <div className="onenote-open-link" onClick={() => window.location.href = data.links.oneNoteClientUrl.href}>
+              ↗ Apri sezione
             </div>
-            <div className="panel-section">
-              <div className="panel-section-title">Ultime pagine</div>
-              {loading && <div className="panel-loading">Caricamento…</div>}
-              {items.map(p => (
-                <LinkRow key={p.id} color={color+'77'} label={p.title||'Senza titolo'}
-                  appUrl={p.links?.oneNoteClientUrl?.href}
-                  webUrl={p.links?.oneNoteWebUrl?.href} />
-              ))}
-              {!loading && !items.length && <div className="panel-loading">Nessuna pagina</div>}
-            </div>
-          </>
-        )}
-
-        {activeTab === 'todo' && (
-          <>
-            <div className="add-task-row">
-              <input
-                className="add-task-input"
-                placeholder="Aggiungi attività…"
-                value={newTask}
-                onChange={e => setNewTask(e.target.value)}
-                onKeyDown={e => e.key === 'Enter' && handleAddTask()}
-                style={{ borderColor: color + '44' }}
-              />
-              <button
-                className="add-task-btn"
-                onClick={handleAddTask}
-                disabled={adding || !newTask.trim()}
-                style={{ color, borderColor: color + '44' }}>
-                {adding ? '…' : '+'}
-              </button>
-            </div>
-
-            {loading && <div className="panel-loading">Caricamento…</div>}
-
-            {items.length > 0 && (
-              <div className="panel-section">
-                <div className="panel-section-title">Con scadenza ({items.length})</div>
-                {items.map(t => (
-                  <TaskRow key={t.id} task={t} color={color} onComplete={handleComplete} />
-                ))}
+          )}
+          {loadingPages && <div className="panel-loading">Caricamento…</div>}
+          <div className="panel-col-body">
+            {pages.map(p => (
+              <div key={p.id} className="page-link"
+                onClick={() => p.links?.oneNoteClientUrl?.href && (window.location.href = p.links.oneNoteClientUrl.href)}>
+                {p.title || 'Senza titolo'}
               </div>
-            )}
+            ))}
+            {!loadingPages && !pages.length && <div className="panel-empty">Nessuna pagina</div>}
+          </div>
+        </div>
 
-            {noDeadlineItems.length > 0 && (
-              <div className="panel-section">
-                <div className="panel-section-title">Da fare ({noDeadlineItems.length})</div>
-                {noDeadlineItems.map(t => (
-                  <TaskRow key={t.id} task={t} color={color} onComplete={handleComplete} />
-                ))}
+        {/* ── OneDrive ── */}
+        <div className="panel-col">
+          <div className="panel-col-header" style={{ color }}>
+            <span>OneDrive</span>
+            <button className="od-add-btn" onClick={() => setAddingOD(a => !a)} title="Aggiungi link">+</button>
+          </div>
+          {addingOD && (
+            <div className="od-add-form">
+              <input className="od-input" placeholder="Nome cartella"
+                value={newODName} onChange={e => setNewODName(e.target.value)} />
+              <input className="od-input" placeholder="URL OneDrive"
+                value={newODUrl} onChange={e => setNewODUrl(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && handleAddODLink()} />
+              <div className="od-form-btns">
+                <button className="od-save-btn" style={{ color }} onClick={handleAddODLink}>Salva</button>
+                <button className="od-cancel-btn" onClick={() => setAddingOD(false)}>Annulla</button>
               </div>
+            </div>
+          )}
+          <div className="panel-col-body">
+            {sectionODLinks.map((link, i) => (
+              <div key={i} className="od-link-row">
+                <span className="od-link-name" onClick={() => window.open(link.url, '_blank')}>
+                  ☁ {link.name}
+                </span>
+                <button className="od-remove-btn" onClick={() => handleRemoveODLink(data.id, i)}>✕</button>
+              </div>
+            ))}
+            {!sectionODLinks.length && !addingOD && (
+              <div className="panel-empty">Nessun link · premi + per aggiungere</div>
             )}
+          </div>
+        </div>
 
-            {!loading && !allTasks.length && <div className="panel-loading">Nessuna attività</div>}
-          </>
-        )}
       </div>
     </div>
   );
@@ -192,13 +229,11 @@ function TaskRow({ task, color, onComplete }) {
   const [completing, setCompleting] = useState(false);
   const isImportant = task.importance === 'high';
   const appUrl = `ms-to-do://tasks/id/${task.id}`;
-  const webUrl = `https://to-do.live.com/tasks/id/${task.id}/details`;
   const due = task.dueDateTime?.dateTime
     ? (() => {
-        const d = new Date(task.dueDateTime.dateTime.endsWith('Z') ? task.dueDateTime.dateTime : task.dueDateTime.dateTime+'Z');
-        return new Date(d.getFullYear(),d.getMonth(),d.getDate()).toLocaleDateString('it-IT',{day:'2-digit',month:'2-digit'});
-      })()
-    : null;
+        const d = new Date(task.dueDateTime.dateTime.endsWith('Z') ? task.dueDateTime.dateTime : task.dueDateTime.dateTime + 'Z');
+        return new Date(d.getFullYear(), d.getMonth(), d.getDate()).toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit' });
+      })() : null;
 
   async function handleComplete(e) {
     e.stopPropagation();
@@ -208,35 +243,18 @@ function TaskRow({ task, color, onComplete }) {
   }
 
   return (
-    <div className={`link-row ${completing ? 'completing' : ''}`} style={{ alignItems: 'flex-start', gap: 8 }}>
-      <button className="schedule-check-btn" onClick={handleComplete} style={{ marginTop: 2 }}>
-        <div className="task-check" style={{ borderColor: completing ? '#86c07a' : color + '66' }}>
+    <div className={`task-row-item ${completing ? 'completing' : ''}`}>
+      <button className="schedule-check-btn" onClick={handleComplete}>
+        <div className="task-check" style={{ borderColor: completing ? '#86c07a' : color + '55' }}>
           {completing && <span className="check-mark">✓</span>}
         </div>
       </button>
-      <div className="task-content" style={{ flex: 1, minWidth: 0 }}>
-        <div className="task-title" style={{ color: isImportant ? color : 'var(--text)', textDecoration: completing ? 'line-through' : 'none' }}>
+      <div className="task-row-content" onClick={() => window.location.href = appUrl} style={{ cursor: 'pointer' }}>
+        <div className="task-title" style={{ color: isImportant ? color : 'var(--text)' }}>
           {isImportant && <span className="task-important">★ </span>}
           {task.title}
         </div>
         {due && <div className="task-due">{due}</div>}
-      </div>
-      <div className="link-btns" style={{ flexShrink: 0 }}>
-        <button className="link-btn primary" onClick={() => window.location.href = appUrl} title="App">App</button>
-        <button className="link-btn" onClick={() => window.open(webUrl,'_blank')} title="Web">Web</button>
-      </div>
-    </div>
-  );
-}
-
-function LinkRow({ color, label, appUrl, webUrl }) {
-  return (
-    <div className="link-row">
-      <span className="link-dot" style={{ background: color }} />
-      <span className="link-label">{label}</span>
-      <div className="link-btns">
-        {appUrl && <button className="link-btn primary" onClick={() => window.location.href = appUrl}>App</button>}
-        {webUrl && <button className="link-btn" onClick={() => window.open(webUrl,'_blank')}>Web</button>}
       </div>
     </div>
   );

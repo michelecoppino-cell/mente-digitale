@@ -1,9 +1,10 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { initAuth, getAccount, login } from './auth';
-import { getNotebooks, getSections, getTodoLists, getPages } from './api';
+import { getNotebooks, getSections, getTodoLists, getTodoTasks, getPages } from './api';
 import MindMap from './MindMap';
 import Panel from './Panel';
 import SchedulePanel from './SchedulePanel';
+import RssPanel from './RssPanel';
 import { COLORS } from './config';
 import './App.css';
 
@@ -12,14 +13,18 @@ export default function App() {
   const [account, setAccount] = useState(null);
   const [notebooks, setNotebooks] = useState([]);
   const [sectionsMap, setSectionsMap] = useState({});
-  const [todoListsMap, setTodoListsMap] = useState({}); // { sectionName_lower: { id, displayName } }
+  const [todoListsMap, setTodoListsMap] = useState({});
+  const [todoCountMap, setTodoCountMap] = useState({}); // { sectionName_lower: count }
   const [selected, setSelected] = useState(null);
   const [sync, setSync] = useState({ state: 'idle', label: 'Non connesso' });
   const [zoom, setZoom] = useState(1);
   const [scheduleOpen, setScheduleOpen] = useState(false);
-  const pagesCache = useRef({});   // { sectionId: [pages] }
-  const tasksCache = useRef({});   // { listId: [tasks] }
-  const [scheduledTasks, setScheduledTasks] = useState(null); // precaricati per SchedulePanel
+  const [rssOpen, setRssOpen] = useState(false);
+  const pagesCache = useRef({});
+  const tasksCache = useRef({});
+  const [scheduledTasks, setScheduledTasks] = useState(null);
+  const preloadQueueRef = useRef([]);
+  const preloadRunningRef = useRef(false);
 
   useEffect(() => {
     initAuth().then(() => {
@@ -31,57 +36,72 @@ export default function App() {
   }, []);
 
   async function handleLogin() {
-    try {
-      await login();
-      setAccount(getAccount());
-      load();
-    } catch (e) { console.error(e); }
+    try { await login(); setAccount(getAccount()); load(); }
+    catch (e) { console.error(e); }
   }
 
   async function load() {
     setSync({ state: 'loading', label: 'Caricamento…' });
     try {
-      const [nbs, todoLists] = await Promise.all([
-        getNotebooks(),
-        getTodoLists()
-      ]);
+      const [nbs, todoLists] = await Promise.all([getNotebooks(), getTodoLists()]);
       nbs.forEach((nb, i) => nb._color = COLORS[i % COLORS.length]);
       setNotebooks(nbs);
-
-      // Mappa liste ToDo per nome (lowercase) per matching con sezioni
       const map = {};
-      console.log('Liste ToDo caricate:', todoLists.map(l => l.displayName));
-      todoLists.forEach(l => {
-        map[l.displayName.toLowerCase()] = { id: l.id, displayName: l.displayName };
-      });
-      console.log('TodoListsMap keys:', Object.keys(map));
+      todoLists.forEach(l => { map[l.displayName.toLowerCase()] = { id: l.id, displayName: l.displayName }; });
       setTodoListsMap(map);
-
       setSync({ state: 'ok', label: `${nbs.length} taccuini` });
-      // Precarica task con scadenza per SchedulePanel in background
-      setTimeout(() => preloadSchedule(todoLists), 3000);
+      // Precarica task in background dopo 2s
+      setTimeout(() => preloadAllTasks(todoLists), 2000);
     } catch {
       setSync({ state: 'error', label: 'Errore caricamento' });
     }
   }
 
-  async function preloadSchedule(lists) {
-    try {
-      const allTasks = [];
-      for (const l of lists) {
-        const token = await import('./auth').then(m => m.getToken());
-        const r = await fetch(
-          `https://graph.microsoft.com/v1.0/me/todo/lists/${l.id}/tasks?$filter=status ne 'completed'&$top=50`,
-          { headers: { Authorization: `Bearer ${token}` } }
-        );
-        if (r.ok) {
-          const d = await r.json();
-          allTasks.push(...(d.value || []).map(t => ({ ...t, _listName: l.displayName, _listId: l.id })));
+  // Precarica tutti i task ToDo in background (sequenziale per evitare 429)
+  async function preloadAllTasks(lists) {
+    const allTasks = [];
+    for (const l of lists) {
+      try {
+        if (!tasksCache.current[l.id]) {
+          const tasks = await getTodoTasks(l.id);
+          tasksCache.current[l.id] = tasks;
+          tasks.forEach(t => allTasks.push({ ...t, _listName: l.displayName, _listId: l.id }));
+        } else {
+          tasksCache.current[l.id].forEach(t => allTasks.push({ ...t, _listName: l.displayName, _listId: l.id }));
         }
-        await new Promise(r => setTimeout(r, 150));
-      }
-      setScheduledTasks(allTasks);
-    } catch(e) { console.error('Preload schedule error', e); }
+        await new Promise(r => setTimeout(r, 300));
+      } catch(e) {}
+    }
+    setScheduledTasks(allTasks);
+    // Calcola badge counts per sezione
+    const counts = {};
+    lists.forEach(l => {
+      const tasks = tasksCache.current[l.id] || [];
+      if (tasks.length > 0) counts[l.displayName.toLowerCase()] = tasks.length;
+    });
+    setTodoCountMap(counts);
+  }
+
+  // Precarica pagine OneNote in background (coda sequenziale)
+  function enqueuePagePreload(sectionId) {
+    if (pagesCache.current[sectionId]) return;
+    preloadQueueRef.current.push(sectionId);
+    runPreloadQueue();
+  }
+
+  async function runPreloadQueue() {
+    if (preloadRunningRef.current) return;
+    preloadRunningRef.current = true;
+    while (preloadQueueRef.current.length > 0) {
+      const id = preloadQueueRef.current.shift();
+      if (pagesCache.current[id]) continue;
+      try {
+        const pages = await getPages(id);
+        pagesCache.current[id] = pages;
+        await new Promise(r => setTimeout(r, 500));
+      } catch(e) {}
+    }
+    preloadRunningRef.current = false;
   }
 
   async function handleExpandNotebook(nb) {
@@ -89,48 +109,21 @@ export default function App() {
     try {
       const sects = await getSections(nb.id);
       setSectionsMap(prev => ({ ...prev, [nb.id]: sects }));
-      // Preload pagine OneNote in background con piccolo ritardo
-      setTimeout(() => preloadSections(sects, nb), 2000);
+      // Accoda preload pagine per ogni sezione
+      setTimeout(() => sects.forEach(s => enqueuePagePreload(s.id)), 1000);
     } catch (e) {
       console.error('Errore sezioni', nb.displayName, e);
       setSectionsMap(prev => ({ ...prev, [nb.id]: [] }));
     }
   }
 
-  async function preloadSections(sects, nb) {
-    // Precarica solo i task ToDo (leggeri), non le pagine OneNote (troppo aggressivo)
-    for (const s of sects) {
-      const todoList = todoListsMap[s.displayName.toLowerCase()];
-      if (todoList && !tasksCache.current[todoList.id]) {
-        try {
-          const tasks = await getTodoTasksCached(todoList.id);
-          tasksCache.current[todoList.id] = tasks;
-        } catch(e) {}
-        await new Promise(r => setTimeout(r, 400)); // ritardo più lungo
-      }
-    }
-  }
-
-  async function getTodoTasksCached(listId) {
-    const { getTodoTasks } = await import('./api');
-    return getTodoTasks(listId);
-  }
-
-  // Trova lista ToDo corrispondente a una sezione per nome
   function findTodoList(sectionName) {
     return todoListsMap[sectionName.toLowerCase()] || null;
   }
 
   function handleSelectSection(section, nb, appKey = 'onenote') {
     const todoList = findTodoList(section.displayName);
-    setSelected({
-      type: 'section',
-      data: section,
-      nb,
-      listId: todoList?.id || null,
-      listName: todoList?.displayName || null,
-      initialTab: appKey.toLowerCase(),
-    });
+    setSelected({ type: 'section', data: section, nb, listId: todoList?.id || null, listName: todoList?.displayName || null, initialTab: appKey.toLowerCase() });
   }
 
   if (!ready) return null;
@@ -139,12 +132,8 @@ export default function App() {
     <div className="app">
       <header className="header">
         <div className="header-left">
-          <button
-            className={`schedule-toggle-btn ${scheduleOpen ? 'active' : ''}`}
-            onClick={() => setScheduleOpen(o => !o)}
-            title="Scadenze">
-            ⏰
-          </button>
+          <button className={`schedule-toggle-btn ${scheduleOpen ? 'active' : ''}`}
+            onClick={() => setScheduleOpen(o => !o)} title="Scadenze">⏰</button>
           <h1 className="logo">Mente Digitale</h1>
           <span className="header-sub">OneNote · ToDo · Calendario</span>
         </div>
@@ -166,10 +155,7 @@ export default function App() {
         <div className="login-screen">
           <div className="login-card">
             <div className="login-title">Benvenuto</div>
-            <div className="login-desc">
-              Accedi con il tuo account Microsoft per caricare<br />
-              i tuoi taccuini OneNote automaticamente.
-            </div>
+            <div className="login-desc">Accedi con il tuo account Microsoft per caricare<br />i tuoi taccuini OneNote automaticamente.</div>
             <button className="login-btn" onClick={handleLogin}>
               <svg width="16" height="16" viewBox="0 0 21 21" fill="none">
                 <rect x="1" y="1" width="9" height="9" fill="#f25022"/>
@@ -179,9 +165,7 @@ export default function App() {
               </svg>
               Accedi con Microsoft
             </button>
-            <div className="login-note">
-              Solo permessi di lettura · nessun dato salvato
-            </div>
+            <div className="login-note">Solo permessi di lettura · nessun dato salvato</div>
           </div>
         </div>
       ) : (
@@ -191,6 +175,7 @@ export default function App() {
             notebooks={notebooks}
             sectionsMap={sectionsMap}
             todoListsMap={todoListsMap}
+            todoCountMap={todoCountMap}
             onSelectSection={handleSelectSection}
             onExpandNotebook={handleExpandNotebook}
             externalZoom={zoom}
@@ -198,12 +183,11 @@ export default function App() {
           />
           <Panel
             selected={selected}
-            sectionsMap={sectionsMap}
-            todoListsMap={todoListsMap}
             pagesCache={pagesCache}
             tasksCache={tasksCache}
             onClose={() => setSelected(null)}
           />
+          <RssPanel open={rssOpen} onToggle={() => setRssOpen(o => !o)} />
         </div>
       )}
     </div>

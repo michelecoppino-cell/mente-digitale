@@ -15,6 +15,7 @@ export default function MindMap({
   const gRef = useRef();
   const stateRef = useRef({ nodes: [], links: [], activeSection: null });
   const activeSectionRef = useRef(null);
+  const todoCountMapRef = useRef({});
 
   // Carica sezioni all'avvio
   useEffect(() => {
@@ -412,6 +413,8 @@ export default function MindMap({
     drawHulls();
     // Nodi app geometrici
     drawAppNodes();
+    // Badge ToDo
+    drawBadges();
   }
 
   function drawAppNodes() {
@@ -501,6 +504,32 @@ export default function MindMap({
       const ty = (H-(maxY-minY)*scale)/2 - minY*scale;
       // zoom-focus rimosso
     }
+  }
+
+  function drawBadges() {
+    const g = gRef.current;
+    if (!g) return;
+    const st = stateRef.current;
+    const counts = todoCountMapRef.current;
+    // Rimuovi layer precedente
+    g.select('.badges').remove();
+    const badgeLayer = g.append('g').attr('class', 'badges');
+    st.nodes.filter(n => n.type === 'section').forEach(n => {
+      if (!n.x || !n.y) return;
+      const count = counts[n.label.toLowerCase()];
+      if (!count) return;
+      const bx = (n.x + (n.rw || 52) / 2) - 4;
+      const by = (n.y - (n.rh || 20) / 2) + 4;
+      badgeLayer.append('circle')
+        .attr('cx', bx).attr('cy', by).attr('r', 7)
+        .attr('fill', n.color).attr('stroke', '#080a0e').attr('stroke-width', 1.5);
+      badgeLayer.append('text')
+        .attr('x', bx).attr('y', by)
+        .attr('text-anchor', 'middle').attr('dominant-baseline', 'central')
+        .attr('font-size', 7).attr('font-weight', 700)
+        .attr('fill', '#080a0e').attr('pointer-events', 'none')
+        .text(count > 9 ? '9+' : count);
+    });
   }
 
   function drawHulls() {

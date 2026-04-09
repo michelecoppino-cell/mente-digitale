@@ -3,17 +3,17 @@ import { getToken } from './auth';
 const GRAPH = 'https://graph.microsoft.com/v1.0';
 
 async function call(path, options = {}, retries = 3) {
-  const token = await getToken();
   for (let attempt = 0; attempt < retries; attempt++) {
     try {
+      const token = await getToken();
       const r = await fetch(GRAPH + path, {
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
         ...options
       });
       if (r.status === 204) return null;
       if (r.status === 429 || r.status === 503 || r.status === 504) {
-        // Retry con backoff
-        const wait = (attempt + 1) * 800;
+        const retry = r.headers.get('Retry-After');
+        const wait = retry ? parseInt(retry) * 1000 : (attempt + 1) * 1000;
         await new Promise(r => setTimeout(r, wait));
         continue;
       }
@@ -21,12 +21,11 @@ async function call(path, options = {}, retries = 3) {
       return r.json();
     } catch(e) {
       if (attempt === retries - 1) throw e;
-      await new Promise(r => setTimeout(r, (attempt + 1) * 800));
+      await new Promise(r => setTimeout(r, (attempt + 1) * 1000));
     }
   }
 }
 
-// ── OneNote ──
 export async function getNotebooks() {
   const d = await call('/me/onenote/notebooks?includePersonalNotebooks=true&$orderby=displayName');
   return d.value;
@@ -37,24 +36,20 @@ export async function getSections(notebookId) {
   return d.value;
 }
 
+// Restituisce tutte le pagine top-level (level=0) della sezione
 export async function getPages(sectionId) {
-  const d = await call(`/me/onenote/sections/${sectionId}/pages?$orderby=lastModifiedDateTime desc&$top=8`);
-  return d.value;
+  const d = await call(`/me/onenote/sections/${sectionId}/pages?$orderby=order&$top=100&$select=id,title,links,level,order`);
+  // Solo pagine di primo livello (non sub-pagine)
+  return (d.value || []).filter(p => (p.level || 0) === 0);
 }
 
-// ── ToDo ──
 export async function getTodoLists() {
   const d = await call('/me/todo/lists');
   return d.value;
 }
 
 export async function getTodoTasks(listId) {
-  const d = await call(`/me/todo/lists/${listId}/tasks?$filter=status ne 'completed'&$orderby=importance desc,createdDateTime desc&$top=20`);
-  return d.value;
-}
-
-export async function getTodoTasksNoDeadline(listId) {
-  const d = await call(`/me/todo/lists/${listId}/tasks?$filter=status ne 'completed' and dueDateTime eq null&$orderby=importance desc,createdDateTime desc&$top=10`);
+  const d = await call(`/me/todo/lists/${listId}/tasks?$filter=status ne 'completed'&$orderby=importance desc,createdDateTime desc&$top=50`);
   return d.value;
 }
 
@@ -72,12 +67,11 @@ export async function createTask(listId, title) {
   });
 }
 
-// ── Calendario ──
 export async function getCalendarEvents(startDate, endDate) {
   const start = startDate.toISOString();
   const end = endDate.toISOString();
   const d = await call(
-    `/me/calendarView?startDateTime=${start}&endDateTime=${end}&$orderby=start/dateTime&$top=100&$select=subject,start,end,bodyPreview,isAllDay,categories`
+    `/me/calendarView?startDateTime=${start}&endDateTime=${end}&$orderby=start/dateTime&$top=100&$select=subject,start,end,isAllDay`
   );
   return d.value;
 }
