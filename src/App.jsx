@@ -37,6 +37,11 @@ export default function App() {
     });
   }, []);
 
+  async function handleLogin() {
+    try { await login(); setAccount(getAccount()); load(false); }
+    catch (e) { console.error(e); }
+  }
+
   async function load(forceRefresh = false) {
     setSync({ state: 'loading', label: 'Caricamento…' });
 

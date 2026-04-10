@@ -48,7 +48,7 @@ export default function RssPanel({ open, onToggle }) {
   function formatDate(str) {
     if (!str) return '';
     try { return new Date(str).toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }); }
-    catch { return ''; }
+    catch(e) { return ''; }
   }
 
   return (

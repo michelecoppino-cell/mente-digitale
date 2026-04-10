@@ -594,7 +594,7 @@ export default function MindMap({
       try {
         const hull = d3.polygonHull(pts);
         return hull ? [{ nb, hull }] : [];
-      } catch { return []; }
+      } catch(e) { return []; }
     });
 
     const sel = g.select('.hulls').selectAll('.hull').data(hullData, d => d.nb.id);

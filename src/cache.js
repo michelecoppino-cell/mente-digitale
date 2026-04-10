@@ -23,7 +23,7 @@ export function cacheGet(key) {
       return null;
     }
     return obj.data;
-  } catch { return null; }
+  } catch(e) { return null; }
 }
 
 export function cacheClear() {
@@ -40,7 +40,7 @@ function clearExpired() {
       try {
         const obj = JSON.parse(localStorage.getItem(k));
         if (Date.now() > obj.expires) localStorage.removeItem(k);
-      } catch { localStorage.removeItem(k); }
+      } catch(e) { localStorage.removeItem(k); }
     });
 }
 

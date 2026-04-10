@@ -4,7 +4,7 @@ import { getPages, getTodoTasks, createTask, completeTask } from './api';
 const ONEDRIVE_KEY = 'onedrive_links_v2';
 
 function loadODLinks() {
-  try { return JSON.parse(localStorage.getItem(ONEDRIVE_KEY) || '{}'); } catch { return {}; }
+  try { return JSON.parse(localStorage.getItem(ONEDRIVE_KEY) || '{}'); } catch(e) { return {}; }
 }
 function saveODLinks(obj) {
   localStorage.setItem(ONEDRIVE_KEY, JSON.stringify(obj));
