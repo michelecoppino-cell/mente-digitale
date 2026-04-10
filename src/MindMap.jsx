@@ -278,18 +278,18 @@ export default function MindMap({
         if (line2) {
           el.append('text').attr('y', -6)
             .attr('text-anchor', 'middle').attr('dominant-baseline', 'central')
-            .attr('font-family', FONT).attr('font-size', 9).attr('font-weight', 400)
+            .attr('font-family', FONT).attr('font-size', d.active ? 11 : 9).attr('font-weight', d.active ? 600 : 400)
             .attr('fill', d.color).attr('opacity', opacity).attr('pointer-events', 'none')
             .text(line1);
           el.append('text').attr('y', 6)
             .attr('text-anchor', 'middle').attr('dominant-baseline', 'central')
-            .attr('font-family', FONT).attr('font-size', 9).attr('font-weight', 400)
+            .attr('font-family', FONT).attr('font-size', d.active ? 11 : 9).attr('font-weight', d.active ? 600 : 400)
             .attr('fill', d.color).attr('opacity', opacity).attr('pointer-events', 'none')
             .text(line2);
         } else {
           el.append('text')
             .attr('text-anchor', 'middle').attr('dominant-baseline', 'central')
-            .attr('font-family', FONT).attr('font-size', 9).attr('font-weight', 400)
+            .attr('font-family', FONT).attr('font-size', d.active ? 11 : 9).attr('font-weight', d.active ? 600 : 400)
             .attr('fill', d.color).attr('opacity', opacity).attr('pointer-events', 'none')
             .text(line1);
         }
@@ -380,14 +380,15 @@ export default function MindMap({
 
       // Forma principale
       if (d.shape === 'rect') {
-        const w = 52;
-        const h = d.label.length > 8 ? 30 : 20;
+        const scale = d.active ? 1.2 : 1.0;
+        const w = Math.round(52 * scale);
+        const h = Math.round((d.label.length > 8 ? 30 : 20) * scale);
         d.rw = w; d.rh = h;
         el.select('.main-shape')
           .attr('x', -w / 2).attr('y', -h / 2)
           .attr('width', w).attr('height', h)
           .attr('stroke', d.active ? d.color : d.color + '88')
-          .attr('stroke-width', d.active ? 1.8 : 1);
+          .attr('stroke-width', d.active ? 2.5 : 1);
       } else {
         el.select('.main-shape')
           .attr('r', d.r || 18)
@@ -426,8 +427,7 @@ export default function MindMap({
     // Hull: solo ogni 3 tick (costoso)
     if (tickCountRef.current % 3 === 0) drawHulls();
 
-    // App nodes: solo se c'è sezione attiva (riusa layer esistente se posizione invariata)
-    if (st.activeSecNode) drawAppNodes();
+    // App nodes disabilitati - apertura dashboard gestita dal click
 
     // Badge: aggiorna posizioni ogni tick
     updateBadgePositions();

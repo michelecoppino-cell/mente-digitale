@@ -187,7 +187,6 @@ export default function App() {
           <button className={`schedule-toggle-btn ${scheduleOpen ? 'active' : ''}`}
             onClick={() => setScheduleOpen(o => !o)} title="Scadenze">⏰</button>
           <h1 className="logo">Mente Digitale</h1>
-          <span className="header-sub">OneNote · ToDo · Calendario</span>
         </div>
         <div className="header-right">
           <div className="zoom-controls">
@@ -196,10 +195,7 @@ export default function App() {
             <button className="zoom-btn" onClick={() => setZoom(z => Math.min(5, +(z + 0.2).toFixed(2)))}>+</button>
             <button className="zoom-btn" style={{fontSize:11,padding:'0 8px',width:'auto'}} onClick={() => setZoom(1)}>↺</button>
           </div>
-          <div className="sync-status" style={{cursor:'pointer'}} onClick={handleRefresh} title="Aggiorna tutto">
-            <div className={`sync-dot ${sync.state}`} />
-            <span>{sync.label}</span>
-          </div>
+          <button className="refresh-btn" onClick={handleRefresh} title="Aggiorna tutto">↺</button>
         </div>
       </header>
 

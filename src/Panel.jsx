@@ -278,7 +278,7 @@ export default function Panel({ selected, pagesCache, tasksCache, onClose }) {
                   {link.urlPc && (
                     <CopyBtn text={link.urlPc} />
                   )}
-                  <button className="od-open-btn" onClick={() => handleStartEdit(data.id, i)} title="Modifica">✏️</button>
+                  <button className="od-edit-btn" onClick={() => handleStartEdit(data.id, i)} title="Modifica">✎</button>
                   <button className="od-remove-btn" onClick={() => handleRemoveODLink(data.id, i)}>✕</button>
                 </div>
               </div>
