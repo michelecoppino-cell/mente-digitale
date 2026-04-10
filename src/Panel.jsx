@@ -62,8 +62,6 @@ export default function Panel({ selected, pagesCache, tasksCache, onClose }) {
     setLoadingPages(true);
     try {
       const p = await getPages(sectionId);
-      console.log('PAGES first keys:', p[0] ? Object.keys(p[0]) : 'empty');
-      console.log('PAGES sample:', p.slice(0,3).map(x=>JSON.stringify(x).slice(0,200)));
       if (pagesCache?.current) pagesCache.current[sectionId] = p;
       setPages(p);
     } catch(e) { console.error(e); }

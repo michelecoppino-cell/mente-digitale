@@ -99,7 +99,6 @@ export default function App() {
   }
 
   async function preloadAllTasks(lists, forceRefresh = false) {
-    console.log('TASKS preload start, lists:', lists?.length);
     const allTasks = [];
     const counts = {};
     for (const l of lists) {
@@ -115,7 +114,6 @@ export default function App() {
         await new Promise(r => setTimeout(r, 200));
       } catch(e) {}
     }
-    console.log('TASKS preload done, counts:', counts);
     setScheduledTasks(allTasks);
     setTodoCountMap(counts);
   }

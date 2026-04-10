@@ -40,10 +40,8 @@ export default function MindMap({
   }, [externalZoom]);
 
   useEffect(() => {
-    console.log('BADGE useEffect todoCountMap:', todoCountMap);
     todoCountMapRef.current = todoCountMap || {};
     if (gRef.current) drawBadgesStatic();
-    else console.log('BADGE: gRef non ancora pronto');
   }, [todoCountMap]);
 
   useEffect(() => {
@@ -557,19 +555,16 @@ export default function MindMap({
   function drawBadgesStatic() {
     // Ricrea tutti i badge con i dati aggiornati
     const g = gRef.current;
-    if (!g) { console.log('BADGE: no g'); return; }
+    if (!g) return;
     const st = stateRef.current;
     const counts = todoCountMapRef.current;
-    console.log('BADGE counts:', counts);
-    console.log('BADGE section nodes:', st.nodes.filter(n=>n.type==='section').map(n=>({name:n.section?.displayName,x:n.x,y:n.y})));
     const badgeLayer = g.select('.badges');
     badgeLayer.selectAll('*').remove();
-    if (!Object.keys(counts).length) { console.log('BADGE: counts vuoto'); return; }
+    if (!Object.keys(counts).length) return;
 
     st.nodes.filter(n => n.type === 'section').forEach(n => {
       const sectionName = (n.section?.displayName || n.label).toLowerCase();
       const count = counts[sectionName];
-      console.log('BADGE check:', sectionName, '->', count);
       if (!count) return;
       const bx = (n.x || 0) + (n.rw || 52) / 2 - 4;
       const by = (n.y || 0) - (n.rh || 20) / 2 + 4;

@@ -1,5 +1,5 @@
 // Cache persistente su localStorage con TTL
-const PREFIX = 'md_cache_v3_'; // v3: pagine con level per tree view // v2: invalida cache vecchia con sottopagine
+const PREFIX = 'md_cache_v4_'; // v4: pagine con pagelevel=true // v3: pagine con level per tree view // v2: invalida cache vecchia con sottopagine
 
 export function cacheSet(key, data, ttlMs) {
   try {
