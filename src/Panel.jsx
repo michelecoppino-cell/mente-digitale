@@ -6,6 +6,13 @@ const LOCAL_KEY = 'onedrive_links_v2';
 function loadLocal() {
   try { return JSON.parse(localStorage.getItem(LOCAL_KEY) || '{}'); } catch(e) { return {}; }
 }
+
+function openProtocol(url) {
+  if (!url) return;
+  const a = document.createElement('a');
+  a.href = url;
+  a.click();
+}
 function saveLocal(obj) {
   try { localStorage.setItem(LOCAL_KEY, JSON.stringify(obj)); } catch(e) {}
 }
@@ -234,7 +241,7 @@ export default function Panel({ selected, pagesCache, tasksCache, onClose }) {
           </div>
           {/* Link apri sezione */}
           {data.links?.oneNoteClientUrl?.href && (
-            <div className="onenote-open-link" onClick={() => window.location.href = data.links.oneNoteClientUrl.href}>
+            <div className="onenote-open-link" onClick={() => openProtocol(data.links.oneNoteClientUrl.href)}>
               ↗ Apri sezione
             </div>
           )}
@@ -328,7 +335,7 @@ function PageTree({ pages }) {
   const tree = buildTree(sorted);
 
   function openPage(p) {
-    if (p.links?.oneNoteClientUrl?.href) window.location.href = p.links.oneNoteClientUrl.href;
+    if (p.links?.oneNoteClientUrl?.href) openProtocol(p.links.oneNoteClientUrl.href);
   }
 
   function renderNode(node, depth = 0) {
@@ -410,7 +417,7 @@ function TaskRow({ task, color, onComplete }) {
           {completing && <span className="check-mark">✓</span>}
         </div>
       </button>
-      <div className="task-row-content" onClick={() => window.location.href = appUrl} style={{ cursor: 'pointer' }}>
+      <div className="task-row-content" onClick={() => openProtocol(appUrl)} style={{ cursor: 'pointer' }}>
         <div className="task-title" style={{ color: isImportant ? color : 'var(--text)' }}>
           {isImportant && <span className="task-important">★ </span>}
           {task.title}
