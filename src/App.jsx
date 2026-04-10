@@ -216,6 +216,7 @@ export default function App() {
           </div>
         </div>
       ) : (
+        <>
         <button
             className={`alarm-btn ${scheduleOpen ? 'active' : ''}`}
             onClick={() => setScheduleOpen(o => !o)}
@@ -247,6 +248,7 @@ export default function App() {
           />
           <RssPanel open={rssOpen} onToggle={() => setRssOpen(o => !o)} />
         </div>
+        </>
       )}
     </div>
   );
