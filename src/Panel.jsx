@@ -241,12 +241,7 @@ export default function Panel({ selected, pagesCache, tasksCache, onClose }) {
           )}
           {loadingPages && <div className="panel-loading">Caricamento…</div>}
           <div className="panel-col-body">
-            {pages.map(p => (
-              <div key={p.id} className="page-link"
-                onClick={() => p.links?.oneNoteClientUrl?.href && (window.location.href = p.links.oneNoteClientUrl.href)}>
-                {p.title || 'Senza titolo'}
-              </div>
-            ))}
+            <PageTree pages={pages} />
             {!loadingPages && !pages.length && <div className="panel-empty">Nessuna pagina</div>}
           </div>
         </div>
@@ -298,6 +293,56 @@ export default function Panel({ selected, pagesCache, tasksCache, onClose }) {
       </div>
     </div>
   );
+}
+
+function PageTree({ pages }) {
+  const [expanded, setExpanded] = useState({});
+
+  // Costruisci albero basato su level e order
+  const roots = pages.filter(p => (p.level || 0) === 0);
+
+  function getChildren(parent, allPages) {
+    const parentIdx = allPages.indexOf(parent);
+    const children = [];
+    let i = parentIdx + 1;
+    while (i < allPages.length) {
+      const p = allPages[i];
+      const pLevel = p.level || 0;
+      const parentLevel = parent.level || 0;
+      if (pLevel <= parentLevel) break;
+      if (pLevel === parentLevel + 1) children.push(p);
+      i++;
+    }
+    return children;
+  }
+
+  function openPage(p) {
+    if (p.links?.oneNoteClientUrl?.href) window.location.href = p.links.oneNoteClientUrl.href;
+  }
+
+  function renderPage(p, allPages, depth = 0) {
+    const children = getChildren(p, allPages);
+    const hasChildren = children.length > 0;
+    const isExpanded = expanded[p.id];
+
+    return (
+      <div key={p.id}>
+        <div className="page-link" style={{ paddingLeft: depth * 12 + 4 }}
+          onClick={() => openPage(p)}>
+          {hasChildren && (
+            <span className="page-expand-btn"
+              onClick={e => { e.stopPropagation(); setExpanded(prev => ({ ...prev, [p.id]: !prev[p.id] })); }}>
+              {isExpanded ? '▾' : '▸'}
+            </span>
+          )}
+          {p.title || 'Senza titolo'}
+        </div>
+        {hasChildren && isExpanded && children.map(c => renderPage(c, allPages, depth + 1))}
+      </div>
+    );
+  }
+
+  return <>{roots.map(p => renderPage(p, pages, 0))}</>;
 }
 
 function CopyBtn({ text }) {

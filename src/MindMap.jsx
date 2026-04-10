@@ -79,6 +79,7 @@ export default function MindMap({
     g.append('g').attr('class', 'hulls');
     g.append('g').attr('class', 'links');
     g.append('g').attr('class', 'nodes');
+    g.append('g').attr('class', 'badges');
 
     // Nodi base: taccuini + sezioni
     const nodes = [];
@@ -419,8 +420,8 @@ export default function MindMap({
     // App nodes: solo se c'è sezione attiva (riusa layer esistente se posizione invariata)
     if (st.activeSecNode) drawAppNodes();
 
-    // Badge: aggiorna ogni 10 tick
-    if (tickCountRef.current % 10 === 1) drawBadgesStatic();
+    // Badge: aggiorna posizioni ogni tick
+    updateBadgePositions();
   }
 
   function drawAppNodes() {
@@ -547,30 +548,47 @@ export default function MindMap({
   }
 
   function drawBadgesStatic() {
+    // Ricrea tutti i badge con i dati aggiornati
     const g = gRef.current;
     if (!g) return;
     const st = stateRef.current;
     const counts = todoCountMapRef.current;
-    // Ricrea solo se ci sono dati
-    g.select('.badges').remove();
+    const badgeLayer = g.select('.badges');
+    badgeLayer.selectAll('*').remove();
     if (!Object.keys(counts).length) return;
-    const badgeLayer = g.append('g').attr('class', 'badges');
-    st.nodes.filter(n => n.type === 'section' && n.x && n.y).forEach(n => {
-      // Usa il nome completo della sezione, non il testo troncato
+
+    st.nodes.filter(n => n.type === 'section').forEach(n => {
       const sectionName = (n.section?.displayName || n.label).toLowerCase();
       const count = counts[sectionName];
       if (!count) return;
-      const bx = (n.x + (n.rw || 52) / 2) - 4;
-      const by = (n.y - (n.rh || 20) / 2) + 4;
+      const bx = (n.x || 0) + (n.rw || 52) / 2 - 4;
+      const by = (n.y || 0) - (n.rh || 20) / 2 + 4;
       badgeLayer.append('circle')
+        .attr('class', 'badge-circle')
+        .attr('data-secid', n.id)
         .attr('cx', bx).attr('cy', by).attr('r', 7)
         .attr('fill', n.color).attr('stroke', '#080a0e').attr('stroke-width', 1.5);
       badgeLayer.append('text')
+        .attr('class', 'badge-text')
+        .attr('data-secid', n.id)
         .attr('x', bx).attr('y', by)
         .attr('text-anchor', 'middle').attr('dominant-baseline', 'central')
         .attr('font-size', 7).attr('font-weight', 700)
         .attr('fill', '#080a0e').attr('pointer-events', 'none')
         .text(count > 9 ? '9+' : count);
+    });
+  }
+
+  function updateBadgePositions() {
+    const g = gRef.current;
+    if (!g) return;
+    const st = stateRef.current;
+    st.nodes.filter(n => n.type === 'section' && n.x && n.y).forEach(n => {
+      const bx = n.x + (n.rw || 52) / 2 - 4;
+      const by = n.y - (n.rh || 20) / 2 + 4;
+      g.select('.badges').selectAll(`[data-secid="${n.id}"]`)
+        .attr('cx', bx).attr('cy', by)
+        .attr('x', bx).attr('y', by);
     });
   }
 

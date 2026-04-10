@@ -979,3 +979,14 @@
   flex-shrink: 0;
   margin-left: 4px;
 }
+
+/* ── PageTree ── */
+.page-expand-btn {
+  font-size: 9px;
+  color: var(--muted);
+  margin-right: 4px;
+  cursor: pointer;
+  display: inline-block;
+  width: 10px;
+  flex-shrink: 0;
+}
