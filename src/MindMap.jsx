@@ -40,6 +40,13 @@ export default function MindMap({
   }, [externalZoom]);
 
   useEffect(() => {
+    console.log('BADGE useEffect todoCountMap:', todoCountMap);
+    todoCountMapRef.current = todoCountMap || {};
+    if (gRef.current) drawBadgesStatic();
+    else console.log('BADGE: gRef non ancora pronto');
+  }, [todoCountMap]);
+
+  useEffect(() => {
     const onResize = () => {
       const allLoaded = notebooks.length && notebooks.every(nb => sectionsMap[nb.id]);
       if (allLoaded) buildGraph();
