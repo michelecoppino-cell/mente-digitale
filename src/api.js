@@ -75,3 +75,35 @@ export async function getCalendarEvents(startDate, endDate) {
   );
   return d.value;
 }
+
+// ── OneDrive Links File ──
+const OD_LINKS_FILE = 'mente-digitale-links.json';
+
+export async function loadODLinksFromCloud() {
+  try {
+    const d = await call(`/me/drive/root:/${OD_LINKS_FILE}:/content`);
+    // Graph restituisce il contenuto raw del file
+    return d;
+  } catch(e) {
+    // File non esiste ancora
+    return null;
+  }
+}
+
+export async function saveODLinksToCloud(links) {
+  const json = JSON.stringify(links, null, 2);
+  const token = await getToken();
+  const r = await fetch(
+    `https://graph.microsoft.com/v1.0/me/drive/root:/${OD_LINKS_FILE}:/content`,
+    {
+      method: 'PUT',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: json,
+    }
+  );
+  if (!r.ok) throw new Error(`Save OD links error ${r.status}`);
+  return r.json();
+}

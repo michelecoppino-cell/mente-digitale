@@ -1,13 +1,13 @@
 import { useState, useEffect, useRef } from 'react';
-import { getPages, getTodoTasks, createTask, completeTask } from './api';
+import { getPages, getTodoTasks, createTask, completeTask, loadODLinksFromCloud, saveODLinksToCloud } from './api';
 
-const ONEDRIVE_KEY = 'onedrive_links_v2';
+const LOCAL_KEY = 'onedrive_links_v2';
 
-function loadODLinks() {
-  try { return JSON.parse(localStorage.getItem(ONEDRIVE_KEY) || '{}'); } catch(e) { return {}; }
+function loadLocal() {
+  try { return JSON.parse(localStorage.getItem(LOCAL_KEY) || '{}'); } catch(e) { return {}; }
 }
-function saveODLinks(obj) {
-  localStorage.setItem(ONEDRIVE_KEY, JSON.stringify(obj));
+function saveLocal(obj) {
+  try { localStorage.setItem(LOCAL_KEY, JSON.stringify(obj)); } catch(e) {}
 }
 
 export default function Panel({ selected, pagesCache, tasksCache, onClose }) {
@@ -18,11 +18,26 @@ export default function Panel({ selected, pagesCache, tasksCache, onClose }) {
   const [loadingTasks, setLoadingTasks] = useState(false);
   const [newTask, setNewTask] = useState('');
   const [adding, setAdding] = useState(false);
-  const [odLinks, setOdLinks] = useState(loadODLinks());
+  const [odLinks, setOdLinks] = useState(loadLocal());
+  const [odSyncing, setOdSyncing] = useState(false);
   const [addingOD, setAddingOD] = useState(false);
   const [newODName, setNewODName] = useState('');
   const [newODUrl, setNewODUrl] = useState('');
   const [newODUrlPc, setNewODUrlPc] = useState('');
+
+  // Carica link da OneDrive cloud all'avvio
+  useEffect(() => {
+    async function syncFromCloud() {
+      try {
+        const cloudLinks = await loadODLinksFromCloud();
+        if (cloudLinks && typeof cloudLinks === 'object') {
+          setOdLinks(cloudLinks);
+          saveLocal(cloudLinks);
+        }
+      } catch(e) {}
+    }
+    syncFromCloud();
+  }, []);
 
   useEffect(() => {
     setPages([]);
@@ -95,7 +110,7 @@ export default function Panel({ selected, pagesCache, tasksCache, onClose }) {
     } catch(e) { console.error(e); }
   }
 
-  function handleAddODLink() {
+  async function handleAddODLink() {
     if (!newODName.trim() || !selected) return;
     const key = selected.data.id;
     const existing = odLinks[key] || [];
@@ -106,21 +121,27 @@ export default function Panel({ selected, pagesCache, tasksCache, onClose }) {
     }];
     const next = { ...odLinks, [key]: updated };
     setOdLinks(next);
-    saveODLinks(next);
+    saveLocal(next);
     setNewODName('');
     setNewODUrl('');
     setNewODUrlPc('');
     setAddingOD(false);
+    // Salva su cloud in background
+    setOdSyncing(true);
+    try { await saveODLinksToCloud(next); } catch(e) { console.error('OD sync error', e); }
+    setOdSyncing(false);
   }
 
 
 
-  function handleRemoveODLink(sectionId, idx) {
+  async function handleRemoveODLink(sectionId, idx) {
     const existing = odLinks[sectionId] || [];
     const updated = existing.filter((_, i) => i !== idx);
     const next = { ...odLinks, [sectionId]: updated };
     setOdLinks(next);
-    saveODLinks(next);
+    saveLocal(next);
+    // Salva su cloud in background
+    try { await saveODLinksToCloud(next); } catch(e) { console.error('OD sync error', e); }
   }
 
   if (!selected) return <div className="panel" />;
@@ -198,6 +219,7 @@ export default function Panel({ selected, pagesCache, tasksCache, onClose }) {
         <div className="panel-col">
           <div className="panel-col-header" style={{ color }}>
             <span>OneDrive</span>
+            {odSyncing && <span style={{fontSize:9,color:'var(--muted)',marginLeft:4}}>↑</span>}
             <button className="od-add-btn" onClick={() => setAddingOD(a => !a)} title="Aggiungi link">+</button>
           </div>
           {addingOD && (
@@ -224,7 +246,7 @@ export default function Panel({ selected, pagesCache, tasksCache, onClose }) {
                     <button className="od-open-btn" onClick={() => window.open(link.url, '_blank')} title="Apri su mobile/web">📱</button>
                   )}
                   {link.urlPc && (
-                    <button className="od-open-btn" onClick={() => { window.location.href = 'odopen://sync?userEmail=michelecoppino%40outlook.it&folderPath=' + encodeURIComponent(link.urlPc); }} title="Apri su PC">🖥</button>
+                    <CopyBtn text={link.urlPc} />
                   )}
                   <button className="od-remove-btn" onClick={() => handleRemoveODLink(data.id, i)}>✕</button>
                 </div>
@@ -238,6 +260,34 @@ export default function Panel({ selected, pagesCache, tasksCache, onClose }) {
 
       </div>
     </div>
+  );
+}
+
+function CopyBtn({ text }) {
+  const [copied, setCopied] = useState(false);
+  async function handleCopy() {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch(e) {
+      // Fallback per browser che non supportano clipboard API
+      const el = document.createElement('textarea');
+      el.value = text;
+      document.body.appendChild(el);
+      el.select();
+      document.execCommand('copy');
+      document.body.removeChild(el);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    }
+  }
+  return (
+    <button className="od-open-btn" onClick={handleCopy}
+      title={copied ? 'Copiato!' : 'Copia percorso PC'}
+      style={{ color: copied ? '#86c07a' : undefined }}>
+      {copied ? '✓' : '🖥'}
+    </button>
   );
 }
 
