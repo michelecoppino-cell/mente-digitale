@@ -298,51 +298,65 @@ export default function Panel({ selected, pagesCache, tasksCache, onClose }) {
 function PageTree({ pages }) {
   const [expanded, setExpanded] = useState({});
 
-  // Costruisci albero basato su level e order
-  const roots = pages.filter(p => (p.level || 0) === 0);
+  // Ordina per order (posizione in OneNote)
+  const sorted = [...pages].sort((a, b) => (a.order || 0) - (b.order || 0));
 
-  function getChildren(parent, allPages) {
-    const parentIdx = allPages.indexOf(parent);
-    const children = [];
-    let i = parentIdx + 1;
-    while (i < allPages.length) {
-      const p = allPages[i];
-      const pLevel = p.level || 0;
-      const parentLevel = parent.level || 0;
-      if (pLevel <= parentLevel) break;
-      if (pLevel === parentLevel + 1) children.push(p);
-      i++;
-    }
-    return children;
+  // Costruisci albero: ogni pagina con level > parentLevel è figlia
+  // Le pagine sono ordinate per posizione, quindi i figli seguono sempre il parent
+  function buildTree(allPages) {
+    const roots = [];
+    const stack = []; // stack di {page, children}
+
+    allPages.forEach(p => {
+      const level = p.level || 0;
+      const node = { page: p, children: [] };
+
+      // Risali lo stack fino a trovare il parent corretto
+      while (stack.length > 0 && (stack[stack.length - 1].page.level || 0) >= level) {
+        stack.pop();
+      }
+
+      if (stack.length === 0) {
+        roots.push(node);
+      } else {
+        stack[stack.length - 1].children.push(node);
+      }
+      stack.push(node);
+    });
+    return roots;
   }
+
+  const tree = buildTree(sorted);
 
   function openPage(p) {
     if (p.links?.oneNoteClientUrl?.href) window.location.href = p.links.oneNoteClientUrl.href;
   }
 
-  function renderPage(p, allPages, depth = 0) {
-    const children = getChildren(p, allPages);
+  function renderNode(node, depth = 0) {
+    const { page: p, children } = node;
     const hasChildren = children.length > 0;
     const isExpanded = expanded[p.id];
 
     return (
       <div key={p.id}>
-        <div className="page-link" style={{ paddingLeft: depth * 12 + 4 }}
+        <div className="page-link" style={{ paddingLeft: depth * 14 + 4 }}
           onClick={() => openPage(p)}>
-          {hasChildren && (
+          {hasChildren ? (
             <span className="page-expand-btn"
               onClick={e => { e.stopPropagation(); setExpanded(prev => ({ ...prev, [p.id]: !prev[p.id] })); }}>
               {isExpanded ? '▾' : '▸'}
             </span>
+          ) : (
+            depth > 0 && <span className="page-expand-btn" style={{opacity:0}}>·</span>
           )}
           {p.title || 'Senza titolo'}
         </div>
-        {hasChildren && isExpanded && children.map(c => renderPage(c, allPages, depth + 1))}
+        {hasChildren && isExpanded && children.map(c => renderNode(c, depth + 1))}
       </div>
     );
   }
 
-  return <>{roots.map(p => renderPage(p, pages, 0))}</>;
+  return <>{tree.map(n => renderNode(n, 0))}</>;
 }
 
 function CopyBtn({ text }) {
