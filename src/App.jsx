@@ -184,8 +184,6 @@ export default function App() {
     <div className="app">
       <header className="header">
         <div className="header-left">
-          <button className={`schedule-toggle-btn ${scheduleOpen ? 'active' : ''}`}
-            onClick={() => setScheduleOpen(o => !o)} title="Scadenze">⏰</button>
         </div>
         <div className="header-center">
           <h1 className="logo">Mente Digitale</h1>
@@ -218,6 +216,17 @@ export default function App() {
           </div>
         </div>
       ) : (
+        <button
+            className={`alarm-btn ${scheduleOpen ? 'active' : ''}`}
+            onClick={() => setScheduleOpen(o => !o)}
+            title="Attività">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="13" r="7"/>
+              <polyline points="12 10 12 14 14 14"/>
+              <line x1="7" y1="4" x2="4.5" y2="6.5"/>
+              <line x1="17" y1="4" x2="19.5" y2="6.5"/>
+            </svg>
+          </button>
         <div className="canvas-area">
           <SchedulePanel open={scheduleOpen} onClose={() => setScheduleOpen(false)} preloadedTasks={scheduledTasks} onSelectSection={handleSelectSection} todoListsMap={todoListsMap} sectionsMap={sectionsMap} />
           <MindMap

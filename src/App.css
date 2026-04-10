@@ -1089,3 +1089,22 @@ body, .app {
 /* ── Dashboard più larghe +35% ── */
 .schedule-panel { width: 405px; }
 .panel { width: 405px; }
+
+/* ── Alarm button fisso ── */
+.alarm-btn {
+  position: fixed;
+  left: 14px;
+  top: 58px;
+  z-index: 100;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--accent);
+  padding: 8px;
+  border-radius: 10px;
+  transition: background 0.15s, transform 0.15s;
+  -webkit-tap-highlight-color: transparent;
+}
+.alarm-btn:hover { background: rgba(200,169,110,0.1); }
+.alarm-btn.active { background: rgba(200,169,110,0.15); }
+.alarm-btn:active { transform: scale(0.92); }
