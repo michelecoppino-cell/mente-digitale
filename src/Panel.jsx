@@ -52,7 +52,12 @@ export default function Panel({ selected, pagesCache, tasksCache, onClose }) {
   }, [selected]);
 
   async function loadPages(sectionId) {
-    if (pagesCache?.current?.[sectionId]) { setPages(pagesCache.current[sectionId]); return; }
+    const cached = pagesCache?.current?.[sectionId];
+    // Usa cache solo se le pagine sono già filtrate (level === 0)
+    if (cached && cached.every(p => (p.level || 0) === 0)) {
+      setPages(cached);
+      return;
+    }
     setLoadingPages(true);
     try {
       const p = await getPages(sectionId);
@@ -154,7 +159,6 @@ export default function Panel({ selected, pagesCache, tasksCache, onClose }) {
   return (
     <div className="panel open">
       <div className="panel-head">
-        <div className="panel-label">Sezione</div>
         <div className="panel-title" style={{ color }}>{data.displayName}</div>
         <button className="panel-close" onClick={onClose}>✕</button>
       </div>

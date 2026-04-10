@@ -942,3 +942,40 @@
   transition: background 0.15s;
 }
 .od-open-btn:hover { background: rgba(255,255,255,0.06); }
+
+/* ── Schedule panel larghezza aumentata ── */
+.schedule-panel { width: 300px; }
+
+/* ── ScheduleTask riga singola ── */
+.schedule-task {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 8px;
+  border-radius: var(--r);
+  border: 1px solid var(--border);
+  margin-bottom: 3px;
+  background: rgba(255,255,255,0.015);
+  min-width: 0;
+}
+.schedule-task-title-row {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 12px;
+  color: var(--text);
+}
+.schedule-task-title-text {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.schedule-task-list-right {
+  font-size: 10px;
+  color: var(--muted);
+  white-space: nowrap;
+  flex-shrink: 0;
+  margin-left: 4px;
+}

@@ -151,7 +151,7 @@ export default function SchedulePanel({ open, onClose, preloadedTasks }) {
     <>
       <div className={`schedule-panel ${open?'open':''}`}>
         <div className="schedule-head">
-          <div><div className="panel-label">Attività</div><div className="schedule-title">La mia giornata</div></div>
+          <div className="panel-label">Attività</div>
           <button className="panel-close" onClick={onClose}>✕</button>
         </div>
 
@@ -291,16 +291,11 @@ function ScheduleTask({ task, onComplete }) {
           {completing && <span className="check-mark">✓</span>}
         </div>
       </button>
-      <div className="task-content">
-        <div className="schedule-task-title">
-          {isImportant && <span className="schedule-star">★ </span>}
-          {task.title}
-        </div>
-        {task._listName && <div className="schedule-task-list">{task._listName}</div>}
+      <div className="schedule-task-title-row">
+        {isImportant && <span className="schedule-star">★ </span>}
+        <span className="schedule-task-title-text">{task.title}</span>
       </div>
-      <div className="schedule-task-right">
-        {due && <span className="schedule-due">{due}</span>}
-      </div>
+      {task._listName && <span className="schedule-task-list-right">{task._listName}</span>}
     </div>
   );
 }
