@@ -38,8 +38,7 @@ export async function getSections(notebookId) {
 
 // Restituisce tutte le pagine top-level (level=0) della sezione
 export async function getPages(sectionId) {
-  const d = await call(`/me/onenote/sections/${sectionId}/pages?$top=100`);
-  // level non sempre restituito - lo calcoliamo da parentPage se disponibile
+  const d = await call(`/me/onenote/sections/${sectionId}/pages?$top=100&$select=id,title,level,order,links`);
   return d.value || [];
 }
 
