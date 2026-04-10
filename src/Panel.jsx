@@ -107,6 +107,35 @@ export default function Panel({ selected, pagesCache, tasksCache, onClose }) {
     setAddingOD(false);
   }
 
+  function openODLink(url) {
+    // Costruisce URL nativo ms-onedrive:// dal link web
+    // es. https://onedrive.live.com/redir?resid=XXX → ms-onedrive://open?resid=XXX
+    let nativeUrl = null;
+    try {
+      const u = new URL(url);
+      if (u.hostname.includes('onedrive.live.com') || u.hostname.includes('1drv.ms')) {
+        // Estrai resid se presente
+        const resid = u.searchParams.get('resid') || u.searchParams.get('id');
+        if (resid) {
+          nativeUrl = `ms-onedrive://open?resid=${resid}`;
+        } else {
+          // Fallback generico per link condivisi
+          nativeUrl = `ms-onedrive://open?url=${encodeURIComponent(url)}`;
+        }
+      } else if (u.hostname.includes('sharepoint.com')) {
+        nativeUrl = `ms-onedrive://open?url=${encodeURIComponent(url)}`;
+      }
+    } catch(e) {}
+
+    if (nativeUrl) {
+      // Prova app nativa, fallback web dopo 600ms
+      window.location.href = nativeUrl;
+      setTimeout(() => window.open(url, '_blank'), 600);
+    } else {
+      window.open(url, '_blank');
+    }
+  }
+
   function handleRemoveODLink(sectionId, idx) {
     const existing = odLinks[sectionId] || [];
     const updated = existing.filter((_, i) => i !== idx);
@@ -208,7 +237,7 @@ export default function Panel({ selected, pagesCache, tasksCache, onClose }) {
           <div className="panel-col-body">
             {sectionODLinks.map((link, i) => (
               <div key={i} className="od-link-row">
-                <span className="od-link-name" onClick={() => window.open(link.url, '_blank')}>
+                <span className="od-link-name" onClick={() => openODLink(link.url)}>
                   ☁ {link.name}
                 </span>
                 <button className="od-remove-btn" onClick={() => handleRemoveODLink(data.id, i)}>✕</button>
