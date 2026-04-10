@@ -1057,3 +1057,35 @@ body, .app {
 .schedule-group-label, .panel-col-header span, .panel-section-title {
   font-weight: 550;
 }
+
+/* ── Header layout fix ── */
+.header {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.header-left {
+  position: absolute;
+  left: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  flex: none;
+}
+.header-center {
+  flex: 1;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+.header-right {
+  position: absolute;
+  right: 16px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* ── Dashboard più larghe +35% ── */
+.schedule-panel { width: 405px; }
+.panel { width: 405px; }

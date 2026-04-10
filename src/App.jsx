@@ -186,6 +186,8 @@ export default function App() {
         <div className="header-left">
           <button className={`schedule-toggle-btn ${scheduleOpen ? 'active' : ''}`}
             onClick={() => setScheduleOpen(o => !o)} title="Scadenze">⏰</button>
+        </div>
+        <div className="header-center">
           <h1 className="logo">Mente Digitale</h1>
         </div>
         <div className="header-right">
@@ -193,7 +195,6 @@ export default function App() {
             <button className="zoom-btn" onClick={() => setZoom(z => Math.max(0.15, +(z - 0.2).toFixed(2)))}>−</button>
             <span className="zoom-label">{Math.round(zoom * 100)}%</span>
             <button className="zoom-btn" onClick={() => setZoom(z => Math.min(5, +(z + 0.2).toFixed(2)))}>+</button>
-            <button className="zoom-btn" style={{fontSize:11,padding:'0 8px',width:'auto'}} onClick={() => setZoom(1)}>↺</button>
           </div>
           <button className="refresh-btn" onClick={handleRefresh} title="Aggiorna tutto">↺</button>
         </div>
