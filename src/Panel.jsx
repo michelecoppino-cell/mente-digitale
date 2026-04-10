@@ -22,6 +22,7 @@ export default function Panel({ selected, pagesCache, tasksCache, onClose }) {
   const [addingOD, setAddingOD] = useState(false);
   const [newODName, setNewODName] = useState('');
   const [newODUrl, setNewODUrl] = useState('');
+  const [newODUrlPc, setNewODUrlPc] = useState('');
 
   useEffect(() => {
     setPages([]);
@@ -95,46 +96,24 @@ export default function Panel({ selected, pagesCache, tasksCache, onClose }) {
   }
 
   function handleAddODLink() {
-    if (!newODName.trim() || !newODUrl.trim() || !selected) return;
+    if (!newODName.trim() || !selected) return;
     const key = selected.data.id;
     const existing = odLinks[key] || [];
-    const updated = [...existing, { name: newODName.trim(), url: newODUrl.trim() }];
+    const updated = [...existing, {
+      name: newODName.trim(),
+      url: newODUrl.trim() || null,
+      urlPc: newODUrlPc.trim() || null,
+    }];
     const next = { ...odLinks, [key]: updated };
     setOdLinks(next);
     saveODLinks(next);
     setNewODName('');
     setNewODUrl('');
+    setNewODUrlPc('');
     setAddingOD(false);
   }
 
-  function openODLink(url) {
-    // Costruisce URL nativo ms-onedrive:// dal link web
-    // es. https://onedrive.live.com/redir?resid=XXX → ms-onedrive://open?resid=XXX
-    let nativeUrl = null;
-    try {
-      const u = new URL(url);
-      if (u.hostname.includes('onedrive.live.com') || u.hostname.includes('1drv.ms')) {
-        // Estrai resid se presente
-        const resid = u.searchParams.get('resid') || u.searchParams.get('id');
-        if (resid) {
-          nativeUrl = `ms-onedrive://open?resid=${resid}`;
-        } else {
-          // Fallback generico per link condivisi
-          nativeUrl = `ms-onedrive://open?url=${encodeURIComponent(url)}`;
-        }
-      } else if (u.hostname.includes('sharepoint.com')) {
-        nativeUrl = `ms-onedrive://open?url=${encodeURIComponent(url)}`;
-      }
-    } catch(e) {}
 
-    if (nativeUrl) {
-      // Prova app nativa, fallback web dopo 600ms
-      window.location.href = nativeUrl;
-      setTimeout(() => window.open(url, '_blank'), 600);
-    } else {
-      window.open(url, '_blank');
-    }
-  }
 
   function handleRemoveODLink(sectionId, idx) {
     const existing = odLinks[sectionId] || [];
@@ -225,8 +204,10 @@ export default function Panel({ selected, pagesCache, tasksCache, onClose }) {
             <div className="od-add-form">
               <input className="od-input" placeholder="Nome cartella"
                 value={newODName} onChange={e => setNewODName(e.target.value)} />
-              <input className="od-input" placeholder="URL OneDrive"
-                value={newODUrl} onChange={e => setNewODUrl(e.target.value)}
+              <input className="od-input" placeholder="Link web (1drv.ms o onedrive.com)"
+                value={newODUrl} onChange={e => setNewODUrl(e.target.value)} />
+              <input className="od-input" placeholder="Percorso PC (C:\Users\...)"
+                value={newODUrlPc} onChange={e => setNewODUrlPc(e.target.value)}
                 onKeyDown={e => e.key === 'Enter' && handleAddODLink()} />
               <div className="od-form-btns">
                 <button className="od-save-btn" style={{ color }} onClick={handleAddODLink}>Salva</button>
@@ -237,10 +218,16 @@ export default function Panel({ selected, pagesCache, tasksCache, onClose }) {
           <div className="panel-col-body">
             {sectionODLinks.map((link, i) => (
               <div key={i} className="od-link-row">
-                <span className="od-link-name" onClick={() => openODLink(link.url)}>
-                  ☁ {link.name}
-                </span>
-                <button className="od-remove-btn" onClick={() => handleRemoveODLink(data.id, i)}>✕</button>
+                <span className="od-link-name">☁ {link.name}</span>
+                <div className="od-link-btns">
+                  {link.url && (
+                    <button className="od-open-btn" onClick={() => window.open(link.url, '_blank')} title="Apri su mobile/web">📱</button>
+                  )}
+                  {link.urlPc && (
+                    <button className="od-open-btn" onClick={() => { window.location.href = 'odopen://sync?userEmail=michelecoppino%40outlook.it&folderPath=' + encodeURIComponent(link.urlPc); }} title="Apri su PC">🖥</button>
+                  )}
+                  <button className="od-remove-btn" onClick={() => handleRemoveODLink(data.id, i)}>✕</button>
+                </div>
               </div>
             ))}
             {!sectionODLinks.length && !addingOD && (
