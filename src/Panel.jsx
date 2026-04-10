@@ -62,6 +62,7 @@ export default function Panel({ selected, pagesCache, tasksCache, onClose }) {
     setLoadingPages(true);
     try {
       const p = await getPages(sectionId);
+      console.log('PAGES sample:', p.slice(0,5).map(x=>({title:x.title,level:x.level,order:x.order})));
       if (pagesCache?.current) pagesCache.current[sectionId] = p;
       setPages(p);
     } catch(e) { console.error(e); }
