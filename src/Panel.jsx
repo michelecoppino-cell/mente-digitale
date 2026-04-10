@@ -53,10 +53,9 @@ export default function Panel({ selected, pagesCache, tasksCache, onClose }) {
   }, [selected]);
 
   async function loadPages(sectionId) {
-    const cached = pagesCache?.current?.[sectionId];
-    // Usa cache solo se le pagine sono già filtrate (level === 0)
-    if (cached && cached.every(p => (p.level || 0) === 0)) {
-      setPages(cached);
+    // Usa sempre la cache se disponibile — ricarica solo con il pulsante refresh
+    if (pagesCache?.current?.[sectionId]) {
+      setPages(pagesCache.current[sectionId]);
       return;
     }
     setLoadingPages(true);

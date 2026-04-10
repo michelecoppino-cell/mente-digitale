@@ -346,7 +346,11 @@ export default function MindMap({
       if (d.type === 'section') {
         const isActive = activeSectionRef.current === d.section.id;
         toggleAppNodes(isActive ? null : d.section.id);
-        if (!isActive) onSelectSection(d.section, d.nb, 'onenote');
+        if (isActive) {
+          onSelectSection(null, null, null); // chiudi panel
+        } else {
+          onSelectSection(d.section, d.nb, 'onenote');
+        }
       }
       if (d.type === 'app' && d.enabled) {
         onSelectSection(d.section, d.nb, d.key);

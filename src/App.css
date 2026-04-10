@@ -982,7 +982,7 @@
 
 /* ── PageTree ── */
 .page-expand-btn {
-  font-size: 9px;
+  font-size: 16px;
   color: var(--muted);
   margin-right: 4px;
   cursor: pointer;

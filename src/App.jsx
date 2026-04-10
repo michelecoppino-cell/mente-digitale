@@ -164,6 +164,7 @@ export default function App() {
   }
 
   function handleSelectSection(section, nb, appKey = 'onenote') {
+    if (!section) { setSelected(null); return; }
     const todoList = findTodoList(section.displayName);
     setSelected({ type: 'section', data: section, nb, listId: todoList?.id || null, listName: todoList?.displayName || null, initialTab: appKey.toLowerCase() });
   }
