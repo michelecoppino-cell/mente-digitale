@@ -47,7 +47,7 @@ function groupTasks(tasks) {
   return groups.filter(g=>g.tasks.length>0);
 }
 
-export default function SchedulePanel({ open, onClose, preloadedTasks }) {
+export default function SchedulePanel({ open, onClose, preloadedTasks, onSelectSection, todoListsMap, sectionsMap }) {
   const [tasks, setTasks] = useState([]);
   const [loading, setLoading] = useState(false);
   const [calModal, setCalModal] = useState(false);
@@ -115,6 +115,21 @@ export default function SchedulePanel({ open, onClose, preloadedTasks }) {
     } catch(e) { console.error(e); }
   }
 
+  function handleOpenPanel(task) {
+    if (!onSelectSection || !task._listName) return;
+    // Trova la sezione corrispondente alla lista ToDo
+    const listNameLower = task._listName.toLowerCase();
+    for (const [nbId, sects] of Object.entries(sectionsMap || {})) {
+      const sec = sects.find(s => s.displayName.toLowerCase() === listNameLower);
+      if (sec) {
+        // Trova il notebook
+        const nb = Object.keys(sectionsMap).length > 0 ? { id: nbId, _color: '#c8a96e' } : null;
+        if (nb) onSelectSection(sec, nb, 'todo');
+        return;
+      }
+    }
+  }
+
   const withDeadline = tasks.filter(t => t.dueDateTime?.dateTime);
   const groups = groupTasks(withDeadline);
   const noDeadline = [
@@ -164,13 +179,13 @@ export default function SchedulePanel({ open, onClose, preloadedTasks }) {
                 <div className={`schedule-group-label ${group.key==='overdue'?'overdue':''}`}>
                   {group.label}<span className="schedule-count">{group.tasks.length}</span>
                 </div>
-                {group.tasks.map(t => <ScheduleTask key={t.id} task={t} onComplete={handleComplete} />)}
+                {group.tasks.map(t => <ScheduleTask key={t.id} task={t} onComplete={handleComplete} onOpenPanel={onSelectSection ? (task) => handleOpenPanel(task) : null} />)}
               </div>
             ))}
             {noDeadline.length > 0 && (
               <div className="schedule-group">
                 <div className="schedule-group-label">Da fare<span className="schedule-count">{noDeadline.length}</span></div>
-                {noDeadline.map(t => <ScheduleTask key={t.id} task={t} onComplete={handleComplete} />)}
+                {noDeadline.map(t => <ScheduleTask key={t.id} task={t} onComplete={handleComplete} onOpenPanel={onSelectSection ? (task) => handleOpenPanel(task) : null} />)}
               </div>
             )}
             {!loading && !groups.length && !noDeadline.length && (
@@ -273,7 +288,7 @@ export default function SchedulePanel({ open, onClose, preloadedTasks }) {
   );
 }
 
-function ScheduleTask({ task, onComplete }) {
+function ScheduleTask({ task, onComplete, onOpenPanel }) {
   const [completing, setCompleting] = useState(false);
   const isImportant = task.importance === 'high';
   const due = task.dueDateTime?.dateTime ? formatDate(task.dueDateTime.dateTime) : null;
@@ -285,7 +300,9 @@ function ScheduleTask({ task, onComplete }) {
   }
 
   return (
-    <div className={`schedule-task ${completing?'completing':''}`}>
+    <div className={`schedule-task ${completing?'completing':''}`}
+      onClick={onOpenPanel ? () => onOpenPanel(task) : undefined}
+      style={{ cursor: onOpenPanel ? 'pointer' : 'default' }}>
       <button className="schedule-check-btn" onClick={handleClick}>
         <div className="task-check" style={{borderColor:completing?'#86c07a':'var(--muted)'}}>
           {completing && <span className="check-mark">✓</span>}

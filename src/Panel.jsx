@@ -24,6 +24,7 @@ export default function Panel({ selected, pagesCache, tasksCache, onClose }) {
   const [newODName, setNewODName] = useState('');
   const [newODUrl, setNewODUrl] = useState('');
   const [newODUrlPc, setNewODUrlPc] = useState('');
+  const [editingOD, setEditingOD] = useState(null); // { sectionId, idx }
 
   // Carica link da OneDrive cloud all'avvio
   useEffect(() => {
@@ -116,6 +117,7 @@ export default function Panel({ selected, pagesCache, tasksCache, onClose }) {
   }
 
   async function handleAddODLink() {
+    if (editingOD) { await handleSaveEdit(); return; }
     if (!newODName.trim() || !selected) return;
     const key = selected.data.id;
     const existing = odLinks[key] || [];
@@ -130,6 +132,7 @@ export default function Panel({ selected, pagesCache, tasksCache, onClose }) {
     setNewODName('');
     setNewODUrl('');
     setNewODUrlPc('');
+    setEditingOD(null);
     setAddingOD(false);
     // Salva su cloud in background
     setOdSyncing(true);
@@ -138,6 +141,35 @@ export default function Panel({ selected, pagesCache, tasksCache, onClose }) {
   }
 
 
+
+  function handleStartEdit(sectionId, idx) {
+    const link = odLinks[sectionId]?.[idx];
+    if (!link) return;
+    setNewODName(link.name);
+    setNewODUrl(link.url || '');
+    setNewODUrlPc(link.urlPc || '');
+    setEditingOD({ sectionId, idx });
+    setAddingOD(true);
+  }
+
+  async function handleSaveEdit() {
+    if (!editingOD) return;
+    const { sectionId, idx } = editingOD;
+    const existing = odLinks[sectionId] || [];
+    const updated = existing.map((l, i) => i === idx ? {
+      name: newODName.trim(),
+      url: newODUrl.trim() || null,
+      urlPc: newODUrlPc.trim() || null,
+    } : l);
+    const next = { ...odLinks, [sectionId]: updated };
+    setOdLinks(next);
+    saveLocal(next);
+    setNewODName(''); setNewODUrl(''); setNewODUrlPc('');
+    setEditingOD(null); setAddingOD(false);
+    setOdSyncing(true);
+    try { await saveODLinksToCloud(next); } catch(e) {}
+    setOdSyncing(false);
+  }
 
   async function handleRemoveODLink(sectionId, idx) {
     const existing = odLinks[sectionId] || [];
@@ -252,6 +284,7 @@ export default function Panel({ selected, pagesCache, tasksCache, onClose }) {
                   {link.urlPc && (
                     <CopyBtn text={link.urlPc} />
                   )}
+                  <button className="od-open-btn" onClick={() => handleStartEdit(data.id, i)} title="Modifica">✏️</button>
                   <button className="od-remove-btn" onClick={() => handleRemoveODLink(data.id, i)}>✕</button>
                 </div>
               </div>

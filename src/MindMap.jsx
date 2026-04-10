@@ -419,8 +419,8 @@ export default function MindMap({
     // App nodes: solo se c'è sezione attiva (riusa layer esistente se posizione invariata)
     if (st.activeSecNode) drawAppNodes();
 
-    // Badge: solo al primo tick e poi staticamente (non cambiano con le posizioni)
-    if (tickCountRef.current === 1) drawBadgesStatic();
+    // Badge: aggiorna ogni 10 tick
+    if (tickCountRef.current % 10 === 1) drawBadgesStatic();
   }
 
   function drawAppNodes() {
@@ -556,7 +556,9 @@ export default function MindMap({
     if (!Object.keys(counts).length) return;
     const badgeLayer = g.append('g').attr('class', 'badges');
     st.nodes.filter(n => n.type === 'section' && n.x && n.y).forEach(n => {
-      const count = counts[n.label.toLowerCase()];
+      // Usa il nome completo della sezione, non il testo troncato
+      const sectionName = (n.section?.displayName || n.label).toLowerCase();
+      const count = counts[sectionName];
       if (!count) return;
       const bx = (n.x + (n.rw || 52) / 2) - 4;
       const by = (n.y - (n.rh || 20) / 2) + 4;

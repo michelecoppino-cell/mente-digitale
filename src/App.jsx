@@ -221,7 +221,7 @@ export default function App() {
         </div>
       ) : (
         <div className="canvas-area">
-          <SchedulePanel open={scheduleOpen} onClose={() => setScheduleOpen(false)} preloadedTasks={scheduledTasks} />
+          <SchedulePanel open={scheduleOpen} onClose={() => setScheduleOpen(false)} preloadedTasks={scheduledTasks} onSelectSection={handleSelectSection} todoListsMap={todoListsMap} sectionsMap={sectionsMap} />
           <MindMap
             notebooks={notebooks}
             sectionsMap={sectionsMap}

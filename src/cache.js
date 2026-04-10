@@ -1,5 +1,5 @@
 // Cache persistente su localStorage con TTL
-const PREFIX = 'md_cache_';
+const PREFIX = 'md_cache_v2_'; // v2: invalida cache vecchia con sottopagine
 
 export function cacheSet(key, data, ttlMs) {
   try {
