@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef } from 'react';
 import * as d3 from 'd3';
 
 const FONT = 'Outfit, sans-serif';
@@ -38,6 +38,12 @@ export default function MindMap({
     d3.select(svgRef.current).transition().duration(220)
       .call(zoomRef.current.scaleTo, externalZoom);
   }, [externalZoom]);
+
+  // Sincronizza ref badge e ridisegna quando i conteggi arrivano (async)
+  useEffect(() => {
+    todoCountMapRef.current = todoCountMap;
+    if (gRef.current) drawBadgesStatic();
+  }, [todoCountMap]);
 
   useEffect(() => {
     todoCountMapRef.current = todoCountMap || {};
@@ -111,7 +117,6 @@ export default function MindMap({
         const secTotal = (sectionsMap[nb.id] || []).length;
         const secAngle = nbAngle + (si - secTotal / 2) * 0.3;
         const secLbl = s.displayName;
-        const secSpaceIdx = secLbl.lastIndexOf(' ', 8);
         const secHas2Lines = secLbl.length > 8;
         const secRh = secHas2Lines ? 30 : 20;
         nodes.push({
@@ -161,7 +166,6 @@ export default function MindMap({
     activeSectionRef.current = sectionId;
 
     st.activeSecNode = null;
-    st.activeSecId = null;
     // Marca sezioni come attive/non attive
     st.nodes.forEach(n => { if (n.type === 'section') n.active = false; });
 
@@ -170,7 +174,6 @@ export default function MindMap({
       if (secNode) {
         secNode.active = true;
         st.activeSecNode = secNode;
-        st.activeSecId = sectionId;
         st.todoListsMap = todoListsMapRef;
       }
     }
@@ -540,20 +543,6 @@ export default function MindMap({
       }
     });
 
-    // Zoom-focus immediato (posizioni già stabili)
-    if (st.needsFocus) {
-      st.needsFocus = false;
-      const xs = APP_KEYS.map((_, i) => sec.x + appR * Math.cos(baseAngle + (i-1)*spread));
-      const ys = APP_KEYS.map((_, i) => sec.y + appR * Math.sin(baseAngle + (i-1)*spread));
-      xs.push(sec.x); ys.push(sec.y);
-      const pad = 70;
-      const minX = Math.min(...xs)-pad, maxX = Math.max(...xs)+pad;
-      const minY = Math.min(...ys)-pad, maxY = Math.max(...ys)+pad;
-      const scale = Math.min(W/(maxX-minX), H/(maxY-minY), 3.5);
-      const tx = (W-(maxX-minX)*scale)/2 - minX*scale;
-      const ty = (H-(maxY-minY)*scale)/2 - minY*scale;
-      // zoom-focus rimosso
-    }
   }
 
   function drawBadgesStatic() {

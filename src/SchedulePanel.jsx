@@ -66,6 +66,17 @@ export default function SchedulePanel({ open, onClose, preloadedTasks, onSelectS
     if (open) loadCalendar(calMonth);
   }, [open, calMonth]);
 
+  // Ricalcola i puntini task nel calendario ogni volta che i task cambiano
+  useEffect(() => {
+    const td = tasks.filter(t => t.dueDateTime?.dateTime).map(t => ({
+      date: parseLocalDate(t.dueDateTime.dateTime),
+      title: t.title,
+      important: t.importance === 'high',
+      listName: t._listName
+    }));
+    setTaskDates(td);
+  }, [tasks]);
+
   async function load() {
     setLoading(true);
     try {
@@ -95,14 +106,6 @@ export default function SchedulePanel({ open, onClose, preloadedTasks, onSelectS
       const end = new Date(month.getFullYear(), month.getMonth()+1, 0, 23, 59, 59);
       const evts = await getCalendarEvents(start, end);
       setEvents(evts);
-      // Date task con scadenza nel mese
-      const td = tasks.filter(t => t.dueDateTime?.dateTime).map(t => ({
-        date: parseLocalDate(t.dueDateTime.dateTime),
-        title: t.title,
-        important: t.importance === 'high',
-        listName: t._listName
-      }));
-      setTaskDates(td);
     } catch(e) { console.error(e); }
     setCalLoading(false);
   }
