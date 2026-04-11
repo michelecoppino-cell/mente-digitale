@@ -123,13 +123,13 @@
 /* ── Panel ── */
 .panel {
   position: absolute;
-  right: 0; top: 0; bottom: 0;
+  left: 0; top: 0; bottom: 0;
   width: 290px;
   background: var(--surface);
-  border-left: 1px solid var(--border);
+  border-right: 1px solid var(--border);
   display: flex;
   flex-direction: column;
-  transform: translateX(100%);
+  transform: translateX(-100%);
   transition: transform 0.36s cubic-bezier(0.4,0,0.2,1);
   z-index: 50;
 }
@@ -317,13 +317,13 @@
 /* ── Schedule panel ── */
 .schedule-panel {
   position: absolute;
-  left: 0; top: 0; bottom: 0;
+  right: 0; top: 0; bottom: 0;
   width: 280px;
   background: var(--surface);
-  border-right: 1px solid var(--border);
+  border-left: 1px solid var(--border);
   display: flex;
   flex-direction: column;
-  transform: translateX(-100%);
+  transform: translateX(100%);
   transition: transform 0.36s cubic-bezier(0.4,0,0.2,1);
   z-index: 50;
 }
@@ -1086,15 +1086,15 @@ body, .app {
   gap: 10px;
 }
 
-/* ── Dashboard più larghe +35% ── */
-.schedule-panel { width: 405px; }
-.panel { width: 405px; }
+/* ── Larghezze dashboard ── */
+.schedule-panel { width: 385px; }
+.panel { width: 385px; }
 
 /* ── Alarm button fisso ── */
 .alarm-btn {
   position: fixed;
-  left: 14px;
-  top: 58px;
+  right: 14px;
+  bottom: 48px;
   z-index: 100;
   background: none;
   border: none;
