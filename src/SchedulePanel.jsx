@@ -1,26 +1,30 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { getTodoLists, completeTask, getCalendarEvents } from './api';
 import { getToken } from './auth';
 
 const TODAY = new Date();
 TODAY.setHours(0,0,0,0);
 
+const START_HOUR = 7;
+const END_HOUR   = 22;
+const HOUR_H     = 22; // px per ora nella griglia
+
 function addDays(d, n) { const r = new Date(d); r.setDate(r.getDate()+n); return r; }
 function startOfWeek(d) { const r = new Date(d); r.setDate(r.getDate()-r.getDay()+1); r.setHours(0,0,0,0); return r; }
 function endOfWeek(d) { return addDays(startOfWeek(d),6); }
 function sameDay(a,b) { return a.getFullYear()===b.getFullYear()&&a.getMonth()===b.getMonth()&&a.getDate()===b.getDate(); }
 
-function parseLocalDate(dateStr) {
-  const d = new Date(dateStr.endsWith('Z')?dateStr:dateStr+'Z');
+function parseLocalDate(s) {
+  const d = new Date(s.endsWith('Z')?s:s+'Z');
   return new Date(d.getFullYear(),d.getMonth(),d.getDate());
 }
-function formatDate(dateStr) {
-  return parseLocalDate(dateStr).toLocaleDateString('it-IT',{day:'2-digit',month:'2-digit'});
+function fmtDate(s) {
+  return parseLocalDate(s).toLocaleDateString('it-IT',{day:'2-digit',month:'2-digit'});
 }
 
 const MONTHS_IT = ['Gennaio','Febbraio','Marzo','Aprile','Maggio','Giugno','Luglio','Agosto','Settembre','Ottobre','Novembre','Dicembre'];
-const DAYS_IT = ['L','M','M','G','V','S','D'];
-const DAYS_FULL = ['Lun','Mar','Mer','Gio','Ven','Sab','Dom'];
+const DAYS_IT   = ['L','M','M','G','V','S','D'];
+const DAYS_ABB  = ['Lun','Mar','Mer','Gio','Ven','Sab','Dom'];
 
 function groupTasks(tasks) {
   const tomorrow = addDays(TODAY,1);
@@ -48,17 +52,29 @@ function groupTasks(tasks) {
   return groups.filter(g=>g.tasks.length>0);
 }
 
+// Posizione verticale di un evento nella griglia
+function evTop(e) {
+  if (!e.start?.dateTime) return 0;
+  const dt = new Date(e.start.dateTime);
+  return Math.max(0, (dt.getHours() + dt.getMinutes()/60 - START_HOUR) * HOUR_H);
+}
+function evHeight(e) {
+  if (!e.start?.dateTime || !e.end?.dateTime) return HOUR_H;
+  const dur = (new Date(e.end.dateTime) - new Date(e.start.dateTime)) / 3600000;
+  return Math.max(dur * HOUR_H, 14);
+}
+
 export default function SchedulePanel({ open, onClose, preloadedTasks, onSelectSection, todoListsMap, sectionsMap }) {
   const [tasks, setTasks] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [calModal, setCalModal] = useState(false);
-  const [calMonth, setCalMonth] = useState(new Date());
   const [calView, setCalView] = useState('week'); // 'week' | 'month'
-  const [calWeek, setCalWeek] = useState(() => startOfWeek(new Date()));
-  const [events, setEvents] = useState([]);
+  const [calMonth, setCalMonth] = useState(new Date());
+  const [calWeek, setCalWeek]   = useState(() => startOfWeek(new Date()));
+  const [events, setEvents]     = useState([]);
   const [taskDates, setTaskDates] = useState([]);
   const [selectedDay, setSelectedDay] = useState(null);
   const [calLoading, setCalLoading] = useState(false);
+  const gridRef = useRef(null);
 
   useEffect(() => {
     if (preloadedTasks) { setTasks(preloadedTasks); return; }
@@ -72,12 +88,18 @@ export default function SchedulePanel({ open, onClose, preloadedTasks, onSelectS
   useEffect(() => {
     const td = tasks.filter(t => t.dueDateTime?.dateTime).map(t => ({
       date: parseLocalDate(t.dueDateTime.dateTime),
-      title: t.title,
-      important: t.importance === 'high',
-      listName: t._listName
+      title: t.title, important: t.importance==='high', listName: t._listName
     }));
     setTaskDates(td);
   }, [tasks]);
+
+  // Scrolla la griglia all'ora corrente quando si apre in vista settimana
+  useEffect(() => {
+    if (open && calView==='week' && gridRef.current) {
+      const h = new Date().getHours() - 1;
+      gridRef.current.scrollTop = Math.max(0, (h - START_HOUR) * HOUR_H);
+    }
+  }, [open, calView]);
 
   async function load() {
     setLoading(true);
@@ -105,9 +127,8 @@ export default function SchedulePanel({ open, onClose, preloadedTasks, onSelectS
     setCalLoading(true);
     try {
       const start = new Date(month.getFullYear(), month.getMonth(), 1);
-      const end = new Date(month.getFullYear(), month.getMonth()+1, 0, 23, 59, 59);
-      const evts = await getCalendarEvents(start, end);
-      setEvents(evts);
+      const end   = new Date(month.getFullYear(), month.getMonth()+1, 0, 23, 59, 59);
+      setEvents(await getCalendarEvents(start, end));
     } catch(e) { console.error(e); }
     setCalLoading(false);
   }
@@ -122,245 +143,280 @@ export default function SchedulePanel({ open, onClose, preloadedTasks, onSelectS
 
   function handleOpenPanel(task) {
     if (!onSelectSection || !task._listName) return;
-    const listNameLower = task._listName.toLowerCase();
+    const lower = task._listName.toLowerCase();
     for (const [nbId, sects] of Object.entries(sectionsMap || {})) {
-      const sec = sects.find(s => s.displayName.toLowerCase() === listNameLower);
-      if (sec) {
-        const nb = Object.keys(sectionsMap).length > 0 ? { id: nbId, _color: '#c8a96e' } : null;
-        if (nb) onSelectSection(sec, nb, 'todo');
-        return;
-      }
+      const sec = sects.find(s => s.displayName.toLowerCase() === lower);
+      if (sec) { onSelectSection(sec, { id: nbId, _color: '#c8a96e' }, 'todo'); return; }
     }
   }
 
-  // Naviga per settimana e aggiorna il mese se necessario
   function navigateWeek(dir) {
     const next = addDays(calWeek, dir * 7);
     setCalWeek(next);
     const m = new Date(next.getFullYear(), next.getMonth(), 1);
-    if (m.getMonth() !== calMonth.getMonth() || m.getFullYear() !== calMonth.getFullYear()) {
+    if (m.getMonth() !== calMonth.getMonth() || m.getFullYear() !== calMonth.getFullYear())
       setCalMonth(m);
-    }
-  }
-
-  const withDeadline = tasks.filter(t => t.dueDateTime?.dateTime);
-  const groups = groupTasks(withDeadline);
-  const noDeadline = [
-    ...tasks.filter(t => !t.dueDateTime?.dateTime && t.importance==='high'),
-    ...tasks.filter(t => !t.dueDateTime?.dateTime && t.importance!=='high'),
-  ].slice(0,10);
-
-  function buildGrid(month) {
-    const first = new Date(month.getFullYear(), month.getMonth(), 1);
-    const last = new Date(month.getFullYear(), month.getMonth()+1, 0);
-    let startDow = first.getDay()-1; if (startDow<0) startDow=6;
-    const cells = [];
-    for (let i=0; i<startDow; i++) cells.push(null);
-    for (let d=1; d<=last.getDate(); d++) cells.push(new Date(month.getFullYear(),month.getMonth(),d));
-    return cells;
   }
 
   function eventsForDay(day) {
     return events.filter(e => {
       const s = e.start?.dateTime || e.start?.date;
-      if (!s) return false;
-      return sameDay(parseLocalDate(s), day);
+      return s && sameDay(parseLocalDate(s), day);
     });
   }
   function tasksForDay(day) {
     return taskDates.filter(t => t.date && sameDay(t.date, day));
   }
 
-  function weekLabel() {
-    const we = addDays(calWeek, 6);
-    const sameMonth = calWeek.getMonth() === we.getMonth();
-    const startStr = sameMonth
-      ? calWeek.getDate()
-      : `${calWeek.getDate()} ${MONTHS_IT[calWeek.getMonth()].slice(0,3)}`;
-    return `${startStr} – ${we.getDate()} ${MONTHS_IT[we.getMonth()].slice(0,3)} ${we.getFullYear()}`;
+  const groups    = groupTasks(tasks.filter(t => t.dueDateTime?.dateTime));
+  const noDeadline = [
+    ...tasks.filter(t => !t.dueDateTime?.dateTime && t.importance==='high'),
+    ...tasks.filter(t => !t.dueDateTime?.dateTime && t.importance!=='high'),
+  ].slice(0,10);
+
+  // Label header settimana
+  const weekEnd = addDays(calWeek, 6);
+  const weekLabel = calWeek.getMonth() === weekEnd.getMonth()
+    ? `${calWeek.getDate()} – ${weekEnd.getDate()} ${MONTHS_IT[weekEnd.getMonth()].slice(0,3)} ${weekEnd.getFullYear()}`
+    : `${calWeek.getDate()} ${MONTHS_IT[calWeek.getMonth()].slice(0,3)} – ${weekEnd.getDate()} ${MONTHS_IT[weekEnd.getMonth()].slice(0,3)} ${weekEnd.getFullYear()}`;
+
+  // Griglia mese
+  function buildGrid(month) {
+    const first = new Date(month.getFullYear(), month.getMonth(), 1);
+    const last  = new Date(month.getFullYear(), month.getMonth()+1, 0);
+    let dow = first.getDay()-1; if (dow<0) dow=6;
+    const cells = [];
+    for (let i=0; i<dow; i++) cells.push(null);
+    for (let d=1; d<=last.getDate(); d++) cells.push(new Date(month.getFullYear(),month.getMonth(),d));
+    return cells;
   }
 
-  const miniGrid = buildGrid(calMonth);
+  // Ore da visualizzare
+  const hours = Array.from({length: END_HOUR - START_HOUR}, (_, i) => START_HOUR + i);
+  const totalH = hours.length * HOUR_H;
+
+  // Ora corrente per la linea rossa
+  const nowOffset = (() => {
+    const now = new Date();
+    const h = now.getHours() + now.getMinutes()/60;
+    return (h >= START_HOUR && h <= END_HOUR) ? (h - START_HOUR) * HOUR_H : null;
+  })();
 
   return (
-    <>
-      <div className={`schedule-panel ${open?'open':''}`}>
-        <div className="schedule-head">
-          <div className="panel-label">Attività</div>
-          <button className="panel-close" onClick={onClose}>✕</button>
-        </div>
-
-        <div className="schedule-panel-inner">
-          {/* Task */}
-          <div className="schedule-tasks-section">
-            {loading && <div className="panel-loading">Caricamento…</div>}
-            {groups.map(group => (
-              <div key={group.key} className="schedule-group">
-                <div className={`schedule-group-label ${group.key==='overdue'?'overdue':''}`}>
-                  {group.label}<span className="schedule-count">{group.tasks.length}</span>
-                </div>
-                {group.tasks.map(t => <ScheduleTask key={t.id} task={t} onComplete={handleComplete} onOpenPanel={onSelectSection ? (task) => handleOpenPanel(task) : null} />)}
-              </div>
-            ))}
-            {noDeadline.length > 0 && (
-              <div className="schedule-group">
-                <div className="schedule-group-label">Da fare<span className="schedule-count">{noDeadline.length}</span></div>
-                {noDeadline.map(t => <ScheduleTask key={t.id} task={t} onComplete={handleComplete} onOpenPanel={onSelectSection ? (task) => handleOpenPanel(task) : null} />)}
-              </div>
-            )}
-            {!loading && !groups.length && !noDeadline.length && (
-              <div className="panel-loading">Nessun task aperto</div>
-            )}
-          </div>
-
-          {/* Mini calendario */}
-          <div className="schedule-cal-section">
-            <div className="mini-cal-header">
-              <button className="cal-nav-btn" onClick={() => setCalMonth(m => new Date(m.getFullYear(),m.getMonth()-1,1))}>‹</button>
-              <span className="mini-cal-month" onClick={() => setCalModal(true)} style={{cursor:'pointer'}}>
-                {MONTHS_IT[calMonth.getMonth()].slice(0,3)} {calMonth.getFullYear()}
-              </span>
-              <button className="cal-nav-btn" onClick={() => setCalMonth(m => new Date(m.getFullYear(),m.getMonth()+1,1))}>›</button>
-              <button className="mini-cal-expand" onClick={() => setCalModal(true)} title="Apri grande">⛶</button>
-            </div>
-            <div className="mini-cal-grid">
-              {DAYS_IT.map((d,i) => <div key={i} className="mini-cal-dow">{d}</div>)}
-              {miniGrid.map((day,i) => {
-                if (!day) return <div key={i} className="mini-cal-cell empty"/>;
-                const isToday = sameDay(day,TODAY);
-                const hasEv = eventsForDay(day).length > 0;
-                const hasTk = tasksForDay(day).length > 0;
-                return (
-                  <div key={i}
-                    className={`mini-cal-cell ${isToday?'today':''} ${hasEv||hasTk?'has-items':''}`}
-                    onClick={() => { setSelectedDay(day); setCalModal(true); }}>
-                    <span>{day.getDate()}</span>
-                    <div className="mini-cal-dots">
-                      {hasEv && <span className="cal-dot event"/>}
-                      {hasTk && <span className="cal-dot task"/>}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        </div>
+    <div className={`schedule-panel ${open?'open':''}`}>
+      <div className="schedule-head">
+        <div className="panel-label">Attività</div>
+        <button className="panel-close" onClick={onClose}>✕</button>
       </div>
 
-      {/* Modal calendario */}
-      {calModal && (
-        <div className="cal-modal-overlay" onClick={() => { setCalModal(false); setSelectedDay(null); }}>
-          <div className="cal-modal" onClick={e => e.stopPropagation()}>
+      <div className="schedule-panel-inner">
 
-            {/* Header */}
-            <div className="cal-modal-head">
-              {calView === 'week' ? (
-                <>
-                  <button className="cal-nav-btn" onClick={() => navigateWeek(-1)}>‹</button>
-                  <span className="cal-modal-title" style={{fontSize:13}}>{weekLabel()}</span>
-                  <button className="cal-nav-btn" onClick={() => navigateWeek(1)}>›</button>
-                </>
-              ) : (
-                <>
-                  <button className="cal-nav-btn" onClick={() => setCalMonth(m => new Date(m.getFullYear(),m.getMonth()-1,1))}>‹</button>
-                  <span className="cal-modal-title">{MONTHS_IT[calMonth.getMonth()]} {calMonth.getFullYear()}</span>
-                  <button className="cal-nav-btn" onClick={() => setCalMonth(m => new Date(m.getFullYear(),m.getMonth()+1,1))}>›</button>
-                </>
-              )}
-              <div className="cal-view-toggle">
-                <button className={calView==='week'?'active':''} onClick={() => setCalView('week')}>Sett.</button>
-                <button className={calView==='month'?'active':''} onClick={() => setCalView('month')}>Mese</button>
+        {/* ── Task ── */}
+        <div className="schedule-tasks-section">
+          {loading && <div className="panel-loading">Caricamento…</div>}
+          {groups.map(group => (
+            <div key={group.key} className="schedule-group">
+              <div className={`schedule-group-label ${group.key==='overdue'?'overdue':''}`}>
+                {group.label}<span className="schedule-count">{group.tasks.length}</span>
               </div>
-              <button className="panel-close" onClick={() => { setCalModal(false); setSelectedDay(null); }}>✕</button>
+              {group.tasks.map(t => <ScheduleTask key={t.id} task={t} onComplete={handleComplete} onOpenPanel={onSelectSection ? t => handleOpenPanel(t) : null}/>)}
             </div>
+          ))}
+          {noDeadline.length > 0 && (
+            <div className="schedule-group">
+              <div className="schedule-group-label">Da fare<span className="schedule-count">{noDeadline.length}</span></div>
+              {noDeadline.map(t => <ScheduleTask key={t.id} task={t} onComplete={handleComplete} onOpenPanel={onSelectSection ? t => handleOpenPanel(t) : null}/>)}
+            </div>
+          )}
+          {!loading && !groups.length && !noDeadline.length && (
+            <div className="panel-loading">Nessun task aperto</div>
+          )}
+        </div>
 
-            {/* Vista settimana */}
-            {calView === 'week' && (
-              <div className="cal-week-grid">
+        {/* ── Calendario ── */}
+        <div className="schedule-cal-section">
+
+          {/* Header */}
+          <div className="cal-panel-header">
+            {calView === 'week' ? (
+              <>
+                <button className="cal-nav-btn" onClick={() => navigateWeek(-1)}>‹</button>
+                <span className="cal-panel-label">{weekLabel}</span>
+                <button className="cal-nav-btn" onClick={() => navigateWeek(1)}>›</button>
+              </>
+            ) : (
+              <>
+                <button className="cal-nav-btn" onClick={() => setCalMonth(m => new Date(m.getFullYear(),m.getMonth()-1,1))}>‹</button>
+                <span className="cal-panel-label">{MONTHS_IT[calMonth.getMonth()].slice(0,3)} {calMonth.getFullYear()}</span>
+                <button className="cal-nav-btn" onClick={() => setCalMonth(m => new Date(m.getFullYear(),m.getMonth()+1,1))}>›</button>
+              </>
+            )}
+            <div className="cal-view-toggle">
+              <button className={calView==='week'?'active':''} onClick={() => setCalView('week')}>Sett.</button>
+              <button className={calView==='month'?'active':''} onClick={() => setCalView('month')}>Mese</button>
+            </div>
+          </div>
+
+          {/* ── Vista settimana ── */}
+          {calView === 'week' && (
+            <>
+              {/* Intestazioni giorni */}
+              <div className="week-days-row">
+                <div className="week-axis-spacer"/>
                 {[0,1,2,3,4,5,6].map(i => {
                   const day = addDays(calWeek, i);
-                  const dayEvs = eventsForDay(day);
-                  const dayTks = tasksForDay(day);
                   const isToday = sameDay(day, TODAY);
+                  const tks = tasksForDay(day);
+                  const allDay = eventsForDay(day).filter(e => e.isAllDay);
+                  return (
+                    <div key={i} className={`week-day-header${isToday?' today':''}`}
+                      onClick={() => setSelectedDay(selectedDay && sameDay(selectedDay,day) ? null : day)}>
+                      <span className="week-day-name">{DAYS_ABB[i]}</span>
+                      <span className={`week-day-num${isToday?' today':''}`}>{day.getDate()}</span>
+                      {tks.length > 0 && <span className="week-task-badge">{tks.length}</span>}
+                      {allDay.map((e,j) => (
+                        <div key={j} className="week-allday-event" title={e.subject}>{e.subject}</div>
+                      ))}
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Griglia 24h */}
+              <div className="week-time-grid" ref={gridRef}>
+                {/* Colonna ore */}
+                <div className="week-time-axis">
+                  {hours.map(h => (
+                    <div key={h} className="week-hour-tick" style={{height:HOUR_H}}>
+                      <span>{h}</span>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Colonne giorni */}
+                {[0,1,2,3,4,5,6].map(i => {
+                  const day = addDays(calWeek, i);
+                  const isToday = sameDay(day, TODAY);
+                  const dayEvs = eventsForDay(day).filter(e => !e.isAllDay && e.start?.dateTime);
                   const isSel = selectedDay && sameDay(day, selectedDay);
                   return (
-                    <div key={i}
-                      className={`cal-week-col ${isToday?'today':''} ${isSel?'selected':''}`}
-                      onClick={() => setSelectedDay(isSel ? null : day)}>
-                      <div className="cal-week-dow">{DAYS_FULL[i]}</div>
-                      <div className={`cal-week-num${isToday?' today':''}`}>{day.getDate()}</div>
-                      <div className="cal-week-events">
-                        {dayEvs.slice(0,3).map((e,j) => (
-                          <div key={j} className="cal-week-event">
-                            <span className="cal-week-event-time">
-                              {e.isAllDay ? '●' : new Date(e.start.dateTime).toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit'})}
-                            </span>
-                            <span className="cal-week-event-title">{e.subject}</span>
-                          </div>
-                        ))}
-                        {dayTks.length > 0 && (
-                          <div className="cal-week-tasks">{dayTks.length} task</div>
-                        )}
-                      </div>
+                    <div key={i} className={`week-day-col${isToday?' today':''}${isSel?' selected':''}`}
+                      style={{height: totalH}}>
+                      {/* Linee ore */}
+                      {hours.map(h => (
+                        <div key={h} className="week-hour-line" style={{top:(h-START_HOUR)*HOUR_H}}/>
+                      ))}
+                      {/* Linea ora corrente */}
+                      {isToday && nowOffset !== null && (
+                        <div className="week-now-line" style={{top: nowOffset}}/>
+                      )}
+                      {/* Eventi */}
+                      {dayEvs.map((e,j) => (
+                        <div key={j} className="week-event-block"
+                          style={{top: evTop(e), height: evHeight(e)}}
+                          title={e.subject}>
+                          <span className="week-event-time-mini">
+                            {new Date(e.start.dateTime).toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit'})}
+                          </span>
+                          <span className="week-event-title">{e.subject}</span>
+                        </div>
+                      ))}
                     </div>
                   );
                 })}
               </div>
-            )}
 
-            {/* Vista mese */}
-            {calView === 'month' && (
-              <div className="cal-modal-grid">
-                {DAYS_IT.map((d,i) => <div key={i} className="cal-dow">{d}</div>)}
+              {/* Dettaglio giorno selezionato */}
+              {selectedDay && (() => {
+                const dayEvs = eventsForDay(selectedDay);
+                const dayTks = tasksForDay(selectedDay);
+                return (
+                  <div className="week-day-detail">
+                    <div className="week-day-detail-title">
+                      {selectedDay.getDate()} {MONTHS_IT[selectedDay.getMonth()]}
+                      <button className="week-day-detail-close" onClick={() => setSelectedDay(null)}>✕</button>
+                    </div>
+                    {dayEvs.map((e,i) => (
+                      <div key={i} className="cal-event-row">
+                        <span className="cal-event-time">
+                          {e.isAllDay ? 'Tutto il giorno' : new Date(e.start.dateTime).toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit'})}
+                        </span>
+                        <span className="cal-event-title">{e.subject}</span>
+                      </div>
+                    ))}
+                    {dayTks.map((t,i) => (
+                      <div key={i} className="cal-task-row">
+                        {t.important && <span className="cal-star">★</span>}
+                        <span className="cal-task-title">{t.title}</span>
+                        <span className="cal-task-list">{t.listName}</span>
+                      </div>
+                    ))}
+                    {!dayEvs.length && !dayTks.length && <div className="cal-empty-day">Nessun evento</div>}
+                  </div>
+                );
+              })()}
+            </>
+          )}
+
+          {/* ── Vista mese ── */}
+          {calView === 'month' && (
+            <div className="month-grid-panel">
+              <div className="mini-cal-grid">
+                {DAYS_IT.map((d,i) => <div key={i} className="mini-cal-dow">{d}</div>)}
                 {buildGrid(calMonth).map((day,i) => {
-                  if (!day) return <div key={i} className="cal-cell empty"/>;
+                  if (!day) return <div key={i} className="mini-cal-cell empty"/>;
                   const isToday = sameDay(day,TODAY);
                   const isSel = selectedDay && sameDay(day,selectedDay);
-                  const dayEv = eventsForDay(day);
-                  const dayTk = tasksForDay(day);
+                  const hasEv = eventsForDay(day).length > 0;
+                  const hasTk = tasksForDay(day).length > 0;
                   return (
                     <div key={i}
-                      className={`cal-cell ${isToday?'today':''} ${isSel?'selected':''} ${dayEv.length||dayTk.length?'has-items':''}`}
+                      className={`mini-cal-cell ${isToday?'today':''} ${isSel?'selected':''} ${hasEv||hasTk?'has-items':''}`}
                       onClick={() => setSelectedDay(isSel?null:day)}>
-                      <span className="cal-day-num">{day.getDate()}</span>
-                      <div className="cal-dots">
-                        {dayEv.slice(0,3).map((_,j) => <span key={j} className="cal-dot event"/>)}
-                        {dayTk.slice(0,3).map((t,j) => <span key={'t'+j} className={`cal-dot task${t.important?' important':''}`}/>)}
+                      <span>{day.getDate()}</span>
+                      <div className="mini-cal-dots">
+                        {hasEv && <span className="cal-dot event"/>}
+                        {hasTk && <span className="cal-dot task"/>}
                       </div>
                     </div>
                   );
                 })}
               </div>
-            )}
+              {/* Dettaglio giorno in vista mese */}
+              {selectedDay && (() => {
+                const dayEvs = eventsForDay(selectedDay);
+                const dayTks = tasksForDay(selectedDay);
+                return (
+                  <div className="week-day-detail">
+                    <div className="week-day-detail-title">
+                      {selectedDay.getDate()} {MONTHS_IT[selectedDay.getMonth()]}
+                      <button className="week-day-detail-close" onClick={() => setSelectedDay(null)}>✕</button>
+                    </div>
+                    {dayEvs.map((e,i) => (
+                      <div key={i} className="cal-event-row">
+                        <span className="cal-event-time">
+                          {e.isAllDay ? 'Tutto il giorno' : new Date(e.start.dateTime).toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit'})}
+                        </span>
+                        <span className="cal-event-title">{e.subject}</span>
+                      </div>
+                    ))}
+                    {dayTks.map((t,i) => (
+                      <div key={i} className="cal-task-row">
+                        {t.important && <span className="cal-star">★</span>}
+                        <span className="cal-task-title">{t.title}</span>
+                        <span className="cal-task-list">{t.listName}</span>
+                      </div>
+                    ))}
+                    {!dayEvs.length && !dayTks.length && <div className="cal-empty-day">Nessun evento</div>}
+                  </div>
+                );
+              })()}
+            </div>
+          )}
 
-            {/* Dettaglio giorno selezionato */}
-            {selectedDay && (
-              <div className="cal-day-detail">
-                <div className="cal-detail-title">{selectedDay.getDate()} {MONTHS_IT[selectedDay.getMonth()]}</div>
-                {eventsForDay(selectedDay).map((e,i) => (
-                  <div key={`${e.id}_${i}`} className="cal-event-row">
-                    <span className="cal-event-time">
-                      {e.isAllDay?'Tutto il giorno':new Date(e.start.dateTime).toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit'})}
-                    </span>
-                    <span className="cal-event-title">{e.subject}</span>
-                  </div>
-                ))}
-                {tasksForDay(selectedDay).map((t,i) => (
-                  <div key={i} className="cal-task-row">
-                    {t.important && <span className="cal-star">★</span>}
-                    <span className="cal-task-title">{t.title}</span>
-                    <span className="cal-task-list">{t.listName}</span>
-                  </div>
-                ))}
-                {!eventsForDay(selectedDay).length && !tasksForDay(selectedDay).length && (
-                  <div className="cal-empty-day">Nessun evento o scadenza</div>
-                )}
-              </div>
-            )}
-          </div>
         </div>
-      )}
-    </>
+      </div>
+    </div>
   );
 }
 
