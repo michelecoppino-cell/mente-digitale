@@ -1,4 +1,4 @@
-import { getToken } from './auth';
+import { getToken, getWorkToken } from './auth';
 
 const GRAPH = 'https://graph.microsoft.com/v1.0';
 
@@ -73,6 +73,33 @@ export async function getCalendarEvents(startDate, endDate) {
     `/me/calendarView?startDateTime=${start}&endDateTime=${end}&$orderby=start/dateTime&$top=100&$select=subject,start,end,isAllDay`
   );
   return d.value;
+}
+
+// Calendario account aziendale — usa token separato
+export async function getWorkCalendarEvents(startDate, endDate) {
+  const start = startDate.toISOString();
+  const end = endDate.toISOString();
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const token = await getWorkToken();
+      const r = await fetch(
+        `${GRAPH}/me/calendarView?startDateTime=${start}&endDateTime=${end}&$orderby=start/dateTime&$top=100&$select=subject,start,end,isAllDay`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      if (r.status === 429 || r.status === 503 || r.status === 504) {
+        const wait = parseInt(r.headers.get('Retry-After') || '1') * 1000;
+        await new Promise(res => setTimeout(res, wait));
+        continue;
+      }
+      if (!r.ok) throw new Error(`Work cal error ${r.status}`);
+      const d = await r.json();
+      return d.value || [];
+    } catch (e) {
+      if (attempt === 2) throw e;
+      await new Promise(res => setTimeout(res, (attempt + 1) * 1000));
+    }
+  }
+  return [];
 }
 
 // ── OneDrive Links File ──

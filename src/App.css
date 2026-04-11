@@ -526,7 +526,8 @@
   width: 4px; height: 4px; border-radius: 50%;
 }
 .cal-dot.event { background: var(--accent); }
-.cal-dot.task { background: #7eb8c9; border: 1px dashed #7eb8c9; background: transparent; }
+.cal-dot.work { background: #7eb8c9; }
+.cal-dot.task { border: 1px dashed #7eb8c9; background: transparent; }
 .cal-dot.task.important { background: #c084a0; border: none; }
 
 .cal-day-detail {
@@ -1108,3 +1109,60 @@ body, .app {
 .alarm-btn:hover { background: rgba(200,169,110,0.1); }
 .alarm-btn.active { background: rgba(200,169,110,0.15); }
 .alarm-btn:active { transform: scale(0.92); }
+
+/* ── Calendario aziendale ── */
+.work-cal-row {
+  padding: 6px 2px 2px;
+  flex-shrink: 0;
+}
+.work-cal-connect-btn {
+  background: none;
+  border: 1px dashed var(--border2);
+  color: var(--muted);
+  font-size: 10px;
+  font-family: 'Outfit', sans-serif;
+  padding: 4px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  width: 100%;
+  transition: color 0.15s, border-color 0.15s;
+}
+.work-cal-connect-btn:hover { color: #7eb8c9; border-color: #7eb8c9; }
+.work-cal-info {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10px;
+  color: var(--muted);
+  padding: 2px 0;
+}
+.work-cal-email {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #7eb8c9;
+}
+.work-cal-disconnect {
+  background: none;
+  border: none;
+  color: var(--muted);
+  font-size: 10px;
+  cursor: pointer;
+  padding: 2px 4px;
+  flex-shrink: 0;
+  transition: color 0.12s;
+}
+.work-cal-disconnect:hover { color: #c07a7a; }
+
+/* Badge "az" eventi aziendali nel dettaglio giorno */
+.cal-work-badge {
+  font-size: 8px;
+  font-weight: 600;
+  background: #7eb8c9;
+  color: #080a0e;
+  padding: 1px 4px;
+  border-radius: 3px;
+  flex-shrink: 0;
+  letter-spacing: 0.03em;
+}

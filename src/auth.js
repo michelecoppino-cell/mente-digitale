@@ -1,7 +1,14 @@
 import { PublicClientApplication, InteractionRequiredAuthError } from '@azure/msal-browser';
-import { CLIENT_ID, REDIRECT_URI, SCOPES } from './config';
+import { CLIENT_ID, REDIRECT_URI, SCOPES, WORK_SCOPES } from './config';
 
 let msal = null;
+
+// Chiavi localStorage per ricordare quale account è personale e quale aziendale
+const PERSONAL_ID_KEY = 'md_personal_id';
+const WORK_ID_KEY     = 'md_work_id';
+
+// Il tenantId dei Microsoft Account personali (MSA) è sempre questo
+const MSA_TENANT = '9188040d-6c67-4c5b-b112-36a304b66dad';
 
 export async function initAuth() {
   msal = new PublicClientApplication({
@@ -13,31 +20,66 @@ export async function initAuth() {
     },
     cache: {
       cacheLocation: 'localStorage',
-      storeAuthStateInCookie: true,  // fondamentale per Safari iOS
+      storeAuthStateInCookie: true, // fondamentale per Safari iOS
     },
-    system: {
-      allowNativeBroker: false,
-    }
+    system: { allowNativeBroker: false },
   });
   await msal.initialize();
+
   try {
     const result = await msal.handleRedirectPromise();
-    if (result) {
-      // Salva token appena ricevuto
-      console.log('Login completato:', result.account?.username);
+    if (result?.account) {
+      const loginType = sessionStorage.getItem('md_login_type');
+      if (loginType === 'work') {
+        localStorage.setItem(WORK_ID_KEY, result.account.homeAccountId);
+      } else {
+        localStorage.setItem(PERSONAL_ID_KEY, result.account.homeAccountId);
+      }
+      sessionStorage.removeItem('md_login_type');
     }
-  } catch(e) {
+  } catch (e) {
     console.error('Redirect error:', e);
+    sessionStorage.removeItem('md_login_type');
   }
   return msal;
 }
 
+// Account personale: usa ID salvato; fallback all'account MSA; fallback al primo
 export function getAccount() {
-  return msal?.getAllAccounts()[0] || null;
+  if (!msal) return null;
+  const all = msal.getAllAccounts();
+  const id = localStorage.getItem(PERSONAL_ID_KEY);
+  if (id) {
+    const acc = all.find(a => a.homeAccountId === id);
+    if (acc) return acc;
+  }
+  // Se non c'è ID salvato, preferisci l'account MSA (personale)
+  const msa = all.find(a => a.tenantId === MSA_TENANT);
+  if (msa) return msa;
+  return all[0] || null;
+}
+
+// Account aziendale: solo tramite ID salvato dopo loginWork()
+export function getWorkAccount() {
+  if (!msal) return null;
+  const id = localStorage.getItem(WORK_ID_KEY);
+  if (!id) return null;
+  return msal.getAllAccounts().find(a => a.homeAccountId === id) || null;
 }
 
 export async function login() {
+  sessionStorage.setItem('md_login_type', 'personal');
   return msal.loginRedirect({ scopes: SCOPES });
+}
+
+// Login account aziendale — solo calendario
+export async function loginWork() {
+  sessionStorage.setItem('md_login_type', 'work');
+  return msal.loginRedirect({ scopes: WORK_SCOPES, prompt: 'select_account' });
+}
+
+export function logoutWork() {
+  localStorage.removeItem(WORK_ID_KEY);
 }
 
 export async function getToken() {
@@ -46,18 +88,38 @@ export async function getToken() {
   try {
     const r = await msal.acquireTokenSilent({ scopes: SCOPES, account });
     // Rinnova proattivamente se scade entro 5 minuti
-    const exp = r.expiresOn?.getTime() || 0;
-    const now = Date.now();
-    if (exp - now < 5 * 60 * 1000) {
+    if ((r.expiresOn?.getTime() || 0) - Date.now() < 5 * 60 * 1000) {
       try {
         const fresh = await msal.acquireTokenSilent({ scopes: SCOPES, account, forceRefresh: true });
         return fresh.accessToken;
-      } catch(e2) {}
+      } catch (e2) {}
     }
     return r.accessToken;
   } catch (e) {
     if (e instanceof InteractionRequiredAuthError) {
+      sessionStorage.setItem('md_login_type', 'personal');
       return msal.acquireTokenRedirect({ scopes: SCOPES });
+    }
+    throw e;
+  }
+}
+
+export async function getWorkToken() {
+  const account = getWorkAccount();
+  if (!account) throw new Error('Account aziendale non connesso');
+  try {
+    const r = await msal.acquireTokenSilent({ scopes: WORK_SCOPES, account });
+    if ((r.expiresOn?.getTime() || 0) - Date.now() < 5 * 60 * 1000) {
+      try {
+        const fresh = await msal.acquireTokenSilent({ scopes: WORK_SCOPES, account, forceRefresh: true });
+        return fresh.accessToken;
+      } catch (e2) {}
+    }
+    return r.accessToken;
+  } catch (e) {
+    if (e instanceof InteractionRequiredAuthError) {
+      sessionStorage.setItem('md_login_type', 'work');
+      return msal.acquireTokenRedirect({ scopes: WORK_SCOPES, account });
     }
     throw e;
   }

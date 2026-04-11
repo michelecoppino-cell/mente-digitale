@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-import { getTodoLists, completeTask, getCalendarEvents } from './api';
-import { getToken } from './auth';
+import { getTodoLists, completeTask, getCalendarEvents, getWorkCalendarEvents } from './api';
+import { getToken, getWorkAccount, loginWork, logoutWork } from './auth';
 
 const TODAY = new Date();
 TODAY.setHours(0,0,0,0);
@@ -56,6 +56,7 @@ export default function SchedulePanel({ open, onClose, preloadedTasks, onSelectS
   const [taskDates, setTaskDates] = useState([]);
   const [selectedDay, setSelectedDay] = useState(null);
   const [calLoading, setCalLoading] = useState(false);
+  const [workAccount, setWorkAccount] = useState(() => getWorkAccount());
 
   useEffect(() => {
     if (preloadedTasks) { setTasks(preloadedTasks); return; }
@@ -104,10 +105,23 @@ export default function SchedulePanel({ open, onClose, preloadedTasks, onSelectS
     try {
       const start = new Date(month.getFullYear(), month.getMonth(), 1);
       const end = new Date(month.getFullYear(), month.getMonth()+1, 0, 23, 59, 59);
-      const evts = await getCalendarEvents(start, end);
-      setEvents(evts);
+      const wa = getWorkAccount(); // rilegge dallo storage (aggiornato dopo redirect)
+      const [personal, work] = await Promise.all([
+        getCalendarEvents(start, end),
+        wa ? getWorkCalendarEvents(start, end).catch(() => []) : Promise.resolve([]),
+      ]);
+      setEvents([
+        ...personal.map(e => ({ ...e, _isWork: false })),
+        ...work.map(e => ({ ...e, _isWork: true })),
+      ]);
     } catch(e) { console.error(e); }
     setCalLoading(false);
+  }
+
+  function handleDisconnectWork() {
+    logoutWork();
+    setWorkAccount(null);
+    setEvents(prev => prev.filter(e => !e._isWork));
   }
 
   async function handleComplete(task) {
@@ -211,20 +225,37 @@ export default function SchedulePanel({ open, onClose, preloadedTasks, onSelectS
               {miniGrid.map((day,i) => {
                 if (!day) return <div key={i} className="mini-cal-cell empty"/>;
                 const isToday = sameDay(day,TODAY);
-                const hasEv = eventsForDay(day).length > 0;
+                const dayEvs = eventsForDay(day);
+                const hasPersonalEv = dayEvs.some(e => !e._isWork);
+                const hasWorkEv = dayEvs.some(e => e._isWork);
                 const hasTk = tasksForDay(day).length > 0;
                 return (
                   <div key={i}
-                    className={`mini-cal-cell ${isToday?'today':''} ${hasEv||hasTk?'has-items':''}`}
+                    className={`mini-cal-cell ${isToday?'today':''} ${dayEvs.length||hasTk?'has-items':''}`}
                     onClick={() => { setSelectedDay(day); setCalModal(true); }}>
                     <span>{day.getDate()}</span>
                     <div className="mini-cal-dots">
-                      {hasEv && <span className="cal-dot event"/>}
+                      {hasPersonalEv && <span className="cal-dot event"/>}
+                      {hasWorkEv && <span className="cal-dot work"/>}
                       {hasTk && <span className="cal-dot task"/>}
                     </div>
                   </div>
                 );
               })}
+            </div>
+            {/* Collegamento calendario aziendale */}
+            <div className="work-cal-row">
+              {!workAccount ? (
+                <button className="work-cal-connect-btn" onClick={loginWork}>
+                  + calendario aziendale
+                </button>
+              ) : (
+                <div className="work-cal-info">
+                  <span className="cal-dot work" style={{flexShrink:0,marginTop:1}}/>
+                  <span className="work-cal-email">{workAccount.username}</span>
+                  <button className="work-cal-disconnect" onClick={handleDisconnectWork} title="Disconnetti">✕</button>
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -254,7 +285,7 @@ export default function SchedulePanel({ open, onClose, preloadedTasks, onSelectS
                     onClick={() => setSelectedDay(isSel?null:day)}>
                     <span className="cal-day-num">{day.getDate()}</span>
                     <div className="cal-dots">
-                      {dayEv.slice(0,3).map((_,j) => <span key={j} className="cal-dot event"/>)}
+                      {dayEv.slice(0,4).map((e,j) => <span key={j} className={`cal-dot event${e._isWork?' work':''}`}/>)}
                       {dayTk.slice(0,3).map((t,j) => <span key={'t'+j} className={`cal-dot task${t.important?' important':''}`}/>)}
                     </div>
                   </div>
@@ -264,8 +295,9 @@ export default function SchedulePanel({ open, onClose, preloadedTasks, onSelectS
             {selectedDay && (
               <div className="cal-day-detail">
                 <div className="cal-detail-title">{selectedDay.getDate()} {MONTHS_IT[selectedDay.getMonth()]}</div>
-                {eventsForDay(selectedDay).map(e => (
-                  <div key={e.id} className="cal-event-row">
+                {eventsForDay(selectedDay).map((e,i) => (
+                  <div key={`${e.id}_${i}`} className="cal-event-row">
+                    {e._isWork && <span className="cal-work-badge">az</span>}
                     <span className="cal-event-time">
                       {e.isAllDay?'Tutto il giorno':new Date(e.start.dateTime).toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit'})}
                     </span>
