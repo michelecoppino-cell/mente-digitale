@@ -1514,5 +1514,5 @@ body, .app {
 }
 
 /* Flex ratios per dare più spazio alla griglia 24h */
-.schedule-tasks-section { flex: 2; }
-.schedule-cal-section   { flex: 3; }
+.schedule-tasks-section { flex: 3; overflow-y: auto; }
+.schedule-cal-section   { flex: 2; overflow-y: auto; }
