@@ -1,0 +1,8 @@
+{
+  "name": "sync-calendar",
+  "version": "1.0.0",
+  "type": "module",
+  "dependencies": {
+    "@azure/msal-node": "^2.16.0"
+  }
+}
