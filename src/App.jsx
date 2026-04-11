@@ -217,8 +217,8 @@ export default function App() {
         </div>
       ) : (
         <>
-        <button
-            className={`alarm-btn ${scheduleOpen ? 'active' : ''}`}
+        {!scheduleOpen && <button
+            className="alarm-btn"
             onClick={() => setScheduleOpen(o => !o)}
             title="Attività">
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
@@ -227,7 +227,7 @@ export default function App() {
               <line x1="7" y1="4" x2="4.5" y2="6.5"/>
               <line x1="17" y1="4" x2="19.5" y2="6.5"/>
             </svg>
-          </button>
+          </button>}
         <div className="canvas-area">
           <SchedulePanel open={scheduleOpen} onClose={() => setScheduleOpen(false)} preloadedTasks={scheduledTasks} onSelectSection={handleSelectSection} todoListsMap={todoListsMap} sectionsMap={sectionsMap} />
           <MindMap
