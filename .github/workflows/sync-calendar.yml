@@ -1,0 +1,34 @@
+name: Sync Calendar from Mail
+
+on:
+  schedule:
+    - cron: '0 */3 * * *'   # ogni 3 ore
+  workflow_dispatch:          # esecuzione manuale dal sito GitHub
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Sync calendar
+        env:
+          MS_REFRESH_TOKEN: ${{ secrets.MS_REFRESH_TOKEN }}
+        run: node scripts/sync-calendar.mjs
+
+      - name: Aggiorna refresh token nel segreto GitHub
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+        run: |
+          NEW_TOKEN=$(cat scripts/.new-refresh-token 2>/dev/null || echo "")
+          if [ -n "$NEW_TOKEN" ]; then
+            gh secret set MS_REFRESH_TOKEN --body "$NEW_TOKEN" --repo ${{ github.repository }}
+            echo "Refresh token aggiornato."
+          else
+            echo "Nessun nuovo refresh token da salvare."
+          fi

@@ -23,3 +23,4 @@ dist-ssr
 *.sln
 *.sw?
 .token-cache.json
+scripts/.new-refresh-token
