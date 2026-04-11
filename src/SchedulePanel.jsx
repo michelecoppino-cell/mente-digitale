@@ -5,9 +5,9 @@ import { getToken } from './auth';
 const TODAY = new Date();
 TODAY.setHours(0,0,0,0);
 
-const START_HOUR = 7;
-const END_HOUR   = 22;
-const HOUR_H     = 22; // px per ora nella griglia
+const START_HOUR = 0;
+const END_HOUR   = 24;
+const HOUR_H     = 11; // px per ora nella griglia
 
 function addDays(d, n) { const r = new Date(d); r.setDate(r.getDate()+n); return r; }
 function startOfWeek(d) { const r = new Date(d); r.setDate(r.getDate()-r.getDay()+1); r.setHours(0,0,0,0); return r; }
@@ -191,8 +191,9 @@ export default function SchedulePanel({ open, onClose, preloadedTasks, onSelectS
     return cells;
   }
 
-  // Ore da visualizzare
+  // Ore da visualizzare (ogni 4h per compattezza)
   const hours = Array.from({length: END_HOUR - START_HOUR}, (_, i) => START_HOUR + i);
+  const hourTicks = hours.filter(h => h % 4 === 0);
   const totalH = hours.length * HOUR_H;
 
   // Ora corrente per la linea rossa
@@ -285,9 +286,10 @@ export default function SchedulePanel({ open, onClose, preloadedTasks, onSelectS
               {/* Griglia 24h */}
               <div className="week-time-grid" ref={gridRef}>
                 {/* Colonna ore */}
-                <div className="week-time-axis">
-                  {hours.map(h => (
-                    <div key={h} className="week-hour-tick" style={{height:HOUR_H}}>
+                <div className="week-time-axis" style={{height: totalH, position:'relative'}}>
+                  {hourTicks.map(h => (
+                    <div key={h} className="week-hour-tick"
+                      style={{position:'absolute', top:(h-START_HOUR)*HOUR_H, width:'100%'}}>
                       <span>{h}</span>
                     </div>
                   ))}

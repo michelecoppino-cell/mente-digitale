@@ -325,7 +325,7 @@
   flex-direction: column;
   transform: translateX(100%);
   transition: transform 0.36s cubic-bezier(0.4,0,0.2,1);
-  z-index: 50;
+  z-index: 60;
 }
 .schedule-panel.open { transform: translateX(0); }
 
@@ -1391,8 +1391,9 @@ body, .app {
   align-items: flex-start;
   justify-content: flex-end;
   padding-right: 3px;
-  flex-shrink: 0;
   border-right: 1px solid var(--border);
+  height: 1px;
+  overflow: visible;
 }
 .week-hour-tick span {
   font-size: 7px;
@@ -1400,6 +1401,7 @@ body, .app {
   line-height: 1;
   margin-top: -4px;
   user-select: none;
+  background: var(--surface);
 }
 
 /* Colonne giorni */
