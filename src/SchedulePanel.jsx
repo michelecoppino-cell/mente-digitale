@@ -7,7 +7,7 @@ TODAY.setHours(0,0,0,0);
 
 const START_HOUR = 0;
 const END_HOUR   = 24;
-const HOUR_H     = 11; // px per ora nella griglia
+const HOUR_H     = 18; // px per ora nella griglia
 
 function addDays(d, n) { const r = new Date(d); r.setDate(r.getDate()+n); return r; }
 function startOfWeek(d) { const r = new Date(d); r.setDate(r.getDate()-r.getDay()+1); r.setHours(0,0,0,0); return r; }
@@ -64,7 +64,7 @@ function evHeight(e) {
   return Math.max(dur * HOUR_H, 14);
 }
 
-export default function SchedulePanel({ open, onClose, preloadedTasks, onSelectSection, todoListsMap, sectionsMap }) {
+export default function SchedulePanel({ open, expanded, onExpand, onClose, preloadedTasks, onSelectSection, todoListsMap, sectionsMap }) {
   const [tasks, setTasks] = useState([]);
   const [loading, setLoading] = useState(false);
   const [calView, setCalView] = useState('week'); // 'week' | 'month'
@@ -204,10 +204,15 @@ export default function SchedulePanel({ open, onClose, preloadedTasks, onSelectS
   })();
 
   return (
-    <div className={`schedule-panel ${open?'open':''}`}>
+    <div className={`schedule-panel ${open?'open':''} ${expanded?'expanded':''}`}>
       <div className="schedule-head">
-        <div className="panel-label">Attività</div>
-        <button className="panel-close" onClick={onClose}>✕</button>
+        <h2 className="schedule-panel-title">Attività</h2>
+        <div style={{display:'flex',gap:6,alignItems:'center'}}>
+          <button className="panel-close" onClick={onExpand} title={expanded?'Riduci':'Espandi'}>
+            {expanded ? '⊠' : '⊞'}
+          </button>
+          <button className="panel-close" onClick={onClose}>✕</button>
+        </div>
       </div>
 
       <div className="schedule-panel-inner">

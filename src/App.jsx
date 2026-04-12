@@ -20,6 +20,7 @@ export default function App() {
   const [sync, setSync] = useState({ state: 'idle', label: 'Non connesso' });
   const [zoom, setZoom] = useState(1);
   const [scheduleOpen, setScheduleOpen] = useState(false);
+  const [scheduleExpanded, setScheduleExpanded] = useState(false);
   const [rssOpen, setRssOpen] = useState(false);
   const pagesCache = useRef({});
   const tasksCache = useRef({});
@@ -229,7 +230,7 @@ export default function App() {
             </svg>
           </button>}
         <div className="canvas-area">
-          <SchedulePanel open={scheduleOpen} onClose={() => setScheduleOpen(false)} preloadedTasks={scheduledTasks} onSelectSection={handleSelectSection} todoListsMap={todoListsMap} sectionsMap={sectionsMap} />
+          <SchedulePanel open={scheduleOpen} expanded={scheduleExpanded} onExpand={() => setScheduleExpanded(e => !e)} onClose={() => { setScheduleOpen(false); setScheduleExpanded(false); }} preloadedTasks={scheduledTasks} onSelectSection={handleSelectSection} todoListsMap={todoListsMap} sectionsMap={sectionsMap} />
           <MindMap
             notebooks={notebooks}
             sectionsMap={sectionsMap}
