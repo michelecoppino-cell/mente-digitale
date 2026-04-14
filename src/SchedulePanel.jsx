@@ -364,23 +364,38 @@ export default function SchedulePanel({ open, onClose, preloadedTasks, onSelectS
           {/* ── Vista mese ── */}
           {calView === 'month' && (
             <div className="month-grid-panel">
-              <div className="mini-cal-grid">
+              <div className={`mini-cal-grid ${calExpanded?'expanded':''}`}>
                 {DAYS_IT.map((d,i) => <div key={i} className="mini-cal-dow">{d}</div>)}
                 {buildGrid(calMonth).map((day,i) => {
                   if (!day) return <div key={i} className="mini-cal-cell empty"/>;
                   const isToday = sameDay(day,TODAY);
                   const isSel = selectedDay && sameDay(day,selectedDay);
-                  const hasEv = eventsForDay(day).length > 0;
+                  const dayEvs = eventsForDay(day);
                   const hasTk = tasksForDay(day).length > 0;
                   return (
                     <div key={i}
-                      className={`mini-cal-cell ${isToday?'today':''} ${isSel?'selected':''} ${hasEv||hasTk?'has-items':''}`}
+                      className={`mini-cal-cell ${isToday?'today':''} ${isSel?'selected':''} ${dayEvs.length||hasTk?'has-items':''}`}
                       onClick={() => setSelectedDay(isSel?null:day)}>
-                      <span>{day.getDate()}</span>
-                      <div className="mini-cal-dots">
-                        {hasEv && <span className="cal-dot event"/>}
-                        {hasTk && <span className="cal-dot task"/>}
-                      </div>
+                      <span className="mini-cal-day-num">{day.getDate()}</span>
+                      {calExpanded ? (
+                        <div className="mini-cal-previews">
+                          {dayEvs.slice(0,2).map((e,j) => (
+                            <div key={j} className="mini-cal-ev-preview" title={e.subject}>
+                              {!e.isAllDay && e.start?.dateTime &&
+                                <span className="mini-cal-ev-time">
+                                  {new Date(e.start.dateTime).toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit'})}
+                                </span>}
+                              <span className="mini-cal-ev-name">{e.subject}</span>
+                            </div>
+                          ))}
+                          {hasTk && <div className="mini-cal-ev-preview task-preview">✓ task</div>}
+                        </div>
+                      ) : (
+                        <div className="mini-cal-dots">
+                          {dayEvs.length > 0 && <span className="cal-dot event"/>}
+                          {hasTk && <span className="cal-dot task"/>}
+                        </div>
+                      )}
                     </div>
                   );
                 })}

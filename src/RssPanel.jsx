@@ -6,16 +6,27 @@ const FEEDS = [
     name: 'Corriere della Sera',
     url: 'https://www.corriere.it/rss/homepage.xml',
     color: '#c8a96e',
+    filterToday: true,
   },
   {
     id: 'sadhguru',
     name: 'Sadhguru',
     url: 'https://feeds.feedburner.com/Sadhguru',
     color: '#9b8ec4',
+    filterToday: false,
   },
 ];
 
 const PROXY = 'https://api.rss2json.com/v1/api.json?rss_url=';
+
+function isToday(str) {
+  if (!str) return false;
+  const d = new Date(str);
+  const now = new Date();
+  return d.getFullYear() === now.getFullYear() &&
+         d.getMonth()    === now.getMonth()    &&
+         d.getDate()     === now.getDate();
+}
 
 export default function RssPanel({ open, onToggle }) {
   const [activeFeed, setActiveFeed] = useState('corriere');
@@ -42,19 +53,23 @@ export default function RssPanel({ open, onToggle }) {
   }
 
   const feed = FEEDS.find(f => f.id === activeFeed);
-  const items = articles[activeFeed] || [];
+  const allItems = articles[activeFeed] || [];
+  // Filtra solo oggi per Corriere; altrimenti mostra tutto
+  const items = feed.filterToday
+    ? allItems.filter(item => isToday(item.pubDate))
+    : allItems;
   const isLoading = loading[activeFeed];
 
-  function formatDate(str) {
+  function formatTime(str) {
     if (!str) return '';
-    try { return new Date(str).toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }); }
+    try { return new Date(str).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' }); }
     catch(e) { return ''; }
   }
 
   return (
     <div className={`rss-bar ${open ? 'open' : ''}`}>
       <div className="rss-toggle" onClick={onToggle}>
-        <span className="rss-toggle-icon">📰</span>
+        {/* Tab feed */}
         <div className="rss-feed-tabs">
           {FEEDS.map(f => (
             <span key={f.id}
@@ -65,13 +80,19 @@ export default function RssPanel({ open, onToggle }) {
             </span>
           ))}
         </div>
+        {/* Titolo centrato */}
+        <span className="rss-title" style={{ color: feed.color }}>{feed.name}</span>
         <span className="rss-toggle-arrow">{open ? '▼' : '▲'}</span>
       </div>
 
       {open && (
         <div className="rss-content">
           {isLoading && <div className="rss-loading">Caricamento {feed.name}…</div>}
-          {!isLoading && !items.length && <div className="rss-loading">Nessun articolo trovato</div>}
+          {!isLoading && !items.length && (
+            <div className="rss-loading">
+              {feed.filterToday ? 'Nessun articolo di oggi ancora disponibile' : 'Nessun articolo trovato'}
+            </div>
+          )}
           <div className="rss-list">
             {items.map((item, i) => (
               <div key={i} className={`rss-item ${expanded === i ? 'expanded' : ''}`}
@@ -80,7 +101,7 @@ export default function RssPanel({ open, onToggle }) {
                   {item.title}
                 </div>
                 <div className="rss-item-meta">
-                  <span className="rss-item-date">{formatDate(item.pubDate)}</span>
+                  <span className="rss-item-date">{formatTime(item.pubDate)}</span>
                   {expanded === i && (
                     <a className="rss-item-link" href={item.link} target="_blank" rel="noreferrer"
                       onClick={e => e.stopPropagation()} style={{ color: feed.color }}>
