@@ -1586,3 +1586,32 @@ body, .app {
 /* Padding sx panel-col-body aumentato */
 .panel-col-body { padding-left: 16px; }
 .panel-col-header { padding-left: 16px; }
+
+/* ── SchedulePanel testi +20% ── */
+.schedule-panel .schedule-group-label { font-size: 13.2px; }
+.schedule-panel .schedule-count { font-size: 12px; }
+.schedule-panel .schedule-task-title-row { font-size: 14.4px; }
+.schedule-panel .schedule-task-list-right { font-size: 12px; }
+.schedule-panel .cal-panel-label { font-size: 13.2px; }
+.schedule-panel .cal-view-toggle button { font-size: 12px; }
+.schedule-panel .cal-nav-btn { font-size: 15.6px; }
+.schedule-panel .week-day-name { font-size: 9.6px; }
+.schedule-panel .week-day-num { font-size: 14.4px; }
+.schedule-panel .week-task-badge { font-size: 8.4px; }
+.schedule-panel .week-allday-event { font-size: 8.4px; }
+.schedule-panel .week-hour-tick span { font-size: 8.4px; }
+.schedule-panel .week-event-time-mini { font-size: 8.4px; }
+.schedule-panel .week-event-title { font-size: 8.4px; }
+.schedule-panel .week-day-detail-title { font-size: 14.4px; }
+.schedule-panel .cal-event-time { font-size: 10.8px; }
+.schedule-panel .cal-event-title { font-size: 12px; }
+.schedule-panel .cal-task-title { font-size: 12px; }
+.schedule-panel .cal-task-list { font-size: 10.8px; }
+.schedule-panel .mini-cal-dow { font-size: 9.6px; }
+.schedule-panel .mini-cal-day-num { font-size: 12px; }
+.schedule-panel .mini-cal-ev-preview { font-size: 8.4px; }
+.schedule-panel .panel-loading { font-size: 13.2px; }
+
+/* Numero del giorno in alto a destra nella vista mese espansa */
+.mini-cal-grid.expanded .mini-cal-cell { flex-direction: column; align-items: stretch; }
+.mini-cal-grid.expanded .mini-cal-day-num { align-self: flex-end; }

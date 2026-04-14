@@ -17,12 +17,24 @@ const FEEDS = [
   },
 ];
 
-const PROXY = 'https://api.rss2json.com/v1/api.json?rss_url=';
+const ALLORIGINS = 'https://api.allorigins.win/get?url=';
 
 function isRecent(str) {
   if (!str) return false;
   const d = new Date(str);
   return (Date.now() - d.getTime()) < 36 * 3600 * 1000; // ultime 36h
+}
+
+function parseRssXml(xml) {
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(xml, 'text/xml');
+  const items = Array.from(doc.querySelectorAll('item'));
+  return items.map(item => ({
+    title: item.querySelector('title')?.textContent || '',
+    link: item.querySelector('link')?.textContent || '',
+    pubDate: item.querySelector('pubDate')?.textContent || '',
+    description: item.querySelector('description')?.textContent || '',
+  }));
 }
 
 export default function RssPanel({ open, onToggle }) {
@@ -40,10 +52,11 @@ export default function RssPanel({ open, onToggle }) {
     setLoading(prev => ({ ...prev, [id]: true }));
     try {
       const feed = FEEDS.find(f => f.id === id);
-      const r = await fetch(PROXY + encodeURIComponent(feed.url));
+      const r = await fetch(ALLORIGINS + encodeURIComponent(feed.url));
       const d = await r.json();
-      if (d.status === 'ok') {
-        setArticles(prev => ({ ...prev, [id]: d.items }));
+      if (d.contents) {
+        const items = parseRssXml(d.contents);
+        setArticles(prev => ({ ...prev, [id]: items }));
       }
     } catch(e) { console.error('RSS error', e); }
     setLoading(prev => ({ ...prev, [id]: false }));

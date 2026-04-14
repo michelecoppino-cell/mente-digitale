@@ -1,11 +1,24 @@
-import { getToken, getWorkToken } from './auth';
+import { getToken } from './auth';
 
 const GRAPH = 'https://graph.microsoft.com/v1.0';
+
+// Cache token in memoria per evitare acquireTokenSilent ad ogni chiamata
+let _cachedToken = null;
+let _cachedTokenExp = 0;
+
+async function getTokenCached() {
+  if (_cachedToken && Date.now() < _cachedTokenExp) return _cachedToken;
+  _cachedToken = await getToken();
+  _cachedTokenExp = Date.now() + 45 * 60 * 1000; // 45 min (token MS dura 1h)
+  return _cachedToken;
+}
+
+export function invalidateTokenCache() { _cachedToken = null; _cachedTokenExp = 0; }
 
 async function call(path, options = {}, retries = 3) {
   for (let attempt = 0; attempt < retries; attempt++) {
     try {
-      const token = await getToken();
+      const token = await getTokenCached();
       const r = await fetch(GRAPH + path, {
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
         ...options
@@ -75,33 +88,6 @@ export async function getCalendarEvents(startDate, endDate) {
   return d.value;
 }
 
-// Calendario account aziendale — usa token separato
-export async function getWorkCalendarEvents(startDate, endDate) {
-  const start = startDate.toISOString();
-  const end = endDate.toISOString();
-  for (let attempt = 0; attempt < 3; attempt++) {
-    try {
-      const token = await getWorkToken();
-      const r = await fetch(
-        `${GRAPH}/me/calendarView?startDateTime=${start}&endDateTime=${end}&$orderby=start/dateTime&$top=100&$select=subject,start,end,isAllDay`,
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-      if (r.status === 429 || r.status === 503 || r.status === 504) {
-        const wait = parseInt(r.headers.get('Retry-After') || '1') * 1000;
-        await new Promise(res => setTimeout(res, wait));
-        continue;
-      }
-      if (!r.ok) throw new Error(`Work cal error ${r.status}`);
-      const d = await r.json();
-      return d.value || [];
-    } catch (e) {
-      if (attempt === 2) throw e;
-      await new Promise(res => setTimeout(res, (attempt + 1) * 1000));
-    }
-  }
-  return [];
-}
-
 // ── OneDrive Links File ──
 const OD_LINKS_FILE = 'mente-digitale-links.json';
 
@@ -118,7 +104,7 @@ export async function loadODLinksFromCloud() {
 
 export async function saveODLinksToCloud(links) {
   const json = JSON.stringify(links, null, 2);
-  const token = await getToken();
+  const token = await getTokenCached();
   const r = await fetch(
     `https://graph.microsoft.com/v1.0/me/drive/root:/${OD_LINKS_FILE}:/content`,
     {

@@ -73,9 +73,10 @@ export async function login() {
 }
 
 // Login account aziendale — solo calendario
+// Usa prompt=admin_consent per bypassare la policy di blocco utenti del tenant
 export async function loginWork() {
   sessionStorage.setItem('md_login_type', 'work');
-  return msal.loginRedirect({ scopes: WORK_SCOPES, prompt: 'select_account' });
+  return msal.loginRedirect({ scopes: WORK_SCOPES, prompt: 'admin_consent' });
 }
 
 export function logoutWork() {
@@ -87,13 +88,6 @@ export async function getToken() {
   if (!account) throw new Error('Non autenticato');
   try {
     const r = await msal.acquireTokenSilent({ scopes: SCOPES, account });
-    // Rinnova proattivamente se scade entro 5 minuti
-    if ((r.expiresOn?.getTime() || 0) - Date.now() < 5 * 60 * 1000) {
-      try {
-        const fresh = await msal.acquireTokenSilent({ scopes: SCOPES, account, forceRefresh: true });
-        return fresh.accessToken;
-      } catch (e2) {}
-    }
     return r.accessToken;
   } catch (e) {
     if (e instanceof InteractionRequiredAuthError) {
@@ -109,12 +103,6 @@ export async function getWorkToken() {
   if (!account) throw new Error('Account aziendale non connesso');
   try {
     const r = await msal.acquireTokenSilent({ scopes: WORK_SCOPES, account });
-    if ((r.expiresOn?.getTime() || 0) - Date.now() < 5 * 60 * 1000) {
-      try {
-        const fresh = await msal.acquireTokenSilent({ scopes: WORK_SCOPES, account, forceRefresh: true });
-        return fresh.accessToken;
-      } catch (e2) {}
-    }
     return r.accessToken;
   } catch (e) {
     if (e instanceof InteractionRequiredAuthError) {
