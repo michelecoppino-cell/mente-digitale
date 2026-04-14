@@ -19,13 +19,10 @@ const FEEDS = [
 
 const PROXY = 'https://api.rss2json.com/v1/api.json?rss_url=';
 
-function isToday(str) {
+function isRecent(str) {
   if (!str) return false;
   const d = new Date(str);
-  const now = new Date();
-  return d.getFullYear() === now.getFullYear() &&
-         d.getMonth()    === now.getMonth()    &&
-         d.getDate()     === now.getDate();
+  return (Date.now() - d.getTime()) < 36 * 3600 * 1000; // ultime 36h
 }
 
 export default function RssPanel({ open, onToggle }) {
@@ -54,9 +51,9 @@ export default function RssPanel({ open, onToggle }) {
 
   const feed = FEEDS.find(f => f.id === activeFeed);
   const allItems = articles[activeFeed] || [];
-  // Filtra solo oggi per Corriere; altrimenti mostra tutto
+  // Corriere: ultime 36h (copre sempre almeno oggi); Sadhguru: tutto
   const items = feed.filterToday
-    ? allItems.filter(item => isToday(item.pubDate))
+    ? allItems.filter(item => isRecent(item.pubDate))
     : allItems;
   const isLoading = loading[activeFeed];
 
@@ -69,7 +66,6 @@ export default function RssPanel({ open, onToggle }) {
   return (
     <div className={`rss-bar ${open ? 'open' : ''}`}>
       <div className="rss-toggle" onClick={onToggle}>
-        {/* Tab feed */}
         <div className="rss-feed-tabs">
           {FEEDS.map(f => (
             <span key={f.id}
@@ -80,8 +76,6 @@ export default function RssPanel({ open, onToggle }) {
             </span>
           ))}
         </div>
-        {/* Titolo centrato */}
-        <span className="rss-title" style={{ color: feed.color }}>{feed.name}</span>
         <span className="rss-toggle-arrow">{open ? '▼' : '▲'}</span>
       </div>
 

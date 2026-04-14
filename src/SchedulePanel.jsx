@@ -18,9 +18,6 @@ function parseLocalDate(s) {
   const d = new Date(s.endsWith('Z')?s:s+'Z');
   return new Date(d.getFullYear(),d.getMonth(),d.getDate());
 }
-function fmtDate(s) {
-  return parseLocalDate(s).toLocaleDateString('it-IT',{day:'2-digit',month:'2-digit'});
-}
 
 const MONTHS_IT = ['Gennaio','Febbraio','Marzo','Aprile','Maggio','Giugno','Luglio','Agosto','Settembre','Ottobre','Novembre','Dicembre'];
 const DAYS_IT   = ['L','M','M','G','V','S','D'];
@@ -52,19 +49,19 @@ function groupTasks(tasks) {
   return groups.filter(g=>g.tasks.length>0);
 }
 
-// Posizione verticale di un evento nella griglia
-function evTop(e) {
+// Posizione verticale di un evento nella griglia (hh = px per ora)
+function evTop(e, hh) {
   if (!e.start?.dateTime) return 0;
   const dt = new Date(e.start.dateTime);
-  return Math.max(0, (dt.getHours() + dt.getMinutes()/60 - START_HOUR) * HOUR_H);
+  return Math.max(0, (dt.getHours() + dt.getMinutes()/60 - START_HOUR) * hh);
 }
-function evHeight(e) {
-  if (!e.start?.dateTime || !e.end?.dateTime) return HOUR_H;
+function evHeight(e, hh) {
+  if (!e.start?.dateTime || !e.end?.dateTime) return hh;
   const dur = (new Date(e.end.dateTime) - new Date(e.start.dateTime)) / 3600000;
-  return Math.max(dur * HOUR_H, 14);
+  return Math.max(dur * hh, 14);
 }
 
-export default function SchedulePanel({ open, onClose, preloadedTasks, onSelectSection, todoListsMap, sectionsMap }) {
+export default function SchedulePanel({ open, onClose, preloadedTasks, onSelectSection, sectionsMap }) {
   const [tasks, setTasks] = useState([]);
   const [loading, setLoading] = useState(false);
   const [calView, setCalView] = useState('week'); // 'week' | 'month'
@@ -74,7 +71,7 @@ export default function SchedulePanel({ open, onClose, preloadedTasks, onSelectS
   const [events, setEvents]     = useState([]);
   const [taskDates, setTaskDates] = useState([]);
   const [selectedDay, setSelectedDay] = useState(null);
-  const [calLoading, setCalLoading] = useState(false);
+  const [, setCalLoading] = useState(false);
   const gridRef = useRef(null);
 
   useEffect(() => {
@@ -98,9 +95,9 @@ export default function SchedulePanel({ open, onClose, preloadedTasks, onSelectS
   useEffect(() => {
     if (open && calView==='week' && gridRef.current) {
       const h = new Date().getHours() - 1;
-      gridRef.current.scrollTop = Math.max(0, (h - START_HOUR) * HOUR_H);
+      gridRef.current.scrollTop = Math.max(0, (h - START_HOUR) * effectiveHourH);
     }
-  }, [open, calView]);
+  }, [open, calView, calExpanded]);
 
   async function load() {
     setLoading(true);
@@ -195,13 +192,14 @@ export default function SchedulePanel({ open, onClose, preloadedTasks, onSelectS
   // Ore da visualizzare (ogni 4h per compattezza)
   const hours = Array.from({length: END_HOUR - START_HOUR}, (_, i) => START_HOUR + i);
   const hourTicks = hours.filter(h => h % 4 === 0);
-  const totalH = hours.length * HOUR_H;
+  const effectiveHourH = calExpanded ? HOUR_H * 2 : HOUR_H;
+  const totalH = hours.length * effectiveHourH;
 
   // Ora corrente per la linea rossa
   const nowOffset = (() => {
     const now = new Date();
     const h = now.getHours() + now.getMinutes()/60;
-    return (h >= START_HOUR && h <= END_HOUR) ? (h - START_HOUR) * HOUR_H : null;
+    return (h >= START_HOUR && h <= END_HOUR) ? (h - START_HOUR) * effectiveHourH : null;
   })();
 
   return (
@@ -290,7 +288,7 @@ export default function SchedulePanel({ open, onClose, preloadedTasks, onSelectS
                 <div className="week-time-axis" style={{height: totalH, position:'relative'}}>
                   {hourTicks.map(h => (
                     <div key={h} className="week-hour-tick"
-                      style={{position:'absolute', top:(h-START_HOUR)*HOUR_H, width:'100%'}}>
+                      style={{position:'absolute', top:(h-START_HOUR)*effectiveHourH, width:'100%'}}>
                       <span>{h}</span>
                     </div>
                   ))}
@@ -307,7 +305,7 @@ export default function SchedulePanel({ open, onClose, preloadedTasks, onSelectS
                       style={{height: totalH}}>
                       {/* Linee ore */}
                       {hours.map(h => (
-                        <div key={h} className="week-hour-line" style={{top:(h-START_HOUR)*HOUR_H}}/>
+                        <div key={h} className="week-hour-line" style={{top:(h-START_HOUR)*effectiveHourH}}/>
                       ))}
                       {/* Linea ora corrente */}
                       {isToday && nowOffset !== null && (
@@ -316,7 +314,7 @@ export default function SchedulePanel({ open, onClose, preloadedTasks, onSelectS
                       {/* Eventi */}
                       {dayEvs.map((e,j) => (
                         <div key={j} className="week-event-block"
-                          style={{top: evTop(e), height: evHeight(e)}}
+                          style={{top: evTop(e, effectiveHourH), height: evHeight(e, effectiveHourH)}}
                           title={e.subject}>
                           <span className="week-event-time-mini">
                             {new Date(e.start.dateTime).toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit'})}
