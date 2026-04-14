@@ -2,9 +2,9 @@ import { useState, useEffect } from 'react';
 
 const FEEDS = [
   {
-    id: 'corriere',
-    name: 'Corriere della Sera',
-    url: 'https://www.corriere.it/rss/homepage.xml',
+    id: 'ansa',
+    name: 'ANSA',
+    url: 'https://www.ansa.it/sito/notizie/topnews/topnews_rss.xml',
     color: '#c8a96e',
     filterToday: true,
   },
@@ -17,7 +17,7 @@ const FEEDS = [
   },
 ];
 
-const CORS_PROXY = 'https://corsproxy.io/?';
+const RSS2JSON = 'https://api.rss2json.com/v1/api.json?rss_url=';
 
 function isRecent(str) {
   if (!str) return false;
@@ -25,20 +25,8 @@ function isRecent(str) {
   return (Date.now() - d.getTime()) < 36 * 3600 * 1000; // ultime 36h
 }
 
-function parseRssXml(xml) {
-  const parser = new DOMParser();
-  const doc = parser.parseFromString(xml, 'text/xml');
-  const items = Array.from(doc.querySelectorAll('item'));
-  return items.map(item => ({
-    title: item.querySelector('title')?.textContent || '',
-    link: item.querySelector('link')?.textContent || '',
-    pubDate: item.querySelector('pubDate')?.textContent || '',
-    description: item.querySelector('description')?.textContent || '',
-  }));
-}
-
 export default function RssPanel({ open, onToggle }) {
-  const [activeFeed, setActiveFeed] = useState('corriere');
+  const [activeFeed, setActiveFeed] = useState('ansa');
   const [articles, setArticles] = useState({});
   const [loading, setLoading] = useState({});
   const [expanded, setExpanded] = useState(null);
@@ -52,10 +40,11 @@ export default function RssPanel({ open, onToggle }) {
     setLoading(prev => ({ ...prev, [id]: true }));
     try {
       const feed = FEEDS.find(f => f.id === id);
-      const r = await fetch(CORS_PROXY + encodeURIComponent(feed.url));
-      const xml = await r.text();
-      const items = parseRssXml(xml);
-      setArticles(prev => ({ ...prev, [id]: items }));
+      const r = await fetch(RSS2JSON + encodeURIComponent(feed.url));
+      const d = await r.json();
+      if (d.status === 'ok' && d.items?.length) {
+        setArticles(prev => ({ ...prev, [id]: d.items }));
+      }
     } catch(e) { console.error('RSS error', e); }
     setLoading(prev => ({ ...prev, [id]: false }));
   }

@@ -1100,7 +1100,7 @@ body, .app {
 
 /* ── Larghezze dashboard ── */
 .schedule-panel { width: 385px; }
-.panel { width: 385px; }
+.panel { width: 385px; z-index: 65; } /* sopra rss-bar (z-index 50) */
 
 /* ── Alarm button fisso ── */
 .alarm-btn {
@@ -1620,3 +1620,16 @@ body, .app {
   justify-content: flex-start;
 }
 .mini-cal-grid.expanded .mini-cal-day-num { align-self: flex-end; }
+/* Testo evento su max 2 righe (non troncato a 1 riga) */
+.mini-cal-grid.expanded .mini-cal-ev-preview {
+  white-space: normal;
+  line-height: 1.3;
+  align-items: flex-start;
+}
+.mini-cal-grid.expanded .mini-cal-ev-name {
+  white-space: normal;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
