@@ -49,15 +49,18 @@ function groupTasks(tasks) {
   return groups.filter(g=>g.tasks.length>0);
 }
 
+// Graph restituisce dateTime senza 'Z' ma in UTC — aggiungiamo Z per forzare parsing UTC
+function parseDT(s) { return new Date(s.endsWith('Z') ? s : s + 'Z'); }
+
 // Posizione verticale di un evento nella griglia (hh = px per ora)
 function evTop(e, hh) {
   if (!e.start?.dateTime) return 0;
-  const dt = new Date(e.start.dateTime);
+  const dt = parseDT(e.start.dateTime);
   return Math.max(0, (dt.getHours() + dt.getMinutes()/60 - START_HOUR) * hh);
 }
 function evHeight(e, hh) {
   if (!e.start?.dateTime || !e.end?.dateTime) return hh;
-  const dur = (new Date(e.end.dateTime) - new Date(e.start.dateTime)) / 3600000;
+  const dur = (parseDT(e.end.dateTime) - parseDT(e.start.dateTime)) / 3600000;
   return Math.max(dur * hh, 14);
 }
 
@@ -317,7 +320,7 @@ export default function SchedulePanel({ open, onClose, preloadedTasks, onSelectS
                           style={{top: evTop(e, effectiveHourH), height: evHeight(e, effectiveHourH)}}
                           title={e.subject}>
                           <span className="week-event-time-mini">
-                            {new Date(e.start.dateTime).toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit'})}
+                            {parseDT(e.start.dateTime).toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit'})}
                           </span>
                           <span className="week-event-title">{e.subject}</span>
                         </div>
@@ -340,7 +343,7 @@ export default function SchedulePanel({ open, onClose, preloadedTasks, onSelectS
                     {dayEvs.map((e,i) => (
                       <div key={i} className="cal-event-row">
                         <span className="cal-event-time">
-                          {e.isAllDay ? 'Tutto il giorno' : new Date(e.start.dateTime).toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit'})}
+                          {e.isAllDay ? 'Tutto il giorno' : parseDT(e.start.dateTime).toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit'})}
                         </span>
                         <span className="cal-event-title">{e.subject}</span>
                       </div>
@@ -381,7 +384,7 @@ export default function SchedulePanel({ open, onClose, preloadedTasks, onSelectS
                             <div key={j} className="mini-cal-ev-preview" title={e.subject}>
                               {!e.isAllDay && e.start?.dateTime &&
                                 <span className="mini-cal-ev-time">
-                                  {new Date(e.start.dateTime).toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit'})}
+                                  {parseDT(e.start.dateTime).toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit'})}
                                 </span>}
                               <span className="mini-cal-ev-name">{e.subject}</span>
                             </div>
@@ -411,7 +414,7 @@ export default function SchedulePanel({ open, onClose, preloadedTasks, onSelectS
                     {dayEvs.map((e,i) => (
                       <div key={i} className="cal-event-row">
                         <span className="cal-event-time">
-                          {e.isAllDay ? 'Tutto il giorno' : new Date(e.start.dateTime).toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit'})}
+                          {e.isAllDay ? 'Tutto il giorno' : parseDT(e.start.dateTime).toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit'})}
                         </span>
                         <span className="cal-event-title">{e.subject}</span>
                       </div>
