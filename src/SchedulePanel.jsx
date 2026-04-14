@@ -64,10 +64,11 @@ function evHeight(e) {
   return Math.max(dur * HOUR_H, 14);
 }
 
-export default function SchedulePanel({ open, expanded, onExpand, onClose, preloadedTasks, onSelectSection, todoListsMap, sectionsMap }) {
+export default function SchedulePanel({ open, onClose, preloadedTasks, onSelectSection, todoListsMap, sectionsMap }) {
   const [tasks, setTasks] = useState([]);
   const [loading, setLoading] = useState(false);
   const [calView, setCalView] = useState('week'); // 'week' | 'month'
+  const [calExpanded, setCalExpanded] = useState(false);
   const [calMonth, setCalMonth] = useState(new Date());
   const [calWeek, setCalWeek]   = useState(() => startOfWeek(new Date()));
   const [events, setEvents]     = useState([]);
@@ -204,21 +205,15 @@ export default function SchedulePanel({ open, expanded, onExpand, onClose, prelo
   })();
 
   return (
-    <div className={`schedule-panel ${open?'open':''} ${expanded?'expanded':''}`}>
+    <div className={`schedule-panel ${open?'open':''}`}>
       <div className="schedule-head">
         <h2 className="schedule-panel-title">Attività</h2>
-        <div style={{display:'flex',gap:6,alignItems:'center'}}>
-          <button className="panel-close" onClick={onExpand} title={expanded?'Riduci':'Espandi'}>
-            {expanded ? '⊠' : '⊞'}
-          </button>
-          <button className="panel-close" onClick={onClose}>✕</button>
-        </div>
       </div>
 
       <div className="schedule-panel-inner">
 
         {/* ── Task ── */}
-        <div className="schedule-tasks-section">
+        <div className={`schedule-tasks-section ${calExpanded?'tasks-collapsed':''}`}>
           {loading && <div className="panel-loading">Caricamento…</div>}
           {groups.map(group => (
             <div key={group.key} className="schedule-group">
@@ -240,7 +235,7 @@ export default function SchedulePanel({ open, expanded, onExpand, onClose, prelo
         </div>
 
         {/* ── Calendario ── */}
-        <div className="schedule-cal-section">
+        <div className={`schedule-cal-section ${calExpanded?'cal-expanded':''}`}>
 
           {/* Header */}
           <div className="cal-panel-header">
@@ -260,6 +255,7 @@ export default function SchedulePanel({ open, expanded, onExpand, onClose, prelo
             <div className="cal-view-toggle">
               <button className={calView==='week'?'active':''} onClick={() => setCalView('week')}>Sett.</button>
               <button className={calView==='month'?'active':''} onClick={() => setCalView('month')}>Mese</button>
+              <button className={calExpanded?'active':''} onClick={() => setCalExpanded(e=>!e)} title={calExpanded?'Riduci':'Espandi'}>{calExpanded?'↑':'↓'}</button>
             </div>
           </div>
 
@@ -423,6 +419,7 @@ export default function SchedulePanel({ open, expanded, onExpand, onClose, prelo
 
         </div>
       </div>
+      <button className="panel-close-tab" onClick={onClose} title="Chiudi">—</button>
     </div>
   );
 }

@@ -4,13 +4,13 @@ const FEEDS = [
   {
     id: 'corriere',
     name: 'Corriere della Sera',
-    url: 'https://xml.corriere.it/rss/homepage.xml',
+    url: 'https://www.corriere.it/rss/homepage.xml',
     color: '#c8a96e',
   },
   {
     id: 'sadhguru',
     name: 'Sadhguru',
-    url: 'https://www.sadhguru.org/feed/',
+    url: 'https://feeds.feedburner.com/Sadhguru',
     color: '#9b8ec4',
   },
 ];
@@ -32,7 +32,7 @@ export default function RssPanel({ open, onToggle }) {
     setLoading(prev => ({ ...prev, [id]: true }));
     try {
       const feed = FEEDS.find(f => f.id === id);
-      const r = await fetch(PROXY + encodeURIComponent(feed.url) + '&count=20');
+      const r = await fetch(PROXY + encodeURIComponent(feed.url));
       const d = await r.json();
       if (d.status === 'ok') {
         setArticles(prev => ({ ...prev, [id]: d.items }));

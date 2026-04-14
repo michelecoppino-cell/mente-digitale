@@ -198,7 +198,6 @@ export default function Panel({ selected, pagesCache, tasksCache, onClose }) {
     <div className="panel open">
       <div className="panel-head">
         <div className="panel-title" style={{ color }}>{data.displayName}</div>
-        <button className="panel-close" onClick={onClose}>✕</button>
       </div>
 
       <div className="panel-body panel-3col">
@@ -297,6 +296,7 @@ export default function Panel({ selected, pagesCache, tasksCache, onClose }) {
         </div>
 
       </div>
+      <button className="panel-close-tab" onClick={onClose} title="Chiudi">—</button>
     </div>
   );
 }

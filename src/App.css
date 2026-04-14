@@ -328,7 +328,6 @@
   z-index: 60;
 }
 .schedule-panel.open { transform: translateX(0); }
-.schedule-panel.expanded { width: 100%; left: 0; }
 
 .schedule-head {
   padding: 20px 20px 16px;
@@ -1527,3 +1526,36 @@ body, .app {
 /* Flex ratios per dare più spazio alla griglia 24h */
 .schedule-tasks-section { flex: 3; overflow-y: auto; }
 .schedule-cal-section   { flex: 2; overflow-y: auto; }
+
+/* Espansione calendario in altezza */
+.schedule-tasks-section.tasks-collapsed { flex: 0; min-height: 0; overflow: hidden; padding-top: 0; padding-bottom: 0; border-bottom: none; }
+.schedule-cal-section.cal-expanded      { flex: 1; }
+
+/* ── Tab di chiusura in basso ── */
+.panel-close-tab {
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 48px;
+  height: 20px;
+  background: var(--surface2);
+  border: 1px solid var(--border2);
+  border-bottom: none;
+  border-radius: 8px 8px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, color 0.15s;
+  z-index: 2;
+  flex-shrink: 0;
+}
+.panel-close-tab:hover { background: rgba(255,255,255,0.06); color: var(--text); }
+
+/* Padding sx panel-col-body aumentato */
+.panel-col-body { padding-left: 16px; }
+.panel-col-header { padding-left: 16px; }

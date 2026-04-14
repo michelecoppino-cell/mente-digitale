@@ -2,7 +2,6 @@ import { useEffect, useRef } from 'react';
 import * as d3 from 'd3';
 
 const FONT = 'Outfit, sans-serif';
-const APP_KEYS = ['OneNote', 'OneDrive', 'ToDo'];
 
 export default function MindMap({
   notebooks, sectionsMap, todoListsMap, todoCountMap,
@@ -16,7 +15,6 @@ export default function MindMap({
   const stateRef = useRef({ nodes: [], links: [], activeSection: null });
   const activeSectionRef = useRef(null);
   const todoCountMapRef = useRef({});
-  const lastAppSecIdRef = useRef(null);
 
   // Carica sezioni all'avvio
   useEffect(() => {
@@ -40,11 +38,6 @@ export default function MindMap({
   }, [externalZoom]);
 
   // Sincronizza ref badge e ridisegna quando i conteggi arrivano (async)
-  useEffect(() => {
-    todoCountMapRef.current = todoCountMap;
-    if (gRef.current) drawBadgesStatic();
-  }, [todoCountMap]);
-
   useEffect(() => {
     todoCountMapRef.current = todoCountMap || {};
     if (gRef.current) drawBadgesStatic();
@@ -434,115 +427,6 @@ export default function MindMap({
 
     // Badge: aggiorna posizioni ogni tick
     updateBadgePositions();
-  }
-
-  function drawAppNodes() {
-    const g = gRef.current;
-    if (!g) return;
-    const st = stateRef.current;
-    const sec = st.activeSecNode;
-
-    if (!sec || !sec.x) {
-      g.select('.app-nodes').remove();
-      lastAppSecIdRef.current = null;
-      return;
-    }
-
-    // Ricostruisci solo se sezione cambiata
-    if (lastAppSecIdRef.current === sec.section?.id) {
-      // Aggiorna solo posizioni esistenti
-      const container = svgRef.current?.parentElement;
-      const W = container?.offsetWidth || 800;
-      const H = container?.offsetHeight || 600;
-      const baseAngle = Math.atan2(sec.y - H/2, sec.x - W/2);
-      const appR = 60;
-      const spread = 0.35;
-      g.select('.app-nodes').selectAll('line')
-        .each(function(_, i) {
-          d3.select(this)
-            .attr('x1', sec.x).attr('y1', sec.y)
-            .attr('x2', sec.x + appR * Math.cos(baseAngle + (i-1)*spread))
-            .attr('y2', sec.y + appR * Math.sin(baseAngle + (i-1)*spread));
-        });
-      g.select('.app-nodes').selectAll('circle, text')
-        .each(function(_, i) {
-          const nodeIdx = Math.floor(i / 4);
-          const angle = baseAngle + (nodeIdx - 1) * spread;
-          const ax = sec.x + appR * Math.cos(angle);
-          const ay = sec.y + appR * Math.sin(angle);
-          const el = d3.select(this);
-          if (this.tagName === 'circle') { el.attr('cx', ax).attr('cy', ay); }
-          else { el.attr('x', ax).attr('y', ay); }
-        });
-      return;
-    }
-
-    lastAppSecIdRef.current = sec.section?.id;
-    // Rimuovi layer precedente e ricostruisci
-    g.select('.app-nodes').remove();
-
-    const container = svgRef.current?.parentElement;
-    const W = container?.offsetWidth || 800;
-    const H = container?.offsetHeight || 600;
-    const cxL = W/2, cyL = H/2;
-    const baseAngle = Math.atan2(sec.y - cyL, sec.x - cxL);
-    const appR = 60;
-    const spread = 0.35;
-
-    const appLayer = g.append('g').attr('class', 'app-nodes');
-
-    APP_KEYS.forEach((key, i) => {
-      const angle = baseAngle + (i - 1) * spread;
-      const ax = sec.x + appR * Math.cos(angle);
-      const ay = sec.y + appR * Math.sin(angle);
-      const color = sec.color;
-      const enabled = key === 'OneNote' || (key === 'ToDo' && !!(st.todoListsMap && st.todoListsMap[sec.section.displayName.toLowerCase()]));
-      const opacity = enabled ? 1 : 0.35;
-
-      // Linea
-      appLayer.append('line')
-        .attr('x1', sec.x).attr('y1', sec.y)
-        .attr('x2', ax).attr('y2', ay)
-        .attr('stroke', color).attr('stroke-width', 0.8)
-        .attr('stroke-dasharray', '3 4').attr('stroke-opacity', 0.4);
-
-      // Alone
-      appLayer.append('circle')
-        .attr('cx', ax).attr('cy', ay).attr('r', 16)
-        .attr('fill', color + '07').attr('stroke', 'none');
-
-      // Cerchio
-      appLayer.append('circle')
-        .attr('cx', ax).attr('cy', ay).attr('r', 10)
-        .attr('fill', '#0c0e14')
-        .attr('stroke', enabled ? color : color + '33')
-        .attr('stroke-width', 1.2)
-        .attr('opacity', opacity);
-
-      // Icona
-      const icons = { OneNote: {l:'N',s:13,w:700}, OneDrive: {l:'☁',s:11,w:400}, ToDo: {l:'✓',s:13,w:700} };
-      const ic = icons[key];
-      appLayer.append('text')
-        .attr('x', ax).attr('y', ay)
-        .attr('text-anchor', 'middle').attr('dominant-baseline', 'central')
-        .attr('font-family', 'Outfit,sans-serif')
-        .attr('font-size', ic.s - 1).attr('font-weight', ic.w)
-        .attr('fill', color).attr('opacity', opacity)
-        .attr('pointer-events', 'none')
-        .text(ic.l);
-
-      // Click area
-      if (enabled) {
-        appLayer.append('circle')
-          .attr('cx', ax).attr('cy', ay).attr('r', 14)
-          .attr('fill', 'transparent').attr('cursor', 'pointer')
-          .on('click', (e) => {
-            e.stopPropagation();
-            onSelectSection(sec.section, sec.nb, key);
-          });
-      }
-    });
-
   }
 
   function drawBadgesStatic() {
