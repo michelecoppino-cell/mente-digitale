@@ -716,7 +716,7 @@
 .panel-body.panel-3col {
   display: flex;
   flex-direction: column;
-  height: calc(100% - 56px);
+  height: calc(100% - 78px); /* -56px header, -22px linguetta chiusura */
   overflow: hidden;
   padding: 0;
 }
@@ -1598,10 +1598,10 @@ body, .app {
 .schedule-panel .week-day-name { font-size: 9.6px; }
 .schedule-panel .week-day-num { font-size: 14.4px; }
 .schedule-panel .week-task-badge { font-size: 8.4px; }
-.schedule-panel .week-allday-event { font-size: 8.4px; }
+.schedule-panel .week-allday-event { font-size: 9px; }
 .schedule-panel .week-hour-tick span { font-size: 8.4px; }
-.schedule-panel .week-event-time-mini { font-size: 8.4px; }
-.schedule-panel .week-event-title { font-size: 8.4px; }
+.schedule-panel .week-event-time-mini { font-size: 10px; }
+.schedule-panel .week-event-title { font-size: 11px; }
 .schedule-panel .week-day-detail-title { font-size: 14.4px; }
 .schedule-panel .cal-event-time { font-size: 10.8px; }
 .schedule-panel .cal-event-title { font-size: 12px; }
@@ -1609,9 +1609,14 @@ body, .app {
 .schedule-panel .cal-task-list { font-size: 10.8px; }
 .schedule-panel .mini-cal-dow { font-size: 9.6px; }
 .schedule-panel .mini-cal-day-num { font-size: 12px; }
-.schedule-panel .mini-cal-ev-preview { font-size: 8.4px; }
+.schedule-panel .mini-cal-ev-preview { font-size: 10px; }
+.schedule-panel .mini-cal-ev-time { font-size: 10px; }
 .schedule-panel .panel-loading { font-size: 13.2px; }
 
 /* Numero del giorno in alto a destra nella vista mese espansa */
-.mini-cal-grid.expanded .mini-cal-cell { flex-direction: column; align-items: stretch; }
+.mini-cal-grid.expanded .mini-cal-cell {
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: flex-start;
+}
 .mini-cal-grid.expanded .mini-cal-day-num { align-self: flex-end; }

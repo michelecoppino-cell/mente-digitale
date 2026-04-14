@@ -17,7 +17,7 @@ const FEEDS = [
   },
 ];
 
-const ALLORIGINS = 'https://api.allorigins.win/get?url=';
+const CORS_PROXY = 'https://corsproxy.io/?';
 
 function isRecent(str) {
   if (!str) return false;
@@ -48,16 +48,14 @@ export default function RssPanel({ open, onToggle }) {
   }, [open, activeFeed]);
 
   async function loadFeed(id) {
-    if (articles[id]) return;
+    if (articles[id]?.length) return;
     setLoading(prev => ({ ...prev, [id]: true }));
     try {
       const feed = FEEDS.find(f => f.id === id);
-      const r = await fetch(ALLORIGINS + encodeURIComponent(feed.url));
-      const d = await r.json();
-      if (d.contents) {
-        const items = parseRssXml(d.contents);
-        setArticles(prev => ({ ...prev, [id]: items }));
-      }
+      const r = await fetch(CORS_PROXY + encodeURIComponent(feed.url));
+      const xml = await r.text();
+      const items = parseRssXml(xml);
+      setArticles(prev => ({ ...prev, [id]: items }));
     } catch(e) { console.error('RSS error', e); }
     setLoading(prev => ({ ...prev, [id]: false }));
   }

@@ -380,16 +380,24 @@ export default function SchedulePanel({ open, onClose, preloadedTasks, onSelectS
                       <span className="mini-cal-day-num">{day.getDate()}</span>
                       {calExpanded ? (
                         <div className="mini-cal-previews">
-                          {dayEvs.slice(0,2).map((e,j) => (
-                            <div key={j} className="mini-cal-ev-preview" title={e.subject}>
-                              {!e.isAllDay && e.start?.dateTime &&
-                                <span className="mini-cal-ev-time">
-                                  {parseDT(e.start.dateTime).toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit'})}
-                                </span>}
-                              <span className="mini-cal-ev-name">{e.subject}</span>
-                            </div>
-                          ))}
-                          {hasTk && <div className="mini-cal-ev-preview task-preview">✓ task</div>}
+                          {(() => {
+                            const rows = [];
+                            dayEvs.slice(0, 3).forEach((e, j) => {
+                              if (rows.length >= 3) return;
+                              rows.push(
+                                <div key={j} className="mini-cal-ev-preview" title={e.subject}>
+                                  {!e.isAllDay && e.start?.dateTime &&
+                                    <span className="mini-cal-ev-time">
+                                      {parseDT(e.start.dateTime).toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit'})}
+                                    </span>}
+                                  <span className="mini-cal-ev-name">{e.subject}</span>
+                                </div>
+                              );
+                            });
+                            if (hasTk && rows.length < 3)
+                              rows.push(<div key="tk" className="mini-cal-ev-preview task-preview">✓ task</div>);
+                            return rows;
+                          })()}
                         </div>
                       ) : (
                         <div className="mini-cal-dots">
