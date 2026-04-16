@@ -51,49 +51,29 @@ async function fetchFeed(url) {
   return r.text();
 }
 
-// ── Gemini API (gratuita fino a 1500 req/giorno) ────────────────────────────
-async function callGemini(prompt) {
-  const key = process.env.GEMINI_API_KEY;
-  if (!key) throw new Error('GEMINI_API_KEY non impostato — aggiungilo come GitHub Secret');
+// ── Groq API (gratuita, no carta di credito, 14400 req/giorno) ──────────────
+async function callGroq(prompt) {
+  const key = process.env.GROQ_API_KEY;
+  if (!key) throw new Error('GROQ_API_KEY non impostato — aggiungilo come GitHub Secret (console.groq.com)');
 
-  // Prova gemini-2.0-flash, fallback su gemini-1.5-flash
-  const models = ['gemini-2.0-flash', 'gemini-1.5-flash'];
-  let lastErr;
+  const r = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${key}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: 'llama-3.3-70b-versatile',
+      messages: [{ role: 'user', content: prompt }],
+      temperature: 0.3,
+      max_tokens: 2048,
+    }),
+    signal: AbortSignal.timeout(60000),
+  });
 
-  for (const model of models) {
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`;
-    console.log(`  Provo modello: ${model}`);
-    try {
-      const r = await fetch(url, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: { temperature: 0.3, maxOutputTokens: 2048 },
-        }),
-        signal: AbortSignal.timeout(60000),
-      });
-
-      const data = await r.json();
-
-      if (!r.ok) {
-        console.warn(`  ${model} → HTTP ${r.status}: ${data.error?.message || r.statusText}`);
-        lastErr = new Error(`${model} HTTP ${r.status}: ${data.error?.message}`);
-        continue;
-      }
-
-      const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
-      if (!text) { lastErr = new Error(`${model}: risposta vuota`); continue; }
-
-      console.log(`  ✓ ${model} OK`);
-      return text;
-    } catch(e) {
-      console.warn(`  ${model} → errore: ${e.message}`);
-      lastErr = e;
-    }
-  }
-
-  throw lastErr || new Error('Tutti i modelli Gemini hanno fallito');
+  const data = await r.json();
+  if (!r.ok) throw new Error(`Groq API ${r.status}: ${data.error?.message || r.statusText}`);
+  return data.choices?.[0]?.message?.content || '';
 }
 
 // ── Main ─────────────────────────────────────────────────────────────────────
@@ -145,8 +125,8 @@ Rispondi SOLO con JSON valido, zero testo prima o dopo il JSON:
   ]
 }`;
 
-  console.log('[generate-news] Chiamo Gemini Flash...');
-  const text = await callGemini(prompt);
+  console.log('[generate-news] Chiamo Groq (Llama 3.3 70B)...');
+  const text = await callGroq(prompt);
 
   const jsonMatch = text.match(/\{[\s\S]*\}/);
   if (!jsonMatch) throw new Error('Risposta Claude non contiene JSON');
