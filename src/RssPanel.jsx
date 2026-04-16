@@ -26,48 +26,93 @@ function isRecent(str) {
 }
 
 // ── Briefing AI ──────────────────────────────────────────────────────────────
+const BRIEFING_SECTIONS = [
+  { key: 'mondo',  label: '🌍 Mondo' },
+  { key: 'italia', label: '🇮🇹 Italia' },
+  { key: 'friuli', label: '📍 Friuli' },
+];
+
+const EMPTY_STATE = { items: null, loading: false, error: null, generatedAt: null };
+
 function BriefingTab({ color }) {
-  const [data, setData] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [expanded, setExpanded] = useState(null); // 'mondo' | 'italia' | 'friuli' | null
+  const [sections, setSections] = useState({
+    mondo:  { ...EMPTY_STATE },
+    italia: { ...EMPTY_STATE },
+    friuli: { ...EMPTY_STATE },
+  });
+  const [expanded, setExpanded] = useState(null);
 
-  useEffect(() => {
-    fetch('/news-summary.json?t=' + Math.floor(Date.now() / 300000)) // cache 5 min
-      .then(r => r.ok ? r.json() : null)
-      .then(d => { setData(d); setLoading(false); })
-      .catch(() => setLoading(false));
-  }, []);
+  async function fetchSection(key) {
+    setSections(prev => ({ ...prev, [key]: { ...prev[key], loading: true, error: null } }));
+    try {
+      const r = await fetch('/api/briefing', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ section: key }),
+      });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error || `HTTP ${r.status}`);
+      setSections(prev => ({
+        ...prev,
+        [key]: { items: d.items, loading: false, error: null, generatedAt: d.generatedAt },
+      }));
+    } catch (e) {
+      setSections(prev => ({ ...prev, [key]: { ...prev[key], loading: false, error: e.message } }));
+    }
+  }
 
-  if (loading) return <div className="rss-loading">Caricamento briefing…</div>;
-  if (!data) return <div className="rss-loading">Briefing non disponibile — verrà generato automaticamente ogni 3h.</div>;
-
-  const sections = [
-    { key: 'mondo',  label: '🌍 Mondo',  items: data.sections?.mondo  || [] },
-    { key: 'italia', label: '🇮🇹 Italia', items: data.sections?.italia || [] },
-    { key: 'friuli', label: '📍 Friuli',  items: data.sections?.friuli || [] },
-  ];
-
-  const genDate = data.generatedAt ? new Date(data.generatedAt) : null;
-  const genLabel = genDate ? genDate.toLocaleString('it-IT', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '';
+  function handleToggle(key) {
+    const opening = expanded !== key;
+    setExpanded(opening ? key : null);
+    if (opening && !sections[key].items && !sections[key].loading) {
+      fetchSection(key);
+    }
+  }
 
   return (
     <div className="briefing-content">
-      {genLabel && <div className="briefing-meta">Aggiornato {genLabel}</div>}
-      {sections.map(sec => (
-        <div key={sec.key} className="briefing-section">
-          <div className="briefing-section-header"
-            onClick={() => setExpanded(expanded === sec.key ? null : sec.key)}>
-            <span>{sec.label}</span>
-            <span className="briefing-chevron">{expanded === sec.key ? '▾' : '▸'}</span>
-          </div>
-          {(expanded === sec.key || expanded === null) && sec.items.map((item, i) => (
-            <div key={i} className="briefing-item">
-              <div className="briefing-item-title" style={{ color }}>{item.title}</div>
-              <div className="briefing-item-summary">{item.summary}</div>
+      {BRIEFING_SECTIONS.map(({ key, label }) => {
+        const sec = sections[key];
+        const isOpen = expanded === key;
+        const genLabel = sec.generatedAt
+          ? new Date(sec.generatedAt).toLocaleString('it-IT', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
+          : null;
+
+        return (
+          <div key={key} className="briefing-section">
+            <div className="briefing-section-header" onClick={() => handleToggle(key)}>
+              <span>{label}</span>
+              <div className="briefing-header-right">
+                {sec.items && !sec.loading && (
+                  <span className="briefing-refresh" title="Aggiorna"
+                    onClick={e => { e.stopPropagation(); fetchSection(key); }}>↺</span>
+                )}
+                {sec.loading && <span className="briefing-spinner" />}
+                <span className="briefing-chevron">{isOpen ? '▾' : '▸'}</span>
+              </div>
             </div>
-          ))}
-        </div>
-      ))}
+
+            {isOpen && (
+              <div>
+                {sec.loading && <div className="rss-loading">Generazione in corso…</div>}
+                {sec.error && <div className="briefing-error">{sec.error}</div>}
+                {!sec.loading && !sec.items && !sec.error && (
+                  <div className="briefing-empty" onClick={() => fetchSection(key)}>
+                    Tocca per generare il briefing
+                  </div>
+                )}
+                {sec.items?.map((item, i) => (
+                  <div key={i} className="briefing-item">
+                    <div className="briefing-item-title" style={{ color }}>{item.title}</div>
+                    <div className="briefing-item-summary">{item.summary}</div>
+                  </div>
+                ))}
+                {genLabel && <div className="briefing-meta">Generato {genLabel}</div>}
+              </div>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }
