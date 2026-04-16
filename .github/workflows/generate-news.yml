@@ -2,7 +2,7 @@ name: Generate News Summary
 
 on:
   schedule:
-    - cron: '20 */3 * * *'   # ogni 3 ore, al minuto 20
+    - cron: '20 7,19 * * *'   # ogni 12 ore — 07:20 e 19:20 UTC (09:20 e 21:20 ora italiana)
   workflow_dispatch:           # esecuzione manuale da GitHub
 
 jobs:
