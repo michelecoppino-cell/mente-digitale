@@ -1,0 +1,33 @@
+name: Generate News Summary
+
+on:
+  schedule:
+    - cron: '20 */3 * * *'   # ogni 3 ore, al minuto 20
+  workflow_dispatch:           # esecuzione manuale da GitHub
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GH_PAT }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Genera briefing notizie con Claude
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: node scripts/generate-news.mjs
+
+      - name: Commit e push news-summary.json
+        run: |
+          git config user.name "news-bot"
+          git config user.email "news-bot@mente-digitale"
+          git add public/news-summary.json
+          git diff --staged --quiet && echo "Nessuna modifica." || (
+            git commit -m "chore: briefing notizie $(date -u +'%d/%m %H:%M') UTC"
+            git push
+          )

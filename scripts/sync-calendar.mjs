@@ -71,12 +71,57 @@ function parseBody(body) {
   };
 }
 
+// ── Trova la cartella "Calendario" (cerca in top-level e subfolder) ──────────
+async function findCalendarioFolder(h) {
+  // 1. Prova nella cartella Archivio (well-known)
+  try {
+    const r = await fetch(
+      'https://graph.microsoft.com/v1.0/me/mailFolders/archive/childFolders?$top=50',
+      { headers: h }
+    );
+    if (r.ok) {
+      const d = await r.json();
+      const found = (d.value || []).find(f => f.displayName === 'Calendario');
+      if (found) return found.id;
+    }
+  } catch {}
+
+  // 2. Prova top-level
+  const top = await fetch(
+    'https://graph.microsoft.com/v1.0/me/mailFolders?$top=50',
+    { headers: h }
+  ).then(r => r.ok ? r.json() : { value: [] });
+
+  const topLevel = (top.value || []).find(f => f.displayName === 'Calendario');
+  if (topLevel) return topLevel.id;
+
+  // 3. Cerca nei subfolder di ogni cartella top-level
+  for (const folder of (top.value || [])) {
+    if (!folder.childFolderCount) continue;
+    const kids = await fetch(
+      `https://graph.microsoft.com/v1.0/me/mailFolders/${folder.id}/childFolders?$top=50`,
+      { headers: h }
+    ).then(r => r.ok ? r.json() : { value: [] });
+    const found = (kids.value || []).find(f => f.displayName === 'Calendario');
+    if (found) return found.id;
+  }
+  return null;
+}
+
 // ── Main ─────────────────────────────────────────────────────────────────────
 async function run() {
   console.log('[sync-calendar] Avvio...');
 
   const token = await refreshAccessToken();
   const h = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
+
+  // Trova la cartella "Calendario" per l'archiviazione
+  const calendarioId = await findCalendarioFolder(h);
+  if (calendarioId) {
+    console.log('[sync-calendar] Cartella "Calendario" trovata per archiviazione.');
+  } else {
+    console.warn('[sync-calendar] Cartella "Calendario" non trovata — le mail saranno solo marcate come lette.');
+  }
 
   // Cerca mail non lette con oggetto esatto "calendario"
   const mailRes = await fetch(
@@ -119,11 +164,19 @@ async function run() {
       }
     }
 
-    // Segna sempre come letta (anche se skippata) per non riprocessarla
-    await fetch(`https://graph.microsoft.com/v1.0/me/messages/${mail.id}`, {
-      method: 'PATCH', headers: h,
-      body: JSON.stringify({ isRead: true }),
-    });
+    // Sposta in "Calendario" (archivia) — include anche mark-as-read
+    if (calendarioId) {
+      await fetch(`https://graph.microsoft.com/v1.0/me/messages/${mail.id}/move`, {
+        method: 'POST', headers: h,
+        body: JSON.stringify({ destinationId: calendarioId }),
+      });
+    } else {
+      // Fallback: solo mark-as-read
+      await fetch(`https://graph.microsoft.com/v1.0/me/messages/${mail.id}`, {
+        method: 'PATCH', headers: h,
+        body: JSON.stringify({ isRead: true }),
+      });
+    }
   }
 
   console.log(`[sync-calendar] Completato — creati: ${created}, saltati: ${skipped}.`);

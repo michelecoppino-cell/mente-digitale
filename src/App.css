@@ -1587,6 +1587,22 @@ body, .app {
 .panel-col-body { padding-left: 16px; }
 .panel-col-header { padding-left: 16px; }
 
+/* ── Briefing AI ── */
+.briefing-content { padding: 6px 16px 12px; }
+.briefing-meta { font-size: 10px; color: var(--muted); margin-bottom: 8px; }
+.briefing-section { margin-bottom: 10px; }
+.briefing-section-header {
+  display: flex; align-items: center; justify-content: space-between;
+  font-size: 11px; font-weight: 600; letter-spacing: 0.05em;
+  color: var(--text); padding: 4px 0;
+  border-bottom: 1px solid var(--border); cursor: pointer;
+  text-transform: uppercase;
+}
+.briefing-chevron { color: var(--muted); font-size: 10px; }
+.briefing-item { padding: 6px 0; border-bottom: 1px solid rgba(255,255,255,0.04); }
+.briefing-item-title { font-size: 12px; font-weight: 500; margin-bottom: 3px; line-height: 1.3; }
+.briefing-item-summary { font-size: 11px; color: var(--muted); line-height: 1.5; }
+
 /* ── SchedulePanel testi +20% ── */
 .schedule-panel .schedule-group-label { font-size: 13.2px; }
 .schedule-panel .schedule-count { font-size: 12px; }
@@ -1620,11 +1636,19 @@ body, .app {
   justify-content: flex-start;
 }
 .mini-cal-grid.expanded .mini-cal-day-num { align-self: flex-end; }
-/* Testo evento su max 2 righe (non troncato a 1 riga) */
+/* Evento espanso: ora sulla prima riga, descrizione sotto su max 2 righe */
 .mini-cal-grid.expanded .mini-cal-ev-preview {
+  flex-direction: column;
+  align-items: flex-start;
   white-space: normal;
   line-height: 1.3;
-  align-items: flex-start;
+  gap: 0;
+  padding: 1px 3px;
+}
+.mini-cal-grid.expanded .mini-cal-ev-time {
+  font-size: 9px;
+  line-height: 1.2;
+  flex-shrink: 0;
 }
 .mini-cal-grid.expanded .mini-cal-ev-name {
   white-space: normal;
@@ -1632,4 +1656,12 @@ body, .app {
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
+  line-height: 1.3;
 }
+
+/* Calendari condivisi — bordo e sfondo rosso */
+.week-event-block.shared {
+  background: rgba(192, 100, 100, 0.15);
+  border-left-color: #c07a7a;
+}
+.week-event-block.shared .week-event-time-mini { color: #c07a7a; }

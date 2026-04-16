@@ -79,13 +79,50 @@ export async function createTask(listId, title) {
   });
 }
 
+export async function getCalendars() {
+  const d = await call('/me/calendars?$select=id,name,color,isDefaultCalendar,owner&$top=50');
+  return d.value || [];
+}
+
 export async function getCalendarEvents(startDate, endDate) {
   const start = startDate.toISOString();
   const end = endDate.toISOString();
-  const d = await call(
-    `/me/calendarView?startDateTime=${start}&endDateTime=${end}&$orderby=start/dateTime&$top=100&$select=subject,start,end,isAllDay`
+  const params = `startDateTime=${start}&endDateTime=${end}&$orderby=start/dateTime&$top=50&$select=subject,start,end,isAllDay`;
+
+  // Recupera tutti i calendari per distinguere condivisi da propri
+  let calendars = [];
+  try { calendars = await getCalendars(); } catch {}
+
+  if (!calendars.length) {
+    // Fallback: solo calendario default
+    const d = await call(`/me/calendarView?${params}`);
+    return d.value || [];
+  }
+
+  const defaultCal = calendars.find(c => c.isDefaultCalendar) || calendars[0];
+  const userEmail  = (defaultCal?.owner?.address || '').toLowerCase();
+
+  // Fetch in parallelo da tutti i calendari (max 8)
+  const results = await Promise.allSettled(
+    calendars.slice(0, 8).map(cal =>
+      call(`/me/calendars/${cal.id}/calendarView?${params}`)
+        .then(d => {
+          const isOwn = !userEmail || (cal.owner?.address || '').toLowerCase() === userEmail;
+          return (d.value || []).map(e => ({
+            ...e,
+            _calName:   cal.name,
+            _isShared:  !isOwn,
+          }));
+        })
+    )
   );
-  return d.value;
+
+  const allEvents = results.flatMap(r => r.status === 'fulfilled' ? r.value : []);
+  return allEvents.sort((a, b) => {
+    const at = a.start?.dateTime || a.start?.date || '';
+    const bt = b.start?.dateTime || b.start?.date || '';
+    return at.localeCompare(bt);
+  });
 }
 
 // ── OneDrive Links File ──

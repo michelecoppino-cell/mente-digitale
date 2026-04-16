@@ -387,8 +387,8 @@ function CopyBtn({ text }) {
   return (
     <button className="od-open-btn" onClick={handleCopy}
       title={copied ? 'Copiato!' : 'Copia percorso PC'}
-      style={{ color: copied ? '#86c07a' : undefined }}>
-      {copied ? '✓' : '🖥'}
+      style={{ color: copied ? '#86c07a' : 'var(--muted)' }}>
+      {copied ? '✓' : '⊡'}
     </button>
   );
 }

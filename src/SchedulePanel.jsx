@@ -316,9 +316,9 @@ export default function SchedulePanel({ open, onClose, preloadedTasks, onSelectS
                       )}
                       {/* Eventi */}
                       {dayEvs.map((e,j) => (
-                        <div key={j} className="week-event-block"
+                        <div key={j} className={`week-event-block${e._isShared?' shared':''}`}
                           style={{top: evTop(e, effectiveHourH), height: evHeight(e, effectiveHourH)}}
-                          title={e.subject}>
+                          title={e._calName ? `[${e._calName}] ${e.subject}` : e.subject}>
                           <span className="week-event-time-mini">
                             {parseDT(e.start.dateTime).toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit'})}
                           </span>
