@@ -54,26 +54,46 @@ async function fetchFeed(url) {
 // ── Gemini API (gratuita fino a 1500 req/giorno) ────────────────────────────
 async function callGemini(prompt) {
   const key = process.env.GEMINI_API_KEY;
-  if (!key) throw new Error('GEMINI_API_KEY non impostato');
+  if (!key) throw new Error('GEMINI_API_KEY non impostato — aggiungilo come GitHub Secret');
 
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${key}`;
-  const r = await fetch(url, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({
-      contents: [{ parts: [{ text: prompt }] }],
-      generationConfig: { temperature: 0.3, maxOutputTokens: 2048 },
-    }),
-    signal: AbortSignal.timeout(60000),
-  });
+  // Prova gemini-2.0-flash, fallback su gemini-1.5-flash
+  const models = ['gemini-2.0-flash', 'gemini-1.5-flash'];
+  let lastErr;
 
-  if (!r.ok) {
-    const e = await r.json().catch(() => ({}));
-    throw new Error(`Gemini API ${r.status}: ${e.error?.message || r.statusText}`);
+  for (const model of models) {
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`;
+    console.log(`  Provo modello: ${model}`);
+    try {
+      const r = await fetch(url, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: { temperature: 0.3, maxOutputTokens: 2048 },
+        }),
+        signal: AbortSignal.timeout(60000),
+      });
+
+      const data = await r.json();
+
+      if (!r.ok) {
+        console.warn(`  ${model} → HTTP ${r.status}: ${data.error?.message || r.statusText}`);
+        lastErr = new Error(`${model} HTTP ${r.status}: ${data.error?.message}`);
+        continue;
+      }
+
+      const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+      if (!text) { lastErr = new Error(`${model}: risposta vuota`); continue; }
+
+      console.log(`  ✓ ${model} OK`);
+      return text;
+    } catch(e) {
+      console.warn(`  ${model} → errore: ${e.message}`);
+      lastErr = e;
+    }
   }
 
-  const data = await r.json();
-  return data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+  throw lastErr || new Error('Tutti i modelli Gemini hanno fallito');
 }
 
 // ── Main ─────────────────────────────────────────────────────────────────────
