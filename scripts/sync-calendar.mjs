@@ -1,10 +1,15 @@
 /**
  * sync-calendar.mjs
- * Legge mail non lette con oggetto "calendario", crea eventi e le segna come lette.
- * Usato da GitHub Actions — nessuna dipendenza, Node 18+.
+ * Legge mail non lette con oggetto "calendario", crea/aggiorna eventi.
+ * Formato mail:
+ *   Titolo evento
+ *   2026-04-16T20:30:00.0000000   ← start (ISO)
+ *   2026-04-17T03:00:00.0000000   ← end (ISO)
+ *   AAMkAGNj...                   ← Outlook item ID (opzionale)
+ *   updated | created             ← azione (opzionale, default: created)
  *
- * Env richieste: MS_REFRESH_TOKEN
- * Env opzionale: GH_TOKEN + GH_REPO (per aggiornare il segreto automaticamente)
+ * Usato da GitHub Actions — nessuna dipendenza, Node 18+.
+ * Env richiesta: MS_REFRESH_TOKEN
  */
 
 import { writeFileSync } from 'fs';
@@ -15,6 +20,10 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const CLIENT_ID = 'b639e8ea-2c30-4beb-8226-46e342721a50';
 const TOKEN_URL = 'https://login.microsoftonline.com/consumers/oauth2/v2.0/token';
 const TIMEZONE  = 'Europe/Rome';
+const GRAPH     = 'https://graph.microsoft.com/v1.0';
+
+// Prefisso usato nel body dell'evento per tenere traccia dell'ID originale
+const SYNC_PREFIX = 'sync-id:';
 
 // ── Token ────────────────────────────────────────────────────────────────────
 async function refreshAccessToken() {
@@ -38,47 +47,139 @@ async function refreshAccessToken() {
   }
 
   const data = await res.json();
-
-  // Salva il nuovo refresh token su file — il workflow lo rilegge e aggiorna il segreto
   if (data.refresh_token) {
     writeFileSync(join(__dirname, '.new-refresh-token'), data.refresh_token, 'utf8');
   }
-
   return data.access_token;
 }
 
 // ── Parsing corpo mail ───────────────────────────────────────────────────────
+const ACTIONS = new Set(['updated', 'created', 'new', 'deleted', 'cancelled']);
+// Outlook item ID: base64url o base64 standard, minimo 60 char
+// Includes '.' poiché alcuni ID Outlook ne contengono
+const ID_RE  = /^[A-Za-z0-9+/=_.\-]{60,}$/;
+const ISO_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/;
+
+/** Estrae l'azione da una riga (es. "updated", "Action: updated", "Azione: updated") */
+function extractAction(line) {
+  const lower = line.toLowerCase().trim();
+  if (ACTIONS.has(lower)) return lower;
+  // "Action: updated" / "Azione: aggiornato" etc.
+  const m = lower.match(/(?:action|azione)\s*[:\-]\s*(\w+)/);
+  if (m && ACTIONS.has(m[1])) return m[1];
+  // Riga che contiene solo la parola azione preceduta da eventuali label
+  for (const a of ACTIONS) {
+    if (lower.endsWith(a) && lower.length <= a.length + 20) return a;
+  }
+  return null;
+}
+
 function parseBody(body) {
   let text = body.content || '';
   if (body.contentType === 'html') {
     text = text
       .replace(/<br\s*\/?>/gi, '\n')
       .replace(/<\/p>/gi, '\n')
+      .replace(/<\/div>/gi, '\n')
       .replace(/<[^>]+>/g, '')
       .replace(/&nbsp;/g, ' ')
       .replace(/&amp;/g, '&')
       .replace(/&lt;/g, '<')
       .replace(/&gt;/g, '>');
   }
-  const lines   = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
-  const isoRe   = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/;
-  const dtLines = lines.filter(l => isoRe.test(l));
-  const txtLines= lines.filter(l => !isoRe.test(l));
-  return {
-    title: txtLines[0] || 'Evento',
-    start: dtLines[0]?.substring(0, 19) ?? null,
-    end:   dtLines[1]?.substring(0, 19) ?? dtLines[0]?.substring(0, 19) ?? null,
+
+  const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+
+  // Debug: mostra tutte le righe estratte
+  console.log(`  [DEBUG] Righe estratte (${lines.length}):`);
+  lines.forEach((l, i) => console.log(`    [${i}] ${l.substring(0, 120)}`));
+
+  const dtLines  = lines.filter(l => ISO_RE.test(l));
+  const idLine   = lines.find(l => ID_RE.test(l) && !ISO_RE.test(l));
+
+  // Cerca azione: prima riga che "suona" come un'azione
+  let detectedAction = null;
+  let actLineRaw = null;
+  for (const l of lines) {
+    const a = extractAction(l);
+    if (a) { detectedAction = a; actLineRaw = l; break; }
+  }
+
+  const txtLines = lines.filter(l =>
+    !ISO_RE.test(l) &&
+    !extractAction(l) &&
+    !(idLine && l === idLine)
+  );
+
+  const result = {
+    title:  txtLines[0] || 'Evento',
+    start:  dtLines[0]?.substring(0, 19) ?? null,
+    end:    dtLines[1]?.substring(0, 19) ?? dtLines[0]?.substring(0, 19) ?? null,
+    extId:  idLine || null,
+    action: detectedAction || 'created',
   };
+
+  console.log(`  [DEBUG] → title="${result.title}" action="${result.action}" extId="${result.extId?.substring(0,20) ?? 'null'}…" start="${result.start}"`);
+  return result;
 }
 
-// ── Trova la cartella "Calendario" (cerca in top-level e subfolder) ──────────
+// ── Cerca evento esistente per extId nel body ────────────────────────────────
+async function findEventByExtId(h, extId, startHint) {
+  // Cerca in un range di ±60 giorni attorno alla data dell'evento
+  const ref = startHint ? new Date(startHint) : new Date();
+  const from = new Date(ref); from.setDate(from.getDate() - 60);
+  const to   = new Date(ref); to.setDate(to.getDate() + 60);
+
+  const url = `${GRAPH}/me/calendarView` +
+    `?startDateTime=${from.toISOString()}&endDateTime=${to.toISOString()}` +
+    `&$top=100&$select=id,subject,body`;
+
+  const r = await fetch(url, { headers: h });
+  if (!r.ok) return null;
+
+  const events = (await r.json()).value || [];
+  return events.find(e =>
+    e.body?.content?.includes(SYNC_PREFIX + extId) ||
+    e.body?.content?.includes(extId)
+  ) || null;
+}
+
+// ── Crea evento (con extId nel body per trovarlo in futuro) ──────────────────
+async function createEvent(h, { title, start, end, extId }) {
+  const bodyContent = extId ? `${SYNC_PREFIX}${extId}` : '';
+  const payload = {
+    subject: title,
+    start: { dateTime: start, timeZone: TIMEZONE },
+    end:   { dateTime: end,   timeZone: TIMEZONE },
+    ...(bodyContent && {
+      body: { contentType: 'text', content: bodyContent }
+    }),
+  };
+
+  const r = await fetch(`${GRAPH}/me/events`, {
+    method: 'POST', headers: h,
+    body: JSON.stringify(payload),
+  });
+
+  if (!r.ok) {
+    const e = await r.json();
+    throw new Error(e.error?.message || `HTTP ${r.status}`);
+  }
+  return r.json();
+}
+
+// ── Elimina evento ───────────────────────────────────────────────────────────
+async function deleteEvent(h, eventId) {
+  const r = await fetch(`${GRAPH}/me/events/${eventId}`, {
+    method: 'DELETE', headers: h,
+  });
+  return r.status === 204 || r.ok;
+}
+
+// ── Trova la cartella "Calendario" ───────────────────────────────────────────
 async function findCalendarioFolder(h) {
-  // 1. Prova nella cartella Archivio (well-known)
   try {
-    const r = await fetch(
-      'https://graph.microsoft.com/v1.0/me/mailFolders/archive/childFolders?$top=50',
-      { headers: h }
-    );
+    const r = await fetch(`${GRAPH}/me/mailFolders/archive/childFolders?$top=50`, { headers: h });
     if (r.ok) {
       const d = await r.json();
       const found = (d.value || []).find(f => f.displayName === 'Calendario');
@@ -86,20 +187,16 @@ async function findCalendarioFolder(h) {
     }
   } catch {}
 
-  // 2. Prova top-level
-  const top = await fetch(
-    'https://graph.microsoft.com/v1.0/me/mailFolders?$top=50',
-    { headers: h }
-  ).then(r => r.ok ? r.json() : { value: [] });
+  const top = await fetch(`${GRAPH}/me/mailFolders?$top=50`, { headers: h })
+    .then(r => r.ok ? r.json() : { value: [] });
 
   const topLevel = (top.value || []).find(f => f.displayName === 'Calendario');
   if (topLevel) return topLevel.id;
 
-  // 3. Cerca nei subfolder di ogni cartella top-level
   for (const folder of (top.value || [])) {
     if (!folder.childFolderCount) continue;
     const kids = await fetch(
-      `https://graph.microsoft.com/v1.0/me/mailFolders/${folder.id}/childFolders?$top=50`,
+      `${GRAPH}/me/mailFolders/${folder.id}/childFolders?$top=50`,
       { headers: h }
     ).then(r => r.ok ? r.json() : { value: [] });
     const found = (kids.value || []).find(f => f.displayName === 'Calendario');
@@ -115,17 +212,13 @@ async function run() {
   const token = await refreshAccessToken();
   const h = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
 
-  // Trova la cartella "Calendario" per l'archiviazione
   const calendarioId = await findCalendarioFolder(h);
-  if (calendarioId) {
-    console.log('[sync-calendar] Cartella "Calendario" trovata per archiviazione.');
-  } else {
-    console.warn('[sync-calendar] Cartella "Calendario" non trovata — le mail saranno solo marcate come lette.');
-  }
+  console.log(calendarioId
+    ? '[sync-calendar] Cartella "Calendario" trovata.'
+    : '[sync-calendar] Cartella "Calendario" non trovata — mail solo lette.');
 
-  // Cerca mail non lette con oggetto esatto "calendario"
   const mailRes = await fetch(
-    `https://graph.microsoft.com/v1.0/me/messages` +
+    `${GRAPH}/me/messages` +
     `?$filter=isRead eq false and subject eq 'calendario'` +
     `&$select=id,subject,body,receivedDateTime&$top=50`,
     { headers: h }
@@ -138,48 +231,68 @@ async function run() {
   const mails = (await mailRes.json()).value || [];
   console.log(`[sync-calendar] ${mails.length} mail da elaborare.`);
 
-  let created = 0, skipped = 0;
+  let created = 0, updated = 0, skipped = 0;
 
   for (const mail of mails) {
-    const { title, start, end } = parseBody(mail.body);
+    const { title, start, end, extId, action } = parseBody(mail.body);
 
     if (!start) {
       console.log(`  [SKIP] Nessuna data — mail del ${mail.receivedDateTime}`);
       skipped++;
     } else {
-      const evRes = await fetch('https://graph.microsoft.com/v1.0/me/events', {
-        method: 'POST', headers: h,
-        body: JSON.stringify({
-          subject: title,
-          start: { dateTime: start, timeZone: TIMEZONE },
-          end:   { dateTime: end,   timeZone: TIMEZONE },
-        }),
-      });
-      if (evRes.ok) {
-        console.log(`  ✓ "${title}"  ${start.substring(0,16)} → ${end.substring(11,16)}`);
-        created++;
-      } else {
-        const e = await evRes.json();
-        console.log(`  ✗ Errore per "${title}": ${e.error?.message}`);
+      try {
+        if (action === 'updated' && extId) {
+          // Cerca evento esistente e cancellalo
+          const existing = await findEventByExtId(h, extId, start);
+          if (existing) {
+            await deleteEvent(h, existing.id);
+            console.log(`  ↩ Cancellato vecchio "${existing.subject}"`);
+          } else {
+            console.log(`  ⚠ Nessun evento trovato con ID ${extId.substring(0, 20)}…`);
+          }
+          // Crea il nuovo evento aggiornato
+          await createEvent(h, { title, start, end, extId });
+          console.log(`  ✓ Aggiornato "${title}"  ${start.substring(0,16)} → ${end.substring(11,16)}`);
+          updated++;
+
+        } else if (action === 'deleted' || action === 'cancelled') {
+          // Solo cancellazione
+          if (extId) {
+            const existing = await findEventByExtId(h, extId, start);
+            if (existing) {
+              await deleteEvent(h, existing.id);
+              console.log(`  ✗ Cancellato "${existing.subject}"`);
+            }
+          }
+          skipped++;
+
+        } else {
+          // Creazione normale
+          await createEvent(h, { title, start, end, extId });
+          console.log(`  ✓ Creato "${title}"  ${start.substring(0,16)} → ${end.substring(11,16)}`);
+          created++;
+        }
+      } catch(e) {
+        console.log(`  ✗ Errore "${title}": ${e.message}`);
+        skipped++;
       }
     }
 
-    // Sposta in "Calendario" (archivia) — include anche mark-as-read
+    // Archivia la mail
     if (calendarioId) {
-      await fetch(`https://graph.microsoft.com/v1.0/me/messages/${mail.id}/move`, {
+      await fetch(`${GRAPH}/me/messages/${mail.id}/move`, {
         method: 'POST', headers: h,
         body: JSON.stringify({ destinationId: calendarioId }),
       });
     } else {
-      // Fallback: solo mark-as-read
-      await fetch(`https://graph.microsoft.com/v1.0/me/messages/${mail.id}`, {
+      await fetch(`${GRAPH}/me/messages/${mail.id}`, {
         method: 'PATCH', headers: h,
         body: JSON.stringify({ isRead: true }),
       });
     }
   }
 
-  console.log(`[sync-calendar] Completato — creati: ${created}, saltati: ${skipped}.`);
+  console.log(`[sync-calendar] Completato — creati: ${created}, aggiornati: ${updated}, saltati: ${skipped}.`);
 }
 
 run().catch(e => { console.error('[sync-calendar] ERRORE:', e.message); process.exit(1); });
