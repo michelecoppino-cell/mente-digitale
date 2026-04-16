@@ -123,25 +123,59 @@ function parseBody(body) {
   return result;
 }
 
-// ── Cerca evento esistente per extId nel body ────────────────────────────────
+// ── Cerca evento esistente per extId (tutti i calendari) ────────────────────
 async function findEventByExtId(h, extId, startHint) {
-  // Cerca in un range di ±60 giorni attorno alla data dell'evento
+  // 1. Prova lookup diretto per ID — funziona cross-calendar se extId è un Graph event ID
+  try {
+    const direct = await fetch(
+      `${GRAPH}/me/events/${encodeURIComponent(extId)}?$select=id,subject,body`,
+      { headers: h }
+    );
+    if (direct.ok) {
+      const ev = await direct.json();
+      if (ev.id) {
+        console.log(`  [DEBUG] Trovato direttamente per ID: "${ev.subject}"`);
+        return ev;
+      }
+    }
+  } catch {}
+
+  // 2. Cerca per sync-id nel body su TUTTI i calendari dell'utente
   const ref = startHint ? new Date(startHint) : new Date();
   const from = new Date(ref); from.setDate(from.getDate() - 60);
   const to   = new Date(ref); to.setDate(to.getDate() + 60);
+  const params = `startDateTime=${from.toISOString()}&endDateTime=${to.toISOString()}` +
+    `&$top=200&$select=id,subject,body`;
 
-  const url = `${GRAPH}/me/calendarView` +
-    `?startDateTime=${from.toISOString()}&endDateTime=${to.toISOString()}` +
-    `&$top=100&$select=id,subject,body`;
+  // Recupera tutti i calendari dell'utente
+  const calsRes = await fetch(`${GRAPH}/me/calendars?$select=id,name&$top=20`, { headers: h });
+  const calIds = calsRes.ok
+    ? (await calsRes.json()).value?.map(c => c.id) || []
+    : [];
 
-  const r = await fetch(url, { headers: h });
-  if (!r.ok) return null;
+  // Cerca in ogni calendario (+ default calendarView come fallback)
+  const urls = [
+    `${GRAPH}/me/calendarView?${params}`,
+    ...calIds.map(id => `${GRAPH}/me/calendars/${id}/calendarView?${params}`),
+  ];
 
-  const events = (await r.json()).value || [];
-  return events.find(e =>
-    e.body?.content?.includes(SYNC_PREFIX + extId) ||
-    e.body?.content?.includes(extId)
-  ) || null;
+  for (const url of urls) {
+    try {
+      const r = await fetch(url, { headers: h });
+      if (!r.ok) continue;
+      const events = (await r.json()).value || [];
+      const found = events.find(e =>
+        e.body?.content?.includes(SYNC_PREFIX + extId) ||
+        e.body?.content?.includes(extId)
+      );
+      if (found) {
+        console.log(`  [DEBUG] Trovato per body match: "${found.subject}"`);
+        return found;
+      }
+    } catch {}
+  }
+
+  return null;
 }
 
 // ── Crea evento (con extId nel body per trovarlo in futuro) ──────────────────
