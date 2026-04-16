@@ -1,10 +1,10 @@
 /**
  * Cloudflare Pages Function — /api/briefing
  * Riceve { section: 'mondo'|'italia'|'friuli' }, scarica RSS ANSA,
- * chiama Groq (Llama 3.3 70B) e restituisce { items, generatedAt }.
+ * chiama Mistral e restituisce { items, generatedAt }.
  *
- * Env richiesta: GROQ_API_KEY (secret in Cloudflare Pages)
- * Chiave gratuita: console.groq.com
+ * Env richiesta: MISTRAL_API_KEY (secret in Cloudflare Pages)
+ * Chiave gratuita: console.mistral.ai
  */
 
 const FEEDS = {
@@ -62,8 +62,8 @@ export async function onRequestPost(context) {
 
     if (!FEEDS[section]) return err('Sezione non valida', 400);
 
-    const apiKey = context.env.GROQ_API_KEY;
-    if (!apiKey) return err('GROQ_API_KEY non configurata — aggiungila nei secret di Cloudflare Pages');
+    const apiKey = context.env.MISTRAL_API_KEY;
+    if (!apiKey) return err('MISTRAL_API_KEY non configurata — aggiungila nei secret di Cloudflare Pages');
 
     // Scarica RSS
     const rssRes = await fetch(FEEDS[section], {
@@ -90,15 +90,15 @@ Rispondi SOLO con un array JSON valido, zero testo prima o dopo:
   ...
 ]`;
 
-    // Chiama Groq — Llama 3.3 70B, gratuito
-    const groqRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+    // Chiama Mistral — gratuito, azienda EU
+    const mistralRes = await fetch('https://api.mistral.ai/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${apiKey}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'llama-3.3-70b-versatile',
+        model: 'mistral-small-latest',
         messages: [{ role: 'user', content: prompt }],
         temperature: 0.3,
         max_tokens: 1024,
@@ -106,13 +106,13 @@ Rispondi SOLO con un array JSON valido, zero testo prima o dopo:
       signal: AbortSignal.timeout(30000),
     });
 
-    if (!groqRes.ok) {
-      const e = await groqRes.json().catch(() => ({}));
-      return err(`Groq API ${groqRes.status}: ${e.error?.message || groqRes.statusText}`);
+    if (!mistralRes.ok) {
+      const e = await mistralRes.json().catch(() => ({}));
+      return err(`Mistral API ${mistralRes.status}: ${e.error?.message || mistralRes.statusText}`);
     }
 
-    const groqData = await groqRes.json();
-    const text = groqData.choices?.[0]?.message?.content || '';
+    const mistralData = await mistralRes.json();
+    const text = mistralData.choices?.[0]?.message?.content || '';
     const match = text.match(/\[[\s\S]*\]/);
     if (!match) return err('Risposta non contiene JSON valido');
 
