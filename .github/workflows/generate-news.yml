@@ -17,9 +17,9 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Genera briefing notizie con Claude
+      - name: Genera briefing notizie con Gemini
         env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: node scripts/generate-news.mjs
 
       - name: Commit e push news-summary.json

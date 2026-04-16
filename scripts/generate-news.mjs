@@ -51,33 +51,29 @@ async function fetchFeed(url) {
   return r.text();
 }
 
-// ── Claude API ───────────────────────────────────────────────────────────────
-async function callClaude(prompt) {
-  const key = process.env.ANTHROPIC_API_KEY;
-  if (!key) throw new Error('ANTHROPIC_API_KEY non impostato');
+// ── Gemini API (gratuita fino a 1500 req/giorno) ────────────────────────────
+async function callGemini(prompt) {
+  const key = process.env.GEMINI_API_KEY;
+  if (!key) throw new Error('GEMINI_API_KEY non impostato');
 
-  const r = await fetch('https://api.anthropic.com/v1/messages', {
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${key}`;
+  const r = await fetch(url, {
     method: 'POST',
-    headers: {
-      'x-api-key': key,
-      'anthropic-version': '2023-06-01',
-      'content-type': 'application/json',
-    },
+    headers: { 'content-type': 'application/json' },
     body: JSON.stringify({
-      model: 'claude-haiku-4-5-20251001',
-      max_tokens: 2048,
-      messages: [{ role: 'user', content: prompt }],
+      contents: [{ parts: [{ text: prompt }] }],
+      generationConfig: { temperature: 0.3, maxOutputTokens: 2048 },
     }),
     signal: AbortSignal.timeout(60000),
   });
 
   if (!r.ok) {
     const e = await r.json().catch(() => ({}));
-    throw new Error(`Claude API ${r.status}: ${e.error?.message || r.statusText}`);
+    throw new Error(`Gemini API ${r.status}: ${e.error?.message || r.statusText}`);
   }
 
   const data = await r.json();
-  return data.content[0].text;
+  return data.candidates?.[0]?.content?.parts?.[0]?.text || '';
 }
 
 // ── Main ─────────────────────────────────────────────────────────────────────
@@ -129,8 +125,8 @@ Rispondi SOLO con JSON valido, zero testo prima o dopo il JSON:
   ]
 }`;
 
-  console.log('[generate-news] Chiamo Claude Haiku...');
-  const text = await callClaude(prompt);
+  console.log('[generate-news] Chiamo Gemini Flash...');
+  const text = await callGemini(prompt);
 
   const jsonMatch = text.match(/\{[\s\S]*\}/);
   if (!jsonMatch) throw new Error('Risposta Claude non contiene JSON');
