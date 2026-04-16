@@ -278,16 +278,16 @@ async function run() {
       }
     }
 
-    // Archivia la mail
+    // Marca come letta (sempre, prima di spostare — evita riprocessamento)
+    await fetch(`${GRAPH}/me/messages/${mail.id}`, {
+      method: 'PATCH', headers: h,
+      body: JSON.stringify({ isRead: true }),
+    });
+    // Sposta in "Calendario" se la cartella esiste
     if (calendarioId) {
       await fetch(`${GRAPH}/me/messages/${mail.id}/move`, {
         method: 'POST', headers: h,
         body: JSON.stringify({ destinationId: calendarioId }),
-      });
-    } else {
-      await fetch(`${GRAPH}/me/messages/${mail.id}`, {
-        method: 'PATCH', headers: h,
-        body: JSON.stringify({ isRead: true }),
       });
     }
   }
