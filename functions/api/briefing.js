@@ -1,9 +1,10 @@
 /**
  * Cloudflare Pages Function — /api/briefing
  * Riceve { section: 'mondo'|'italia'|'friuli' }, scarica RSS ANSA,
- * chiama Claude Haiku e restituisce { items, generatedAt }.
+ * chiama Gemini Flash e restituisce { items, generatedAt }.
  *
- * Env richiesta: ANTHROPIC_API_KEY (secret in Cloudflare Pages)
+ * Env richiesta: GEMINI_API_KEY (secret in Cloudflare Pages)
+ * Chiave gratuita: aistudio.google.com
  */
 
 const FEEDS = {
@@ -61,8 +62,8 @@ export async function onRequestPost(context) {
 
     if (!FEEDS[section]) return err('Sezione non valida', 400);
 
-    const apiKey = context.env.ANTHROPIC_API_KEY;
-    if (!apiKey) return err('ANTHROPIC_API_KEY non configurata — aggiungila nei secret di Cloudflare Pages');
+    const apiKey = context.env.GEMINI_API_KEY;
+    if (!apiKey) return err('GEMINI_API_KEY non configurata — aggiungila nei secret di Cloudflare Pages');
 
     // Scarica RSS
     const rssRes = await fetch(FEEDS[section], {
@@ -75,9 +76,9 @@ export async function onRequestPost(context) {
 
     if (!items.length) return json({ items: [], generatedAt: new Date().toISOString() });
 
-    const count  = COUNTS[section];
-    const label  = PROMPTS[section];
-    const news   = items.map((i, n) => `${n + 1}. ${i.title}${i.desc ? ' — ' + i.desc : ''}`).join('\n');
+    const count = COUNTS[section];
+    const label = PROMPTS[section];
+    const news  = items.map((i, n) => `${n + 1}. ${i.title}${i.desc ? ' — ' + i.desc : ''}`).join('\n');
 
     const prompt = `Sei un giornalista italiano. Dalle seguenti notizie ${label} delle ultime 24h, scegli le ${count} più importanti e riassumile.
 
@@ -89,31 +90,27 @@ Rispondi SOLO con un array JSON valido, zero testo prima o dopo:
   ...
 ]`;
 
-    // Chiama Claude Haiku
-    const claudeRes = await fetch('https://api.anthropic.com/v1/messages', {
+    // Chiama Gemini Flash (gratuito)
+    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+    const geminiRes = await fetch(geminiUrl, {
       method: 'POST',
-      headers: {
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01',
-        'content-type': 'application/json',
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        model: 'claude-haiku-4-5-20251001',
-        max_tokens: 1024,
-        messages: [{ role: 'user', content: prompt }],
+        contents: [{ parts: [{ text: prompt }] }],
+        generationConfig: { temperature: 0.3, maxOutputTokens: 1024 },
       }),
       signal: AbortSignal.timeout(45000),
     });
 
-    if (!claudeRes.ok) {
-      const e = await claudeRes.json().catch(() => ({}));
-      return err(`Claude API ${claudeRes.status}: ${e.error?.message || claudeRes.statusText}`);
+    if (!geminiRes.ok) {
+      const e = await geminiRes.json().catch(() => ({}));
+      return err(`Gemini API ${geminiRes.status}: ${e.error?.message || geminiRes.statusText}`);
     }
 
-    const claudeData = await claudeRes.json();
-    const text = claudeData.content?.[0]?.text || '';
+    const geminiData = await geminiRes.json();
+    const text = geminiData.candidates?.[0]?.content?.parts?.[0]?.text || '';
     const match = text.match(/\[[\s\S]*\]/);
-    if (!match) return err('Risposta Claude non contiene JSON valido');
+    if (!match) return err('Risposta Gemini non contiene JSON valido');
 
     const result = JSON.parse(match[0]);
     return json({ items: result, generatedAt: new Date().toISOString() });
