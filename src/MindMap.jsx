@@ -68,13 +68,17 @@ export default function MindMap({
     gRef.current = g;
 
     // Zoom & Pan
+    let zoomRafId = null;
     const zoom = d3.zoom()
       .scaleExtent([0.1, 5])
-      .wheelDelta(e => -e.deltaY * (e.deltaMode === 1 ? 0.05 : e.deltaMode ? 1 : 0.004))
+      .wheelDelta(e => -e.deltaY * (e.deltaMode === 1 ? 0.05 : e.deltaMode ? 1 : 0.002))
       .on('zoom', e => {
-      g.attr('transform', e.transform);
-      onZoomChange(Math.round(e.transform.k * 100) / 100);
-    });
+        g.attr('transform', e.transform); // DOM diretto — sempre istantaneo
+        cancelAnimationFrame(zoomRafId);  // React state: aggiorna solo al prossimo frame disponibile
+        zoomRafId = requestAnimationFrame(() =>
+          onZoomChange(Math.round(e.transform.k * 100) / 100)
+        );
+      });
     zoomRef.current = zoom;
     svg.call(zoom).on('dblclick.zoom', null);
     svg.on('click', () => toggleAppNodes(null));
@@ -151,6 +155,41 @@ export default function MindMap({
 
     // Ridisegna badge con i conteggi già presenti (es. dopo resize)
     drawBadgesStatic();
+  }
+
+  // Zoom adattivo su un notebook e le sue sezioni
+  function zoomToNotebook(nbNode) {
+    const st = stateRef.current;
+    const container = svgRef.current?.parentElement;
+    if (!container) return;
+    const W = container.offsetWidth;
+    const H = container.offsetHeight;
+
+    const secNodes = st.nodes.filter(n => n.type === 'section' && n.nb?.id === nbNode.nb.id);
+    const allNodes = [nbNode, ...secNodes];
+
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    allNodes.forEach(n => {
+      const hw = n.shape === 'rect' ? (n.rw || 52) / 2 : (n.r || 46);
+      const hh = n.shape === 'rect' ? (n.rh || 20) / 2 : (n.r || 46);
+      minX = Math.min(minX, (n.x || 0) - hw);
+      maxX = Math.max(maxX, (n.x || 0) + hw);
+      minY = Math.min(minY, (n.y || 0) - hh);
+      maxY = Math.max(maxY, (n.y || 0) + hh);
+    });
+
+    const pad = 70;
+    minX -= pad; maxX += pad; minY -= pad; maxY += pad;
+    const bw = maxX - minX;
+    const bh = maxY - minY;
+    const scale = Math.min(W / bw, H / bh, 4);
+    const tx = W / 2 - scale * (minX + bw / 2);
+    const ty = H / 2 - scale * (minY + bh / 2);
+
+    d3.select(svgRef.current)
+      .transition().duration(420)
+      .call(zoomRef.current.transform, d3.zoomIdentity.translate(tx, ty).scale(scale));
+    onZoomChange(Math.round(scale * 100) / 100);
   }
 
   // Aggiunge o rimuove nodi app senza ricostruire tutto
@@ -342,6 +381,9 @@ export default function MindMap({
     // Click
     nodeEnter.on('click', (e, d) => {
       e.stopPropagation();
+      if (d.type === 'notebook') {
+        zoomToNotebook(d);
+      }
       if (d.type === 'section') {
         const isActive = activeSectionRef.current === d.section.id;
         toggleAppNodes(isActive ? null : d.section.id);
