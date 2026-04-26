@@ -148,6 +148,9 @@ export default function MindMap({
     d3.select(svgRef.current)
       .call(zoomRef.current.transform, d3.zoomIdentity.translate(initTx, initTy).scale(initScale));
     onZoomChange(initScale);
+
+    // Ridisegna badge con i conteggi già presenti (es. dopo resize)
+    drawBadgesStatic();
   }
 
   // Aggiunge o rimuove nodi app senza ricostruire tutto
