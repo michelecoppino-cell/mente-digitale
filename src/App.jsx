@@ -3,6 +3,7 @@ import { initAuth, getAccount, login } from './auth';
 import { getNotebooks, getSections, getTodoLists, getTodoTasks, getPages } from './api';
 import { cacheGet, cacheSet, cacheClear, TTL } from './cache';
 import MindMap from './MindMap';
+import IdentityPanel from './IdentityPanel';
 import Panel from './Panel';
 import SchedulePanel from './SchedulePanel';
 import RssPanel from './RssPanel';
@@ -229,6 +230,7 @@ export default function App() {
             </svg>
           </button>}
         <div className="canvas-area">
+          <IdentityPanel />
           <SchedulePanel open={scheduleOpen} onClose={() => setScheduleOpen(false)} preloadedTasks={scheduledTasks} onSelectSection={handleSelectSection} todoListsMap={todoListsMap} sectionsMap={sectionsMap} />
           <MindMap
             notebooks={notebooks}

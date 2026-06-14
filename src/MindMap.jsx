@@ -15,6 +15,7 @@ export default function MindMap({
   const stateRef = useRef({ nodes: [], links: [], activeSection: null });
   const activeSectionRef = useRef(null);
   const todoCountMapRef = useRef({});
+  const internalZoomRef = useRef(false); // true durante zoom D3, evita feedback loop
 
   // Carica sezioni all'avvio
   useEffect(() => {
@@ -30,9 +31,10 @@ export default function MindMap({
     buildGraph();
   }, [notebooks, sectionsMap]);
 
-  // Zoom esterno
+  // Zoom esterno (solo da pulsanti, non da wheel D3)
   useEffect(() => {
     if (!zoomRef.current || !svgRef.current) return;
+    if (internalZoomRef.current) { internalZoomRef.current = false; return; }
     d3.select(svgRef.current).transition().duration(220)
       .call(zoomRef.current.scaleTo, externalZoom);
   }, [externalZoom]);
@@ -68,16 +70,13 @@ export default function MindMap({
     gRef.current = g;
 
     // Zoom & Pan
-    let zoomRafId = null;
     const zoom = d3.zoom()
       .scaleExtent([0.1, 5])
-      .wheelDelta(e => -e.deltaY * (e.deltaMode === 1 ? 0.05 : e.deltaMode ? 1 : 0.002))
+      .wheelDelta(e => -e.deltaY * (e.deltaMode === 1 ? 0.05 : e.deltaMode ? 1 : 0.005))
       .on('zoom', e => {
-        g.attr('transform', e.transform); // DOM diretto — sempre istantaneo
-        cancelAnimationFrame(zoomRafId);  // React state: aggiorna solo al prossimo frame disponibile
-        zoomRafId = requestAnimationFrame(() =>
-          onZoomChange(Math.round(e.transform.k * 100) / 100)
-        );
+        g.attr('transform', e.transform);
+        internalZoomRef.current = true; // segnala: questo cambio viene da D3, non da pulsanti
+        onZoomChange(Math.round(e.transform.k * 100) / 100);
       });
     zoomRef.current = zoom;
     svg.call(zoom).on('dblclick.zoom', null);
@@ -258,7 +257,6 @@ export default function MindMap({
     const nodeEnter = nodeSel.enter().append('g')
       .attr('class', 'node')
       .style('cursor', d => {
-        if (d.type === 'notebook') return 'default';
         if (d.type === 'app' && !d.enabled) return 'not-allowed';
         return 'pointer';
       })

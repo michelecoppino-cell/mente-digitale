@@ -125,6 +125,31 @@ export async function getCalendarEvents(startDate, endDate) {
   });
 }
 
+// ── OneDrive Identity Docs ────────────────────────────────────────────────────
+const OD_BUSSOLA_FILE = 'mente-digitale-bussola.json';
+const OD_VISIONE_FILE  = 'mente-digitale-visione.json';
+
+export async function loadIdentityDoc(type) {
+  const filename = type === 'bussola' ? OD_BUSSOLA_FILE : OD_VISIONE_FILE;
+  try {
+    return await call(`/me/drive/root:/${filename}:/content`);
+  } catch {
+    return null;
+  }
+}
+
+export async function saveIdentityDoc(type, data) {
+  const filename = type === 'bussola' ? OD_BUSSOLA_FILE : OD_VISIONE_FILE;
+  const token = await getTokenCached();
+  const r = await fetch(`${GRAPH}/me/drive/root:/${filename}:/content`, {
+    method: 'PUT',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(data, null, 2),
+  });
+  if (!r.ok) throw new Error(`Save identity doc error ${r.status}`);
+  return r.json();
+}
+
 // ── OneDrive Links File ──
 const OD_LINKS_FILE = 'mente-digitale-links.json';
 
