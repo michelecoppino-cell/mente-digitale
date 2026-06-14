@@ -89,24 +89,6 @@ const DEFAULT_VISIONE = {
   ],
 };
 
-function IconCompass() {
-  return (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={OCRA} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
-      <circle cx="12" cy="12" r="10" />
-      <polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76" />
-    </svg>
-  );
-}
-
-function IconEye() {
-  return (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={OCRA} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
-      <circle cx="12" cy="12" r="3" />
-    </svg>
-  );
-}
-
 function IconPencil() {
   return (
     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -116,8 +98,7 @@ function IconPencil() {
   );
 }
 
-export default function IdentityPanel() {
-  const [open, setOpen] = useState(null); // null | 'bussola' | 'visione'
+export default function IdentityPanel({ open, onClose }) {
   const [doc, setDoc] = useState(null);
   const [loading, setLoading] = useState(false);
   const [editing, setEditing] = useState(false);
@@ -145,8 +126,8 @@ export default function IdentityPanel() {
   }, [open]);
 
   function handleClose() {
-    setOpen(null);
     setEditing(false);
+    onClose();
   }
 
   function startEdit() {
@@ -177,7 +158,7 @@ export default function IdentityPanel() {
       setDoc(draft);
       setEditing(false);
       setDraft(null);
-    } catch (e) {
+    } catch {
       setSaveError('Errore durante il salvataggio. Riprova.');
     } finally {
       setSaving(false);
@@ -186,190 +167,142 @@ export default function IdentityPanel() {
 
   const modalTitle = open === 'bussola' ? 'La Bussola' : 'La Visione';
 
+  if (!open) return null;
+
   return (
-    <>
-      {/* Fixed center orb */}
+    <div
+      onClick={e => { if (e.target === e.currentTarget) handleClose(); }}
+      style={{
+        position: 'fixed', inset: 0, zIndex: 300,
+        background: 'rgba(0, 0, 0, 0.72)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+      }}
+    >
       <div style={{
-        position: 'fixed',
-        top: '50%',
-        left: '50%',
-        transform: 'translate(-50%, -50%)',
-        zIndex: 10,
-        pointerEvents: 'none',
+        background: '#0d0f17',
+        border: `1px solid ${OCRA}3a`,
+        borderRadius: 14,
+        width: 'min(660px, 92vw)',
+        maxHeight: '84vh',
+        display: 'flex',
+        flexDirection: 'column',
+        overflow: 'hidden',
+        boxShadow: '0 8px 48px rgba(0,0,0,0.6)',
       }}>
+        {/* Header */}
         <div style={{
-          width: 68,
-          height: 68,
-          borderRadius: '50%',
-          border: `1.5px solid ${OCRA}`,
-          background: 'rgba(8, 9, 16, 0.82)',
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          justifyContent: 'center',
-          gap: 6,
-          pointerEvents: 'all',
-          boxShadow: `0 0 18px 2px ${OCRA}22`,
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          padding: '15px 20px',
+          borderBottom: `1px solid ${OCRA}28`,
+          flexShrink: 0,
         }}>
-          <button
-            onClick={() => setOpen('bussola')}
-            title="La Bussola — Chi sono"
-            style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 2, lineHeight: 1, opacity: 0.9, transition: 'opacity .15s' }}
-            onMouseEnter={e => e.currentTarget.style.opacity = 1}
-            onMouseLeave={e => e.currentTarget.style.opacity = 0.9}
-          >
-            <IconCompass />
-          </button>
-          <div style={{ width: 28, height: 1, background: `${OCRA}44` }} />
-          <button
-            onClick={() => setOpen('visione')}
-            title="La Visione"
-            style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 2, lineHeight: 1, opacity: 0.9, transition: 'opacity .15s' }}
-            onMouseEnter={e => e.currentTarget.style.opacity = 1}
-            onMouseLeave={e => e.currentTarget.style.opacity = 0.9}
-          >
-            <IconEye />
-          </button>
-        </div>
-      </div>
-
-      {/* Modal overlay */}
-      {open && (
-        <div
-          onClick={e => { if (e.target === e.currentTarget) handleClose(); }}
-          style={{
-            position: 'fixed', inset: 0, zIndex: 300,
-            background: 'rgba(0, 0, 0, 0.72)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-          }}
-        >
-          <div style={{
-            background: '#0d0f17',
-            border: `1px solid ${OCRA}3a`,
-            borderRadius: 14,
-            width: 'min(660px, 92vw)',
-            maxHeight: '84vh',
-            display: 'flex',
-            flexDirection: 'column',
-            overflow: 'hidden',
-            boxShadow: `0 8px 48px rgba(0,0,0,0.6)`,
-          }}>
-            {/* Header */}
-            <div style={{
-              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-              padding: '15px 20px',
-              borderBottom: `1px solid ${OCRA}28`,
-              flexShrink: 0,
-            }}>
-              <span style={{ color: OCRA, fontSize: 14, fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase' }}>
-                {modalTitle}
-              </span>
-              <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                {!editing ? (
-                  <button
-                    onClick={startEdit}
-                    title="Modifica"
-                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: OCRA, opacity: 0.65, padding: '4px 6px', borderRadius: 6, transition: 'opacity .15s' }}
-                    onMouseEnter={e => e.currentTarget.style.opacity = 1}
-                    onMouseLeave={e => e.currentTarget.style.opacity = 0.65}
-                  >
-                    <IconPencil />
-                  </button>
-                ) : (
-                  <>
-                    <button
-                      onClick={cancelEdit}
-                      style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#888', padding: '4px 10px', borderRadius: 6, fontSize: 12 }}
-                    >
-                      Annulla
-                    </button>
-                    <button
-                      onClick={handleSave}
-                      disabled={saving}
-                      style={{
-                        background: OCRA, border: 'none', cursor: saving ? 'default' : 'pointer',
-                        color: '#111', padding: '4px 14px', borderRadius: 6,
-                        fontSize: 12, fontWeight: 700, opacity: saving ? 0.7 : 1,
-                      }}
-                    >
-                      {saving ? '…' : 'Salva'}
-                    </button>
-                  </>
-                )}
+          <span style={{ color: OCRA, fontSize: 14, fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase' }}>
+            {modalTitle}
+          </span>
+          <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+            {!editing ? (
+              <button
+                onClick={startEdit}
+                title="Modifica"
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: OCRA, opacity: 0.65, padding: '4px 6px', borderRadius: 6, transition: 'opacity .15s' }}
+                onMouseEnter={e => e.currentTarget.style.opacity = 1}
+                onMouseLeave={e => e.currentTarget.style.opacity = 0.65}
+              >
+                <IconPencil />
+              </button>
+            ) : (
+              <>
                 <button
-                  onClick={handleClose}
-                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#666', padding: '4px 6px', fontSize: 17, lineHeight: 1, marginLeft: 4 }}
+                  onClick={cancelEdit}
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#888', padding: '4px 10px', borderRadius: 6, fontSize: 12 }}
                 >
-                  ✕
+                  Annulla
                 </button>
-              </div>
-            </div>
-
-            {/* Body */}
-            <div style={{ overflowY: 'auto', padding: '22px 26px', flex: 1 }}>
-              {loading ? (
-                <div style={{ color: '#555', textAlign: 'center', padding: 48, fontSize: 13 }}>Caricamento…</div>
-              ) : editing ? (
-                <>
-                  {(draft?.sections || []).map((section, i) => (
-                    <div key={i} style={{ marginBottom: 30 }}>
-                      <input
-                        value={section.title}
-                        onChange={e => updateSection(i, 'title', e.target.value)}
-                        style={{
-                          width: '100%', background: 'transparent', border: 'none',
-                          borderBottom: `1px solid ${OCRA}55`,
-                          color: OCRA, fontSize: 11, fontWeight: 700, letterSpacing: '0.12em',
-                          textTransform: 'uppercase', marginBottom: 10,
-                          padding: '3px 0', outline: 'none', fontFamily: 'inherit',
-                          boxSizing: 'border-box',
-                        }}
-                      />
-                      <textarea
-                        value={section.content}
-                        onChange={e => updateSection(i, 'content', e.target.value)}
-                        rows={Math.max(5, (section.content.match(/\n/g) || []).length + 2)}
-                        style={{
-                          width: '100%', background: '#13151f',
-                          border: `1px solid #2a2d3a`, borderRadius: 7,
-                          color: '#c4c4cc', fontSize: 13, lineHeight: 1.75,
-                          padding: '10px 13px', resize: 'vertical', outline: 'none',
-                          fontFamily: 'inherit', boxSizing: 'border-box',
-                        }}
-                      />
-                    </div>
-                  ))}
-                  {saveError && (
-                    <div style={{ color: '#e07070', fontSize: 12, marginTop: -10, marginBottom: 10 }}>
-                      {saveError}
-                    </div>
-                  )}
-                </>
-              ) : (
-                (doc?.sections || []).map((section, i) => (
-                  <div key={i} style={{ marginBottom: 30 }}>
-                    <div style={{
-                      color: OCRA, fontSize: 11, fontWeight: 700,
-                      letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: 10,
-                    }}>
-                      {section.title}
-                    </div>
-                    {section.content ? (
-                      <div style={{ color: '#c0c0c8', fontSize: 13, lineHeight: 1.8, whiteSpace: 'pre-wrap' }}>
-                        {section.content}
-                      </div>
-                    ) : (
-                      <div style={{ color: '#3a3d4a', fontSize: 13, fontStyle: 'italic' }}>
-                        Ancora vuoto — clicca la matita per aggiungere contenuto.
-                      </div>
-                    )}
-                  </div>
-                ))
-              )}
-            </div>
+                <button
+                  onClick={handleSave}
+                  disabled={saving}
+                  style={{
+                    background: OCRA, border: 'none', cursor: saving ? 'default' : 'pointer',
+                    color: '#111', padding: '4px 14px', borderRadius: 6,
+                    fontSize: 12, fontWeight: 700, opacity: saving ? 0.7 : 1,
+                  }}
+                >
+                  {saving ? '…' : 'Salva'}
+                </button>
+              </>
+            )}
+            <button
+              onClick={handleClose}
+              style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#666', padding: '4px 6px', fontSize: 17, lineHeight: 1, marginLeft: 4 }}
+            >
+              ✕
+            </button>
           </div>
         </div>
-      )}
-    </>
+
+        {/* Body */}
+        <div style={{ overflowY: 'auto', padding: '22px 26px', flex: 1 }}>
+          {loading ? (
+            <div style={{ color: '#555', textAlign: 'center', padding: 48, fontSize: 13 }}>Caricamento…</div>
+          ) : editing ? (
+            <>
+              {(draft?.sections || []).map((section, i) => (
+                <div key={i} style={{ marginBottom: 30 }}>
+                  <input
+                    value={section.title}
+                    onChange={e => updateSection(i, 'title', e.target.value)}
+                    style={{
+                      width: '100%', background: 'transparent', border: 'none',
+                      borderBottom: `1px solid ${OCRA}55`,
+                      color: OCRA, fontSize: 11, fontWeight: 700, letterSpacing: '0.12em',
+                      textTransform: 'uppercase', marginBottom: 10,
+                      padding: '3px 0', outline: 'none', fontFamily: 'inherit',
+                      boxSizing: 'border-box',
+                    }}
+                  />
+                  <textarea
+                    value={section.content}
+                    onChange={e => updateSection(i, 'content', e.target.value)}
+                    rows={Math.max(5, (section.content.match(/\n/g) || []).length + 2)}
+                    style={{
+                      width: '100%', background: '#13151f',
+                      border: '1px solid #2a2d3a', borderRadius: 7,
+                      color: '#c4c4cc', fontSize: 13, lineHeight: 1.75,
+                      padding: '10px 13px', resize: 'vertical', outline: 'none',
+                      fontFamily: 'inherit', boxSizing: 'border-box',
+                    }}
+                  />
+                </div>
+              ))}
+              {saveError && (
+                <div style={{ color: '#e07070', fontSize: 12, marginTop: -10, marginBottom: 10 }}>
+                  {saveError}
+                </div>
+              )}
+            </>
+          ) : (
+            (doc?.sections || []).map((section, i) => (
+              <div key={i} style={{ marginBottom: 30 }}>
+                <div style={{
+                  color: OCRA, fontSize: 11, fontWeight: 700,
+                  letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: 10,
+                }}>
+                  {section.title}
+                </div>
+                {section.content ? (
+                  <div style={{ color: '#c0c0c8', fontSize: 13, lineHeight: 1.8, whiteSpace: 'pre-wrap' }}>
+                    {section.content}
+                  </div>
+                ) : (
+                  <div style={{ color: '#3a3d4a', fontSize: 13, fontStyle: 'italic' }}>
+                    Ancora vuoto — clicca la matita per aggiungere contenuto.
+                  </div>
+                )}
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+    </div>
   );
 }

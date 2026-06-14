@@ -2,11 +2,13 @@ import { useEffect, useRef } from 'react';
 import * as d3 from 'd3';
 
 const FONT = 'Outfit, sans-serif';
+const OCRA = '#c8a96e';
 
 export default function MindMap({
   notebooks, sectionsMap, todoListsMap, todoCountMap,
   onSelectSection, onExpandNotebook,
-  externalZoom, onZoomChange
+  externalZoom, onZoomChange,
+  onIdentityOpen,
 }) {
   const svgRef = useRef();
   const zoomRef = useRef();
@@ -16,6 +18,8 @@ export default function MindMap({
   const activeSectionRef = useRef(null);
   const todoCountMapRef = useRef({});
   const internalZoomRef = useRef(false); // true durante zoom D3, evita feedback loop
+  const openIdentityRef = useRef(null);
+  openIdentityRef.current = onIdentityOpen;
 
   // Carica sezioni all'avvio
   useEffect(() => {
@@ -154,6 +158,46 @@ export default function MindMap({
 
     // Ridisegna badge con i conteggi già presenti (es. dopo resize)
     drawBadgesStatic();
+
+    // ── Orb identità — fisso al baricentro dei notebook ──────────────────────
+    const orb = g.append('g')
+      .attr('class', 'identity-orb')
+      .attr('transform', `translate(${cx},${cy})`)
+      .on('click', e => e.stopPropagation());
+
+    // Cerchio ocra pieno
+    orb.append('circle').attr('r', 28).attr('fill', OCRA);
+
+    // Separatore orizzontale
+    orb.append('line')
+      .attr('x1', -14).attr('x2', 14).attr('y1', 1).attr('y2', 1)
+      .attr('stroke', 'rgba(0,0,0,0.22)').attr('stroke-width', 0.8);
+
+    // Icona bussola — metà superiore
+    const compassG = orb.append('g').attr('transform', 'translate(0,-11)').style('cursor', 'pointer')
+      .on('click', e => { e.stopPropagation(); openIdentityRef.current?.('bussola'); });
+    compassG.append('circle').attr('r', 7).attr('fill', 'none').attr('stroke', 'rgba(0,0,0,0.55)').attr('stroke-width', 1.3);
+    compassG.append('polygon')
+      .attr('points', '2.97,-2.97 1.48,1.48 -2.97,2.97 -1.48,-1.48')
+      .attr('fill', 'rgba(0,0,0,0.55)');
+    // area click metà superiore
+    orb.append('path')
+      .attr('d', 'M-28,0 A28,28 0 0 1 28,0 Z')
+      .attr('fill', 'transparent').style('cursor', 'pointer')
+      .on('click', e => { e.stopPropagation(); openIdentityRef.current?.('bussola'); });
+
+    // Icona occhio — metà inferiore
+    const eyeG = orb.append('g').attr('transform', 'translate(0,11)').style('cursor', 'pointer')
+      .on('click', e => { e.stopPropagation(); openIdentityRef.current?.('visione'); });
+    eyeG.append('path')
+      .attr('d', 'M-7,0 C-5,-3.5 5,-3.5 7,0 C5,3.5 -5,3.5 -7,0 Z')
+      .attr('fill', 'none').attr('stroke', 'rgba(0,0,0,0.55)').attr('stroke-width', 1.3).attr('stroke-linejoin', 'round');
+    eyeG.append('circle').attr('r', 2.2).attr('fill', 'rgba(0,0,0,0.55)');
+    // area click metà inferiore
+    orb.append('path')
+      .attr('d', 'M-28,0 A28,28 0 0 0 28,0 Z')
+      .attr('fill', 'transparent').style('cursor', 'pointer')
+      .on('click', e => { e.stopPropagation(); openIdentityRef.current?.('visione'); });
   }
 
   // Zoom adattivo su un notebook e le sue sezioni

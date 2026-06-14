@@ -22,6 +22,7 @@ export default function App() {
   const [zoom, setZoom] = useState(1);
   const [scheduleOpen, setScheduleOpen] = useState(false);
   const [rssOpen, setRssOpen] = useState(false);
+  const [identityOpen, setIdentityOpen] = useState(null);
   const pagesCache = useRef({});
   const tasksCache = useRef({});
   const [scheduledTasks, setScheduledTasks] = useState(null);
@@ -230,7 +231,7 @@ export default function App() {
             </svg>
           </button>}
         <div className="canvas-area">
-          <IdentityPanel />
+          <IdentityPanel open={identityOpen} onClose={() => setIdentityOpen(null)} />
           <SchedulePanel open={scheduleOpen} onClose={() => setScheduleOpen(false)} preloadedTasks={scheduledTasks} onSelectSection={handleSelectSection} todoListsMap={todoListsMap} sectionsMap={sectionsMap} />
           <MindMap
             notebooks={notebooks}
@@ -241,6 +242,7 @@ export default function App() {
             onExpandNotebook={handleExpandNotebook}
             externalZoom={zoom}
             onZoomChange={setZoom}
+            onIdentityOpen={setIdentityOpen}
           />
           <Panel
             selected={selected}
