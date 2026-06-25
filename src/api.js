@@ -181,3 +181,66 @@ export async function saveODLinksToCloud(links) {
   if (!r.ok) throw new Error(`Save OD links error ${r.status}`);
   return r.json();
 }
+
+// ── OneDrive Planner Files ────────────────────────────────────────────────────
+const OD_DAILY_PLANS_FILE  = 'mente-digitale-daily-plans.json';
+const OD_PLANNER_CFG_FILE  = 'mente-digitale-planner-config.json';
+
+export async function loadDailyPlans() {
+  try {
+    return await call(`/me/drive/root:/${OD_DAILY_PLANS_FILE}:/content`);
+  } catch {
+    return {};
+  }
+}
+
+export async function saveDailyPlans(plans) {
+  // Prune entries older than 90 days
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - 90);
+  const pruned = {};
+  for (const [date, plan] of Object.entries(plans)) {
+    if (new Date(date) >= cutoff) pruned[date] = plan;
+  }
+  const token = await getTokenCached();
+  const r = await fetch(`${GRAPH}/me/drive/root:/${OD_DAILY_PLANS_FILE}:/content`, {
+    method: 'PUT',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(pruned, null, 2),
+  });
+  if (!r.ok) throw new Error(`Save daily plans error ${r.status}`);
+  return r.json();
+}
+
+export async function loadPlannerConfig() {
+  try {
+    return await call(`/me/drive/root:/${OD_PLANNER_CFG_FILE}:/content`);
+  } catch {
+    return null;
+  }
+}
+
+export async function savePlannerConfig(config) {
+  const token = await getTokenCached();
+  const r = await fetch(`${GRAPH}/me/drive/root:/${OD_PLANNER_CFG_FILE}:/content`, {
+    method: 'PUT',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(config, null, 2),
+  });
+  if (!r.ok) throw new Error(`Save planner config error ${r.status}`);
+  return r.json();
+}
+
+export async function getRecentEmails() {
+  const yesterday = new Date();
+  yesterday.setDate(yesterday.getDate() - 1);
+  const iso = yesterday.toISOString();
+  const params = [
+    `$filter=receivedDateTime ge ${iso}`,
+    `$select=subject,from,bodyPreview,receivedDateTime,isRead`,
+    `$top=50`,
+    `$orderby=receivedDateTime desc`,
+  ].join('&');
+  const d = await call(`/me/messages?${params}`);
+  return d?.value || [];
+}

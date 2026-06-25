@@ -1,0 +1,790 @@
+import { useState, useEffect, useRef } from 'react';
+import {
+  loadDailyPlans, saveDailyPlans,
+  loadPlannerConfig, savePlannerConfig,
+  getRecentEmails, completeTask, getCalendarEvents,
+} from './api';
+import { cacheGet, cacheSet } from './cache';
+import './PlannerView.css';
+
+// ── Constants ─────────────────────────────────────────────────────────────────
+const SLOT_HEIGHT      = 48;  // px per 30-min slot
+const DEFAULT_DURATION = 60;  // minutes for newly dropped tasks
+const SAVE_DEBOUNCE    = 2000;
+const PLANS_CACHE_TTL  = 5 * 60 * 1000;
+
+const DEFAULT_CONFIG = {
+  projects: [
+    { key: 'p1', name: 'Progetto 1', color: '#7eb8c9', todoListNames: [] },
+    { key: 'p2', name: 'Progetto 2', color: '#c084a0', todoListNames: [] },
+  ],
+  workdayStart: '08:00',
+  workdayEnd: '20:00',
+};
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function t2m(t) {
+  const [h, m] = t.split(':').map(Number);
+  return h * 60 + (m || 0);
+}
+function m2t(min) {
+  return `${String(Math.floor(min / 60)).padStart(2,'0')}:${String(min % 60).padStart(2,'0')}`;
+}
+function slots(start, end) {
+  const out = [];
+  let cur = t2m(start);
+  while (cur < t2m(end)) { out.push(m2t(cur)); cur += 30; }
+  return out;
+}
+function todayStr() {
+  return new Date().toISOString().split('T')[0];
+}
+function genId() {
+  return Math.random().toString(36).slice(2) + Date.now().toString(36);
+}
+function isoToHHMM(iso) {
+  if (!iso) return null;
+  if (!iso.includes('T')) return iso.slice(0, 5);
+  const d = new Date(iso);
+  return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+}
+function findProject(task, cfg) {
+  const name = (task._listName || '').toLowerCase();
+  for (const p of cfg.projects) {
+    if ((p.todoListNames || []).some(n => n.toLowerCase() === name)) return p;
+  }
+  return null;
+}
+
+// ── Main PlannerView ──────────────────────────────────────────────────────────
+export default function PlannerView({ open, onClose, preloadedTasks = [] }) {
+  const [currentDate, setCurrentDate]       = useState(todayStr);
+  const [plans, setPlans]                   = useState({});
+  const [config, setConfig]                 = useState(DEFAULT_CONFIG);
+  const [todayPlan, setTodayPlan]           = useState({ date: todayStr(), blocks: [], emailExtractedActions: [] });
+  const [calEvents, setCalEvents]           = useState([]);
+  const [rolloverBlocks, setRolloverBlocks] = useState([]);
+  const [projectFilter, setProjectFilter]   = useState('all');
+  const [saveStatus, setSaveStatus]         = useState('idle');
+  const [emailStatus, setEmailStatus]       = useState('idle');
+  const [aiStatus, setAiStatus]             = useState('idle');
+  const [settingsOpen, setSettingsOpen]     = useState(false);
+  const [breakdownModal, setBreakdownModal] = useState(null);
+  const [dragOverTime, setDragOverTime]     = useState(null);
+
+  const timelineBodyRef = useRef(null);
+  const saveTimerRef    = useRef(null);
+  const plansRef        = useRef({});
+  const configRef       = useRef(DEFAULT_CONFIG);
+
+  // ── Load on open / date change ──────────────────────────────────────────────
+  useEffect(() => {
+    if (!open) return;
+    loadAll();
+    // Scroll to current hour on open
+    requestAnimationFrame(() => {
+      if (!timelineBodyRef.current) return;
+      const now = new Date();
+      const workStart = t2m(configRef.current.workdayStart);
+      const cur = now.getHours() * 60 + now.getMinutes();
+      const offset = Math.max(0, (cur - workStart) / 30 * SLOT_HEIGHT - 80);
+      timelineBodyRef.current.scrollTop = offset;
+    });
+  }, [open, currentDate]); // eslint-disable-line
+
+  async function loadAll() {
+    await Promise.all([initConfig(), initPlans()]);
+    fetchCalEvents();
+  }
+
+  async function initConfig() {
+    try {
+      const cached = cacheGet('planner_config');
+      const cfg = cached || await loadPlannerConfig();
+      if (cfg) { setConfig(cfg); configRef.current = cfg; }
+      if (!cached && cfg) cacheSet('planner_config', cfg, 30 * 60 * 1000);
+    } catch (e) { console.error('planner config load', e); }
+  }
+
+  async function initPlans() {
+    try {
+      const cached = cacheGet('daily_plans');
+      const allPlans = cached || await loadDailyPlans() || {};
+      setPlans(allPlans);
+      plansRef.current = allPlans;
+      if (!cached) cacheSet('daily_plans', allPlans, PLANS_CACHE_TTL);
+
+      const dayPlan = allPlans[currentDate] || { date: currentDate, blocks: [], emailExtractedActions: [] };
+      setTodayPlan(dayPlan);
+
+      const yesterday = new Date(currentDate);
+      yesterday.setDate(yesterday.getDate() - 1);
+      const yStr = yesterday.toISOString().split('T')[0];
+      const yPlan = allPlans[yStr];
+      if (yPlan) setRolloverBlocks(yPlan.blocks.filter(b => !b.completed));
+      else setRolloverBlocks([]);
+    } catch (e) { console.error('planner plans load', e); }
+  }
+
+  async function fetchCalEvents() {
+    try {
+      const start = new Date(currentDate + 'T00:00:00');
+      const end   = new Date(currentDate + 'T23:59:59');
+      const evs = await getCalendarEvents(start, end);
+      setCalEvents(evs);
+    } catch (e) { console.error('cal events load', e); }
+  }
+
+  // ── Save ────────────────────────────────────────────────────────────────────
+  function scheduleSave(updatedPlan) {
+    setSaveStatus('saving');
+    clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = setTimeout(async () => {
+      try {
+        const updated = { ...plansRef.current, [currentDate]: updatedPlan };
+        plansRef.current = updated;
+        setPlans(updated);
+        cacheSet('daily_plans', updated, PLANS_CACHE_TTL);
+        await saveDailyPlans(updated);
+        setSaveStatus('saved');
+      } catch (e) {
+        console.error('save plans', e);
+        setSaveStatus('error');
+      }
+    }, SAVE_DEBOUNCE);
+  }
+
+  function mutatePlan(updater) {
+    setTodayPlan(prev => {
+      const next = updater(prev);
+      scheduleSave(next);
+      return next;
+    });
+  }
+
+  // ── DnD ─────────────────────────────────────────────────────────────────────
+  function handleTimelineDragOver(e) {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    if (!timelineBodyRef.current) return;
+    const rect = timelineBodyRef.current.getBoundingClientRect();
+    const relY  = e.clientY - rect.top + timelineBodyRef.current.scrollTop;
+    const workStart  = t2m(configRef.current.workdayStart);
+    const workEnd    = t2m(configRef.current.workdayEnd);
+    const slotIndex  = Math.floor(relY / SLOT_HEIGHT);
+    const clamped    = Math.max(workStart, Math.min(workEnd - 30, workStart + slotIndex * 30));
+    setDragOverTime(m2t(clamped));
+  }
+
+  function handleTimelineDrop(e) {
+    e.preventDefault();
+    if (!dragOverTime) return;
+    try {
+      const data = JSON.parse(e.dataTransfer.getData('text/plain'));
+      if (data.type === 'task')     addBlock(data.task, dragOverTime, false);
+      else if (data.type === 'rollover') addBlock(data.task, dragOverTime, true);
+      else if (data.type === 'block')    moveBlock(data.blockId, dragOverTime);
+    } catch {}
+    setDragOverTime(null);
+  }
+
+  function addBlock(task, startTime, fromRollover) {
+    const proj    = findProject(task, configRef.current);
+    const endMin  = Math.min(t2m(startTime) + DEFAULT_DURATION, t2m(configRef.current.workdayEnd));
+    const newBlock = {
+      id: genId(), taskId: task.id, taskTitle: task.title,
+      listId: task._listId, listName: task._listName,
+      projectKey: proj?.key || null, projectColor: proj?.color || '#888',
+      startTime, endTime: m2t(endMin),
+      completed: false, completedAt: null,
+      isAISuggested: false, subSteps: [], fromRollover: !!fromRollover,
+    };
+    mutatePlan(prev => ({ ...prev, blocks: [...prev.blocks, newBlock] }));
+    if (fromRollover) setRolloverBlocks(prev => prev.filter(b => b.taskId !== task.id));
+  }
+
+  function moveBlock(blockId, newStartTime) {
+    mutatePlan(prev => ({
+      ...prev,
+      blocks: prev.blocks.map(b => {
+        if (b.id !== blockId) return b;
+        const dur    = t2m(b.endTime) - t2m(b.startTime);
+        const endMin = Math.min(t2m(newStartTime) + dur, t2m(configRef.current.workdayEnd));
+        return { ...b, startTime: newStartTime, endTime: m2t(endMin) };
+      }),
+    }));
+  }
+
+  async function handleCompleteBlock(blockId) {
+    const block = todayPlan.blocks.find(b => b.id === blockId);
+    if (!block) return;
+    mutatePlan(prev => ({
+      ...prev,
+      blocks: prev.blocks.map(b =>
+        b.id === blockId ? { ...b, completed: true, completedAt: new Date().toISOString() } : b
+      ),
+    }));
+    if (block.listId && block.taskId) {
+      try { await completeTask(block.listId, block.taskId); } catch {}
+    }
+  }
+
+  function handleRemoveBlock(blockId) {
+    mutatePlan(prev => ({ ...prev, blocks: prev.blocks.filter(b => b.id !== blockId) }));
+  }
+
+  function dismissEmailAction(actionId) {
+    mutatePlan(prev => ({
+      ...prev,
+      emailExtractedActions: (prev.emailExtractedActions || []).map(a =>
+        a.id === actionId ? { ...a, dismissed: true } : a
+      ),
+    }));
+  }
+
+  // ── AI ───────────────────────────────────────────────────────────────────────
+  async function handleScanEmail() {
+    setEmailStatus('loading');
+    try {
+      const emails = await getRecentEmails();
+      if (!emails.length) { setEmailStatus('done'); return; }
+      const res  = await fetch('/api/daily-plan', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'extract-email-actions', emails: emails.slice(0, 20) }),
+      });
+      const data = await res.json();
+      if (data.actions?.length) {
+        const actions = data.actions.map(a => ({ ...a, id: genId(), dismissed: false }));
+        mutatePlan(prev => ({
+          ...prev,
+          emailExtractedActions: [...(prev.emailExtractedActions || []), ...actions],
+          emailScanTimestamp: new Date().toISOString(),
+        }));
+      }
+      setEmailStatus('done');
+    } catch (e) {
+      console.error('scan email', e);
+      setEmailStatus('error');
+    }
+  }
+
+  async function handleGenerateSchedule() {
+    setAiStatus('loading');
+    try {
+      const taskPayload = preloadedTasks.map(t => ({
+        taskId: t.id, taskTitle: t.title,
+        listId: t._listId, listName: t._listName,
+        projectKey: findProject(t, configRef.current)?.key || null,
+        importance: t.importance,
+        dueDate: t.dueDateTimeValue?.dateTime || null,
+      }));
+      const evPayload = calEvents.map(ev => ({
+        subject: ev.subject,
+        startTime: isoToHHMM(ev.start?.dateTime || ev.start?.date),
+        endTime:   isoToHHMM(ev.end?.dateTime   || ev.end?.date),
+      })).filter(e => e.startTime);
+      const res  = await fetch('/api/daily-plan', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'generate-schedule',
+          tasks: taskPayload.slice(0, 30),
+          calEvents: evPayload,
+          workdayStart: configRef.current.workdayStart,
+          workdayEnd:   configRef.current.workdayEnd,
+          date: currentDate,
+        }),
+      });
+      const data = await res.json();
+      if (data.blocks) {
+        const newBlocks = data.blocks.map(b => ({
+          ...b, id: genId(),
+          isAISuggested: true, completed: false, completedAt: null,
+          subSteps: b.subSteps || [],
+          projectColor: configRef.current.projects.find(p => p.key === b.projectKey)?.color || '#888',
+        }));
+        mutatePlan(prev => ({ ...prev, blocks: newBlocks }));
+      }
+      setAiStatus('done');
+    } catch (e) {
+      console.error('generate schedule', e);
+      setAiStatus('error');
+    }
+  }
+
+  async function handleBreakdownTask(block) {
+    setBreakdownModal({ block, steps: null, loading: true });
+    try {
+      const res  = await fetch('/api/daily-plan', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'breakdown-task',
+          taskTitle: block.taskTitle,
+          listName:  block.listName,
+          projectKey: block.projectKey,
+        }),
+      });
+      const data = await res.json();
+      setBreakdownModal({ block, steps: data.steps || [], loading: false });
+    } catch {
+      setBreakdownModal(prev => ({ ...prev, loading: false, steps: [], error: true }));
+    }
+  }
+
+  function applyBreakdown(steps) {
+    if (!breakdownModal) return;
+    mutatePlan(prev => ({
+      ...prev,
+      blocks: prev.blocks.map(b =>
+        b.id === breakdownModal.block.id
+          ? { ...b, subSteps: steps.map(s => ({ id: genId(), title: s.title, completed: false })) }
+          : b
+      ),
+    }));
+    setBreakdownModal(null);
+  }
+
+  // ── Config ───────────────────────────────────────────────────────────────────
+  async function handleSaveConfig(newConfig) {
+    setConfig(newConfig);
+    configRef.current = newConfig;
+    cacheSet('planner_config', newConfig, 30 * 60 * 1000);
+    try { await savePlannerConfig(newConfig); } catch (e) { console.error('save config', e); }
+  }
+
+  // ── Derived ──────────────────────────────────────────────────────────────────
+  const timeSlots   = slots(config.workdayStart, config.workdayEnd);
+  const scheduledIds = new Set(todayPlan.blocks.map(b => b.taskId));
+
+  const poolTasks = preloadedTasks.filter(t => {
+    if (scheduledIds.has(t.id)) return false;
+    if (projectFilter === 'all') return true;
+    return findProject(t, config)?.key === projectFilter;
+  });
+
+  const poolByProject = {};
+  for (const t of poolTasks) {
+    const proj = findProject(t, config);
+    const key  = proj?.key || '__none';
+    const name = proj?.name || t._listName || 'Altro';
+    if (!poolByProject[key]) poolByProject[key] = { name, color: proj?.color || '#888', tasks: [] };
+    poolByProject[key].tasks.push(t);
+  }
+
+  const activeEmailActions = (todayPlan.emailExtractedActions || []).filter(a => !a.dismissed);
+  const workStart          = t2m(config.workdayStart);
+
+  function saveLabel() {
+    const now = new Date().toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
+    if (saveStatus === 'saving') return '⏳ Salvataggio…';
+    if (saveStatus === 'saved')  return `💾 ${now}`;
+    if (saveStatus === 'error')  return '⚠️ Errore salvataggio';
+    return '';
+  }
+
+  if (!open) return null;
+
+  // ── Render ────────────────────────────────────────────────────────────────────
+  return (
+    <div className="planner-view">
+
+      {/* Header */}
+      <div className="planner-header">
+        <div className="planner-header-left">
+          <button className="planner-nav-btn" onClick={() => {
+            const d = new Date(currentDate + 'T12:00:00'); d.setDate(d.getDate() - 1);
+            setCurrentDate(d.toISOString().split('T')[0]);
+          }}>◀</button>
+          <span className="planner-date">
+            {new Date(currentDate + 'T12:00:00').toLocaleDateString('it-IT', {
+              weekday: 'long', day: 'numeric', month: 'long',
+            })}
+          </span>
+          <button className="planner-nav-btn" onClick={() => {
+            const d = new Date(currentDate + 'T12:00:00'); d.setDate(d.getDate() + 1);
+            setCurrentDate(d.toISOString().split('T')[0]);
+          }}>▶</button>
+          {currentDate !== todayStr() && (
+            <button className="planner-today-btn" onClick={() => setCurrentDate(todayStr())}>Oggi</button>
+          )}
+        </div>
+        <div className="planner-header-actions">
+          <button
+            className={`planner-action-btn${emailStatus === 'loading' ? ' loading' : ''}`}
+            onClick={handleScanEmail}
+            disabled={emailStatus === 'loading'}
+            title="Scansiona email per estrarre action item">
+            {emailStatus === 'loading' ? '⏳' : '📧'} Email
+          </button>
+          <button
+            className={`planner-action-btn accent${aiStatus === 'loading' ? ' loading' : ''}`}
+            onClick={handleGenerateSchedule}
+            disabled={aiStatus === 'loading'}
+            title="Genera piano AI per oggi">
+            {aiStatus === 'loading' ? '⏳' : '✨'} Piano AI
+          </button>
+          <button className="planner-action-btn" onClick={() => setSettingsOpen(s => !s)} title="Impostazioni">
+            ⚙️
+          </button>
+          <button className="planner-close-btn" onClick={onClose} title="Chiudi pianificatore">✕</button>
+        </div>
+      </div>
+
+      {/* Settings panel */}
+      {settingsOpen && (
+        <SettingsPanel config={config} onSave={handleSaveConfig} onClose={() => setSettingsOpen(false)} />
+      )}
+
+      {/* 3-column body */}
+      <div className="planner-body">
+
+        {/* ── Column 1: Task Pool ── */}
+        <div className="planner-pool">
+          <div className="planner-col-header">
+            <span>Task</span>
+            <div className="planner-filters">
+              <button
+                className={`planner-filter-btn${projectFilter === 'all' ? ' active' : ''}`}
+                onClick={() => setProjectFilter('all')}>
+                Tutti
+              </button>
+              {config.projects.map(p => (
+                <button
+                  key={p.key}
+                  className={`planner-filter-btn${projectFilter === p.key ? ' active' : ''}`}
+                  style={{ '--proj-color': p.color }}
+                  onClick={() => setProjectFilter(prev => prev === p.key ? 'all' : p.key)}>
+                  {p.name.slice(0, 8)}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="planner-pool-body">
+            {/* Rollover */}
+            {rolloverBlocks.length > 0 && (
+              <div className="planner-rollover-section">
+                <div className="planner-rollover-banner">⚠️ Da ieri — {rolloverBlocks.length} task</div>
+                {rolloverBlocks.map(b => (
+                  <div
+                    key={b.id}
+                    className="planner-pool-task rollover"
+                    draggable
+                    onDragStart={e => e.dataTransfer.setData('text/plain', JSON.stringify({
+                      type: 'rollover',
+                      task: { id: b.taskId, title: b.taskTitle, _listId: b.listId, _listName: b.listName },
+                    }))}>
+                    <span className="planner-task-dot" style={{ background: b.projectColor || '#888' }} />
+                    <span className="planner-task-title">{b.taskTitle}</span>
+                    <span className="planner-task-list">{b.listName}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Pool by project */}
+            {Object.entries(poolByProject).map(([key, group]) => (
+              <div key={key} className="planner-pool-group">
+                <div className="planner-pool-group-label" style={{ color: group.color }}>
+                  <span className="planner-group-dot" style={{ background: group.color }} />
+                  {group.name}
+                  <span className="planner-group-count">{group.tasks.length}</span>
+                </div>
+                {group.tasks.map(task => (
+                  <div
+                    key={task.id}
+                    className={`planner-pool-task${task.importance === 'high' ? ' important' : ''}`}
+                    draggable
+                    onDragStart={e => e.dataTransfer.setData('text/plain', JSON.stringify({ type: 'task', task }))}>
+                    <span className="planner-task-dot" style={{ background: group.color }} />
+                    <span className="planner-task-title">{task.title}</span>
+                    {task.importance === 'high' && <span className="planner-task-star">★</span>}
+                  </div>
+                ))}
+              </div>
+            ))}
+
+            {poolTasks.length === 0 && rolloverBlocks.length === 0 && (
+              <div className="planner-empty">
+                {preloadedTasks.length === 0
+                  ? 'Caricamento task in corso…'
+                  : 'Tutti i task sono già pianificati'}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* ── Column 2: Timeline ── */}
+        <div className="planner-timeline">
+          <div className="planner-col-header">
+            <span>
+              {new Date(currentDate + 'T12:00:00').toLocaleDateString('it-IT', {
+                weekday: 'short', day: 'numeric', month: 'short',
+              })}
+            </span>
+            <span className="planner-timeline-hint">Trascina qui i task →</span>
+          </div>
+          <div
+            ref={timelineBodyRef}
+            className="planner-timeline-body"
+            onDragOver={handleTimelineDragOver}
+            onDrop={handleTimelineDrop}
+            onDragLeave={e => {
+              if (!timelineBodyRef.current?.contains(e.relatedTarget)) setDragOverTime(null);
+            }}>
+
+            {/* Slot grid lines (also define total height) */}
+            {timeSlots.map(slot => (
+              <div
+                key={slot}
+                className={`planner-slot${dragOverTime === slot ? ' drag-over' : ''}`}
+                style={{ height: SLOT_HEIGHT }}>
+                <span className="planner-slot-time">{slot}</span>
+                <div className="planner-slot-line" />
+              </div>
+            ))}
+
+            {/* Calendar events — absolute, read-only */}
+            {calEvents.map((ev, i) => {
+              const evStart = isoToHHMM(ev.start?.dateTime || ev.start?.date);
+              const evEnd   = isoToHHMM(ev.end?.dateTime   || ev.end?.date);
+              if (!evStart || !evEnd) return null;
+              const evStartMin = t2m(evStart);
+              const evEndMin   = t2m(evEnd);
+              const workEnd    = t2m(config.workdayEnd);
+              if (evEndMin <= workStart || evStartMin >= workEnd) return null;
+              const top    = Math.max(0, (evStartMin - workStart) / 30 * SLOT_HEIGHT);
+              const height = Math.max(SLOT_HEIGHT / 2, (Math.min(evEndMin, workEnd) - Math.max(evStartMin, workStart)) / 30 * SLOT_HEIGHT);
+              return (
+                <div
+                  key={`cal-${i}`}
+                  className={`planner-cal-event${ev._isShared ? ' shared' : ''}`}
+                  style={{ top, height }}
+                  title={`${evStart}–${evEnd} · ${ev.subject}${ev._calName ? ` (${ev._calName})` : ''}`}>
+                  <span className="planner-event-time">{evStart}–{evEnd}</span>
+                  <span className="planner-event-title">{ev.subject}</span>
+                </div>
+              );
+            })}
+
+            {/* Task blocks — absolute, draggable */}
+            {todayPlan.blocks.map(block => {
+              const startMin = t2m(block.startTime);
+              const endMin   = t2m(block.endTime);
+              const top      = Math.max(0, (startMin - workStart) / 30 * SLOT_HEIGHT);
+              const height   = Math.max(SLOT_HEIGHT - 4, (endMin - startMin) / 30 * SLOT_HEIGHT - 4);
+              return (
+                <div
+                  key={block.id}
+                  className={`planner-block${block.completed ? ' completed' : ''}${block.isAISuggested ? ' ai-suggested' : ''}`}
+                  style={{ top: top + 2, height, borderLeftColor: block.projectColor, background: `${block.projectColor}22` }}
+                  draggable={!block.completed}
+                  onDragStart={e => {
+                    e.stopPropagation();
+                    e.dataTransfer.setData('text/plain', JSON.stringify({ type: 'block', blockId: block.id }));
+                  }}>
+                  <div className="planner-block-header">
+                    <button
+                      className="planner-block-check"
+                      style={{ color: block.completed ? '#86c07a' : block.projectColor }}
+                      onClick={() => handleCompleteBlock(block.id)}
+                      title="Segna come completato">
+                      {block.completed ? '✓' : '○'}
+                    </button>
+                    <span className="planner-block-title">{block.taskTitle}</span>
+                    <div className="planner-block-actions">
+                      <button className="planner-block-btn" onClick={() => handleBreakdownTask(block)} title="Scomponi in sottostep">🔀</button>
+                      <button className="planner-block-btn" onClick={() => handleRemoveBlock(block.id)} title="Rimuovi">✕</button>
+                    </div>
+                  </div>
+                  <div className="planner-block-meta">
+                    <span>{block.startTime}–{block.endTime}</span>
+                    {block.listName && <span>{block.listName}</span>}
+                    {block.isAISuggested && <span className="planner-ai-badge">AI</span>}
+                  </div>
+                  {block.subSteps?.length > 0 && (
+                    <div className="planner-block-steps">
+                      {block.subSteps.slice(0, 3).map(s => (
+                        <div key={s.id} className={`planner-step${s.completed ? ' done' : ''}`}>· {s.title}</div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+
+            {/* Drop indicator */}
+            {dragOverTime && (
+              <div
+                className="planner-drop-indicator"
+                style={{
+                  top:    (t2m(dragOverTime) - workStart) / 30 * SLOT_HEIGHT,
+                  height: SLOT_HEIGHT * 2,
+                }} />
+            )}
+          </div>
+        </div>
+
+        {/* ── Column 3: AI Panel ── */}
+        <div className="planner-ai-panel">
+          <div className="planner-col-header">
+            <span>Assistente</span>
+            <span className={`planner-save-status ${saveStatus}`}>{saveLabel()}</span>
+          </div>
+          <div className="planner-ai-body">
+
+            {/* Email actions */}
+            {activeEmailActions.length > 0 && (
+              <div className="planner-ai-section">
+                <div className="planner-ai-section-title">📧 Action da email</div>
+                {activeEmailActions.map(a => (
+                  <div key={a.id} className="planner-email-action">
+                    <div className="planner-email-action-text">{a.extractedAction}</div>
+                    <div className="planner-email-action-meta" title={`Da: ${a.from}`}>{a.subject?.slice(0, 35)}</div>
+                    <div className="planner-email-action-btns">
+                      <button
+                        className="planner-email-add-btn"
+                        onClick={() => {
+                          addBlock(
+                            { id: genId(), title: a.extractedAction, _listId: null, _listName: 'Email' },
+                            config.workdayStart,
+                            false
+                          );
+                          dismissEmailAction(a.id);
+                        }}>
+                        + Timeline
+                      </button>
+                      <button className="planner-email-dismiss-btn" onClick={() => dismissEmailAction(a.id)}>✕</button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Active blocks summary */}
+            {todayPlan.blocks.length > 0 && (
+              <div className="planner-ai-section">
+                <div className="planner-ai-section-title">
+                  📋 Piano di oggi
+                  <span className="planner-ai-count">{todayPlan.blocks.filter(b => !b.completed).length} attivi</span>
+                </div>
+                {todayPlan.blocks
+                  .filter(b => !b.completed)
+                  .sort((a, b) => a.startTime.localeCompare(b.startTime))
+                  .slice(0, 8)
+                  .map(b => (
+                    <div key={b.id} className="planner-ai-block-item">
+                      <span className="planner-ai-time">{b.startTime}</span>
+                      <span className="planner-ai-task">{b.taskTitle}</span>
+                    </div>
+                  ))
+                }
+              </div>
+            )}
+
+            {activeEmailActions.length === 0 && todayPlan.blocks.length === 0 && (
+              <div className="planner-ai-empty">
+                <p>Trascina i task dalla lista a sinistra sulla timeline per pianificarli.</p>
+                <p>Usa <strong>📧 Email</strong> per estrarre action item automaticamente.</p>
+                <p>Usa <strong>✨ Piano AI</strong> per generare l&apos;intera giornata con un click.</p>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Breakdown modal */}
+      {breakdownModal && (
+        <div className="planner-modal-overlay" onClick={() => setBreakdownModal(null)}>
+          <div className="planner-modal" onClick={e => e.stopPropagation()}>
+            <div className="planner-modal-header">
+              <span>Scomponi: {breakdownModal.block.taskTitle}</span>
+              <button onClick={() => setBreakdownModal(null)}>✕</button>
+            </div>
+            <div className="planner-modal-body">
+              {breakdownModal.loading && (
+                <div className="planner-modal-loading">Analisi con AI in corso…</div>
+              )}
+              {!breakdownModal.loading && breakdownModal.error && (
+                <div className="planner-modal-loading" style={{ color: '#c07a7a' }}>
+                  Errore durante l&apos;analisi. Riprova.
+                </div>
+              )}
+              {!breakdownModal.loading && breakdownModal.steps && (
+                <>
+                  {breakdownModal.steps.map((s, i) => (
+                    <div key={i} className="planner-modal-step">
+                      <span>{i + 1}.</span> {s.title}
+                    </div>
+                  ))}
+                  {breakdownModal.steps.length > 0 && (
+                    <button className="planner-modal-apply-btn" onClick={() => applyBreakdown(breakdownModal.steps)}>
+                      Applica sottostep al blocco
+                    </button>
+                  )}
+                  {breakdownModal.steps.length === 0 && (
+                    <div className="planner-modal-loading">Nessun sottostep suggerito.</div>
+                  )}
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── SettingsPanel ─────────────────────────────────────────────────────────────
+function SettingsPanel({ config, onSave, onClose }) {
+  const [local, setLocal] = useState(() => JSON.parse(JSON.stringify(config)));
+
+  function setProject(key, field, value) {
+    setLocal(prev => ({
+      ...prev,
+      projects: prev.projects.map(p => p.key === key ? { ...p, [field]: value } : p),
+    }));
+  }
+
+  return (
+    <div className="planner-settings">
+      <div className="planner-settings-header">
+        <span>Impostazioni Pianificatore</span>
+        <button onClick={onClose}>✕</button>
+      </div>
+      <div className="planner-settings-body">
+        <div className="planner-settings-row">
+          <label>Inizio giornata</label>
+          <input type="time" value={local.workdayStart}
+            onChange={e => setLocal(p => ({ ...p, workdayStart: e.target.value }))} />
+        </div>
+        <div className="planner-settings-row">
+          <label>Fine giornata</label>
+          <input type="time" value={local.workdayEnd}
+            onChange={e => setLocal(p => ({ ...p, workdayEnd: e.target.value }))} />
+        </div>
+        <div className="planner-settings-section-title">Progetti (mappa a liste To-Do)</div>
+        {local.projects.map(p => (
+          <div key={p.key} className="planner-settings-project">
+            <input type="color" value={p.color}
+              onChange={e => setProject(p.key, 'color', e.target.value)} />
+            <input type="text" value={p.name} placeholder="Nome progetto"
+              onChange={e => setProject(p.key, 'name', e.target.value)} />
+            <input
+              type="text"
+              value={(p.todoListNames || []).join(', ')}
+              placeholder="Nomi liste To-Do (virgola)"
+              onChange={e => setProject(p.key, 'todoListNames',
+                e.target.value.split(',').map(s => s.trim()).filter(Boolean))} />
+          </div>
+        ))}
+      </div>
+      <div className="planner-settings-footer">
+        <button className="planner-settings-save-btn" onClick={() => { onSave(local); onClose(); }}>
+          Salva impostazioni
+        </button>
+      </div>
+    </div>
+  );
+}
