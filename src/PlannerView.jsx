@@ -3,6 +3,8 @@ import {
   loadDailyPlans, saveDailyPlans,
   loadPlannerConfig, savePlannerConfig,
   getRecentEmails, completeTask, getCalendarEvents,
+  getTask, updateTaskBody,
+  createChecklistItem, updateChecklistItem, deleteChecklistItem,
 } from './api';
 import { cacheGet, cacheSet } from './cache';
 import './PlannerView.css';
@@ -88,6 +90,8 @@ export default function PlannerView({ open, onClose, preloadedTasks = [] }) {
   const [dragOverTime, setDragOverTime]     = useState(null);
   const [viewMode, setViewMode]             = useState('day');
   const [resizingId, setResizingId]         = useState(null);
+  const [selectedTask, setSelectedTask]     = useState(null);
+  const [rightPanel, setRightPanel]         = useState('detail');
 
   const timelineBodyRef = useRef(null);
   const saveTimerRef    = useRef(null);
@@ -430,10 +434,11 @@ export default function PlannerView({ open, onClose, preloadedTasks = [] }) {
 
   const poolByProject = {};
   for (const t of poolTasks) {
-    const proj = findProject(t, config);
-    const key  = proj?.key || '__none';
-    const name = proj?.name || t._listName || 'Altro';
-    if (!poolByProject[key]) poolByProject[key] = { name, color: proj?.color || '#888', tasks: [] };
+    const proj  = findProject(t, config);
+    const key   = proj?.key ?? `list:${t._listName ?? 'altro'}`;
+    const name  = proj?.name ?? t._listName ?? 'Altro';
+    const color = proj?.color ?? '#888';
+    if (!poolByProject[key]) poolByProject[key] = { name, color, tasks: [] };
     poolByProject[key].tasks.push(t);
   }
 
@@ -561,8 +566,9 @@ export default function PlannerView({ open, onClose, preloadedTasks = [] }) {
                   return (
                     <div
                       key={task.id}
-                      className={`planner-pool-task${isScheduled ? ' scheduled' : ''}${task.importance === 'high' ? ' important' : ''}`}
+                      className={`planner-pool-task${isScheduled ? ' scheduled' : ''}${task.importance === 'high' ? ' important' : ''}${selectedTask?.id === task.id ? ' selected' : ''}`}
                       draggable={!isScheduled}
+                      onClick={() => { setSelectedTask(task); setRightPanel('detail'); }}
                       onDragStart={isScheduled ? undefined : e =>
                         e.dataTransfer.setData('text/plain', JSON.stringify({ type: 'task', task }))
                       }>
@@ -706,69 +712,95 @@ export default function PlannerView({ open, onClose, preloadedTasks = [] }) {
           </div>
         </div>
 
-        {/* ── Column 3: AI Panel ── */}
+        {/* ── Column 3: Detail / AI Panel ── */}
         <div className="planner-ai-panel">
           <div className="planner-col-header">
-            <span>Assistente</span>
+            <div className="planner-panel-tabs">
+              <button
+                className={`planner-panel-tab${rightPanel === 'detail' ? ' active' : ''}`}
+                onClick={() => setRightPanel('detail')}>
+                📋 Dettagli
+              </button>
+              <button
+                className={`planner-panel-tab${rightPanel === 'assistant' ? ' active' : ''}`}
+                onClick={() => setRightPanel('assistant')}>
+                🤖 Assistente
+              </button>
+            </div>
             <span className={`planner-save-status ${saveStatus}`}>{saveLabel()}</span>
           </div>
           <div className="planner-ai-body">
 
-            {/* Email actions */}
-            {activeEmailActions.length > 0 && (
-              <div className="planner-ai-section">
-                <div className="planner-ai-section-title">📧 Action da email</div>
-                {activeEmailActions.map(a => (
-                  <div key={a.id} className="planner-email-action">
-                    <div className="planner-email-action-text">{a.extractedAction}</div>
-                    <div className="planner-email-action-meta" title={`Da: ${a.from}`}>{a.subject?.slice(0, 35)}</div>
-                    <div className="planner-email-action-btns">
-                      <button
-                        className="planner-email-add-btn"
-                        onClick={() => {
-                          addBlock(
-                            { id: genId(), title: a.extractedAction, _listId: null, _listName: 'Email' },
-                            config.workdayStart,
-                            false
-                          );
-                          dismissEmailAction(a.id);
-                        }}>
-                        + Timeline
-                      </button>
-                      <button className="planner-email-dismiss-btn" onClick={() => dismissEmailAction(a.id)}>✕</button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {/* Active blocks summary */}
-            {todayPlan.blocks.length > 0 && (
-              <div className="planner-ai-section">
-                <div className="planner-ai-section-title">
-                  📋 Piano di oggi
-                  <span className="planner-ai-count">{todayPlan.blocks.filter(b => !b.completed).length} attivi</span>
+            {rightPanel === 'detail' ? (
+              selectedTask ? (
+                <TaskDetailPanel
+                  task={selectedTask}
+                  onClose={() => setSelectedTask(null)}
+                />
+              ) : (
+                <div className="planner-detail-empty">
+                  <p>Clicca un task nel pool per vedere note e sottoattività.</p>
                 </div>
-                {todayPlan.blocks
-                  .filter(b => !b.completed)
-                  .sort((a, b) => a.startTime.localeCompare(b.startTime))
-                  .slice(0, 8)
-                  .map(b => (
-                    <div key={b.id} className="planner-ai-block-item">
-                      <span className="planner-ai-time">{b.startTime}</span>
-                      <span className="planner-ai-task">{b.taskTitle}</span>
-                    </div>
-                  ))
-                }
-              </div>
-            )}
+              )
+            ) : (
+              <>
+                {/* Email actions */}
+                {activeEmailActions.length > 0 && (
+                  <div className="planner-ai-section">
+                    <div className="planner-ai-section-title">📧 Action da email</div>
+                    {activeEmailActions.map(a => (
+                      <div key={a.id} className="planner-email-action">
+                        <div className="planner-email-action-text">{a.extractedAction}</div>
+                        <div className="planner-email-action-meta" title={`Da: ${a.from}`}>{a.subject?.slice(0, 35)}</div>
+                        <div className="planner-email-action-btns">
+                          <button
+                            className="planner-email-add-btn"
+                            onClick={() => {
+                              addBlock(
+                                { id: genId(), title: a.extractedAction, _listId: null, _listName: 'Email' },
+                                config.workdayStart,
+                                false
+                              );
+                              dismissEmailAction(a.id);
+                            }}>
+                            + Timeline
+                          </button>
+                          <button className="planner-email-dismiss-btn" onClick={() => dismissEmailAction(a.id)}>✕</button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
 
-            {activeEmailActions.length === 0 && todayPlan.blocks.length === 0 && (
-              <div className="planner-ai-empty">
-                <p>Trascina i task dalla lista a sinistra sulla timeline per pianificarli.</p>
-                <p>Usa <strong>📧 Email</strong> per estrarre action item automaticamente.</p>
-                <p>Usa <strong>✨ Piano AI</strong> per generare l&apos;intera giornata con un click.</p>
-              </div>
+                {/* Active blocks summary */}
+                {todayPlan.blocks.length > 0 && (
+                  <div className="planner-ai-section">
+                    <div className="planner-ai-section-title">
+                      📋 Piano di oggi
+                      <span className="planner-ai-count">{todayPlan.blocks.filter(b => !b.completed).length} attivi</span>
+                    </div>
+                    {todayPlan.blocks
+                      .filter(b => !b.completed)
+                      .sort((a, b) => a.startTime.localeCompare(b.startTime))
+                      .slice(0, 8)
+                      .map(b => (
+                        <div key={b.id} className="planner-ai-block-item">
+                          <span className="planner-ai-time">{b.startTime}</span>
+                          <span className="planner-ai-task">{b.taskTitle}</span>
+                        </div>
+                      ))
+                    }
+                  </div>
+                )}
+
+                {activeEmailActions.length === 0 && todayPlan.blocks.length === 0 && (
+                  <div className="planner-ai-empty">
+                    <p>Trascina i task dalla lista a sinistra sulla timeline per pianificarli.</p>
+                    <p>Usa <strong>📧 Email</strong> per estrarre action item automaticamente.</p>
+                    <p>Usa <strong>✨ Piano AI</strong> per generare l&apos;intera giornata con un click.</p>
+                  </div>
+                )}
+              </>
             )}
           </div>
         </div>
@@ -812,6 +844,123 @@ export default function PlannerView({ open, onClose, preloadedTasks = [] }) {
             </div>
           </div>
         </div>
+      )}
+    </div>
+  );
+}
+
+// ── TaskDetailPanel ───────────────────────────────────────────────────────────
+function TaskDetailPanel({ task, onClose }) {
+  const [loading, setLoading]         = useState(true);
+  const [notes, setNotes]             = useState('');
+  const [items, setItems]             = useState([]);
+  const [newItemText, setNewItemText] = useState('');
+  const [savingNotes, setSavingNotes] = useState(false);
+  const notesTimerRef                 = useRef(null);
+
+  useEffect(() => { load(); }, [task.id]); // eslint-disable-line
+
+  async function load() {
+    setLoading(true);
+    try {
+      const full = await getTask(task._listId, task.id);
+      let body = full.body?.content || '';
+      if (full.body?.contentType === 'html') {
+        body = body.replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').trim();
+      }
+      setNotes(body);
+      setItems((full.checklistItems || []).sort((a, b) => a.isChecked - b.isChecked));
+    } catch {}
+    setLoading(false);
+  }
+
+  function handleNotesChange(e) {
+    const val = e.target.value;
+    setNotes(val);
+    clearTimeout(notesTimerRef.current);
+    notesTimerRef.current = setTimeout(async () => {
+      setSavingNotes(true);
+      try { await updateTaskBody(task._listId, task.id, val); } catch {}
+      setSavingNotes(false);
+    }, 1200);
+  }
+
+  async function handleToggle(item) {
+    const checked = !item.isChecked;
+    setItems(prev => prev.map(i => i.id === item.id ? { ...i, isChecked: checked } : i));
+    try { await updateChecklistItem(task._listId, task.id, item.id, checked); } catch {}
+  }
+
+  async function handleDelete(itemId) {
+    setItems(prev => prev.filter(i => i.id !== itemId));
+    try { await deleteChecklistItem(task._listId, task.id, itemId); } catch {}
+  }
+
+  async function handleAdd(e) {
+    e.preventDefault();
+    const text = newItemText.trim();
+    if (!text) return;
+    setNewItemText('');
+    const tmp = { id: `tmp-${Date.now()}`, displayName: text, isChecked: false };
+    setItems(prev => [...prev, tmp]);
+    try {
+      const created = await createChecklistItem(task._listId, task.id, text);
+      setItems(prev => prev.map(i => i.id === tmp.id ? created : i));
+    } catch {
+      setItems(prev => prev.filter(i => i.id !== tmp.id));
+    }
+  }
+
+  return (
+    <div className="planner-task-detail">
+      <div className="planner-task-detail-header">
+        <div className="planner-task-detail-title">{task.title}</div>
+        <div className="planner-task-detail-meta">{task._listName}</div>
+        <button className="planner-task-detail-close" onClick={onClose} title="Chiudi">✕</button>
+      </div>
+
+      {loading ? (
+        <div className="planner-task-detail-loading">Caricamento…</div>
+      ) : (
+        <>
+          <div className="planner-task-detail-section">
+            <div className="planner-task-detail-section-label">
+              Note {savingNotes && <span className="planner-saving-dot">●</span>}
+            </div>
+            <textarea
+              className="planner-task-detail-notes"
+              value={notes}
+              onChange={handleNotesChange}
+              placeholder="Nessuna nota…"
+              rows={4}
+            />
+          </div>
+
+          <div className="planner-task-detail-section">
+            <div className="planner-task-detail-section-label">Sottoattività ({items.length})</div>
+            {items.map(item => (
+              <div key={item.id} className={`planner-checklist-item${item.isChecked ? ' checked' : ''}`}>
+                <button className="planner-checklist-check" onClick={() => handleToggle(item)}>
+                  {item.isChecked ? '✓' : '○'}
+                </button>
+                <span className="planner-checklist-text">{item.displayName}</span>
+                <button className="planner-checklist-delete" onClick={() => handleDelete(item.id)}>✕</button>
+              </div>
+            ))}
+            <form className="planner-checklist-add" onSubmit={handleAdd}>
+              <input
+                type="text"
+                value={newItemText}
+                onChange={e => setNewItemText(e.target.value)}
+                placeholder="+ Nuova sottoattività"
+                className="planner-checklist-input"
+              />
+              <button type="submit" className="planner-checklist-add-btn" disabled={!newItemText.trim()}>
+                +
+              </button>
+            </form>
+          </div>
+        </>
       )}
     </div>
   );

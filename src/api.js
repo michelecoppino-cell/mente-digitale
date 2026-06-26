@@ -231,6 +231,37 @@ export async function savePlannerConfig(config) {
   return r.json();
 }
 
+export async function getTask(listId, taskId) {
+  return call(`/me/todo/lists/${listId}/tasks/${taskId}?$expand=checklistItems`);
+}
+
+export async function updateTaskBody(listId, taskId, content) {
+  return call(`/me/todo/lists/${listId}/tasks/${taskId}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ body: { content, contentType: 'text' } }),
+  });
+}
+
+export async function createChecklistItem(listId, taskId, displayName) {
+  return call(`/me/todo/lists/${listId}/tasks/${taskId}/checklistItems`, {
+    method: 'POST',
+    body: JSON.stringify({ displayName, isChecked: false }),
+  });
+}
+
+export async function updateChecklistItem(listId, taskId, itemId, isChecked) {
+  return call(`/me/todo/lists/${listId}/tasks/${taskId}/checklistItems/${itemId}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ isChecked }),
+  });
+}
+
+export async function deleteChecklistItem(listId, taskId, itemId) {
+  return call(`/me/todo/lists/${listId}/tasks/${taskId}/checklistItems/${itemId}`, {
+    method: 'DELETE',
+  });
+}
+
 export async function getRecentEmails() {
   const yesterday = new Date();
   yesterday.setDate(yesterday.getDate() - 1);
