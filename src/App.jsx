@@ -266,6 +266,8 @@ export default function App() {
           open={plannerOpen}
           onClose={() => setPlannerOpen(false)}
           preloadedTasks={scheduledTasks || []}
+          notebooks={notebooks}
+          sectionsMap={sectionsMap}
         />
         </>
       )}

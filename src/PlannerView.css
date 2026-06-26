@@ -222,9 +222,7 @@
 
 /* ── Task Pool column ── */
 .planner-pool {
-  width: 270px;
   flex-shrink: 0;
-  border-right: 1px solid var(--border);
   display: flex;
   flex-direction: column;
   min-height: 0;
@@ -338,13 +336,27 @@
   line-height: 1.6;
 }
 
+/* ── Column resize handle ── */
+.planner-col-resize {
+  flex-shrink: 0;
+  width: 5px;
+  cursor: col-resize;
+  background: transparent;
+  border-left: 1px solid var(--border);
+  transition: background 0.15s, border-left-color 0.15s;
+  z-index: 5;
+}
+.planner-col-resize:hover {
+  background: rgba(200,169,110,0.18);
+  border-left-color: rgba(200,169,110,0.45);
+}
+
 /* ── Timeline column ── */
 .planner-timeline {
   flex: 1;
   min-width: 0;
   display: flex;
   flex-direction: column;
-  border-right: 1px solid var(--border);
 }
 
 .planner-timeline-body {
@@ -445,7 +457,7 @@
 .planner-block:active { cursor: grabbing; }
 .planner-block.completed {
   opacity: 0.45;
-  cursor: default;
+  cursor: pointer;
 }
 .planner-block.ai-suggested {
   border-style: dashed;
@@ -548,7 +560,6 @@
 
 /* ── AI Panel column ── */
 .planner-ai-panel {
-  width: 270px;
   flex-shrink: 0;
   display: flex;
   flex-direction: column;

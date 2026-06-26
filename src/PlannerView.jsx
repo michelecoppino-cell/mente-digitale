@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import {
   loadDailyPlans, saveDailyPlans,
   loadPlannerConfig, savePlannerConfig,
@@ -62,6 +62,15 @@ function isAllDay(ev) {
   return ev.isAllDay || (!ev.start?.dateTime && !!ev.start?.date);
 }
 
+function shadeColor(hex, step) {
+  const num = parseInt((hex || '#888888').replace('#', ''), 16);
+  const f = 1 - step * 0.1;
+  const r = Math.min(255, Math.max(20, Math.round(((num >> 16) & 0xFF) * f)));
+  const g = Math.min(255, Math.max(20, Math.round(((num >> 8) & 0xFF) * f)));
+  const b = Math.min(255, Math.max(20, Math.round((num & 0xFF) * f)));
+  return `#${((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1)}`;
+}
+
 function getWeekDays(dateStr) {
   const d = new Date(dateStr + 'T12:00:00');
   const dow = d.getDay();
@@ -75,7 +84,7 @@ function getWeekDays(dateStr) {
 }
 
 // ── Main PlannerView ──────────────────────────────────────────────────────────
-export default function PlannerView({ open, onClose, preloadedTasks = [] }) {
+export default function PlannerView({ open, onClose, preloadedTasks = [], notebooks = [], sectionsMap = {} }) {
   const [currentDate, setCurrentDate]       = useState(todayStr);
   const [plans, setPlans]                   = useState({});
   const [config, setConfig]                 = useState(DEFAULT_CONFIG);
@@ -92,6 +101,8 @@ export default function PlannerView({ open, onClose, preloadedTasks = [] }) {
   const [resizingId, setResizingId]         = useState(null);
   const [selectedTask, setSelectedTask]     = useState(null);
   const [rightPanel, setRightPanel]         = useState('detail');
+  const [poolWidth, setPoolWidth]           = useState(280);
+  const [aiWidth, setAiWidth]               = useState(280);
 
   const timelineBodyRef = useRef(null);
   const saveTimerRef    = useRef(null);
@@ -215,11 +226,12 @@ export default function PlannerView({ open, onClose, preloadedTasks = [] }) {
 
   function addBlock(task, startTime, fromRollover) {
     const proj    = findProject(task, configRef.current);
+    const color   = proj?.color ?? listColorMapRef.current[(task._listName ?? '').toLowerCase()] ?? '#888';
     const endMin  = Math.min(t2m(startTime) + DEFAULT_DURATION, t2m(configRef.current.workdayEnd));
     const newBlock = {
       id: genId(), taskId: task.id, taskTitle: task.title,
       listId: task._listId, listName: task._listName,
-      projectKey: proj?.key || null, projectColor: proj?.color || '#888',
+      projectKey: proj?.key || null, projectColor: color,
       startTime, endTime: m2t(endMin),
       completed: false, completedAt: null,
       isAISuggested: false, subSteps: [], fromRollover: !!fromRollover,
@@ -401,6 +413,25 @@ export default function PlannerView({ open, onClose, preloadedTasks = [] }) {
     setBreakdownModal(null);
   }
 
+  // ── Panel resize ─────────────────────────────────────────────────────────────
+  function handlePoolResizeStart(e) {
+    e.preventDefault();
+    const startX = e.clientX, startW = poolWidth;
+    const onMove = ev => setPoolWidth(Math.max(180, Math.min(520, startW + ev.clientX - startX)));
+    const onUp   = () => { document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp); };
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  }
+
+  function handleAiResizeStart(e) {
+    e.preventDefault();
+    const startX = e.clientX, startW = aiWidth;
+    const onMove = ev => setAiWidth(Math.max(180, Math.min(520, startW - (ev.clientX - startX))));
+    const onUp   = () => { document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp); };
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  }
+
   // ── Config ───────────────────────────────────────────────────────────────────
   async function handleSaveConfig(newConfig) {
     setConfig(newConfig);
@@ -412,6 +443,19 @@ export default function PlannerView({ open, onClose, preloadedTasks = [] }) {
   // ── Derived ──────────────────────────────────────────────────────────────────
   const timeSlots   = slots(config.workdayStart, config.workdayEnd);
   const scheduledIds = new Set(todayPlan.blocks.map(b => b.taskId));
+
+  // Map each section/list name → a shade of its notebook color
+  const listColorMap = useMemo(() => {
+    const map = {};
+    for (const nb of notebooks) {
+      (sectionsMap[nb.id] || []).forEach((s, i) => {
+        map[s.displayName.toLowerCase()] = shadeColor(nb._color || '#888', i);
+      });
+    }
+    return map;
+  }, [notebooks, sectionsMap]);
+  const listColorMapRef = useRef({});
+  listColorMapRef.current = listColorMap;
 
   const uniqueLists = (() => {
     const seen = new Map();
@@ -437,7 +481,7 @@ export default function PlannerView({ open, onClose, preloadedTasks = [] }) {
     const proj  = findProject(t, config);
     const key   = proj?.key ?? `list:${t._listName ?? 'altro'}`;
     const name  = proj?.name ?? t._listName ?? 'Altro';
-    const color = proj?.color ?? '#888';
+    const color = proj?.color ?? listColorMap[(t._listName ?? '').toLowerCase()] ?? '#888';
     if (!poolByProject[key]) poolByProject[key] = { name, color, tasks: [] };
     poolByProject[key].tasks.push(t);
   }
@@ -532,7 +576,7 @@ export default function PlannerView({ open, onClose, preloadedTasks = [] }) {
       ) : (<>
 
         {/* ── Column 1: Task Pool ── */}
-        <div className="planner-pool">
+        <div className="planner-pool" style={{ width: poolWidth }}>
           <div className="planner-col-header">
             <span>Task</span>
             <div className="planner-filters">
@@ -569,9 +613,23 @@ export default function PlannerView({ open, onClose, preloadedTasks = [] }) {
                       className={`planner-pool-task${isScheduled ? ' scheduled' : ''}${task.importance === 'high' ? ' important' : ''}${selectedTask?.id === task.id ? ' selected' : ''}`}
                       draggable={!isScheduled}
                       onClick={() => { setSelectedTask(task); setRightPanel('detail'); }}
-                      onDragStart={isScheduled ? undefined : e =>
-                        e.dataTransfer.setData('text/plain', JSON.stringify({ type: 'task', task }))
-                      }>
+                      onDragStart={isScheduled ? undefined : e => {
+                        e.dataTransfer.setData('text/plain', JSON.stringify({ type: 'task', task }));
+                        const c = group.color;
+                        const ghost = document.createElement('div');
+                        ghost.textContent = task.title;
+                        Object.assign(ghost.style, {
+                          position: 'fixed', top: '-9999px', left: '-9999px',
+                          background: `${c}28`, border: `1.5px dashed ${c}`,
+                          borderRadius: '6px', color: 'rgba(220,215,200,0.9)',
+                          padding: '5px 10px', fontSize: '11px', fontFamily: "'Outfit',sans-serif",
+                          whiteSpace: 'nowrap', maxWidth: '220px', overflow: 'hidden',
+                          textOverflow: 'ellipsis', opacity: '0.85',
+                        });
+                        document.body.appendChild(ghost);
+                        e.dataTransfer.setDragImage(ghost, 10, 10);
+                        requestAnimationFrame(() => ghost.parentNode?.removeChild(ghost));
+                      }}>
                       <span className="planner-task-dot" style={{ background: group.color }} />
                       <span className="planner-task-title">{task.title}</span>
                       {task.importance === 'high' && !isScheduled && <span className="planner-task-star">★</span>}
@@ -591,6 +649,7 @@ export default function PlannerView({ open, onClose, preloadedTasks = [] }) {
           </div>
         </div>
 
+        <div className="planner-col-resize" onMouseDown={handlePoolResizeStart} title="Ridimensiona" />
         {/* ── Column 2: Timeline ── */}
         <div className="planner-timeline">
           <div className="planner-col-header">
@@ -663,6 +722,12 @@ export default function PlannerView({ open, onClose, preloadedTasks = [] }) {
                   className={`planner-block${block.completed ? ' completed' : ''}${block.isAISuggested ? ' ai-suggested' : ''}`}
                   style={{ top: top + 2, height, borderLeftColor: block.projectColor, background: `${block.projectColor}22` }}
                   draggable={!block.completed && resizingId !== block.id}
+                  onClick={() => {
+                    if (block.taskId && block.listId) {
+                      setSelectedTask({ id: block.taskId, title: block.taskTitle, _listId: block.listId, _listName: block.listName });
+                      setRightPanel('detail');
+                    }
+                  }}
                   onDragStart={e => {
                     e.stopPropagation();
                     e.dataTransfer.setData('text/plain', JSON.stringify({ type: 'block', blockId: block.id }));
@@ -712,8 +777,9 @@ export default function PlannerView({ open, onClose, preloadedTasks = [] }) {
           </div>
         </div>
 
+        <div className="planner-col-resize" onMouseDown={handleAiResizeStart} title="Ridimensiona" />
         {/* ── Column 3: Detail / AI Panel ── */}
-        <div className="planner-ai-panel">
+        <div className="planner-ai-panel" style={{ width: aiWidth }}>
           <div className="planner-col-header">
             <div className="planner-panel-tabs">
               <button
