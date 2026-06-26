@@ -1,0 +1,42 @@
+.cl-root { display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+.cl-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0 24px; height: 56px;
+  background: var(--surface); border-bottom: 1px solid var(--border); flex-shrink: 0;
+}
+.cl-logo { display: flex; align-items: center; gap: 10px; }
+.cl-logo-icon { font-size: 22px; }
+.cl-logo-text { font-size: 17px; font-weight: 700; color: var(--text); }
+.cl-header-right { display: flex; align-items: center; gap: 10px; }
+.cl-user { color: var(--muted); font-size: 13px; }
+.cl-refresh { padding: 6px 10px; font-size: 16px; }
+.cl-main { flex: 1; overflow-y: auto; padding: 24px; }
+.cl-section-title { font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin-bottom: 16px; }
+.cl-section-title.cl-muted { margin-top: 32px; opacity: 0.6; }
+.cl-empty { display: flex; flex-direction: column; align-items: center; gap: 16px; padding: 80px 0; color: var(--muted); text-align: center; }
+.cl-empty-icon { font-size: 48px; }
+.cl-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; }
+.cl-card {
+  display: flex; flex-direction: column; gap: 10px;
+  padding: 16px; background: var(--surface); border: 1px solid var(--border);
+  border-radius: 8px; text-align: left; cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+.cl-card:hover { border-color: var(--accent); background: var(--surface2); }
+.cl-card-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
+.cl-card-info { min-width: 0; }
+.cl-card-name { font-size: 15px; font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cl-card-cliente { color: var(--muted); font-size: 13px; margin-top: 2px; }
+.cl-card-codice { color: var(--muted); font-size: 11px; margin-top: 2px; font-family: monospace; }
+.cl-stato-badge { flex-shrink: 0; }
+.cl-card-kpi { display: flex; flex-direction: column; gap: 6px; }
+.cl-mini-kpi { display: flex; align-items: center; gap: 8px; }
+.cl-mini-label { color: var(--muted); font-size: 11px; width: 40px; flex-shrink: 0; }
+.cl-mini-bar-wrap { flex: 1; height: 4px; background: var(--border2); border-radius: 2px; overflow: hidden; }
+.cl-mini-bar { height: 100%; border-radius: 2px; transition: width 0.3s; }
+.cl-mini-pct { color: var(--muted); font-size: 11px; width: 32px; text-align: right; }
+.cl-card-badges { display: flex; gap: 6px; flex-wrap: wrap; }
+.cl-card-loading { color: var(--muted); font-size: 12px; }
+.cl-card-date { color: var(--muted); font-size: 12px; }
+.cl-archived { opacity: 0.5; }
+.cl-card-archived { opacity: 0.7; }
