@@ -10,7 +10,7 @@ import { cacheGet, cacheSet } from './cache';
 import './PlannerView.css';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
-const SLOT_HEIGHT      = 48;  // px per 30-min slot
+const SLOT_HEIGHT      = 32;  // px per 30-min slot (32 → ~12h visible at once)
 const DEFAULT_DURATION = 60;  // minutes for newly dropped tasks
 const SAVE_DEBOUNCE    = 2000;
 const PLANS_CACHE_TTL  = 5 * 60 * 1000;
@@ -20,8 +20,8 @@ const DEFAULT_CONFIG = {
     { key: 'p1', name: 'Progetto 1', color: '#7eb8c9', todoListNames: [] },
     { key: 'p2', name: 'Progetto 2', color: '#c084a0', todoListNames: [] },
   ],
-  workdayStart: '06:00',
-  workdayEnd: '20:00',
+  workdayStart: '07:30',
+  workdayEnd: '19:30',
 };
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -101,8 +101,8 @@ export default function PlannerView({ open, onClose, preloadedTasks = [], notebo
   const [resizingId, setResizingId]         = useState(null);
   const [selectedTask, setSelectedTask]     = useState(null);
   const [rightPanel, setRightPanel]         = useState('detail');
-  const [poolWidth, setPoolWidth]           = useState(280);
-  const [aiWidth, setAiWidth]               = useState(280);
+  const [poolWidth, setPoolWidth]           = useState(560);
+  const [aiWidth, setAiWidth]               = useState(560);
 
   const timelineBodyRef = useRef(null);
   const saveTimerRef    = useRef(null);
@@ -417,7 +417,7 @@ export default function PlannerView({ open, onClose, preloadedTasks = [], notebo
   function handlePoolResizeStart(e) {
     e.preventDefault();
     const startX = e.clientX, startW = poolWidth;
-    const onMove = ev => setPoolWidth(Math.max(180, Math.min(520, startW + ev.clientX - startX)));
+    const onMove = ev => setPoolWidth(Math.max(180, Math.min(800, startW + ev.clientX - startX)));
     const onUp   = () => { document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp); };
     document.addEventListener('mousemove', onMove);
     document.addEventListener('mouseup', onUp);
@@ -426,7 +426,7 @@ export default function PlannerView({ open, onClose, preloadedTasks = [], notebo
   function handleAiResizeStart(e) {
     e.preventDefault();
     const startX = e.clientX, startW = aiWidth;
-    const onMove = ev => setAiWidth(Math.max(180, Math.min(520, startW - (ev.clientX - startX))));
+    const onMove = ev => setAiWidth(Math.max(180, Math.min(800, startW - (ev.clientX - startX))));
     const onUp   = () => { document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp); };
     document.addEventListener('mousemove', onMove);
     document.addEventListener('mouseup', onUp);
@@ -624,7 +624,7 @@ export default function PlannerView({ open, onClose, preloadedTasks = [], notebo
                           borderRadius: '6px', color: '#fff',
                           padding: '5px 10px', fontSize: '11px', fontFamily: "'Outfit',sans-serif",
                           whiteSpace: 'nowrap', maxWidth: '220px', overflow: 'hidden',
-                          textOverflow: 'ellipsis', opacity: '0.82',
+                          textOverflow: 'ellipsis', opacity: '0.95',
                         });
                         document.body.appendChild(ghost);
                         e.dataTransfer.setDragImage(ghost, 10, 10);
