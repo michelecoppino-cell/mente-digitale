@@ -18,7 +18,7 @@ const DEFAULT_CONFIG = {
     { key: 'p1', name: 'Progetto 1', color: '#7eb8c9', todoListNames: [] },
     { key: 'p2', name: 'Progetto 2', color: '#c084a0', todoListNames: [] },
   ],
-  workdayStart: '08:00',
+  workdayStart: '06:00',
   workdayEnd: '20:00',
 };
 
@@ -56,6 +56,10 @@ function findProject(task, cfg) {
   return null;
 }
 
+function isAllDay(ev) {
+  return ev.isAllDay || (!ev.start?.dateTime && !!ev.start?.date);
+}
+
 function getWeekDays(dateStr) {
   const d = new Date(dateStr + 'T12:00:00');
   const dow = d.getDay();
@@ -75,7 +79,6 @@ export default function PlannerView({ open, onClose, preloadedTasks = [] }) {
   const [config, setConfig]                 = useState(DEFAULT_CONFIG);
   const [todayPlan, setTodayPlan]           = useState({ date: todayStr(), blocks: [], emailExtractedActions: [] });
   const [calEvents, setCalEvents]           = useState([]);
-  const [rolloverBlocks, setRolloverBlocks] = useState([]);
   const [projectFilter, setProjectFilter]   = useState('all');
   const [saveStatus, setSaveStatus]         = useState('idle');
   const [emailStatus, setEmailStatus]       = useState('idle');
@@ -135,12 +138,6 @@ export default function PlannerView({ open, onClose, preloadedTasks = [] }) {
       const dayPlan = allPlans[currentDate] || { date: currentDate, blocks: [], emailExtractedActions: [] };
       setTodayPlan(dayPlan);
 
-      const yesterday = new Date(currentDate);
-      yesterday.setDate(yesterday.getDate() - 1);
-      const yStr = yesterday.toISOString().split('T')[0];
-      const yPlan = allPlans[yStr];
-      if (yPlan) setRolloverBlocks(yPlan.blocks.filter(b => !b.completed));
-      else setRolloverBlocks([]);
     } catch (e) { console.error('planner plans load', e); }
   }
 
@@ -206,9 +203,8 @@ export default function PlannerView({ open, onClose, preloadedTasks = [] }) {
     if (!dragOverTime) return;
     try {
       const data = JSON.parse(e.dataTransfer.getData('text/plain'));
-      if (data.type === 'task')     addBlock(data.task, dragOverTime, false);
-      else if (data.type === 'rollover') addBlock(data.task, dragOverTime, true);
-      else if (data.type === 'block')    moveBlock(data.blockId, dragOverTime);
+      if (data.type === 'task')   addBlock(data.task, dragOverTime, false);
+      else if (data.type === 'block') moveBlock(data.blockId, dragOverTime);
     } catch {}
     setDragOverTime(null);
   }
@@ -425,10 +421,12 @@ export default function PlannerView({ open, onClose, preloadedTasks = [] }) {
   })();
 
   const poolTasks = preloadedTasks.filter(t => {
-    if (scheduledIds.has(t.id)) return false;
     if (projectFilter === 'all') return true;
     return t._listName === projectFilter;
   });
+
+  const allDayEvents = calEvents.filter(isAllDay);
+  const timedEvents  = calEvents.filter(ev => !isAllDay(ev));
 
   const poolByProject = {};
   for (const t of poolTasks) {
@@ -550,27 +548,6 @@ export default function PlannerView({ open, onClose, preloadedTasks = [] }) {
             </div>
           </div>
           <div className="planner-pool-body">
-            {/* Rollover */}
-            {rolloverBlocks.length > 0 && (
-              <div className="planner-rollover-section">
-                <div className="planner-rollover-banner">⚠️ Da ieri — {rolloverBlocks.length} task</div>
-                {rolloverBlocks.map(b => (
-                  <div
-                    key={b.id}
-                    className="planner-pool-task rollover"
-                    draggable
-                    onDragStart={e => e.dataTransfer.setData('text/plain', JSON.stringify({
-                      type: 'rollover',
-                      task: { id: b.taskId, title: b.taskTitle, _listId: b.listId, _listName: b.listName },
-                    }))}>
-                    <span className="planner-task-dot" style={{ background: b.projectColor || '#888' }} />
-                    <span className="planner-task-title">{b.taskTitle}</span>
-                    <span className="planner-task-list">{b.listName}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-
             {/* Pool by project */}
             {Object.entries(poolByProject).map(([key, group]) => (
               <div key={key} className="planner-pool-group">
@@ -579,25 +556,30 @@ export default function PlannerView({ open, onClose, preloadedTasks = [] }) {
                   {group.name}
                   <span className="planner-group-count">{group.tasks.length}</span>
                 </div>
-                {group.tasks.map(task => (
-                  <div
-                    key={task.id}
-                    className={`planner-pool-task${task.importance === 'high' ? ' important' : ''}`}
-                    draggable
-                    onDragStart={e => e.dataTransfer.setData('text/plain', JSON.stringify({ type: 'task', task }))}>
-                    <span className="planner-task-dot" style={{ background: group.color }} />
-                    <span className="planner-task-title">{task.title}</span>
-                    {task.importance === 'high' && <span className="planner-task-star">★</span>}
-                  </div>
-                ))}
+                {group.tasks.map(task => {
+                  const isScheduled = scheduledIds.has(task.id);
+                  return (
+                    <div
+                      key={task.id}
+                      className={`planner-pool-task${isScheduled ? ' scheduled' : ''}${task.importance === 'high' ? ' important' : ''}`}
+                      draggable={!isScheduled}
+                      onDragStart={isScheduled ? undefined : e =>
+                        e.dataTransfer.setData('text/plain', JSON.stringify({ type: 'task', task }))
+                      }>
+                      <span className="planner-task-dot" style={{ background: group.color }} />
+                      <span className="planner-task-title">{task.title}</span>
+                      {task.importance === 'high' && !isScheduled && <span className="planner-task-star">★</span>}
+                    </div>
+                  );
+                })}
               </div>
             ))}
 
-            {poolTasks.length === 0 && rolloverBlocks.length === 0 && (
+            {poolTasks.length === 0 && (
               <div className="planner-empty">
                 {preloadedTasks.length === 0
                   ? 'Caricamento task in corso…'
-                  : 'Tutti i task sono già pianificati'}
+                  : 'Nessun task in questa lista'}
               </div>
             )}
           </div>
@@ -613,6 +595,13 @@ export default function PlannerView({ open, onClose, preloadedTasks = [] }) {
             </span>
             <span className="planner-timeline-hint">Trascina qui i task →</span>
           </div>
+          {allDayEvents.length > 0 && (
+            <div className="planner-allday-strip">
+              {allDayEvents.map((ev, i) => (
+                <span key={i} className="planner-allday-chip" title={ev.subject}>{ev.subject}</span>
+              ))}
+            </div>
+          )}
           <div
             ref={timelineBodyRef}
             className="planner-timeline-body"
@@ -634,7 +623,7 @@ export default function PlannerView({ open, onClose, preloadedTasks = [] }) {
             ))}
 
             {/* Calendar events — absolute, read-only */}
-            {calEvents.map((ev, i) => {
+            {timedEvents.map((ev, i) => {
               const evStart = isoToHHMM(ev.start?.dateTime || ev.start?.date);
               const evEnd   = isoToHHMM(ev.end?.dateTime   || ev.end?.date);
               if (!evStart || !evEnd) return null;
@@ -844,6 +833,22 @@ function WeeklyTimeline({ weekDays, plans, calEvents, config, workStart, timeSlo
           </div>
         ))}
       </div>
+      {/* All-day events row */}
+      <div className="planner-week-allday-row">
+        <div className="planner-week-gutter" />
+        {weekDays.map(day => {
+          const dayAllDay = calEvents.filter(ev =>
+            isAllDay(ev) && (ev.start?.date || ev.start?.dateTime || '').slice(0, 10) === day
+          );
+          return (
+            <div key={day} className="planner-week-allday-col">
+              {dayAllDay.map((ev, i) => (
+                <span key={i} className="planner-allday-chip" title={ev.subject}>{ev.subject}</span>
+              ))}
+            </div>
+          );
+        })}
+      </div>
       <div className="planner-week-body">
         <div className="planner-week-gutter-col">
           {timeSlots.map(slot => (
@@ -853,7 +858,7 @@ function WeeklyTimeline({ weekDays, plans, calEvents, config, workStart, timeSlo
         {weekDays.map(day => {
           const dayPlan   = plans[day] || { blocks: [] };
           const dayEvents = calEvents.filter(ev =>
-            (ev.start?.dateTime || ev.start?.date || '').slice(0, 10) === day
+            !isAllDay(ev) && (ev.start?.dateTime || ev.start?.date || '').slice(0, 10) === day
           );
           return (
             <div key={day} className={`planner-week-day-col${day === today ? ' today' : ''}`}>

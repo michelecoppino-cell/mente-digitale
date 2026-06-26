@@ -238,19 +238,15 @@
   scrollbar-color: var(--border2) transparent;
 }
 
-/* Rollover section */
-.planner-rollover-section {
-  margin-bottom: 12px;
+/* Scheduled (already on timeline) state */
+.planner-pool-task.scheduled {
+  opacity: 0.42;
+  cursor: default;
+  pointer-events: none;
 }
-.planner-rollover-banner {
-  font-size: 11px;
-  color: #c8a96e;
-  background: rgba(200,169,110,0.1);
-  border: 1px solid rgba(200,169,110,0.25);
-  border-radius: 5px;
-  padding: 4px 8px;
-  margin-bottom: 6px;
-  font-weight: 500;
+.planner-pool-task.scheduled .planner-task-title {
+  text-decoration: line-through;
+  text-decoration-color: var(--muted);
 }
 
 /* Pool groups */
@@ -759,6 +755,53 @@
   width: 100%;
 }
 .planner-modal-apply-btn:hover { background: rgba(200,169,110,0.1); }
+
+/* ── All-day events strip (day view) ── */
+.planner-allday-strip {
+  flex-shrink: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--border);
+  background: rgba(8,10,14,0.55);
+  min-height: 28px;
+}
+.planner-allday-chip {
+  background: rgba(126,184,201,0.12);
+  border: 1px solid rgba(126,184,201,0.28);
+  color: #7eb8c9;
+  border-radius: 3px;
+  padding: 1px 7px;
+  font-size: 10px;
+  white-space: nowrap;
+  overflow: hidden;
+  max-width: 200px;
+  text-overflow: ellipsis;
+}
+
+/* All-day row in week view */
+.planner-week-allday-row {
+  display: flex;
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--border);
+  min-height: 24px;
+  background: rgba(8,10,14,0.45);
+}
+.planner-week-allday-col {
+  flex: 1;
+  border-left: 1px solid var(--border);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  padding: 2px 3px;
+  min-height: 24px;
+}
+.planner-week-allday-col .planner-allday-chip {
+  max-width: 100%;
+  font-size: 9px;
+  padding: 1px 4px;
+}
 
 /* ── Resize handle ── */
 .planner-block-resize {
