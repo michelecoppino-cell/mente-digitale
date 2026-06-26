@@ -6,7 +6,7 @@
  * Env richiesta: ANTHROPIC_API_KEY (secret in Cloudflare Pages)
  */
 
-const CLAUDE_MODEL = 'claude-haiku-4-5-20251001';
+const CLAUDE_MODEL = 'claude-haiku-4-5';
 const CLAUDE_API   = 'https://api.anthropic.com/v1/messages';
 
 function json(data, status = 200) {
