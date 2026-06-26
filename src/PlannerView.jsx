@@ -103,18 +103,19 @@ export default function PlannerView({ open, onClose, preloadedTasks = [], notebo
   const [rightPanel, setRightPanel]         = useState('detail');
   const [poolWidth, setPoolWidth]           = useState(560);
   const [aiWidth, setAiWidth]               = useState(560);
+  const [calOutOfRange, setCalOutOfRange]   = useState(false);
 
-  const timelineBodyRef = useRef(null);
-  const saveTimerRef    = useRef(null);
-  const plansRef        = useRef({});
-  const configRef       = useRef(DEFAULT_CONFIG);
-  const resizingRef     = useRef(null);
+  const timelineBodyRef  = useRef(null);
+  const saveTimerRef     = useRef(null);
+  const plansRef         = useRef({});
+  const configRef        = useRef(DEFAULT_CONFIG);
+  const resizingRef      = useRef(null);
+  const allCalEventsRef  = useRef([]);
 
-  // ── Load on open / date change ──────────────────────────────────────────────
+  // ── Load config + plans once on open; scroll to now ─────────────────────────
   useEffect(() => {
     if (!open) return;
-    loadAll();
-    // Scroll to current hour on open
+    Promise.all([initConfig(), initPlans()]);
     requestAnimationFrame(() => {
       if (!timelineBodyRef.current) return;
       const now = new Date();
@@ -123,15 +124,16 @@ export default function PlannerView({ open, onClose, preloadedTasks = [], notebo
       const offset = Math.max(0, (cur - workStart) / 30 * SLOT_HEIGHT - 80);
       timelineBodyRef.current.scrollTop = offset;
     });
+  }, [open]); // eslint-disable-line
+
+  // ── Fetch bulk cal events once, then filter locally on every date/view change ─
+  useEffect(() => {
+    if (!open) return;
+    fetchCalEventsAll();
   }, [open, currentDate, viewMode]); // eslint-disable-line
 
   // Reset filter when tasks list changes
   useEffect(() => { setProjectFilter('all'); }, [preloadedTasks]);
-
-  async function loadAll() {
-    await Promise.all([initConfig(), initPlans()]);
-    fetchCalEvents();
-  }
 
   async function initConfig() {
     try {
@@ -156,20 +158,65 @@ export default function PlannerView({ open, onClose, preloadedTasks = [], notebo
     } catch (e) { console.error('planner plans load', e); }
   }
 
-  async function fetchCalEvents() {
+  // Fetch a 6-month window once; subsequent calls filter from the in-memory/cache ref.
+  async function fetchCalEventsAll() {
+    const CAL_BULK_KEY = 'cal_events_bulk';
+    const CAL_MONTHS   = 3;
+
+    // 1 — in-memory (same session)
+    if (allCalEventsRef.current.length > 0) {
+      filterCalEvents(allCalEventsRef.current);
+      return;
+    }
+    // 2 — session cache
+    const cached = cacheGet(CAL_BULK_KEY);
+    if (cached) {
+      allCalEventsRef.current = cached;
+      filterCalEvents(cached);
+      return;
+    }
+    // 3 — API: fetch the full ±3-month window once
     try {
-      let start, end;
-      if (viewMode === 'week') {
-        const wd = getWeekDays(currentDate);
-        start = new Date(wd[0] + 'T00:00:00');
-        end   = new Date(wd[6] + 'T23:59:59');
-      } else {
-        start = new Date(currentDate + 'T00:00:00');
-        end   = new Date(currentDate + 'T23:59:59');
-      }
-      const evs = await getCalendarEvents(start, end);
-      setCalEvents(evs);
-    } catch (e) { console.error('cal events load', e); }
+      const today = new Date();
+      const start = new Date(today); start.setMonth(today.getMonth() - CAL_MONTHS); start.setHours(0,0,0,0);
+      const end   = new Date(today); end.setMonth(today.getMonth() + CAL_MONTHS);   end.setHours(23,59,59,999);
+      const evs = await getCalendarEvents(start, end, 500);
+      allCalEventsRef.current = evs;
+      cacheSet(CAL_BULK_KEY, evs, 30 * 60 * 1000);
+      filterCalEvents(evs);
+    } catch (e) {
+      console.error('cal events bulk load', e);
+      filterCalEvents([]);
+    }
+  }
+
+  function filterCalEvents(allEvs) {
+    const CAL_MONTHS = 3;
+    const today      = new Date();
+    const minDate    = new Date(today); minDate.setMonth(today.getMonth() - CAL_MONTHS);
+    const maxDate    = new Date(today); maxDate.setMonth(today.getMonth() + CAL_MONTHS);
+    const viewDate   = new Date(currentDate + 'T12:00:00');
+
+    if (viewDate < minDate || viewDate > maxDate) {
+      setCalOutOfRange(true);
+      setCalEvents([]);
+      return;
+    }
+    setCalOutOfRange(false);
+
+    let viewStart, viewEnd;
+    if (viewMode === 'week') {
+      const wd = getWeekDays(currentDate);
+      viewStart = wd[0]; viewEnd = wd[6];
+    } else {
+      viewStart = currentDate; viewEnd = currentDate;
+    }
+
+    const filtered = allEvs.filter(ev => {
+      const d = (ev.start?.dateTime || ev.start?.date || '').slice(0, 10);
+      return d >= viewStart && d <= viewEnd;
+    });
+    setCalEvents(filtered);
   }
 
   // ── Save ────────────────────────────────────────────────────────────────────
@@ -660,6 +707,11 @@ export default function PlannerView({ open, onClose, preloadedTasks = [], notebo
             </span>
             <span className="planner-timeline-hint">Trascina qui i task →</span>
           </div>
+          {calOutOfRange && (
+            <div className="planner-cal-outofrange">
+              📅 Calendario non caricato oltre i 3 mesi dalla data odierna
+            </div>
+          )}
           {allDayEvents.length > 0 && (
             <div className="planner-allday-strip">
               {allDayEvents.map((ev, i) => (

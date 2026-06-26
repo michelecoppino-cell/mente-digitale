@@ -84,10 +84,10 @@ export async function getCalendars() {
   return d.value || [];
 }
 
-export async function getCalendarEvents(startDate, endDate) {
+export async function getCalendarEvents(startDate, endDate, top = 50) {
   const start = startDate.toISOString();
   const end = endDate.toISOString();
-  const params = `startDateTime=${start}&endDateTime=${end}&$orderby=start/dateTime&$top=50&$select=subject,start,end,isAllDay`;
+  const params = `startDateTime=${start}&endDateTime=${end}&$orderby=start/dateTime&$top=${top}&$select=subject,start,end,isAllDay`;
 
   // Recupera tutti i calendari per distinguere condivisi da propri
   let calendars = [];

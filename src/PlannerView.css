@@ -767,6 +767,19 @@
 }
 .planner-modal-apply-btn:hover { background: rgba(200,169,110,0.1); }
 
+/* ── Calendar out-of-range banner ── */
+.planner-cal-outofrange {
+  flex-shrink: 0;
+  padding: 6px 14px;
+  background: rgba(200,169,110,0.08);
+  border-bottom: 1px solid rgba(200,169,110,0.2);
+  font-size: 11px;
+  color: var(--accent);
+  letter-spacing: 0;
+  text-transform: none;
+  font-weight: 400;
+}
+
 /* ── All-day events strip (day view) ── */
 .planner-allday-strip {
   flex-shrink: 0;
