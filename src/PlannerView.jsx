@@ -56,6 +56,18 @@ function findProject(task, cfg) {
   return null;
 }
 
+function getWeekDays(dateStr) {
+  const d = new Date(dateStr + 'T12:00:00');
+  const dow = d.getDay();
+  const monday = new Date(d);
+  monday.setDate(d.getDate() - (dow === 0 ? 6 : dow - 1));
+  return Array.from({ length: 7 }, (_, i) => {
+    const day = new Date(monday);
+    day.setDate(monday.getDate() + i);
+    return day.toISOString().split('T')[0];
+  });
+}
+
 // ── Main PlannerView ──────────────────────────────────────────────────────────
 export default function PlannerView({ open, onClose, preloadedTasks = [] }) {
   const [currentDate, setCurrentDate]       = useState(todayStr);
@@ -71,11 +83,14 @@ export default function PlannerView({ open, onClose, preloadedTasks = [] }) {
   const [settingsOpen, setSettingsOpen]     = useState(false);
   const [breakdownModal, setBreakdownModal] = useState(null);
   const [dragOverTime, setDragOverTime]     = useState(null);
+  const [viewMode, setViewMode]             = useState('day');
+  const [resizingId, setResizingId]         = useState(null);
 
   const timelineBodyRef = useRef(null);
   const saveTimerRef    = useRef(null);
   const plansRef        = useRef({});
   const configRef       = useRef(DEFAULT_CONFIG);
+  const resizingRef     = useRef(null);
 
   // ── Load on open / date change ──────────────────────────────────────────────
   useEffect(() => {
@@ -90,7 +105,10 @@ export default function PlannerView({ open, onClose, preloadedTasks = [] }) {
       const offset = Math.max(0, (cur - workStart) / 30 * SLOT_HEIGHT - 80);
       timelineBodyRef.current.scrollTop = offset;
     });
-  }, [open, currentDate]); // eslint-disable-line
+  }, [open, currentDate, viewMode]); // eslint-disable-line
+
+  // Reset filter when tasks list changes
+  useEffect(() => { setProjectFilter('all'); }, [preloadedTasks]);
 
   async function loadAll() {
     await Promise.all([initConfig(), initPlans()]);
@@ -128,8 +146,15 @@ export default function PlannerView({ open, onClose, preloadedTasks = [] }) {
 
   async function fetchCalEvents() {
     try {
-      const start = new Date(currentDate + 'T00:00:00');
-      const end   = new Date(currentDate + 'T23:59:59');
+      let start, end;
+      if (viewMode === 'week') {
+        const wd = getWeekDays(currentDate);
+        start = new Date(wd[0] + 'T00:00:00');
+        end   = new Date(wd[6] + 'T23:59:59');
+      } else {
+        start = new Date(currentDate + 'T00:00:00');
+        end   = new Date(currentDate + 'T23:59:59');
+      }
       const evs = await getCalendarEvents(start, end);
       setCalEvents(evs);
     } catch (e) { console.error('cal events load', e); }
@@ -231,6 +256,36 @@ export default function PlannerView({ open, onClose, preloadedTasks = [] }) {
 
   function handleRemoveBlock(blockId) {
     mutatePlan(prev => ({ ...prev, blocks: prev.blocks.filter(b => b.id !== blockId) }));
+  }
+
+  function handleResizeStart(e, block) {
+    e.preventDefault();
+    e.stopPropagation();
+    resizingRef.current = { blockId: block.id, startY: e.clientY, startEndMin: t2m(block.endTime) };
+    setResizingId(block.id);
+
+    function onMove(ev) {
+      const { blockId, startY, startEndMin } = resizingRef.current;
+      const deltaMin = Math.round((ev.clientY - startY) / SLOT_HEIGHT * 30 / 30) * 30;
+      const newEndMin = Math.max(startEndMin + 30,
+        Math.min(t2m(configRef.current.workdayEnd), startEndMin + deltaMin));
+      setTodayPlan(prev => ({
+        ...prev,
+        blocks: prev.blocks.map(b =>
+          b.id === blockId ? { ...b, endTime: m2t(newEndMin) } : b),
+      }));
+    }
+
+    function onUp() {
+      resizingRef.current = null;
+      setResizingId(null);
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+      setTodayPlan(prev => { scheduleSave(prev); return prev; });
+    }
+
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
   }
 
   function dismissEmailAction(actionId) {
@@ -358,10 +413,21 @@ export default function PlannerView({ open, onClose, preloadedTasks = [] }) {
   const timeSlots   = slots(config.workdayStart, config.workdayEnd);
   const scheduledIds = new Set(todayPlan.blocks.map(b => b.taskId));
 
+  const uniqueLists = (() => {
+    const seen = new Map();
+    for (const t of preloadedTasks) {
+      if (t._listName && !seen.has(t._listName)) {
+        const proj = findProject(t, config);
+        seen.set(t._listName, { name: t._listName, color: proj?.color || '#888' });
+      }
+    }
+    return Array.from(seen.values());
+  })();
+
   const poolTasks = preloadedTasks.filter(t => {
     if (scheduledIds.has(t.id)) return false;
     if (projectFilter === 'all') return true;
-    return findProject(t, config)?.key === projectFilter;
+    return t._listName === projectFilter;
   });
 
   const poolByProject = {};
@@ -394,21 +460,31 @@ export default function PlannerView({ open, onClose, preloadedTasks = [] }) {
       <div className="planner-header">
         <div className="planner-header-left">
           <button className="planner-nav-btn" onClick={() => {
-            const d = new Date(currentDate + 'T12:00:00'); d.setDate(d.getDate() - 1);
+            const d = new Date(currentDate + 'T12:00:00');
+            d.setDate(d.getDate() - (viewMode === 'week' ? 7 : 1));
             setCurrentDate(d.toISOString().split('T')[0]);
           }}>◀</button>
           <span className="planner-date">
-            {new Date(currentDate + 'T12:00:00').toLocaleDateString('it-IT', {
+            {viewMode === 'week' ? (() => {
+              const wd = getWeekDays(currentDate);
+              const f = ds => new Date(ds + 'T12:00:00').toLocaleDateString('it-IT', { day: 'numeric', month: 'short' });
+              return `${f(wd[0])} – ${f(wd[6])}`;
+            })() : new Date(currentDate + 'T12:00:00').toLocaleDateString('it-IT', {
               weekday: 'long', day: 'numeric', month: 'long',
             })}
           </span>
           <button className="planner-nav-btn" onClick={() => {
-            const d = new Date(currentDate + 'T12:00:00'); d.setDate(d.getDate() + 1);
+            const d = new Date(currentDate + 'T12:00:00');
+            d.setDate(d.getDate() + (viewMode === 'week' ? 7 : 1));
             setCurrentDate(d.toISOString().split('T')[0]);
           }}>▶</button>
           {currentDate !== todayStr() && (
             <button className="planner-today-btn" onClick={() => setCurrentDate(todayStr())}>Oggi</button>
           )}
+          <div className="planner-view-toggle">
+            <button className={viewMode === 'day' ? 'active' : ''} onClick={() => setViewMode('day')}>Giorno</button>
+            <button className={viewMode === 'week' ? 'active' : ''} onClick={() => setViewMode('week')}>Settimana</button>
+          </div>
         </div>
         <div className="planner-header-actions">
           <button
@@ -437,8 +513,20 @@ export default function PlannerView({ open, onClose, preloadedTasks = [] }) {
         <SettingsPanel config={config} onSave={handleSaveConfig} onClose={() => setSettingsOpen(false)} />
       )}
 
-      {/* 3-column body */}
+      {/* Body */}
       <div className="planner-body">
+
+      {viewMode === 'week' ? (
+        <WeeklyTimeline
+          weekDays={getWeekDays(currentDate)}
+          plans={plans}
+          calEvents={calEvents}
+          config={config}
+          workStart={workStart}
+          timeSlots={timeSlots}
+          onDayClick={day => { setCurrentDate(day); setViewMode('day'); }}
+        />
+      ) : (<>
 
         {/* ── Column 1: Task Pool ── */}
         <div className="planner-pool">
@@ -450,13 +538,13 @@ export default function PlannerView({ open, onClose, preloadedTasks = [] }) {
                 onClick={() => setProjectFilter('all')}>
                 Tutti
               </button>
-              {config.projects.map(p => (
+              {uniqueLists.map(list => (
                 <button
-                  key={p.key}
-                  className={`planner-filter-btn${projectFilter === p.key ? ' active' : ''}`}
-                  style={{ '--proj-color': p.color }}
-                  onClick={() => setProjectFilter(prev => prev === p.key ? 'all' : p.key)}>
-                  {p.name.slice(0, 8)}
+                  key={list.name}
+                  className={`planner-filter-btn${projectFilter === list.name ? ' active' : ''}`}
+                  style={{ '--proj-color': list.color }}
+                  onClick={() => setProjectFilter(prev => prev === list.name ? 'all' : list.name)}>
+                  {list.name}
                 </button>
               ))}
             </div>
@@ -579,7 +667,7 @@ export default function PlannerView({ open, onClose, preloadedTasks = [] }) {
                   key={block.id}
                   className={`planner-block${block.completed ? ' completed' : ''}${block.isAISuggested ? ' ai-suggested' : ''}`}
                   style={{ top: top + 2, height, borderLeftColor: block.projectColor, background: `${block.projectColor}22` }}
-                  draggable={!block.completed}
+                  draggable={!block.completed && resizingId !== block.id}
                   onDragStart={e => {
                     e.stopPropagation();
                     e.dataTransfer.setData('text/plain', JSON.stringify({ type: 'block', blockId: block.id }));
@@ -609,6 +697,9 @@ export default function PlannerView({ open, onClose, preloadedTasks = [] }) {
                         <div key={s.id} className={`planner-step${s.completed ? ' done' : ''}`}>· {s.title}</div>
                       ))}
                     </div>
+                  )}
+                  {!block.completed && (
+                    <div className="planner-block-resize" onMouseDown={e => handleResizeStart(e, block)} />
                   )}
                 </div>
               );
@@ -692,6 +783,7 @@ export default function PlannerView({ open, onClose, preloadedTasks = [] }) {
             )}
           </div>
         </div>
+      </>)}
       </div>
 
       {/* Breakdown modal */}
@@ -732,6 +824,73 @@ export default function PlannerView({ open, onClose, preloadedTasks = [] }) {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// ── WeeklyTimeline ────────────────────────────────────────────────────────────
+function WeeklyTimeline({ weekDays, plans, calEvents, config, workStart, timeSlots, onDayClick }) {
+  const today = todayStr();
+  return (
+    <div className="planner-week-wrap">
+      <div className="planner-week-head">
+        <div className="planner-week-gutter" />
+        {weekDays.map(day => (
+          <div
+            key={day}
+            className={`planner-week-day-header${day === today ? ' today' : ''}`}
+            onClick={() => onDayClick(day)}>
+            {new Date(day + 'T12:00:00').toLocaleDateString('it-IT', { weekday: 'short', day: 'numeric', month: 'short' })}
+          </div>
+        ))}
+      </div>
+      <div className="planner-week-body">
+        <div className="planner-week-gutter-col">
+          {timeSlots.map(slot => (
+            <div key={slot} className="planner-week-slot-label" style={{ height: SLOT_HEIGHT }}>{slot}</div>
+          ))}
+        </div>
+        {weekDays.map(day => {
+          const dayPlan   = plans[day] || { blocks: [] };
+          const dayEvents = calEvents.filter(ev =>
+            (ev.start?.dateTime || ev.start?.date || '').slice(0, 10) === day
+          );
+          return (
+            <div key={day} className={`planner-week-day-col${day === today ? ' today' : ''}`}>
+              {timeSlots.map(slot => (
+                <div key={slot} className="planner-week-slot-row" style={{ height: SLOT_HEIGHT }} />
+              ))}
+              {dayEvents.map((ev, i) => {
+                const evStart = isoToHHMM(ev.start?.dateTime || ev.start?.date);
+                const evEnd   = isoToHHMM(ev.end?.dateTime   || ev.end?.date);
+                if (!evStart || !evEnd) return null;
+                const top    = Math.max(0, (t2m(evStart) - workStart) / 30 * SLOT_HEIGHT);
+                const height = Math.max(SLOT_HEIGHT / 2, (t2m(evEnd) - t2m(evStart)) / 30 * SLOT_HEIGHT);
+                return (
+                  <div key={i} className="planner-week-cal-event"
+                    style={{ top, height }}
+                    title={`${evStart}–${evEnd} · ${ev.subject}`}>
+                    <span className="planner-event-time">{evStart}</span>
+                    <span className="planner-event-title">{ev.subject}</span>
+                  </div>
+                );
+              })}
+              {dayPlan.blocks.map(block => {
+                const top    = Math.max(0, (t2m(block.startTime) - workStart) / 30 * SLOT_HEIGHT);
+                const height = Math.max(SLOT_HEIGHT - 4, (t2m(block.endTime) - t2m(block.startTime)) / 30 * SLOT_HEIGHT - 4);
+                return (
+                  <div key={block.id}
+                    className={`planner-week-task-block${block.completed ? ' completed' : ''}`}
+                    style={{ top: top + 2, height, borderLeftColor: block.projectColor, background: `${block.projectColor}22` }}
+                    title={`${block.startTime}–${block.endTime} · ${block.taskTitle}`}>
+                    <span className="planner-block-title">{block.taskTitle}</span>
+                  </div>
+                );
+              })}
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
