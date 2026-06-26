@@ -620,11 +620,11 @@ export default function PlannerView({ open, onClose, preloadedTasks = [], notebo
                         ghost.textContent = task.title;
                         Object.assign(ghost.style, {
                           position: 'fixed', top: '-9999px', left: '-9999px',
-                          background: `${c}28`, border: `1.5px dashed ${c}`,
-                          borderRadius: '6px', color: 'rgba(220,215,200,0.9)',
+                          background: c, border: `1.5px dashed rgba(255,255,255,0.6)`,
+                          borderRadius: '6px', color: '#fff',
                           padding: '5px 10px', fontSize: '11px', fontFamily: "'Outfit',sans-serif",
                           whiteSpace: 'nowrap', maxWidth: '220px', overflow: 'hidden',
-                          textOverflow: 'ellipsis', opacity: '0.85',
+                          textOverflow: 'ellipsis', opacity: '0.82',
                         });
                         document.body.appendChild(ghost);
                         e.dataTransfer.setDragImage(ghost, 10, 10);
