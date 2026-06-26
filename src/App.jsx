@@ -7,6 +7,7 @@ import IdentityPanel from './IdentityPanel';
 import Panel from './Panel';
 import SchedulePanel from './SchedulePanel';
 import RssPanel from './RssPanel';
+import PlannerView from './PlannerView';
 import { COLORS } from './config';
 import './App.css';
 
@@ -22,6 +23,7 @@ export default function App() {
   const [zoom, setZoom] = useState(1);
   const [scheduleOpen, setScheduleOpen] = useState(false);
   const [rssOpen, setRssOpen] = useState(false);
+  const [plannerOpen, setPlannerOpen] = useState(false);
   const [identityOpen, setIdentityOpen] = useState(null);
   const pagesCache = useRef({});
   const tasksCache = useRef({});
@@ -186,6 +188,14 @@ export default function App() {
     <div className="app">
       <header className="header">
         <div className="header-left">
+          {account && (
+            <button
+              className={`planner-toggle-btn${plannerOpen ? ' active' : ''}`}
+              onClick={() => setPlannerOpen(o => !o)}
+              title="Pianificatore giornaliero">
+              📅 Piano
+            </button>
+          )}
         </div>
         <div className="header-center">
           <h1 className="logo">Mente Digitale</h1>
@@ -219,7 +229,7 @@ export default function App() {
         </div>
       ) : (
         <>
-        {!scheduleOpen && <button
+        {!scheduleOpen && !plannerOpen && <button
             className="alarm-btn"
             onClick={() => setScheduleOpen(o => !o)}
             title="Attività">
@@ -252,6 +262,11 @@ export default function App() {
           />
           <RssPanel open={rssOpen} onToggle={() => setRssOpen(o => !o)} />
         </div>
+        <PlannerView
+          open={plannerOpen}
+          onClose={() => setPlannerOpen(false)}
+          preloadedTasks={scheduledTasks || []}
+        />
         </>
       )}
     </div>
