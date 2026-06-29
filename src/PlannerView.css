@@ -468,6 +468,8 @@
   align-items: center;
   gap: 5px;
   min-width: 0;
+  position: relative;
+  z-index: 1;
 }
 
 .planner-block-check {
@@ -520,6 +522,8 @@
   font-size: 9px;
   color: var(--muted);
   flex-wrap: wrap;
+  position: relative;
+  z-index: 1;
 }
 
 .planner-ai-badge {
@@ -545,6 +549,60 @@
   line-height: 1.3;
 }
 .planner-step.done { text-decoration: line-through; opacity: 0.5; }
+
+/* ── Sub-step overlay (dashed zones inside task blocks) ── */
+.planner-substep-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  border-radius: inherit;
+}
+.planner-substep-zone {
+  position: absolute;
+  left: 0; right: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.planner-substep-label {
+  font-size: 10px;
+  font-weight: 500;
+  color: rgba(255,255,255,0.88);
+  text-align: center;
+  padding: 0 10px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+  text-shadow: 0 1px 4px rgba(0,0,0,0.55);
+  pointer-events: none;
+  user-select: none;
+}
+.planner-substep-zone.done .planner-substep-label {
+  text-decoration: line-through;
+  color: rgba(255,255,255,0.4);
+}
+.planner-substep-divider {
+  position: absolute;
+  bottom: -6px;
+  left: 0; right: 0;
+  height: 12px;
+  cursor: ns-resize;
+  pointer-events: auto;
+  z-index: 3;
+}
+.planner-substep-divider::after {
+  content: '';
+  position: absolute;
+  left: 0; right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  border-top: 1.5px dashed rgba(255,255,255,0.7);
+}
+.planner-substep-divider:hover::after {
+  border-top-color: rgba(255,255,255,1);
+}
 
 /* Drop indicator */
 .planner-drop-indicator {

@@ -110,6 +110,7 @@ export default function PlannerView({ open, onClose, preloadedTasks = [], notebo
   const plansRef         = useRef({});
   const configRef        = useRef(DEFAULT_CONFIG);
   const resizingRef      = useRef(null);
+  const subResizingRef   = useRef(null);
   const allCalEventsRef  = useRef([]);
 
   // ── Load config + plans once on open; scroll to now ─────────────────────────
@@ -447,15 +448,58 @@ export default function PlannerView({ open, onClose, preloadedTasks = [], notebo
   function applyBreakdown(items) {
     if (!breakdownModal) return;
     const selected = items.filter(i => i.selected);
+    const n = selected.length;
     mutatePlan(prev => ({
       ...prev,
       blocks: prev.blocks.map(b =>
         b.id === breakdownModal.block.id
-          ? { ...b, subSteps: selected.map(i => ({ id: i.id, title: i.displayName, completed: i.isChecked })) }
+          ? {
+              ...b,
+              subSteps:  selected.map(i => ({ id: i.id, title: i.displayName, completed: i.isChecked })),
+              subSplits: n > 1 ? Array.from({ length: n - 1 }, (_, k) => (k + 1) / n) : [],
+            }
           : b
       ),
     }));
     setBreakdownModal(null);
+  }
+
+  function handleSubSplitResizeStart(e, block, splitIdx, blockHeight) {
+    e.preventDefault();
+    e.stopPropagation();
+    const n = block.subSteps.length;
+    const splits = block.subSplits?.length === n - 1
+      ? [...block.subSplits]
+      : Array.from({ length: n - 1 }, (_, k) => (k + 1) / n);
+    subResizingRef.current = { blockId: block.id, splitIdx, startY: e.clientY, startFrac: splits[splitIdx], blockHeight, splits };
+
+    function onMove(ev) {
+      const { blockId, splitIdx, startY, startFrac, blockHeight, splits: orig } = subResizingRef.current;
+      const deltaFrac = (ev.clientY - startY) / blockHeight;
+      const minGap = Math.max(0.05, 20 / blockHeight);
+      const lo = splitIdx > 0 ? orig[splitIdx - 1] + minGap : minGap;
+      const hi = splitIdx < orig.length - 1 ? orig[splitIdx + 1] - minGap : 1 - minGap;
+      const newFrac = Math.max(lo, Math.min(hi, startFrac + deltaFrac));
+      setTodayPlan(prev => ({
+        ...prev,
+        blocks: prev.blocks.map(b => {
+          if (b.id !== blockId) return b;
+          const next = b.subSplits ? [...b.subSplits] : [...orig];
+          next[splitIdx] = newFrac;
+          return { ...b, subSplits: next };
+        }),
+      }));
+    }
+
+    function onUp() {
+      subResizingRef.current = null;
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+      setTodayPlan(prev => { scheduleSave(prev); return prev; });
+    }
+
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
   }
 
   // ── Panel resize ─────────────────────────────────────────────────────────────
@@ -801,13 +845,36 @@ export default function PlannerView({ open, onClose, preloadedTasks = [], notebo
                     {block.listName && <span>{block.listName}</span>}
                     {block.isAISuggested && <span className="planner-ai-badge">AI</span>}
                   </div>
-                  {block.subSteps?.length > 0 && (
-                    <div className="planner-block-steps">
-                      {block.subSteps.slice(0, 3).map(s => (
-                        <div key={s.id} className={`planner-step${s.completed ? ' done' : ''}`}>· {s.title}</div>
-                      ))}
-                    </div>
-                  )}
+                  {block.subSteps?.length > 0 && (() => {
+                    const n = block.subSteps.length;
+                    const splits = block.subSplits?.length === n - 1
+                      ? block.subSplits
+                      : Array.from({ length: n - 1 }, (_, k) => (k + 1) / n);
+                    return (
+                      <div className="planner-substep-overlay">
+                        {block.subSteps.map((s, i) => {
+                          const topFrac = i === 0 ? 0 : splits[i - 1];
+                          const btmFrac = i === n - 1 ? 1 : splits[i];
+                          const subTop    = topFrac * height;
+                          const subHeight = (btmFrac - topFrac) * height;
+                          return (
+                            <div
+                              key={s.id}
+                              className={`planner-substep-zone${s.completed ? ' done' : ''}`}
+                              style={{ top: subTop, height: subHeight }}>
+                              <span className="planner-substep-label">{s.title}</span>
+                              {i < n - 1 && (
+                                <div
+                                  className="planner-substep-divider"
+                                  onMouseDown={ev => handleSubSplitResizeStart(ev, block, i, height)}
+                                />
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    );
+                  })()}
                   {!block.completed && (
                     <div className="planner-block-resize" onMouseDown={e => handleResizeStart(e, block)} />
                   )}
