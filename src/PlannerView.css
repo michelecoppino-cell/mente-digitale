@@ -405,8 +405,8 @@
   left: 40px;
   right: 6px;
   border-radius: 4px;
-  background: rgba(126,184,201,0.12);
-  border-left: 3px solid #7eb8c9;
+  background: rgba(255,255,255,0.07);
+  border-left: 3px solid rgba(255,255,255,0.35);
   padding: 3px 6px;
   overflow: hidden;
   pointer-events: none;
@@ -416,21 +416,20 @@
   gap: 1px;
 }
 .planner-cal-event.shared {
-  background: rgba(192,100,100,0.1);
-  border-left-color: #c07a7a;
+  background: rgba(255,255,255,0.05);
+  border-left-color: rgba(255,255,255,0.2);
 }
 
 .planner-event-time {
   font-size: 9px;
-  color: #7eb8c9;
+  color: rgba(255,255,255,0.5);
   line-height: 1.2;
   flex-shrink: 0;
 }
-.planner-cal-event.shared .planner-event-time { color: #c07a7a; }
 
 .planner-event-title {
   font-size: 10px;
-  color: var(--text);
+  color: rgba(255,255,255,0.75);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1030,8 +1029,8 @@
   left: 2px;
   right: 2px;
   border-radius: 3px;
-  background: rgba(126,184,201,0.12);
-  border-left: 3px solid #7eb8c9;
+  background: rgba(255,255,255,0.07);
+  border-left: 3px solid rgba(255,255,255,0.3);
   padding: 2px 4px;
   overflow: hidden;
   pointer-events: none;

@@ -112,6 +112,8 @@ export default function PlannerView({ open, onClose, preloadedTasks = [], notebo
   const resizingRef      = useRef(null);
   const subResizingRef   = useRef(null);
   const allCalEventsRef  = useRef([]);
+  const currentDateRef   = useRef(currentDate);
+  currentDateRef.current = currentDate;
 
   // ── Load config + plans once on open; scroll to now ─────────────────────────
   useEffect(() => {
@@ -132,6 +134,12 @@ export default function PlannerView({ open, onClose, preloadedTasks = [], notebo
     if (!open) return;
     fetchCalEventsAll();
   }, [open, currentDate, viewMode]); // eslint-disable-line
+
+  // Sync todayPlan when the user navigates to a different date
+  useEffect(() => {
+    if (!open) return;
+    setTodayPlan(plansRef.current[currentDate] || { date: currentDate, blocks: [], emailExtractedActions: [] });
+  }, [currentDate]); // eslint-disable-line
 
   // Reset filter when tasks list changes
   useEffect(() => { setProjectFilter('all'); }, [preloadedTasks]);
@@ -242,6 +250,8 @@ export default function PlannerView({ open, onClose, preloadedTasks = [], notebo
   function mutatePlan(updater) {
     setTodayPlan(prev => {
       const next = updater(prev);
+      // Immediately update plansRef so navigating away and back shows correct data
+      plansRef.current = { ...plansRef.current, [currentDateRef.current]: next };
       scheduleSave(next);
       return next;
     });
