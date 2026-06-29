@@ -320,13 +320,13 @@ export default function PlannerView({ open, onClose, preloadedTasks = [], notebo
   function handleResizeStart(e, block) {
     e.preventDefault();
     e.stopPropagation();
-    resizingRef.current = { blockId: block.id, startY: e.clientY, startEndMin: t2m(block.endTime) };
+    resizingRef.current = { blockId: block.id, startY: e.clientY, startEndMin: t2m(block.endTime), blockStartMin: t2m(block.startTime) };
     setResizingId(block.id);
 
     function onMove(ev) {
-      const { blockId, startY, startEndMin } = resizingRef.current;
+      const { blockId, startY, startEndMin, blockStartMin } = resizingRef.current;
       const deltaMin = Math.round((ev.clientY - startY) / SLOT_HEIGHT * 30 / 30) * 30;
-      const newEndMin = Math.max(startEndMin + 30,
+      const newEndMin = Math.max(blockStartMin + 30,
         Math.min(t2m(configRef.current.workdayEnd), startEndMin + deltaMin));
       setTodayPlan(prev => ({
         ...prev,
@@ -428,32 +428,30 @@ export default function PlannerView({ open, onClose, preloadedTasks = [], notebo
   }
 
   async function handleBreakdownTask(block) {
-    setBreakdownModal({ block, steps: null, loading: true });
+    if (!block.taskId || !block.listId) {
+      setBreakdownModal({ block, items: [], loading: false, noTask: true });
+      return;
+    }
+    setBreakdownModal({ block, items: null, loading: true });
     try {
-      const res  = await fetch('/api/daily-plan', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'breakdown-task',
-          taskTitle: block.taskTitle,
-          listName:  block.listName,
-          projectKey: block.projectKey,
-        }),
-      });
-      const data = await res.json();
-      setBreakdownModal({ block, steps: data.steps || [], loading: false });
+      const full = await getTask(block.listId, block.taskId);
+      const items = (full.checklistItems || [])
+        .sort((a, b) => a.isChecked - b.isChecked)
+        .map(i => ({ ...i, selected: !i.isChecked }));
+      setBreakdownModal({ block, items, loading: false });
     } catch {
-      setBreakdownModal(prev => ({ ...prev, loading: false, steps: [], error: true }));
+      setBreakdownModal(prev => ({ ...prev, loading: false, items: [], error: true }));
     }
   }
 
-  function applyBreakdown(steps) {
+  function applyBreakdown(items) {
     if (!breakdownModal) return;
+    const selected = items.filter(i => i.selected);
     mutatePlan(prev => ({
       ...prev,
       blocks: prev.blocks.map(b =>
         b.id === breakdownModal.block.id
-          ? { ...b, subSteps: steps.map(s => ({ id: genId(), title: s.title, completed: false })) }
+          ? { ...b, subSteps: selected.map(i => ({ id: i.id, title: i.displayName, completed: i.isChecked })) }
           : b
       ),
     }));
@@ -772,7 +770,7 @@ export default function PlannerView({ open, onClose, preloadedTasks = [], notebo
                 <div
                   key={block.id}
                   className={`planner-block${block.completed ? ' completed' : ''}${block.isAISuggested ? ' ai-suggested' : ''}`}
-                  style={{ top: top + 2, height, borderLeftColor: block.projectColor, background: `${block.projectColor}22` }}
+                  style={{ top: top + 2, height, borderLeftColor: block.projectColor, background: block.projectColor }}
                   draggable={!block.completed && resizingId !== block.id}
                   onClick={() => {
                     if (block.taskId && block.listId) {
@@ -930,34 +928,49 @@ export default function PlannerView({ open, onClose, preloadedTasks = [], notebo
         <div className="planner-modal-overlay" onClick={() => setBreakdownModal(null)}>
           <div className="planner-modal" onClick={e => e.stopPropagation()}>
             <div className="planner-modal-header">
-              <span>Scomponi: {breakdownModal.block.taskTitle}</span>
+              <span>Sottoattività: {breakdownModal.block.taskTitle}</span>
               <button onClick={() => setBreakdownModal(null)}>✕</button>
             </div>
             <div className="planner-modal-body">
               {breakdownModal.loading && (
-                <div className="planner-modal-loading">Analisi con AI in corso…</div>
+                <div className="planner-modal-loading">Caricamento sottoattività…</div>
+              )}
+              {!breakdownModal.loading && breakdownModal.noTask && (
+                <div className="planner-modal-loading" style={{ color: 'var(--muted)' }}>
+                  Questo blocco non è collegato a un task To-Do.
+                </div>
               )}
               {!breakdownModal.loading && breakdownModal.error && (
                 <div className="planner-modal-loading" style={{ color: '#c07a7a' }}>
-                  Errore durante l&apos;analisi. Riprova.
+                  Errore durante il caricamento. Riprova.
                 </div>
               )}
-              {!breakdownModal.loading && breakdownModal.steps && (
-                <>
-                  {breakdownModal.steps.map((s, i) => (
-                    <div key={i} className="planner-modal-step">
-                      <span>{i + 1}.</span> {s.title}
-                    </div>
-                  ))}
-                  {breakdownModal.steps.length > 0 && (
-                    <button className="planner-modal-apply-btn" onClick={() => applyBreakdown(breakdownModal.steps)}>
-                      Applica sottostep al blocco
+              {!breakdownModal.loading && breakdownModal.items && !breakdownModal.noTask && (
+                breakdownModal.items.length === 0 ? (
+                  <div className="planner-modal-loading">Nessuna sottoattività nel task.</div>
+                ) : (
+                  <>
+                    <div className="planner-modal-hint">Seleziona le sottoattività da mostrare nel blocco:</div>
+                    {breakdownModal.items.map((item, i) => (
+                      <div
+                        key={item.id}
+                        className={`planner-modal-step selectable${item.selected ? ' selected' : ''}${item.isChecked ? ' done' : ''}`}
+                        onClick={() => setBreakdownModal(prev => ({
+                          ...prev,
+                          items: prev.items.map((it, j) => j === i ? { ...it, selected: !it.selected } : it),
+                        }))}>
+                        <span className="planner-modal-check">{item.selected ? '☑' : '☐'}</span>
+                        <span className="planner-modal-step-text">{item.displayName}</span>
+                        {item.isChecked && <span className="planner-modal-done-badge">✓</span>}
+                      </div>
+                    ))}
+                    <button
+                      className="planner-modal-apply-btn"
+                      onClick={() => applyBreakdown(breakdownModal.items)}>
+                      Applica al blocco ({breakdownModal.items.filter(i => i.selected).length} selezionate)
                     </button>
-                  )}
-                  {breakdownModal.steps.length === 0 && (
-                    <div className="planner-modal-loading">Nessun sottostep suggerito.</div>
-                  )}
-                </>
+                  </>
+                )
               )}
             </div>
           </div>

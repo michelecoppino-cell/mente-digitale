@@ -753,6 +753,29 @@
 .planner-modal-step:last-of-type { border-bottom: none; margin-bottom: 14px; }
 .planner-modal-step span:first-child { color: var(--accent); flex-shrink: 0; }
 
+.planner-modal-hint {
+  font-size: 11px;
+  color: var(--muted);
+  margin-bottom: 8px;
+}
+.planner-modal-step.selectable {
+  cursor: pointer;
+  border-radius: 5px;
+  padding: 7px 8px;
+  margin: 0 -8px;
+  transition: background 0.12s;
+  align-items: center;
+}
+.planner-modal-step.selectable:hover { background: rgba(255,255,255,0.05); }
+.planner-modal-step.selectable.selected { background: rgba(200,169,110,0.08); }
+.planner-modal-step.selectable.done .planner-modal-step-text { text-decoration: line-through; color: var(--muted); }
+.planner-modal-check { font-size: 14px; flex-shrink: 0; color: var(--accent); }
+.planner-modal-step-text { flex: 1; }
+.planner-modal-done-badge {
+  font-size: 10px; color: var(--muted);
+  border: 1px solid var(--border2); border-radius: 3px; padding: 0 4px;
+}
+
 .planner-modal-apply-btn {
   background: none;
   border: 1px solid var(--accent);
