@@ -64,6 +64,9 @@
 .sync-dot.loading { background: var(--accent); animation: pulse 1s infinite; }
 .sync-dot.error { background: #c07a7a; }
 
+.sync-label-text { white-space: nowrap; }
+@media (max-width: 640px) { .sync-label-text { display: none; } }
+
 @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.35} }
 
 /* ── Login ── */

@@ -39,7 +39,7 @@ function parseRss(xml, maxItems = 20) {
   while ((m = re.exec(xml)) !== null && items.length < maxItems) {
     const block = m[1];
     const pubDate = extractTag(block, 'pubDate');
-    try { if (pubDate && new Date(pubDate).getTime() < cutoff) continue; } catch {}
+    try { if (pubDate && new Date(pubDate).getTime() < cutoff) continue; } catch { /* pubDate non parsabile — tieni l'item */ }
     const title = extractTag(block, 'title');
     const desc  = extractTag(block, 'description').slice(0, 200);
     if (title) items.push({ title, desc });

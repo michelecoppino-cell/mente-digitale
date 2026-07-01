@@ -18,6 +18,7 @@ export default function MindMap({
   const activeSectionRef = useRef(null);
   const todoCountMapRef = useRef({});
   const internalZoomRef = useRef(false); // true durante zoom D3, evita feedback loop
+  const tickCountRef = useRef(0);
   const openIdentityRef = useRef(null);
   openIdentityRef.current = onIdentityOpen;
 
@@ -488,8 +489,6 @@ export default function MindMap({
     });
   }
 
-  const tickCountRef = { current: 0 };
-
   function tick() {
     const g = gRef.current;
     if (!g) return;
@@ -583,7 +582,7 @@ export default function MindMap({
       try {
         const hull = d3.polygonHull(pts);
         return hull ? [{ nb, hull }] : [];
-      } catch(e) { return []; }
+      } catch { return []; }
     });
 
     const sel = g.select('.hulls').selectAll('.hull').data(hullData, d => d.nb.id);

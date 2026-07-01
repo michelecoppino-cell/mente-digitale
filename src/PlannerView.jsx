@@ -38,8 +38,12 @@ function slots(start, end) {
   while (cur < t2m(end)) { out.push(m2t(cur)); cur += 30; }
   return out;
 }
+// Data in formato YYYY-MM-DD nel fuso orario locale (toISOString darebbe UTC)
+function localDateStr(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
 function todayStr() {
-  return new Date().toISOString().split('T')[0];
+  return localDateStr(new Date());
 }
 function genId() {
   return Math.random().toString(36).slice(2) + Date.now().toString(36);
@@ -79,7 +83,7 @@ function getWeekDays(dateStr) {
   return Array.from({ length: 7 }, (_, i) => {
     const day = new Date(monday);
     day.setDate(monday.getDate() + i);
-    return day.toISOString().split('T')[0];
+    return localDateStr(day);
   });
 }
 
@@ -276,13 +280,13 @@ export default function PlannerView({ open, onClose, preloadedTasks = [], notebo
     if (!dragOverTime) return;
     try {
       const data = JSON.parse(e.dataTransfer.getData('text/plain'));
-      if (data.type === 'task')   addBlock(data.task, dragOverTime, false);
+      if (data.type === 'task')   addBlock(data.task, dragOverTime);
       else if (data.type === 'block') moveBlock(data.blockId, dragOverTime);
-    } catch {}
+    } catch { /* payload drag non valido — ignora */ }
     setDragOverTime(null);
   }
 
-  function addBlock(task, startTime, fromRollover) {
+  function addBlock(task, startTime) {
     const proj    = findProject(task, configRef.current);
     const color   = proj?.color ?? listColorMapRef.current[(task._listName ?? '').toLowerCase()] ?? '#888';
     const endMin  = Math.min(t2m(startTime) + DEFAULT_DURATION, t2m(configRef.current.workdayEnd));
@@ -292,10 +296,9 @@ export default function PlannerView({ open, onClose, preloadedTasks = [], notebo
       projectKey: proj?.key || null, projectColor: color,
       startTime, endTime: m2t(endMin),
       completed: false, completedAt: null,
-      isAISuggested: false, subSteps: [], fromRollover: !!fromRollover,
+      isAISuggested: false, subSteps: [],
     };
     mutatePlan(prev => ({ ...prev, blocks: [...prev.blocks, newBlock] }));
-    if (fromRollover) setRolloverBlocks(prev => prev.filter(b => b.taskId !== task.id));
   }
 
   function moveBlock(blockId, newStartTime) {
@@ -320,7 +323,7 @@ export default function PlannerView({ open, onClose, preloadedTasks = [], notebo
       ),
     }));
     if (block.listId && block.taskId) {
-      try { await completeTask(block.listId, block.taskId); } catch {}
+      try { await completeTask(block.listId, block.taskId); } catch (e) { console.error('complete task', e); }
     }
   }
 
@@ -608,7 +611,7 @@ export default function PlannerView({ open, onClose, preloadedTasks = [], notebo
           <button className="planner-nav-btn" onClick={() => {
             const d = new Date(currentDate + 'T12:00:00');
             d.setDate(d.getDate() - (viewMode === 'week' ? 7 : 1));
-            setCurrentDate(d.toISOString().split('T')[0]);
+            setCurrentDate(localDateStr(d));
           }}>◀</button>
           <span className="planner-date">
             {viewMode === 'week' ? (() => {
@@ -622,7 +625,7 @@ export default function PlannerView({ open, onClose, preloadedTasks = [], notebo
           <button className="planner-nav-btn" onClick={() => {
             const d = new Date(currentDate + 'T12:00:00');
             d.setDate(d.getDate() + (viewMode === 'week' ? 7 : 1));
-            setCurrentDate(d.toISOString().split('T')[0]);
+            setCurrentDate(localDateStr(d));
           }}>▶</button>
           {currentDate !== todayStr() && (
             <button className="planner-today-btn" onClick={() => setCurrentDate(todayStr())}>Oggi</button>
@@ -667,7 +670,6 @@ export default function PlannerView({ open, onClose, preloadedTasks = [], notebo
           weekDays={getWeekDays(currentDate)}
           plans={plans}
           calEvents={calEvents}
-          config={config}
           workStart={workStart}
           timeSlots={timeSlots}
           onDayClick={day => { setCurrentDate(day); setViewMode('day'); }}
@@ -951,8 +953,7 @@ export default function PlannerView({ open, onClose, preloadedTasks = [], notebo
                             onClick={() => {
                               addBlock(
                                 { id: genId(), title: a.extractedAction, _listId: null, _listName: 'Email' },
-                                config.workdayStart,
-                                false
+                                config.workdayStart
                               );
                               dismissEmailAction(a.id);
                             }}>
@@ -1078,7 +1079,7 @@ function TaskDetailPanel({ task, onClose }) {
       }
       setNotes(body);
       setItems((full.checklistItems || []).sort((a, b) => a.isChecked - b.isChecked));
-    } catch {}
+    } catch (e) { console.error('load task detail', e); }
     setLoading(false);
   }
 
@@ -1088,7 +1089,7 @@ function TaskDetailPanel({ task, onClose }) {
     clearTimeout(notesTimerRef.current);
     notesTimerRef.current = setTimeout(async () => {
       setSavingNotes(true);
-      try { await updateTaskBody(task._listId, task.id, val); } catch {}
+      try { await updateTaskBody(task._listId, task.id, val); } catch (e) { console.error('save notes', e); }
       setSavingNotes(false);
     }, 1200);
   }
@@ -1096,12 +1097,12 @@ function TaskDetailPanel({ task, onClose }) {
   async function handleToggle(item) {
     const checked = !item.isChecked;
     setItems(prev => prev.map(i => i.id === item.id ? { ...i, isChecked: checked } : i));
-    try { await updateChecklistItem(task._listId, task.id, item.id, checked); } catch {}
+    try { await updateChecklistItem(task._listId, task.id, item.id, checked); } catch (e) { console.error('toggle checklist', e); }
   }
 
   async function handleDelete(itemId) {
     setItems(prev => prev.filter(i => i.id !== itemId));
-    try { await deleteChecklistItem(task._listId, task.id, itemId); } catch {}
+    try { await deleteChecklistItem(task._listId, task.id, itemId); } catch (e) { console.error('delete checklist', e); }
   }
 
   async function handleAdd(e) {
@@ -1175,7 +1176,7 @@ function TaskDetailPanel({ task, onClose }) {
 }
 
 // ── WeeklyTimeline ────────────────────────────────────────────────────────────
-function WeeklyTimeline({ weekDays, plans, calEvents, config, workStart, timeSlots, onDayClick }) {
+function WeeklyTimeline({ weekDays, plans, calEvents, workStart, timeSlots, onDayClick }) {
   const today = todayStr();
   return (
     <div className="planner-week-wrap">

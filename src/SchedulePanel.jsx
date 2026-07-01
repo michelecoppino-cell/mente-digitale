@@ -1,9 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
-import { getTodoLists, completeTask, getCalendarEvents } from './api';
-import { getToken } from './auth';
+import { getTodoLists, getTodoTasks, completeTask, getCalendarEvents } from './api';
 
-const TODAY = new Date();
-TODAY.setHours(0,0,0,0);
+// Mezzanotte di oggi — da ricalcolare a ogni uso, non a caricamento modulo
+function todayMidnight() { const d = new Date(); d.setHours(0,0,0,0); return d; }
 
 const START_HOUR = 0;
 const END_HOUR   = 24;
@@ -24,6 +23,7 @@ const DAYS_IT   = ['L','M','M','G','V','S','D'];
 const DAYS_ABB  = ['Lun','Mar','Mer','Gio','Ven','Sab','Dom'];
 
 function groupTasks(tasks) {
+  const TODAY = todayMidnight();
   const tomorrow = addDays(TODAY,1);
   const endThisWeek = endOfWeek(TODAY);
   const endNextWeek = endOfWeek(addDays(TODAY,7));
@@ -65,6 +65,7 @@ function evHeight(e, hh) {
 }
 
 export default function SchedulePanel({ open, onClose, preloadedTasks, onSelectSection, sectionsMap }) {
+  const TODAY = todayMidnight();
   const [tasks, setTasks] = useState([]);
   const [loading, setLoading] = useState(false);
   const [calView, setCalView] = useState('week'); // 'week' | 'month'
@@ -76,6 +77,7 @@ export default function SchedulePanel({ open, onClose, preloadedTasks, onSelectS
   const [selectedDay, setSelectedDay] = useState(null);
   const [, setCalLoading] = useState(false);
   const gridRef = useRef(null);
+  const effectiveHourH = calExpanded ? HOUR_H * 2 : HOUR_H;
 
   useEffect(() => {
     if (preloadedTasks) { setTasks(preloadedTasks); return; }
@@ -108,16 +110,11 @@ export default function SchedulePanel({ open, onClose, preloadedTasks, onSelectS
       const lists = await getTodoLists();
       const allTasks = [];
       for (const l of lists) {
-        const token = await getToken();
-        const r = await fetch(
-          `https://graph.microsoft.com/v1.0/me/todo/lists/${l.id}/tasks?$filter=status ne 'completed'&$top=50`,
-          { headers: { Authorization: `Bearer ${token}` } }
-        );
-        if (r.ok) {
-          const d = await r.json();
-          allTasks.push(...(d.value||[]).map(t=>({...t,_listName:l.displayName,_listId:l.id})));
-        }
-        await new Promise(r=>setTimeout(r,150));
+        try {
+          const tasks = await getTodoTasks(l.id);
+          allTasks.push(...tasks.map(t => ({ ...t, _listName: l.displayName, _listId: l.id })));
+        } catch (e) { console.error('load tasks', l.displayName, e); }
+        await new Promise(r => setTimeout(r, 150));
       }
       setTasks(allTasks);
     } catch(e) { console.error(e); }
@@ -195,7 +192,6 @@ export default function SchedulePanel({ open, onClose, preloadedTasks, onSelectS
   // Ore da visualizzare (ogni 4h per compattezza)
   const hours = Array.from({length: END_HOUR - START_HOUR}, (_, i) => START_HOUR + i);
   const hourTicks = hours.filter(h => h % 4 === 0);
-  const effectiveHourH = calExpanded ? HOUR_H * 2 : HOUR_H;
   const totalH = hours.length * effectiveHourH;
 
   // Ora corrente per la linea rossa

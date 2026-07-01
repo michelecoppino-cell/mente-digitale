@@ -1,10 +1,10 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { getPages, getTodoTasks, createTask, completeTask, loadODLinksFromCloud, saveODLinksToCloud } from './api';
 
 const LOCAL_KEY = 'onedrive_links_v2';
 
 function loadLocal() {
-  try { return JSON.parse(localStorage.getItem(LOCAL_KEY) || '{}'); } catch(e) { return {}; }
+  try { return JSON.parse(localStorage.getItem(LOCAL_KEY) || '{}'); } catch { return {}; }
 }
 
 function openProtocol(url) {
@@ -14,7 +14,7 @@ function openProtocol(url) {
   a.click();
 }
 function saveLocal(obj) {
-  try { localStorage.setItem(LOCAL_KEY, JSON.stringify(obj)); } catch(e) {}
+  try { localStorage.setItem(LOCAL_KEY, JSON.stringify(obj)); } catch { /* quota piena — ignora */ }
 }
 
 export default function Panel({ selected, pagesCache, tasksCache, onClose }) {
@@ -42,7 +42,7 @@ export default function Panel({ selected, pagesCache, tasksCache, onClose }) {
           setOdLinks(cloudLinks);
           saveLocal(cloudLinks);
         }
-      } catch(e) {}
+      } catch (e) { console.error('OD links sync', e); }
     }
     syncFromCloud();
   }, []);
@@ -173,7 +173,7 @@ export default function Panel({ selected, pagesCache, tasksCache, onClose }) {
     setNewODName(''); setNewODUrl(''); setNewODUrlPc('');
     setEditingOD(null); setAddingOD(false);
     setOdSyncing(true);
-    try { await saveODLinksToCloud(next); } catch(e) {}
+    try { await saveODLinksToCloud(next); } catch (e) { console.error('OD sync error', e); }
     setOdSyncing(false);
   }
 
@@ -372,7 +372,7 @@ function CopyBtn({ text }) {
       await navigator.clipboard.writeText(text);
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
-    } catch(e) {
+    } catch {
       // Fallback per browser che non supportano clipboard API
       const el = document.createElement('textarea');
       el.value = text;

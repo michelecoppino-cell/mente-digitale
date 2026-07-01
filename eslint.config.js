@@ -24,6 +24,10 @@ export default defineConfig([
     },
     rules: {
       'no-unused-vars': ['error', { varsIgnorePattern: '^[A-Z_]' }],
+      'no-empty': ['error', { allowEmptyCatch: true }],
+      // Il codebase usa ref condivisi via prop (pagesCache/tasksCache) e function
+      // declaration hoisted negli effect: pattern voluti, non errori bloccanti.
+      'react-hooks/immutability': 'warn',
     },
   },
 ])

@@ -1,4 +1,4 @@
-const CACHE = 'mente-digitale-v1';
+const CACHE = 'mente-digitale-v2';
 const PRECACHE = ['/', '/index.html'];
 
 self.addEventListener('install', e => {
@@ -19,7 +19,27 @@ self.addEventListener('fetch', e => {
   // Solo per richieste alla stessa origine (non API Microsoft)
   if (!e.request.url.startsWith(self.location.origin)) return;
   if (e.request.url.includes('/v1.0/')) return;
+  // Le API dinamiche non vanno mai in cache
+  if (e.request.url.includes('/api/')) return;
 
+  // HTML (navigazioni): network-first, così i deploy arrivano subito;
+  // la cache serve solo da fallback offline
+  if (e.request.mode === 'navigate' || e.request.destination === 'document') {
+    e.respondWith(
+      fetch(e.request)
+        .then(res => {
+          if (res.ok) {
+            const clone = res.clone();
+            caches.open(CACHE).then(c => c.put(e.request, clone));
+          }
+          return res;
+        })
+        .catch(() => caches.match(e.request).then(c => c || caches.match('/')))
+    );
+    return;
+  }
+
+  // Asset statici (JS/CSS con hash, immagini, font): cache-first
   e.respondWith(
     caches.match(e.request).then(cached => {
       const networkFetch = fetch(e.request).then(res => {

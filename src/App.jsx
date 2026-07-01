@@ -97,7 +97,8 @@ export default function App() {
         );
       }, 2000);
 
-    } catch {
+    } catch (e) {
+      console.error('load', e);
       setSync({ state: 'error', label: 'Errore caricamento' });
     }
   }
@@ -116,7 +117,7 @@ export default function App() {
         tasks.forEach(t => allTasks.push({ ...t, _listName: l.displayName, _listId: l.id }));
         if (tasks.length > 0) counts[l.displayName.toLowerCase()] = tasks.length;
         await new Promise(r => setTimeout(r, 200));
-      } catch(e) {}
+      } catch (e) { console.error('preload tasks', l.displayName, e); }
     }
     setScheduledTasks(allTasks);
     setTodoCountMap(counts);
@@ -142,7 +143,7 @@ export default function App() {
         }
         pagesCache.current[sectionId] = cached;
         await new Promise(r => setTimeout(r, 400));
-      } catch(e) {}
+      } catch (e) { console.error('preload pages', sectionId, e); }
     }
     preloadRunningRef.current = false;
   }
@@ -201,6 +202,12 @@ export default function App() {
           <h1 className="logo">Mente Digitale</h1>
         </div>
         <div className="header-right">
+          {account && (
+            <div className="sync-status" title={sync.label}>
+              <span className={`sync-dot ${sync.state}`} />
+              <span className="sync-label-text">{sync.label}</span>
+            </div>
+          )}
           <div className="zoom-controls">
             <button className="zoom-btn" onClick={() => setZoom(z => Math.max(0.15, +(z - 0.2).toFixed(2)))}>−</button>
             <span className="zoom-label">{Math.round(zoom * 100)}%</span>

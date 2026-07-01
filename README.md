@@ -1,16 +1,54 @@
-# React + Vite
+# Mente Digitale
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Dashboard personale (PWA) che unifica l'ecosistema Microsoft 365 in un'unica "mente digitale":
+una mappa mentale interattiva dei taccuini OneNote, un pianificatore giornaliero collegato a
+Microsoft To-Do e al calendario Outlook, e un briefing di notizie generato con l'AI.
 
-Currently, two official plugins are available:
+## Funzionalità
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+- **Mappa mentale (D3)** — taccuini e sezioni OneNote come grafo force-directed navigabile;
+  badge con il numero di task aperti per sezione; "orb" centrale con documenti identitari
+  (Bussola / Visione) salvati su OneDrive.
+- **Pannello sezione** — pagine OneNote, task To-Do della lista omonima e link OneDrive
+  per la sezione selezionata.
+- **Pianificatore giornaliero** — drag & drop dei task su una timeline a slot di 30 minuti,
+  vista giorno/settimana, eventi del calendario in sola lettura, sottostep ridimensionabili,
+  piani salvati su OneDrive. Piano AI generato via Claude (`/api/daily-plan`) ed estrazione
+  di action item dalle email.
+- **Pannello attività** — task raggruppati per scadenza + calendario settimanale/mensile.
+- **Briefing notizie** — riassunti AI dei feed ANSA (mondo, Italia, Friuli) via `/api/briefing`.
 
-## React Compiler
+## Architettura
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+| Componente | Tecnologia |
+|---|---|
+| Frontend | React 19 + Vite, D3 per la mappa |
+| Autenticazione | MSAL Browser (account Microsoft personale, scope Graph in sola lettura + To-Do/Files in scrittura) |
+| Dati | Microsoft Graph (OneNote, To-Do, Calendar, OneDrive, Mail) con cache localStorage a TTL |
+| Backend | Cloudflare Pages Functions (`functions/api/*`) |
+| AI | Claude Haiku (`daily-plan`), Mistral (`briefing`) |
+| Automazioni | GitHub Actions (`generate-news`, `sync-calendar`) |
 
-## Expanding the ESLint configuration
+I dati utente non transitano da alcun backend proprio: il browser parla direttamente con
+Microsoft Graph; le funzioni Cloudflare ricevono solo i payload minimi necessari all'AI.
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+## Sviluppo
+
+```bash
+npm install
+npm run dev       # dev server Vite
+npm run lint      # ESLint
+npm run build     # build di produzione in dist/
+```
+
+### Variabili d'ambiente (Cloudflare Pages)
+
+| Nome | Uso |
+|---|---|
+| `ANTHROPIC_API_KEY` | `/api/daily-plan` (piano AI, email, breakdown task) |
+| `MISTRAL_API_KEY` | `/api/briefing` (riassunto notizie) |
+
+### Configurazione MSAL
+
+`src/config.js` contiene `CLIENT_ID` dell'app registrata su Entra ID e gli scope richiesti.
+Il redirect URI è l'origin corrente.
