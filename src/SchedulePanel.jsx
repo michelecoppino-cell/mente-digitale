@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { getTodoLists, getTodoTasks, completeTask, getCalendarEvents } from './api';
+import Skeleton from './Skeleton';
 
 // Mezzanotte di oggi — da ricalcolare a ogni uso, non a caricamento modulo
 function todayMidnight() { const d = new Date(); d.setHours(0,0,0,0); return d; }
@@ -211,7 +212,7 @@ export default function SchedulePanel({ open, onClose, preloadedTasks, onSelectS
 
         {/* ── Task ── */}
         <div className={`schedule-tasks-section ${calExpanded?'tasks-collapsed':''}`}>
-          {loading && <div className="panel-loading">Caricamento…</div>}
+          {loading && <Skeleton rows={6} height={15} />}
           {groups.map(group => (
             <div key={group.key} className="schedule-group">
               <div className={`schedule-group-label ${group.key==='overdue'?'overdue':''}`}>

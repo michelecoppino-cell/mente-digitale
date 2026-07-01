@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { getPages, getTodoTasks, createTask, completeTask, loadODLinksFromCloud, saveODLinksToCloud } from './api';
+import Skeleton from './Skeleton';
 
 const LOCAL_KEY = 'onedrive_links_v2';
 
@@ -220,7 +221,7 @@ export default function Panel({ selected, pagesCache, tasksCache, onClose }) {
                   {adding ? '…' : '+'}
                 </button>
               </div>
-              {loadingTasks && <div className="panel-loading">Caricamento…</div>}
+              {loadingTasks && <Skeleton rows={4} />}
               <div className="panel-col-body">
                 {tasks.map(t => <TaskRow key={t.id} task={t} color={color} onComplete={handleComplete} />)}
                 {noDeadlineTasks.map(t => <TaskRow key={t.id} task={t} color={color} onComplete={handleComplete} />)}
@@ -244,7 +245,7 @@ export default function Panel({ selected, pagesCache, tasksCache, onClose }) {
               ↗ Apri sezione
             </div>
           )}
-          {loadingPages && <div className="panel-loading">Caricamento…</div>}
+          {loadingPages && <Skeleton rows={5} />}
           <div className="panel-col-body">
             <PageTree pages={pages} />
             {!loadingPages && !pages.length && <div className="panel-empty">Nessuna pagina</div>}

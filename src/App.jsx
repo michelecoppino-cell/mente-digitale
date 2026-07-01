@@ -4,6 +4,7 @@ import { getNotebooks, getSections, getTodoLists, getTodoTasks, getPages } from 
 import { cacheGet, cacheSet, cacheClear, TTL } from './cache';
 import MindMap from './MindMap';
 import IdentityPanel from './IdentityPanel';
+import SearchOverlay from './SearchOverlay';
 import Panel from './Panel';
 import SchedulePanel from './SchedulePanel';
 import RssPanel from './RssPanel';
@@ -25,6 +26,7 @@ export default function App() {
   const [rssOpen, setRssOpen] = useState(false);
   const [plannerOpen, setPlannerOpen] = useState(false);
   const [identityOpen, setIdentityOpen] = useState(null);
+  const [searchOpen, setSearchOpen] = useState(false);
   const pagesCache = useRef({});
   const tasksCache = useRef({});
   const [scheduledTasks, setScheduledTasks] = useState(null);
@@ -39,6 +41,18 @@ export default function App() {
       setReady(true);
       if (acc) load(false);
     });
+  }, []);
+
+  // Scorciatoia Ctrl/Cmd+K per la ricerca globale
+  useEffect(() => {
+    function onKeyDown(e) {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setSearchOpen(o => !o);
+      }
+    }
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
   }, []);
 
   async function handleLogin() {
@@ -208,6 +222,14 @@ export default function App() {
               <span className="sync-label-text">{sync.label}</span>
             </div>
           )}
+          {account && (
+            <button className="search-btn" onClick={() => setSearchOpen(true)} title="Cerca (Ctrl+K)">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                <circle cx="11" cy="11" r="7" />
+                <line x1="21" y1="21" x2="16.5" y2="16.5" />
+              </svg>
+            </button>
+          )}
           <div className="zoom-controls">
             <button className="zoom-btn" onClick={() => setZoom(z => Math.max(0.15, +(z - 0.2).toFixed(2)))}>−</button>
             <span className="zoom-label">{Math.round(zoom * 100)}%</span>
@@ -275,6 +297,15 @@ export default function App() {
           preloadedTasks={scheduledTasks || []}
           notebooks={notebooks}
           sectionsMap={sectionsMap}
+        />
+        <SearchOverlay
+          open={searchOpen}
+          onClose={() => setSearchOpen(false)}
+          notebooks={notebooks}
+          sectionsMap={sectionsMap}
+          pagesCache={pagesCache}
+          tasks={scheduledTasks || []}
+          onSelectSection={(sec, nb, app) => { setPlannerOpen(false); handleSelectSection(sec, nb, app); }}
         />
         </>
       )}

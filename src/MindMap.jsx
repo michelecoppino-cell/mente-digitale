@@ -166,6 +166,14 @@ export default function MindMap({
       .attr('transform', `translate(${cx},${cy})`)
       .on('click', e => e.stopPropagation());
 
+    // Anello pulsante dietro l'orb (animazione CSS .orb-pulse)
+    orb.append('circle').attr('class', 'orb-pulse')
+      .attr('r', 33).attr('fill', 'none')
+      .attr('stroke', OCRA).attr('stroke-width', 1.2);
+    orb.append('circle').attr('class', 'orb-pulse orb-pulse-2')
+      .attr('r', 33).attr('fill', 'none')
+      .attr('stroke', OCRA).attr('stroke-width', 1.2);
+
     // Cerchio ocra pieno
     orb.append('circle').attr('r', 28).attr('fill', OCRA);
 
@@ -412,6 +420,23 @@ export default function MindMap({
 
       }
     });
+
+    // Glow al passaggio del mouse
+    nodeEnter
+      .on('mouseenter', function(e, d) {
+        const el = d3.select(this);
+        el.select('.halo').transition().duration(160).attr('fill', d.color + '1e');
+        el.select('.main-shape').transition().duration(160)
+          .attr('stroke-width', d.type === 'notebook' ? 3 : d.active ? 2.5 : 2)
+          .attr('stroke', d.color);
+      })
+      .on('mouseleave', function(e, d) {
+        const el = d3.select(this);
+        el.select('.halo').transition().duration(300).attr('fill', d.color + '07');
+        el.select('.main-shape').transition().duration(300)
+          .attr('stroke-width', d.type === 'notebook' ? 2 : (d.shape === 'rect' && d.active) ? 2.5 : d.shape === 'rect' ? 1 : 1.2)
+          .attr('stroke', d.shape === 'rect' && !d.active ? d.color + '88' : d.color);
+      });
 
     // Drag (solo non-notebook)
     nodeEnter.filter(d => d.type !== 'notebook')
