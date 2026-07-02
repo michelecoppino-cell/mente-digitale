@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { initAuth, getAccount, login } from './auth';
-import { getNotebooks, getSections, getTodoLists, getTodoTasks, getPages, getRecentEmails, createTask } from './api';
+import { getNotebooks, getSections, getTodoLists, getTodoTasks, getPages, getRecentEmails, getRecentPages, getPageContentText, createTask } from './api';
 import { cacheGet, cacheSet, cacheClear, TTL } from './cache';
 import MindMap from './MindMap';
 import IdentityPanel from './IdentityPanel';
@@ -14,6 +14,25 @@ import EisenhowerTriage from './EisenhowerTriage';
 import { parseEisenhower } from './eisenhower';
 import { COLORS } from './config';
 import './App.css';
+
+const REVIEW_SEEN_TTL = 7 * 24 * 60 * 60 * 1000;      // 7 giorni
+const NOTES_LOOKBACK_MS = 2 * 24 * 60 * 60 * 1000;    // ultime 48h
+
+function suggestionSignature(a) {
+  return `${a.source || 'email'}::${a.title || ''}::${a.extractedAction || ''}`;
+}
+
+function markSuggestionSeen(sig) {
+  const seen = cacheGet('review_seen') || [];
+  if (!seen.includes(sig)) {
+    cacheSet('review_seen', [...seen, sig].slice(-300), REVIEW_SEEN_TTL);
+  }
+}
+
+function filterRecentPages(pages, lookbackMs) {
+  const cutoff = Date.now() - lookbackMs;
+  return pages.filter(p => p.lastModifiedDateTime && new Date(p.lastModifiedDateTime).getTime() >= cutoff);
+}
 
 export default function App() {
   const [ready, setReady] = useState(false);
@@ -128,23 +147,44 @@ export default function App() {
     }
   }
 
-  // Campanella Daily Review: proposte di task da email recenti (in futuro anche
-  // MOM/routine). Richiamata all'avvio e su "↺ Aggiorna tutto".
+  // Campanella Daily Review: proposte di task da email Outlook recenti + pagine
+  // OneNote modificate di recente (MOM/appunti). Richiamata all'avvio e su
+  // "↺ Aggiorna tutto". Ogni proposta viene mostrata una sola volta: accettata o
+  // ignorata, la sua "firma" viene ricordata (localStorage, 7 giorni) così non
+  // ricompare più finché la pagina/email non cambia — nessuno sforzo manuale
+  // ripetuto sulla stessa cosa.
   async function refreshDailyReview() {
     setReviewLoading(true);
     try {
-      const emails = await getRecentEmails();
-      if (!emails.length) { setReviewSuggestions([]); setReviewLoading(false); return; }
+      const [emails, pages] = await Promise.all([
+        getRecentEmails().catch(e => { console.error('recent emails', e); return []; }),
+        getRecentPages(20).catch(e => { console.error('recent pages', e); return []; }),
+      ]);
+
+      const recentPages = filterRecentPages(pages, NOTES_LOOKBACK_MS).slice(0, 6);
+
+      const notes = [];
+      for (const p of recentPages) {
+        try {
+          const text = await getPageContentText(p.id);
+          if (text) notes.push({ title: p.title, lastModifiedDateTime: p.lastModifiedDateTime, text });
+          await new Promise(r => setTimeout(r, 150));
+        } catch (e) { console.error('page content', p.title, e); }
+      }
+
+      if (!emails.length && !notes.length) { setReviewSuggestions([]); setReviewLoading(false); return; }
+
       const res = await fetch('/api/daily-plan', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'daily-review-suggestions', emails: emails.slice(0, 20) }),
+        body: JSON.stringify({ action: 'daily-review-suggestions', emails: emails.slice(0, 20), notes }),
       });
       const data = await res.json();
-      setReviewSuggestions((data.actions || []).map(a => ({
-        ...a,
-        id: Math.random().toString(36).slice(2) + Date.now().toString(36),
-      })));
+      const seen = cacheGet('review_seen') || [];
+      const fresh = (data.actions || [])
+        .map(a => ({ ...a, id: Math.random().toString(36).slice(2) + Date.now().toString(36), _sig: suggestionSignature(a) }))
+        .filter(a => !seen.includes(a._sig));
+      setReviewSuggestions(fresh);
     } catch (e) {
       console.error('daily review', e);
     }
@@ -157,12 +197,14 @@ export default function App() {
     try {
       const task = await createTask(list.id, suggestion.extractedAction);
       setScheduledTasks(prev => [...(prev || []), { ...task, _listId: list.id, _listName: list.displayName }]);
+      markSuggestionSeen(suggestion._sig);
       setReviewSuggestions(prev => prev.filter(s => s.id !== suggestion.id));
     } catch (e) { console.error('accept suggestion', e); }
   }
 
-  function handleDismissSuggestion(id) {
-    setReviewSuggestions(prev => prev.filter(s => s.id !== id));
+  function handleDismissSuggestion(suggestion) {
+    markSuggestionSeen(suggestion._sig);
+    setReviewSuggestions(prev => prev.filter(s => s.id !== suggestion.id));
   }
 
   async function preloadAllTasks(lists, forceRefresh = false) {
@@ -315,17 +357,19 @@ export default function App() {
                     <span>Daily Review</span>
                     <button onClick={() => setReviewOpen(false)}>✕</button>
                   </div>
-                  {reviewLoading && <div className="bell-empty">Analisi email in corso…</div>}
+                  {reviewLoading && <div className="bell-empty">Analisi email e OneNote in corso…</div>}
                   {!reviewLoading && reviewSuggestions.length === 0 && (
                     <div className="bell-empty">Nessuna proposta al momento.</div>
                   )}
                   {!reviewLoading && reviewSuggestions.map(s => (
                     <div key={s.id} className="bell-item">
                       <div className="bell-item-text">{s.extractedAction}</div>
-                      <div className="bell-item-meta">{s.subject?.slice(0, 40)}</div>
+                      <div className="bell-item-meta">
+                        {s.source === 'onenote' ? '📓' : '📧'} {s.title?.slice(0, 40)}
+                      </div>
                       <div className="bell-item-actions">
                         <button className="bell-accept-btn" onClick={() => handleAcceptSuggestion(s)}>✓ Crea task</button>
-                        <button className="bell-dismiss-btn" onClick={() => handleDismissSuggestion(s.id)}>✕</button>
+                        <button className="bell-dismiss-btn" onClick={() => handleDismissSuggestion(s)}>✕</button>
                       </div>
                     </div>
                   ))}

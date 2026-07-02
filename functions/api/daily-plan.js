@@ -1,6 +1,6 @@
 /**
  * Cloudflare Pages Function — /api/daily-plan
- * Tre azioni: generate-schedule, extract-email-actions, breakdown-task
+ * Azioni: generate-schedule, daily-review-suggestions (email + OneNote), breakdown-task
  * Usa Claude API (claude-haiku-4-5-20251001)
  *
  * Env richiesta: ANTHROPIC_API_KEY (secret in Cloudflare Pages)
@@ -104,45 +104,52 @@ Rispondi SOLO con un array JSON valido, nessun testo prima o dopo:
   return { blocks };
 }
 
-// ── Action: extract-email-actions ─────────────────────────────────────────────
+// ── Action: daily-review-suggestions (email Outlook + note OneNote) ───────────
 
-async function extractEmailActions(apiKey, { emails }) {
-  if (!emails?.length) return { actions: [] };
+async function extractDailySuggestions(apiKey, { emails, notes }) {
+  const hasEmails = emails?.length > 0;
+  const hasNotes = notes?.length > 0;
+  if (!hasEmails && !hasNotes) return { actions: [] };
 
-  const emailsText = emails.slice(0, 20).map((e, i) => {
+  const emailsText = hasEmails ? emails.slice(0, 20).map((e, i) => {
     const from = e.from?.emailAddress?.address || e.from || '';
     return `Email ${i+1}:
 Da: ${from}
 Oggetto: ${e.subject || ''}
 Preview: ${(e.bodyPreview || '').slice(0, 200)}`;
-  }).join('\n\n');
+  }).join('\n\n') : '';
 
-  const prompt = `Sei un assistente che estrae action item dalle email per un Project Manager.
+  const notesText = hasNotes ? notes.slice(0, 8).map((n, i) => {
+    const modified = n.lastModifiedDateTime ? n.lastModifiedDateTime.slice(0, 10) : '';
+    return `Nota OneNote ${i+1} — "${n.title || 'Senza titolo'}" (modificata ${modified}):
+${(n.text || '').slice(0, 1500)}`;
+  }).join('\n\n') : '';
 
-Analizza queste email e estrai gli action item specifici che richiedono follow-up.
+  const prompt = `Sei un assistente che estrae action item per un Project Manager, analizzando email Outlook e note OneNote (inclusi appunti/verbali di riunione).
 
-${emailsText}
+${hasEmails ? `EMAIL RECENTI:\n${emailsText}\n` : ''}
+${hasNotes ? `NOTE ONENOTE RECENTI:\n${notesText}\n` : ''}
 
 Regole:
-1. Estrai solo action item chiari e specifici (non FYI)
-2. Concentrati su scadenze, richieste e deliverable
+1. Estrai solo action item chiari e specifici che richiedono un follow-up concreto (non FYI, non semplici osservazioni)
+2. Concentrati su scadenze, richieste esplicite, decisioni prese in riunione e deliverable
 3. Sii conciso (max 10 parole per action)
-4. Al massimo 2 action per email
-5. Ignora email di marketing/newsletter
+4. Al massimo 2 action per fonte (email o nota)
+5. Ignora email di marketing/newsletter e note che sono solo appunti personali senza seguito
 
-Rispondi SOLO con un array JSON valido:
+Rispondi SOLO con un array JSON valido, nessun testo prima o dopo:
 [
   {
-    "subject": "oggetto email originale",
-    "from": "email mittente",
-    "snippet": "citazione rilevante dall'email (max 60 char)",
+    "source": "email oppure onenote",
+    "title": "oggetto email o titolo pagina OneNote",
+    "meta": "mittente email oppure data di modifica della nota",
     "extractedAction": "action item conciso"
   }
 ]
 
 Se non ci sono action item significativi, rispondi con [].`;
 
-  const text = await callClaude(apiKey, prompt, 1024);
+  const text = await callClaude(apiKey, prompt, 1536);
   const actions = extractJson(text);
   if (!Array.isArray(actions)) return { actions: [] };
   return { actions };
@@ -188,11 +195,8 @@ export async function onRequestPost(context) {
       case 'generate-schedule':
         return json(await generateSchedule(apiKey, payload));
       case 'extract-email-actions':
-        return json(await extractEmailActions(apiKey, payload));
-      // Alias generalizzato: oggi analizza solo le email, in futuro aggregherà
-      // anche MOM/routine — il frontend consuma lo stesso formato {actions}.
       case 'daily-review-suggestions':
-        return json(await extractEmailActions(apiKey, payload));
+        return json(await extractDailySuggestions(apiKey, payload));
       case 'breakdown-task':
         return json(await breakdownTask(apiKey, payload));
       default:
