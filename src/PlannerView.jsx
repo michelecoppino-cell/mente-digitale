@@ -9,6 +9,7 @@ import {
 import { cacheGet, cacheSet } from './cache';
 import Skeleton from './Skeleton';
 import EisenhowerTriage from './EisenhowerTriage';
+import PomodoroTimer from './PomodoroTimer';
 import { EIS_QUADRANTS, parseEisenhower, quadrantInfo } from './eisenhower';
 import './PlannerView.css';
 
@@ -100,6 +101,7 @@ export default function PlannerView({ open, onClose, preloadedTasks = [], notebo
   const [projectFilter, setProjectFilter]   = useState('all');
   const [eisFilter, setEisFilter]           = useState('all');
   const [eisenhowerOpen, setEisenhowerOpen] = useState(false);
+  const [pomodoroBlockId, setPomodoroBlockId] = useState(null);
   const [saveStatus, setSaveStatus]         = useState('idle');
   const [emailStatus, setEmailStatus]       = useState('idle');
   const [aiStatus, setAiStatus]             = useState('idle');
@@ -379,6 +381,15 @@ export default function PlannerView({ open, onClose, preloadedTasks = [], notebo
 
   function handleRemoveBlock(blockId) {
     mutatePlan(prev => ({ ...prev, blocks: prev.blocks.filter(b => b.id !== blockId) }));
+  }
+
+  function incrementBlockPomodoro(blockId) {
+    mutatePlan(prev => ({
+      ...prev,
+      blocks: prev.blocks.map(b =>
+        b.id === blockId ? { ...b, pomodoros: (b.pomodoros || 0) + 1 } : b
+      ),
+    }));
   }
 
   function handleResizeStart(e, block) {
@@ -944,6 +955,10 @@ export default function PlannerView({ open, onClose, preloadedTasks = [], notebo
                     </button>
                     <span className="planner-block-title">{block.taskTitle}</span>
                     <div className="planner-block-actions">
+                      <button
+                        className="planner-block-btn"
+                        onClick={e => { e.stopPropagation(); setPomodoroBlockId(block.id); }}
+                        title="Avvia Pomodoro su questo blocco">🍅</button>
                       <button className="planner-block-btn" onClick={() => handleBreakdownTask(block)} title="Scomponi in sottostep">🔀</button>
                       <button className="planner-block-btn" onClick={() => handleRemoveBlock(block.id)} title="Rimuovi">✕</button>
                     </div>
@@ -952,6 +967,7 @@ export default function PlannerView({ open, onClose, preloadedTasks = [], notebo
                     <span>{block.startTime}–{block.endTime}</span>
                     {block.listName && <span>{block.listName}</span>}
                     {block.isAISuggested && <span className="planner-ai-badge">AI</span>}
+                    {block.pomodoros > 0 && <span title="Pomodori completati">🍅×{block.pomodoros}</span>}
                   </div>
                   {block.subSteps?.length > 0 && (() => {
                     const n = block.subSteps.length;
@@ -1102,6 +1118,14 @@ export default function PlannerView({ open, onClose, preloadedTasks = [], notebo
         onClose={() => setEisenhowerOpen(false)}
         tasks={preloadedTasks}
       />
+
+      {pomodoroBlockId && (
+        <PomodoroTimer
+          block={todayPlan.blocks.find(b => b.id === pomodoroBlockId)}
+          onClose={() => setPomodoroBlockId(null)}
+          onCycleComplete={() => incrementBlockPomodoro(pomodoroBlockId)}
+        />
+      )}
 
       {/* Breakdown modal */}
       {breakdownModal && (
