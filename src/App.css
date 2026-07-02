@@ -11,6 +11,9 @@
   align-items: center;
   justify-content: space-between;
   padding: 13px 24px;
+  padding-top: calc(13px + env(safe-area-inset-top, 0px));
+  padding-left: calc(24px + env(safe-area-inset-left, 0px));
+  padding-right: calc(24px + env(safe-area-inset-right, 0px));
   border-bottom: 1px solid var(--border);
   background: rgba(8,10,14,0.94);
   backdrop-filter: blur(16px);
@@ -65,10 +68,18 @@
 .sync-dot.error { background: #c07a7a; }
 
 .sync-label-text { white-space: nowrap; }
-@media (max-width: 640px) { .sync-label-text { display: none; } }
+/* Sotto questa soglia il gruppo di controlli a destra (ricerca, GTD, Eisenhower,
+   campanella, zoom, refresh) non ci sta più tutto insieme: si nascondono prima
+   gli elementi meno essenziali (testo sync, zoom) per evitare che il gruppo
+   trabocchi e vada a sovrapporsi al logo centrale. */
+@media (max-width: 860px) {
+  .sync-label-text { display: none; }
+  .zoom-controls { display: none; }
+}
 
 /* ── Ricerca globale ── */
 .search-btn {
+  position: relative;
   background: none;
   border: 1px solid var(--border2);
   color: var(--muted);
@@ -79,12 +90,12 @@
   transition: background 0.15s, color 0.15s;
 }
 .search-btn:hover { background: rgba(255,255,255,0.06); color: var(--text); }
+.search-btn.has-badge { border-color: var(--accent); color: var(--accent); }
 
 /* ── Campanella Daily Review ── */
 .bell-wrap { position: relative; }
-.search-btn.has-badge { border-color: var(--accent); color: var(--accent); }
 
-.bell-badge {
+.header-badge {
   position: absolute;
   top: -5px; right: -5px;
   background: var(--accent);
@@ -1281,15 +1292,6 @@
 
 /* ── Modifiche grafiche ── */
 
-/* Logo centrato */
-.header-left {
-  flex: 1;
-  justify-content: center;
-}
-.header-right {
-  position: absolute;
-  right: 16px;
-}
 
 /* Refresh button */
 .refresh-btn {
@@ -1346,32 +1348,62 @@ body, .app {
   font-weight: 550;
 }
 
-/* ── Header layout fix ── */
+/* ── Header layout fix ──
+   3 colonne flessibili (non più posizionamento assoluto): sinistra e destra si
+   comprimono simmetricamente quando serve spazio, così il logo centrale non va
+   mai in sovrapposizione con i bottoni, a qualunque larghezza. */
 .header {
   position: relative;
   display: flex;
   align-items: center;
+  gap: 10px;
 }
 .header-left {
-  position: absolute;
-  left: 16px;
+  flex: 1 1 0;
+  min-width: 0;
   display: flex;
   align-items: center;
   justify-content: flex-start;
-  flex: none;
 }
 .header-center {
-  flex: 1;
+  flex: 0 1 auto;
+  min-width: 0;
   display: flex;
   justify-content: center;
   align-items: center;
 }
 .header-right {
-  position: absolute;
-  right: 16px;
+  flex: 1 1 0;
+  min-width: 0;
   display: flex;
   align-items: center;
+  justify-content: flex-end;
   gap: 10px;
+}
+
+/* Su schermi molto stretti anche la compressione simmetrica non basta: si va
+   a capo su più righe invece di accavallarsi. */
+@media (max-width: 640px) {
+  .header {
+    flex-wrap: wrap;
+    row-gap: 8px;
+    padding-top: calc(10px + env(safe-area-inset-top, 0px));
+    padding-bottom: 10px;
+  }
+  .header-left,
+  .header-right {
+    flex: 0 1 auto;
+  }
+  .header-center {
+    order: -1;
+    flex: 1 1 100%;
+  }
+  .header-right {
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 6px;
+    margin-left: auto;
+  }
 }
 
 /* ── Larghezze dashboard ── */

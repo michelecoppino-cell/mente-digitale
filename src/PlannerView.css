@@ -1,8 +1,8 @@
-/* ── Planner View — full-screen overlay ── */
+/* ── Planner View — occupa lo spazio sotto l'header fisso di App.jsx ── */
 .planner-view {
-  position: fixed;
-  inset: 0;
-  z-index: 200;
+  position: relative;
+  flex: 1;
+  min-height: 0;
   background: var(--bg);
   display: flex;
   flex-direction: column;
@@ -100,70 +100,6 @@
   margin-left: 4px;
 }
 .planner-close-btn:hover { background: rgba(255,255,255,0.06); color: var(--text); }
-
-/* ── Settings panel ── */
-.planner-settings {
-  background: var(--surface);
-  border-bottom: 1px solid var(--border);
-  padding: 14px 20px;
-  flex-shrink: 0;
-}
-
-.planner-settings-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 12px;
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--text);
-}
-.planner-settings-header button {
-  background: none; border: none; color: var(--muted); cursor: pointer; font-size: 14px;
-  transition: color 0.12s;
-}
-.planner-settings-header button:hover { color: var(--text); }
-
-.planner-settings-body { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-start; }
-
-.planner-settings-row {
-  display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted);
-}
-.planner-settings-row input[type="time"] {
-  background: var(--surface2); border: 1px solid var(--border2);
-  border-radius: 5px; padding: 4px 8px; color: var(--text);
-  font-family: 'Outfit', sans-serif; font-size: 12px;
-}
-
-.planner-settings-section-title {
-  width: 100%;
-  font-size: 10px; font-weight: 600; letter-spacing: 0.08em;
-  text-transform: uppercase; color: var(--muted); margin-top: 4px;
-}
-
-.planner-settings-project {
-  display: flex; gap: 8px; align-items: center; width: 100%;
-}
-.planner-settings-project input[type="color"] {
-  width: 28px; height: 28px; border-radius: 4px;
-  border: 1px solid var(--border2); cursor: pointer; padding: 2px;
-  background: var(--surface2);
-}
-.planner-settings-project input[type="text"] {
-  background: var(--surface2); border: 1px solid var(--border2);
-  border-radius: 5px; padding: 5px 8px; color: var(--text);
-  font-family: 'Outfit', sans-serif; font-size: 12px; outline: none;
-}
-.planner-settings-project input[type="text"]:first-of-type { width: 130px; }
-.planner-settings-project input[type="text"]:last-of-type { flex: 1; }
-
-.planner-settings-footer { margin-top: 12px; }
-.planner-settings-save-btn {
-  background: none; border: 1px solid var(--accent); color: var(--accent);
-  padding: 6px 16px; border-radius: 7px; font-size: 12px; cursor: pointer;
-  font-family: 'Outfit', sans-serif; transition: background 0.15s;
-}
-.planner-settings-save-btn:hover { background: rgba(200,169,110,0.1); }
 
 /* ── Body: 3 columns ── */
 .planner-body {
@@ -350,6 +286,89 @@
   padding: 12px 4px;
   text-align: center;
   line-height: 1.6;
+}
+
+/* ── Vista Quadranti Eisenhower nel Task Pool ── */
+.planner-eis-grid-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.planner-eis-unclassified-banner {
+  flex-shrink: 0;
+  padding: 6px 10px;
+  background: rgba(200,169,110,0.08);
+  border: 1px solid rgba(200,169,110,0.2);
+  border-radius: 6px;
+  font-size: 11px;
+  color: var(--accent);
+}
+
+.planner-eis-grid {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr 1fr;
+  gap: 8px;
+  min-height: 420px;
+}
+
+.planner-eis-cell {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border: 1px solid var(--q-color, var(--border2));
+  border-radius: 8px;
+  background: rgba(255,255,255,0.015);
+  overflow: hidden;
+}
+
+.planner-eis-cell-header {
+  flex-shrink: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 7px 9px;
+  border-bottom: 1px solid var(--border);
+}
+
+.planner-eis-cell-key {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--q-color);
+  letter-spacing: 0.04em;
+}
+
+.planner-eis-cell-label {
+  font-size: 10px;
+  color: var(--muted);
+}
+
+.planner-eis-cell-tasks {
+  flex: 1;
+  overflow-y: auto;
+  padding: 6px 8px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border2) transparent;
+}
+
+.planner-eis-cell-empty {
+  font-size: 10px;
+  color: var(--muted);
+  font-style: italic;
+  padding: 6px 0;
+  text-align: center;
+}
+
+.planner-eis-grid-task-section {
+  font-size: 10px;
+  color: var(--muted);
+  flex-shrink: 0;
+  max-width: 90px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* ── Column resize handle ── */
@@ -660,117 +679,6 @@
 .planner-save-status.saving { color: var(--accent); }
 .planner-save-status.saved  { color: #86c07a; }
 .planner-save-status.error  { color: #c07a7a; }
-
-/* AI sections */
-.planner-ai-section {
-  margin-bottom: 16px;
-}
-
-.planner-ai-section-title {
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--text);
-  margin-bottom: 8px;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.planner-ai-count {
-  font-size: 10px;
-  font-weight: 400;
-  color: var(--muted);
-  margin-left: auto;
-}
-
-/* Email action items */
-.planner-email-action {
-  background: var(--surface2);
-  border: 1px solid var(--border);
-  border-radius: 7px;
-  padding: 8px 10px;
-  margin-bottom: 6px;
-}
-
-.planner-email-action-text {
-  font-size: 12px;
-  color: var(--text);
-  line-height: 1.4;
-  margin-bottom: 4px;
-}
-
-.planner-email-action-meta {
-  font-size: 10px;
-  color: var(--muted);
-  margin-bottom: 6px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.planner-email-action-btns {
-  display: flex;
-  gap: 5px;
-}
-
-.planner-email-add-btn {
-  background: none;
-  border: 1px solid var(--accent);
-  color: var(--accent);
-  padding: 3px 9px;
-  border-radius: 5px;
-  font-size: 10px;
-  cursor: pointer;
-  font-family: 'Outfit', sans-serif;
-  transition: background 0.15s;
-}
-.planner-email-add-btn:hover { background: rgba(200,169,110,0.1); }
-
-.planner-email-dismiss-btn {
-  background: none;
-  border: 1px solid var(--border2);
-  color: var(--muted);
-  width: 22px; height: 22px;
-  border-radius: 5px;
-  font-size: 10px;
-  cursor: pointer;
-  font-family: 'Outfit', sans-serif;
-  transition: background 0.15s;
-  display: flex; align-items: center; justify-content: center;
-}
-.planner-email-dismiss-btn:hover { background: rgba(255,255,255,0.06); color: var(--text); }
-
-/* AI block items summary */
-.planner-ai-block-item {
-  display: flex;
-  gap: 8px;
-  padding: 5px 0;
-  border-bottom: 1px solid var(--border);
-  font-size: 11px;
-  align-items: baseline;
-}
-.planner-ai-block-item:last-child { border-bottom: none; }
-
-.planner-ai-time {
-  color: var(--accent);
-  flex-shrink: 0;
-  font-size: 10px;
-}
-
-.planner-ai-task {
-  color: var(--text);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.planner-ai-empty {
-  font-size: 12px;
-  color: var(--muted);
-  line-height: 1.7;
-  padding: 8px 0;
-}
-.planner-ai-empty p { margin: 0 0 8px 0; }
 
 /* ── Breakdown Modal ── */
 .planner-modal-overlay {
@@ -1103,29 +1011,6 @@
   -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
 }
-
-/* ── Panel tabs (Dettagli / Assistente) ── */
-.planner-panel-tabs {
-  display: flex;
-  gap: 2px;
-}
-.planner-panel-tab {
-  background: none;
-  border: 1px solid transparent;
-  color: var(--muted);
-  padding: 2px 8px;
-  font-size: 10px;
-  border-radius: 4px;
-  cursor: pointer;
-  font-family: 'Outfit', sans-serif;
-  transition: all 0.15s;
-}
-.planner-panel-tab.active {
-  border-color: var(--border2);
-  background: rgba(200,169,110,0.1);
-  color: var(--accent);
-}
-.planner-panel-tab:hover:not(.active) { color: var(--text); }
 
 /* ── Task Detail Panel ── */
 .planner-task-detail { padding: 12px; display: flex; flex-direction: column; gap: 14px; }
