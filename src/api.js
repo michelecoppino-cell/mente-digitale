@@ -85,11 +85,33 @@ export async function completeTask(listId, taskId) {
   });
 }
 
-export async function createTask(listId, title) {
+export async function createTask(listId, title, opts = {}) {
+  const payload = { title };
+  if (opts.body) payload.body = { content: opts.body, contentType: 'text' };
+  if (opts.dueDate) payload.dueDateTime = { dateTime: opts.dueDate, timeZone: 'UTC' };
   return call(`/me/todo/lists/${listId}/tasks`, {
     method: 'POST',
-    body: JSON.stringify({ title })
+    body: JSON.stringify(payload)
   });
+}
+
+function escapeHtml(s) {
+  return (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+// Crea una pagina OneNote nella sezione indicata (richiede content-type
+// application/xhtml+xml, diverso dalle chiamate JSON standard di `call`).
+export async function createNotePage(sectionId, title, contentText) {
+  const token = await getTokenCached();
+  const html = `<!DOCTYPE html><html><head><title>${escapeHtml(title)}</title></head>` +
+    `<body><p>${escapeHtml(contentText).replace(/\n/g, '<br/>')}</p></body></html>`;
+  const r = await fetch(`${GRAPH}/me/onenote/sections/${sectionId}/pages`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/xhtml+xml' },
+    body: html,
+  });
+  if (!r.ok) throw new Error(`Create page error ${r.status}`);
+  return r.json();
 }
 
 export async function getCalendars() {

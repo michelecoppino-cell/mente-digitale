@@ -8,6 +8,9 @@ import {
 } from './api';
 import { cacheGet, cacheSet } from './cache';
 import Skeleton from './Skeleton';
+import EisenhowerTriage from './EisenhowerTriage';
+import PomodoroTimer from './PomodoroTimer';
+import { EIS_QUADRANTS, parseEisenhower, quadrantInfo } from './eisenhower';
 import './PlannerView.css';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -89,13 +92,16 @@ function getWeekDays(dateStr) {
 }
 
 // ── Main PlannerView ──────────────────────────────────────────────────────────
-export default function PlannerView({ open, onClose, preloadedTasks = [], notebooks = [], sectionsMap = {} }) {
+export default function PlannerView({ open, onClose, preloadedTasks = [], notebooks = [], sectionsMap = {}, autoAddTask = null, onAutoAdded }) {
   const [currentDate, setCurrentDate]       = useState(todayStr);
   const [plans, setPlans]                   = useState({});
   const [config, setConfig]                 = useState(DEFAULT_CONFIG);
   const [todayPlan, setTodayPlan]           = useState({ date: todayStr(), blocks: [], emailExtractedActions: [] });
   const [calEvents, setCalEvents]           = useState([]);
   const [projectFilter, setProjectFilter]   = useState('all');
+  const [eisFilter, setEisFilter]           = useState('all');
+  const [eisenhowerOpen, setEisenhowerOpen] = useState(false);
+  const [pomodoroBlockId, setPomodoroBlockId] = useState(null);
   const [saveStatus, setSaveStatus]         = useState('idle');
   const [emailStatus, setEmailStatus]       = useState('idle');
   const [aiStatus, setAiStatus]             = useState('idle');
@@ -149,6 +155,13 @@ export default function PlannerView({ open, onClose, preloadedTasks = [], notebo
 
   // Reset filter when tasks list changes
   useEffect(() => { setProjectFilter('all'); }, [preloadedTasks]);
+
+  // Aggiunge automaticamente un task catturato da GTD al piano di oggi, una tantum
+  useEffect(() => {
+    if (!open || !autoAddTask) return;
+    addBlock(autoAddTask, configRef.current.workdayStart);
+    onAutoAdded?.();
+  }, [open, autoAddTask]); // eslint-disable-line
 
   async function initConfig() {
     try {
@@ -377,6 +390,15 @@ export default function PlannerView({ open, onClose, preloadedTasks = [], notebo
     mutatePlan(prev => ({ ...prev, blocks: prev.blocks.filter(b => b.id !== blockId) }));
   }
 
+  function incrementBlockPomodoro(blockId) {
+    mutatePlan(prev => ({
+      ...prev,
+      blocks: prev.blocks.map(b =>
+        b.id === blockId ? { ...b, pomodoros: (b.pomodoros || 0) + 1 } : b
+      ),
+    }));
+  }
+
   function handleResizeStart(e, block) {
     e.preventDefault();
     e.stopPropagation();
@@ -452,6 +474,7 @@ export default function PlannerView({ open, onClose, preloadedTasks = [], notebo
         projectKey: findProject(t, configRef.current)?.key || null,
         importance: t.importance,
         dueDate: t.dueDateTimeValue?.dateTime || null,
+        eisenhower: parseEisenhower(t.body?.content),
       }));
       const evPayload = calEvents.map(ev => ({
         subject: ev.subject,
@@ -617,8 +640,9 @@ export default function PlannerView({ open, onClose, preloadedTasks = [], notebo
   })();
 
   const poolTasks = preloadedTasks.filter(t => {
-    if (projectFilter === 'all') return true;
-    return t._listName === projectFilter;
+    if (projectFilter !== 'all' && t._listName !== projectFilter) return false;
+    if (eisFilter !== 'all' && parseEisenhower(t.body?.content) !== eisFilter) return false;
+    return true;
   });
 
   const allDayEvents = calEvents.filter(isAllDay);
@@ -682,6 +706,12 @@ export default function PlannerView({ open, onClose, preloadedTasks = [], notebo
           </div>
         </div>
         <div className="planner-header-actions">
+          <button
+            className="planner-action-btn"
+            onClick={() => setEisenhowerOpen(true)}
+            title="Smistamento Eisenhower dei task non classificati">
+            🧭 Eisenhower
+          </button>
           <button
             className={`planner-action-btn${emailStatus === 'loading' ? ' loading' : ''}`}
             onClick={handleScanEmail}
@@ -753,6 +783,25 @@ export default function PlannerView({ open, onClose, preloadedTasks = [], notebo
               ))}
             </div>
           </div>
+          <div className="planner-col-header planner-eis-filter-row">
+            <div className="planner-filters">
+              <button
+                className={`planner-filter-btn${eisFilter === 'all' ? ' active' : ''}`}
+                onClick={() => setEisFilter('all')}>
+                Tutti i quadranti
+              </button>
+              {EIS_QUADRANTS.map(q => (
+                <button
+                  key={q.key}
+                  className={`planner-filter-btn${eisFilter === q.key ? ' active' : ''}`}
+                  style={{ '--proj-color': q.color }}
+                  onClick={() => setEisFilter(prev => prev === q.key ? 'all' : q.key)}
+                  title={q.label}>
+                  {q.key}
+                </button>
+              ))}
+            </div>
+          </div>
           <div className="planner-pool-body">
             {/* Pool by project */}
             {Object.entries(poolByProject).map(([key, group]) => (
@@ -764,6 +813,8 @@ export default function PlannerView({ open, onClose, preloadedTasks = [], notebo
                 </div>
                 {group.tasks.map(task => {
                   const isScheduled = scheduledIds.has(task.id);
+                  const eisKey  = parseEisenhower(task.body?.content);
+                  const eisInfo = eisKey ? quadrantInfo(eisKey) : null;
                   return (
                     <div
                       key={task.id}
@@ -789,6 +840,14 @@ export default function PlannerView({ open, onClose, preloadedTasks = [], notebo
                       }}>
                       <span className="planner-task-dot" style={{ background: group.color }} />
                       <span className="planner-task-title">{task.title}</span>
+                      {eisInfo && (
+                        <span
+                          className="planner-eis-badge"
+                          style={{ '--q-color': eisInfo.color }}
+                          title={eisInfo.label}>
+                          {eisInfo.key}
+                        </span>
+                      )}
                       {task.importance === 'high' && !isScheduled && <span className="planner-task-star">★</span>}
                     </div>
                   );
@@ -903,6 +962,10 @@ export default function PlannerView({ open, onClose, preloadedTasks = [], notebo
                     </button>
                     <span className="planner-block-title">{block.taskTitle}</span>
                     <div className="planner-block-actions">
+                      <button
+                        className="planner-block-btn"
+                        onClick={e => { e.stopPropagation(); setPomodoroBlockId(block.id); }}
+                        title="Avvia Pomodoro su questo blocco">🍅</button>
                       <button className="planner-block-btn" onClick={() => handleBreakdownTask(block)} title="Scomponi in sottostep">🔀</button>
                       <button className="planner-block-btn" onClick={() => handleRemoveBlock(block.id)} title="Rimuovi">✕</button>
                     </div>
@@ -911,6 +974,7 @@ export default function PlannerView({ open, onClose, preloadedTasks = [], notebo
                     <span>{block.startTime}–{block.endTime}</span>
                     {block.listName && <span>{block.listName}</span>}
                     {block.isAISuggested && <span className="planner-ai-badge">AI</span>}
+                    {block.pomodoros > 0 && <span title="Pomodori completati">🍅×{block.pomodoros}</span>}
                   </div>
                   {block.subSteps?.length > 0 && (() => {
                     const n = block.subSteps.length;
@@ -1055,6 +1119,20 @@ export default function PlannerView({ open, onClose, preloadedTasks = [], notebo
         </div>
       </>)}
       </div>
+
+      <EisenhowerTriage
+        open={eisenhowerOpen}
+        onClose={() => setEisenhowerOpen(false)}
+        tasks={preloadedTasks}
+      />
+
+      {pomodoroBlockId && (
+        <PomodoroTimer
+          block={todayPlan.blocks.find(b => b.id === pomodoroBlockId)}
+          onClose={() => setPomodoroBlockId(null)}
+          onCycleComplete={() => incrementBlockPomodoro(pomodoroBlockId)}
+        />
+      )}
 
       {/* Breakdown modal */}
       {breakdownModal && (

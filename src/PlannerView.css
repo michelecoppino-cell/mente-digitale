@@ -327,6 +327,22 @@
   flex-shrink: 0;
 }
 
+.planner-eis-filter-row {
+  padding-top: 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.planner-eis-badge {
+  font-size: 8px;
+  font-weight: 700;
+  color: var(--q-color, var(--muted));
+  border: 1px solid var(--q-color, var(--border2));
+  border-radius: 3px;
+  padding: 0 4px;
+  flex-shrink: 0;
+  letter-spacing: 0.03em;
+}
+
 .planner-empty {
   font-size: 11px;
   color: var(--muted);
