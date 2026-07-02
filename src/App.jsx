@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { initAuth, getAccount, login } from './auth';
-import { getNotebooks, getSections, getTodoLists, getTodoTasks, getPages } from './api';
+import { getNotebooks, getSections, getTodoLists, getTodoTasks, getPages, getRecentEmails, createTask } from './api';
 import { cacheGet, cacheSet, cacheClear, TTL } from './cache';
 import MindMap from './MindMap';
 import IdentityPanel from './IdentityPanel';
@@ -30,6 +30,9 @@ export default function App() {
   const [searchOpen, setSearchOpen] = useState(false);
   const [gtdOpen, setGtdOpen] = useState(false);
   const [pendingPlannerTask, setPendingPlannerTask] = useState(null);
+  const [reviewSuggestions, setReviewSuggestions] = useState([]);
+  const [reviewOpen, setReviewOpen] = useState(false);
+  const [reviewLoading, setReviewLoading] = useState(false);
   const pagesCache = useRef({});
   const tasksCache = useRef({});
   const [scheduledTasks, setScheduledTasks] = useState(null);
@@ -114,10 +117,49 @@ export default function App() {
         );
       }, 2000);
 
+      refreshDailyReview();
+
     } catch (e) {
       console.error('load', e);
       setSync({ state: 'error', label: 'Errore caricamento' });
     }
+  }
+
+  // Campanella Daily Review: proposte di task da email recenti (in futuro anche
+  // MOM/routine). Richiamata all'avvio e su "↺ Aggiorna tutto".
+  async function refreshDailyReview() {
+    setReviewLoading(true);
+    try {
+      const emails = await getRecentEmails();
+      if (!emails.length) { setReviewSuggestions([]); setReviewLoading(false); return; }
+      const res = await fetch('/api/daily-plan', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'daily-review-suggestions', emails: emails.slice(0, 20) }),
+      });
+      const data = await res.json();
+      setReviewSuggestions((data.actions || []).map(a => ({
+        ...a,
+        id: Math.random().toString(36).slice(2) + Date.now().toString(36),
+      })));
+    } catch (e) {
+      console.error('daily review', e);
+    }
+    setReviewLoading(false);
+  }
+
+  async function handleAcceptSuggestion(suggestion) {
+    const list = todoListsRef.current[0];
+    if (!list) return;
+    try {
+      const task = await createTask(list.id, suggestion.extractedAction);
+      setScheduledTasks(prev => [...(prev || []), { ...task, _listId: list.id, _listName: list.displayName }]);
+      setReviewSuggestions(prev => prev.filter(s => s.id !== suggestion.id));
+    } catch (e) { console.error('accept suggestion', e); }
+  }
+
+  function handleDismissSuggestion(id) {
+    setReviewSuggestions(prev => prev.filter(s => s.id !== id));
   }
 
   async function preloadAllTasks(lists, forceRefresh = false) {
@@ -240,6 +282,42 @@ export default function App() {
                 <line x1="5" y1="12" x2="19" y2="12" />
               </svg>
             </button>
+          )}
+          {account && (
+            <div className="bell-wrap">
+              <button
+                className={`search-btn${reviewSuggestions.length ? ' has-badge' : ''}`}
+                onClick={() => setReviewOpen(o => !o)}
+                title="Proposte Daily Review">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" />
+                  <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+                </svg>
+                {reviewSuggestions.length > 0 && <span className="bell-badge">{reviewSuggestions.length}</span>}
+              </button>
+              {reviewOpen && (
+                <div className="bell-dropdown">
+                  <div className="bell-dropdown-header">
+                    <span>Daily Review</span>
+                    <button onClick={() => setReviewOpen(false)}>✕</button>
+                  </div>
+                  {reviewLoading && <div className="bell-empty">Analisi email in corso…</div>}
+                  {!reviewLoading && reviewSuggestions.length === 0 && (
+                    <div className="bell-empty">Nessuna proposta al momento.</div>
+                  )}
+                  {!reviewLoading && reviewSuggestions.map(s => (
+                    <div key={s.id} className="bell-item">
+                      <div className="bell-item-text">{s.extractedAction}</div>
+                      <div className="bell-item-meta">{s.subject?.slice(0, 40)}</div>
+                      <div className="bell-item-actions">
+                        <button className="bell-accept-btn" onClick={() => handleAcceptSuggestion(s)}>✓ Crea task</button>
+                        <button className="bell-dismiss-btn" onClick={() => handleDismissSuggestion(s.id)}>✕</button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           )}
           <div className="zoom-controls">
             <button className="zoom-btn" onClick={() => setZoom(z => Math.max(0.15, +(z - 0.2).toFixed(2)))}>−</button>

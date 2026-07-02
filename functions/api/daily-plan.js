@@ -189,6 +189,10 @@ export async function onRequestPost(context) {
         return json(await generateSchedule(apiKey, payload));
       case 'extract-email-actions':
         return json(await extractEmailActions(apiKey, payload));
+      // Alias generalizzato: oggi analizza solo le email, in futuro aggregherà
+      // anche MOM/routine — il frontend consuma lo stesso formato {actions}.
+      case 'daily-review-suggestions':
+        return json(await extractEmailActions(apiKey, payload));
       case 'breakdown-task':
         return json(await breakdownTask(apiKey, payload));
       default:
