@@ -68,6 +68,30 @@ export async function getPages(sectionId) {
   return d.value || [];
 }
 
+// Pagine più recenti su TUTTI i taccuini in un'unica chiamata (endpoint "flat" di
+// Graph), usato dalla Daily Review per intercettare MOM/appunti recenti senza
+// dover enumerare notebook/sezioni.
+export async function getRecentPages(top = 20) {
+  const d = await call(`/me/onenote/pages?$orderby=lastModifiedDateTime desc&$select=id,title,lastModifiedDateTime&$top=${top}`);
+  return d.value || [];
+}
+
+// Contenuto testuale di una pagina OneNote (l'endpoint restituisce HTML, non JSON).
+export async function getPageContentText(pageId) {
+  const token = await getTokenCached();
+  const r = await fetch(`${GRAPH}/me/onenote/pages/${pageId}/content`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!r.ok) throw new Error(`Page content error ${r.status}`);
+  const html = await r.text();
+  return html
+    .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 export async function getTodoLists() {
   const d = await call('/me/todo/lists');
   return d.value;
