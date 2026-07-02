@@ -10,6 +10,8 @@ import SchedulePanel from './SchedulePanel';
 import RssPanel from './RssPanel';
 import PlannerView from './PlannerView';
 import GtdClarifyModal from './GtdClarifyModal';
+import EisenhowerTriage from './EisenhowerTriage';
+import { parseEisenhower } from './eisenhower';
 import { COLORS } from './config';
 import './App.css';
 
@@ -29,6 +31,7 @@ export default function App() {
   const [identityOpen, setIdentityOpen] = useState(null);
   const [searchOpen, setSearchOpen] = useState(false);
   const [gtdOpen, setGtdOpen] = useState(false);
+  const [eisenhowerOpen, setEisenhowerOpen] = useState(false);
   const [pendingPlannerTask, setPendingPlannerTask] = useState(null);
   const [reviewSuggestions, setReviewSuggestions] = useState([]);
   const [reviewOpen, setReviewOpen] = useState(false);
@@ -242,6 +245,8 @@ export default function App() {
     await load(true);
   }
 
+  const unclassifiedCount = (scheduledTasks || []).filter(t => !parseEisenhower(t.body?.content)).length;
+
   if (!ready) return null;
 
   return (
@@ -284,6 +289,15 @@ export default function App() {
             </button>
           )}
           {account && (
+            <button
+              className={`search-btn${unclassifiedCount > 0 ? ' has-badge' : ''}`}
+              onClick={() => setEisenhowerOpen(true)}
+              title="Smistamento Eisenhower dei task non classificati">
+              🧭
+              {unclassifiedCount > 0 && <span className="header-badge">{unclassifiedCount}</span>}
+            </button>
+          )}
+          {account && (
             <div className="bell-wrap">
               <button
                 className={`search-btn${reviewSuggestions.length ? ' has-badge' : ''}`}
@@ -293,7 +307,7 @@ export default function App() {
                   <path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" />
                   <path d="M13.73 21a2 2 0 0 1-3.46 0" />
                 </svg>
-                {reviewSuggestions.length > 0 && <span className="bell-badge">{reviewSuggestions.length}</span>}
+                {reviewSuggestions.length > 0 && <span className="header-badge">{reviewSuggestions.length}</span>}
               </button>
               {reviewOpen && (
                 <div className="bell-dropdown">
@@ -358,7 +372,7 @@ export default function App() {
               <line x1="17" y1="4" x2="19.5" y2="6.5"/>
             </svg>
           </button>}
-        <div className="canvas-area">
+        <div className="canvas-area" style={{ display: plannerOpen ? 'none' : undefined }}>
           <IdentityPanel open={identityOpen} onClose={() => setIdentityOpen(null)} />
           <SchedulePanel open={scheduleOpen} onClose={() => setScheduleOpen(false)} preloadedTasks={scheduledTasks} onSelectSection={handleSelectSection} todoListsMap={todoListsMap} sectionsMap={sectionsMap} />
           <MindMap
@@ -388,6 +402,11 @@ export default function App() {
           sectionsMap={sectionsMap}
           autoAddTask={pendingPlannerTask}
           onAutoAdded={() => setPendingPlannerTask(null)}
+        />
+        <EisenhowerTriage
+          open={eisenhowerOpen}
+          onClose={() => setEisenhowerOpen(false)}
+          tasks={scheduledTasks || []}
         />
         <GtdClarifyModal
           open={gtdOpen}

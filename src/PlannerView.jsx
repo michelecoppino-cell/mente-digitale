@@ -1,14 +1,13 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import {
   loadDailyPlans, saveDailyPlans,
-  loadPlannerConfig, savePlannerConfig,
-  getRecentEmails, completeTask, getCalendarEvents,
+  loadPlannerConfig,
+  completeTask, getCalendarEvents,
   getTask, updateTaskBody,
   createChecklistItem, updateChecklistItem, deleteChecklistItem,
 } from './api';
 import { cacheGet, cacheSet } from './cache';
 import Skeleton from './Skeleton';
-import EisenhowerTriage from './EisenhowerTriage';
 import PomodoroTimer from './PomodoroTimer';
 import { EIS_QUADRANTS, parseEisenhower, quadrantInfo } from './eisenhower';
 import './PlannerView.css';
@@ -100,18 +99,14 @@ export default function PlannerView({ open, onClose, preloadedTasks = [], notebo
   const [calEvents, setCalEvents]           = useState([]);
   const [projectFilter, setProjectFilter]   = useState('all');
   const [eisFilter, setEisFilter]           = useState('all');
-  const [eisenhowerOpen, setEisenhowerOpen] = useState(false);
+  const [poolViewMode, setPoolViewMode]     = useState('list'); // 'list' | 'quadrants'
   const [pomodoroBlockId, setPomodoroBlockId] = useState(null);
   const [saveStatus, setSaveStatus]         = useState('idle');
-  const [emailStatus, setEmailStatus]       = useState('idle');
-  const [aiStatus, setAiStatus]             = useState('idle');
-  const [settingsOpen, setSettingsOpen]     = useState(false);
   const [breakdownModal, setBreakdownModal] = useState(null);
   const [dragOverTime, setDragOverTime]     = useState(null);
   const [viewMode, setViewMode]             = useState('day');
   const [resizingId, setResizingId]         = useState(null);
   const [selectedTask, setSelectedTask]     = useState(null);
-  const [rightPanel, setRightPanel]         = useState('detail');
   const [poolWidth, setPoolWidth]           = useState(560);
   const [aiWidth, setAiWidth]               = useState(560);
   const [calOutOfRange, setCalOutOfRange]   = useState(false);
@@ -429,87 +424,6 @@ export default function PlannerView({ open, onClose, preloadedTasks = [], notebo
     document.addEventListener('mouseup', onUp);
   }
 
-  function dismissEmailAction(actionId) {
-    mutatePlan(prev => ({
-      ...prev,
-      emailExtractedActions: (prev.emailExtractedActions || []).map(a =>
-        a.id === actionId ? { ...a, dismissed: true } : a
-      ),
-    }));
-  }
-
-  // ── AI ───────────────────────────────────────────────────────────────────────
-  async function handleScanEmail() {
-    setEmailStatus('loading');
-    try {
-      const emails = await getRecentEmails();
-      if (!emails.length) { setEmailStatus('done'); return; }
-      const res  = await fetch('/api/daily-plan', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'extract-email-actions', emails: emails.slice(0, 20) }),
-      });
-      const data = await res.json();
-      if (data.actions?.length) {
-        const actions = data.actions.map(a => ({ ...a, id: genId(), dismissed: false }));
-        mutatePlan(prev => ({
-          ...prev,
-          emailExtractedActions: [...(prev.emailExtractedActions || []), ...actions],
-          emailScanTimestamp: new Date().toISOString(),
-        }));
-      }
-      setEmailStatus('done');
-    } catch (e) {
-      console.error('scan email', e);
-      setEmailStatus('error');
-    }
-  }
-
-  async function handleGenerateSchedule() {
-    setAiStatus('loading');
-    try {
-      const taskPayload = preloadedTasks.map(t => ({
-        taskId: t.id, taskTitle: t.title,
-        listId: t._listId, listName: t._listName,
-        projectKey: findProject(t, configRef.current)?.key || null,
-        importance: t.importance,
-        dueDate: t.dueDateTimeValue?.dateTime || null,
-        eisenhower: parseEisenhower(t.body?.content),
-      }));
-      const evPayload = calEvents.map(ev => ({
-        subject: ev.subject,
-        startTime: isoToHHMM(ev.start?.dateTime || ev.start?.date),
-        endTime:   isoToHHMM(ev.end?.dateTime   || ev.end?.date),
-      })).filter(e => e.startTime);
-      const res  = await fetch('/api/daily-plan', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'generate-schedule',
-          tasks: taskPayload.slice(0, 30),
-          calEvents: evPayload,
-          workdayStart: configRef.current.workdayStart,
-          workdayEnd:   configRef.current.workdayEnd,
-          date: currentDate,
-        }),
-      });
-      const data = await res.json();
-      if (data.blocks) {
-        const newBlocks = data.blocks.map(b => ({
-          ...b, id: genId(),
-          isAISuggested: true, completed: false, completedAt: null,
-          subSteps: b.subSteps || [],
-          projectColor: configRef.current.projects.find(p => p.key === b.projectKey)?.color || '#888',
-        }));
-        mutatePlan(prev => ({ ...prev, blocks: newBlocks }));
-      }
-      setAiStatus('done');
-    } catch (e) {
-      console.error('generate schedule', e);
-      setAiStatus('error');
-    }
-  }
-
   async function handleBreakdownTask(block) {
     if (!block.taskId || !block.listId) {
       setBreakdownModal({ block, items: [], loading: false, noTask: true });
@@ -603,14 +517,6 @@ export default function PlannerView({ open, onClose, preloadedTasks = [], notebo
     document.addEventListener('mouseup', onUp);
   }
 
-  // ── Config ───────────────────────────────────────────────────────────────────
-  async function handleSaveConfig(newConfig) {
-    setConfig(newConfig);
-    configRef.current = newConfig;
-    cacheSet('planner_config', newConfig, 30 * 60 * 1000);
-    try { await savePlannerConfig(newConfig); } catch (e) { console.error('save config', e); }
-  }
-
   // ── Derived ──────────────────────────────────────────────────────────────────
   const timeSlots   = slots(config.workdayStart, config.workdayEnd);
   const scheduledIds = new Set(todayPlan.blocks.map(b => b.taskId));
@@ -658,8 +564,10 @@ export default function PlannerView({ open, onClose, preloadedTasks = [], notebo
     poolByProject[key].tasks.push(t);
   }
 
-  const activeEmailActions = (todayPlan.emailExtractedActions || []).filter(a => !a.dismissed);
-  const workStart          = t2m(config.workdayStart);
+  const workStart = t2m(config.workdayStart);
+
+  // Task non ancora classificati secondo Eisenhower, nell'ambito del filtro progetto corrente
+  const unclassifiedPoolTasks = poolTasks.filter(t => !parseEisenhower(t.body?.content));
 
   function saveLabel() {
     const now = new Date().toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
@@ -706,37 +614,9 @@ export default function PlannerView({ open, onClose, preloadedTasks = [], notebo
           </div>
         </div>
         <div className="planner-header-actions">
-          <button
-            className="planner-action-btn"
-            onClick={() => setEisenhowerOpen(true)}
-            title="Smistamento Eisenhower dei task non classificati">
-            🧭 Eisenhower
-          </button>
-          <button
-            className={`planner-action-btn${emailStatus === 'loading' ? ' loading' : ''}`}
-            onClick={handleScanEmail}
-            disabled={emailStatus === 'loading'}
-            title="Scansiona email per estrarre action item">
-            {emailStatus === 'loading' ? '⏳' : '📧'} Email
-          </button>
-          <button
-            className={`planner-action-btn accent${aiStatus === 'loading' ? ' loading' : ''}`}
-            onClick={handleGenerateSchedule}
-            disabled={aiStatus === 'loading'}
-            title="Genera piano AI per oggi">
-            {aiStatus === 'loading' ? '⏳' : '✨'} Piano AI
-          </button>
-          <button className="planner-action-btn" onClick={() => setSettingsOpen(s => !s)} title="Impostazioni">
-            ⚙️
-          </button>
           <button className="planner-close-btn" onClick={onClose} title="Chiudi pianificatore">✕</button>
         </div>
       </div>
-
-      {/* Settings panel */}
-      {settingsOpen && (
-        <SettingsPanel config={config} onSave={handleSaveConfig} onClose={() => setSettingsOpen(false)} />
-      )}
 
       {/* Tab colonne — visibili solo su mobile (CSS) */}
       {viewMode === 'day' && (
@@ -766,6 +646,12 @@ export default function PlannerView({ open, onClose, preloadedTasks = [], notebo
         <div className={`planner-pool${mobileTab === 'pool' ? ' mobile-active' : ''}`} style={{ width: poolWidth }}>
           <div className="planner-col-header">
             <span>Task</span>
+            <div className="planner-view-toggle">
+              <button className={poolViewMode === 'list' ? 'active' : ''} onClick={() => setPoolViewMode('list')}>Lista</button>
+              <button className={poolViewMode === 'quadrants' ? 'active' : ''} onClick={() => setPoolViewMode('quadrants')}>Quadranti</button>
+            </div>
+          </div>
+          <div className="planner-col-header">
             <div className="planner-filters">
               <button
                 className={`planner-filter-btn${projectFilter === 'all' ? ' active' : ''}`}
@@ -783,84 +669,130 @@ export default function PlannerView({ open, onClose, preloadedTasks = [], notebo
               ))}
             </div>
           </div>
-          <div className="planner-col-header planner-eis-filter-row">
-            <div className="planner-filters">
-              <button
-                className={`planner-filter-btn${eisFilter === 'all' ? ' active' : ''}`}
-                onClick={() => setEisFilter('all')}>
-                Tutti i quadranti
-              </button>
-              {EIS_QUADRANTS.map(q => (
+          {poolViewMode === 'list' && (
+            <div className="planner-col-header planner-eis-filter-row">
+              <div className="planner-filters">
                 <button
-                  key={q.key}
-                  className={`planner-filter-btn${eisFilter === q.key ? ' active' : ''}`}
-                  style={{ '--proj-color': q.color }}
-                  onClick={() => setEisFilter(prev => prev === q.key ? 'all' : q.key)}
-                  title={q.label}>
-                  {q.key}
+                  className={`planner-filter-btn${eisFilter === 'all' ? ' active' : ''}`}
+                  onClick={() => setEisFilter('all')}>
+                  Tutti i quadranti
                 </button>
-              ))}
+                {EIS_QUADRANTS.map(q => (
+                  <button
+                    key={q.key}
+                    className={`planner-filter-btn${eisFilter === q.key ? ' active' : ''}`}
+                    style={{ '--proj-color': q.color }}
+                    onClick={() => setEisFilter(prev => prev === q.key ? 'all' : q.key)}
+                    title={q.label}>
+                    {q.key}
+                  </button>
+                ))}
+              </div>
             </div>
-          </div>
-          <div className="planner-pool-body">
-            {/* Pool by project */}
-            {Object.entries(poolByProject).map(([key, group]) => (
-              <div key={key} className="planner-pool-group">
-                <div className="planner-pool-group-label" style={{ color: group.color }}>
-                  <span className="planner-group-dot" style={{ background: group.color }} />
-                  {group.name}
-                  <span className="planner-group-count">{group.tasks.length}</span>
+          )}
+
+          {poolViewMode === 'list' ? (
+            <div className="planner-pool-body">
+              {/* Pool by project */}
+              {Object.entries(poolByProject).map(([key, group]) => (
+                <div key={key} className="planner-pool-group">
+                  <div className="planner-pool-group-label" style={{ color: group.color }}>
+                    <span className="planner-group-dot" style={{ background: group.color }} />
+                    {group.name}
+                    <span className="planner-group-count">{group.tasks.length}</span>
+                  </div>
+                  {group.tasks.map(task => {
+                    const isScheduled = scheduledIds.has(task.id);
+                    const eisKey  = parseEisenhower(task.body?.content);
+                    const eisInfo = eisKey ? quadrantInfo(eisKey) : null;
+                    return (
+                      <div
+                        key={task.id}
+                        className={`planner-pool-task${isScheduled ? ' scheduled' : ''}${task.importance === 'high' ? ' important' : ''}${selectedTask?.id === task.id ? ' selected' : ''}`}
+                        draggable={!isScheduled}
+                        onClick={() => { setSelectedTask(task); setMobileTab('panel'); }}
+                        onDragStart={isScheduled ? undefined : e => {
+                          e.dataTransfer.setData('text/plain', JSON.stringify({ type: 'task', task }));
+                          const c = group.color;
+                          const ghost = document.createElement('div');
+                          ghost.textContent = task.title;
+                          Object.assign(ghost.style, {
+                            position: 'fixed', top: '-9999px', left: '-9999px',
+                            background: c, border: `1.5px dashed rgba(255,255,255,0.6)`,
+                            borderRadius: '6px', color: '#fff',
+                            padding: '5px 10px', fontSize: '11px', fontFamily: "'Outfit',sans-serif",
+                            whiteSpace: 'nowrap', maxWidth: '220px', overflow: 'hidden',
+                            textOverflow: 'ellipsis', opacity: '0.95',
+                          });
+                          document.body.appendChild(ghost);
+                          e.dataTransfer.setDragImage(ghost, 10, 10);
+                          requestAnimationFrame(() => ghost.parentNode?.removeChild(ghost));
+                        }}>
+                        <span className="planner-task-dot" style={{ background: group.color }} />
+                        <span className="planner-task-title">{task.title}</span>
+                        {eisInfo && (
+                          <span
+                            className="planner-eis-badge"
+                            style={{ '--q-color': eisInfo.color }}
+                            title={eisInfo.label}>
+                            {eisInfo.key}
+                          </span>
+                        )}
+                        {task.importance === 'high' && !isScheduled && <span className="planner-task-star">★</span>}
+                      </div>
+                    );
+                  })}
                 </div>
-                {group.tasks.map(task => {
-                  const isScheduled = scheduledIds.has(task.id);
-                  const eisKey  = parseEisenhower(task.body?.content);
-                  const eisInfo = eisKey ? quadrantInfo(eisKey) : null;
+              ))}
+
+              {poolTasks.length === 0 && (
+                preloadedTasks.length === 0
+                  ? <Skeleton rows={7} height={26} />
+                  : <div className="planner-empty">Nessun task in questa lista</div>
+              )}
+            </div>
+          ) : (
+            <div className="planner-pool-body planner-eis-grid-body">
+              {unclassifiedPoolTasks.length > 0 && (
+                <div className="planner-eis-unclassified-banner">
+                  ⚠️ Alcuni task non sono catalogati
+                </div>
+              )}
+              <div className="planner-eis-grid">
+                {EIS_QUADRANTS.map(q => {
+                  const tasks = poolTasks.filter(t => parseEisenhower(t.body?.content) === q.key);
                   return (
-                    <div
-                      key={task.id}
-                      className={`planner-pool-task${isScheduled ? ' scheduled' : ''}${task.importance === 'high' ? ' important' : ''}${selectedTask?.id === task.id ? ' selected' : ''}`}
-                      draggable={!isScheduled}
-                      onClick={() => { setSelectedTask(task); setRightPanel('detail'); setMobileTab('panel'); }}
-                      onDragStart={isScheduled ? undefined : e => {
-                        e.dataTransfer.setData('text/plain', JSON.stringify({ type: 'task', task }));
-                        const c = group.color;
-                        const ghost = document.createElement('div');
-                        ghost.textContent = task.title;
-                        Object.assign(ghost.style, {
-                          position: 'fixed', top: '-9999px', left: '-9999px',
-                          background: c, border: `1.5px dashed rgba(255,255,255,0.6)`,
-                          borderRadius: '6px', color: '#fff',
-                          padding: '5px 10px', fontSize: '11px', fontFamily: "'Outfit',sans-serif",
-                          whiteSpace: 'nowrap', maxWidth: '220px', overflow: 'hidden',
-                          textOverflow: 'ellipsis', opacity: '0.95',
-                        });
-                        document.body.appendChild(ghost);
-                        e.dataTransfer.setDragImage(ghost, 10, 10);
-                        requestAnimationFrame(() => ghost.parentNode?.removeChild(ghost));
-                      }}>
-                      <span className="planner-task-dot" style={{ background: group.color }} />
-                      <span className="planner-task-title">{task.title}</span>
-                      {eisInfo && (
-                        <span
-                          className="planner-eis-badge"
-                          style={{ '--q-color': eisInfo.color }}
-                          title={eisInfo.label}>
-                          {eisInfo.key}
-                        </span>
-                      )}
-                      {task.importance === 'high' && !isScheduled && <span className="planner-task-star">★</span>}
+                    <div key={q.key} className="planner-eis-cell" style={{ '--q-color': q.color }}>
+                      <div className="planner-eis-cell-header">
+                        <span className="planner-eis-cell-key">{q.key}</span>
+                        <span className="planner-eis-cell-label">{q.label}</span>
+                      </div>
+                      <div className="planner-eis-cell-tasks">
+                        {tasks.map(task => {
+                          const isScheduled = scheduledIds.has(task.id);
+                          return (
+                            <div
+                              key={task.id}
+                              className={`planner-pool-task${isScheduled ? ' scheduled' : ''}${task.importance === 'high' ? ' important' : ''}${selectedTask?.id === task.id ? ' selected' : ''}`}
+                              draggable={!isScheduled}
+                              onClick={() => { setSelectedTask(task); setMobileTab('panel'); }}
+                              onDragStart={isScheduled ? undefined : e => {
+                                e.dataTransfer.setData('text/plain', JSON.stringify({ type: 'task', task }));
+                              }}>
+                              <span className="planner-task-title">{task.title}</span>
+                              {task._listName && <span className="planner-eis-grid-task-section">{task._listName}</span>}
+                              {task.importance === 'high' && !isScheduled && <span className="planner-task-star">★</span>}
+                            </div>
+                          );
+                        })}
+                        {tasks.length === 0 && <div className="planner-eis-cell-empty">Nessun task</div>}
+                      </div>
                     </div>
                   );
                 })}
               </div>
-            ))}
-
-            {poolTasks.length === 0 && (
-              preloadedTasks.length === 0
-                ? <Skeleton rows={7} height={26} />
-                : <div className="planner-empty">Nessun task in questa lista</div>
-            )}
-          </div>
+            </div>
+          )}
         </div>
 
         <div className="planner-col-resize" onMouseDown={handlePoolResizeStart} title="Ridimensiona" />
@@ -944,7 +876,6 @@ export default function PlannerView({ open, onClose, preloadedTasks = [], notebo
                   onClick={() => {
                     if (block.taskId && block.listId) {
                       setSelectedTask({ id: block.taskId, title: block.taskTitle, _listId: block.listId, _listName: block.listName });
-                      setRightPanel('detail');
                       setMobileTab('panel');
                     }
                   }}
@@ -1026,105 +957,27 @@ export default function PlannerView({ open, onClose, preloadedTasks = [], notebo
         </div>
 
         <div className="planner-col-resize" onMouseDown={handleAiResizeStart} title="Ridimensiona" />
-        {/* ── Column 3: Detail / AI Panel ── */}
+        {/* ── Column 3: Detail Panel ── */}
         <div className={`planner-ai-panel${mobileTab === 'panel' ? ' mobile-active' : ''}`} style={{ width: aiWidth }}>
           <div className="planner-col-header">
-            <div className="planner-panel-tabs">
-              <button
-                className={`planner-panel-tab${rightPanel === 'detail' ? ' active' : ''}`}
-                onClick={() => setRightPanel('detail')}>
-                📋 Dettagli
-              </button>
-              <button
-                className={`planner-panel-tab${rightPanel === 'assistant' ? ' active' : ''}`}
-                onClick={() => setRightPanel('assistant')}>
-                🤖 Assistente
-              </button>
-            </div>
+            <span>📋 Dettagli</span>
             <span className={`planner-save-status ${saveStatus}`}>{saveLabel()}</span>
           </div>
           <div className="planner-ai-body">
-
-            {rightPanel === 'detail' ? (
-              selectedTask ? (
-                <TaskDetailPanel
-                  task={selectedTask}
-                  onClose={() => setSelectedTask(null)}
-                />
-              ) : (
-                <div className="planner-detail-empty">
-                  <p>Clicca un task nel pool per vedere note e sottoattività.</p>
-                </div>
-              )
+            {selectedTask ? (
+              <TaskDetailPanel
+                task={selectedTask}
+                onClose={() => setSelectedTask(null)}
+              />
             ) : (
-              <>
-                {/* Email actions */}
-                {activeEmailActions.length > 0 && (
-                  <div className="planner-ai-section">
-                    <div className="planner-ai-section-title">📧 Action da email</div>
-                    {activeEmailActions.map(a => (
-                      <div key={a.id} className="planner-email-action">
-                        <div className="planner-email-action-text">{a.extractedAction}</div>
-                        <div className="planner-email-action-meta" title={`Da: ${a.from}`}>{a.subject?.slice(0, 35)}</div>
-                        <div className="planner-email-action-btns">
-                          <button
-                            className="planner-email-add-btn"
-                            onClick={() => {
-                              addBlock(
-                                { id: genId(), title: a.extractedAction, _listId: null, _listName: 'Email' },
-                                config.workdayStart
-                              );
-                              dismissEmailAction(a.id);
-                            }}>
-                            + Timeline
-                          </button>
-                          <button className="planner-email-dismiss-btn" onClick={() => dismissEmailAction(a.id)}>✕</button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                {/* Active blocks summary */}
-                {todayPlan.blocks.length > 0 && (
-                  <div className="planner-ai-section">
-                    <div className="planner-ai-section-title">
-                      📋 Piano di oggi
-                      <span className="planner-ai-count">{todayPlan.blocks.filter(b => !b.completed).length} attivi</span>
-                    </div>
-                    {todayPlan.blocks
-                      .filter(b => !b.completed)
-                      .sort((a, b) => a.startTime.localeCompare(b.startTime))
-                      .slice(0, 8)
-                      .map(b => (
-                        <div key={b.id} className="planner-ai-block-item">
-                          <span className="planner-ai-time">{b.startTime}</span>
-                          <span className="planner-ai-task">{b.taskTitle}</span>
-                        </div>
-                      ))
-                    }
-                  </div>
-                )}
-
-                {activeEmailActions.length === 0 && todayPlan.blocks.length === 0 && (
-                  <div className="planner-ai-empty">
-                    <p>Trascina i task dalla lista a sinistra sulla timeline per pianificarli.</p>
-                    <p>Usa <strong>📧 Email</strong> per estrarre action item automaticamente.</p>
-                    <p>Usa <strong>✨ Piano AI</strong> per generare l&apos;intera giornata con un click.</p>
-                  </div>
-                )}
-              </>
+              <div className="planner-detail-empty">
+                <p>Clicca un task nel pool per vedere note e sottoattività.</p>
+              </div>
             )}
           </div>
         </div>
       </>)}
       </div>
-
-      <EisenhowerTriage
-        open={eisenhowerOpen}
-        onClose={() => setEisenhowerOpen(false)}
-        tasks={preloadedTasks}
-      />
 
       {pomodoroBlockId && (
         <PomodoroTimer
@@ -1436,55 +1289,3 @@ function WeeklyTimeline({ weekDays, plans, calEvents, workStart, timeSlots, onDa
   );
 }
 
-// ── SettingsPanel ─────────────────────────────────────────────────────────────
-function SettingsPanel({ config, onSave, onClose }) {
-  const [local, setLocal] = useState(() => JSON.parse(JSON.stringify(config)));
-
-  function setProject(key, field, value) {
-    setLocal(prev => ({
-      ...prev,
-      projects: prev.projects.map(p => p.key === key ? { ...p, [field]: value } : p),
-    }));
-  }
-
-  return (
-    <div className="planner-settings">
-      <div className="planner-settings-header">
-        <span>Impostazioni Pianificatore</span>
-        <button onClick={onClose}>✕</button>
-      </div>
-      <div className="planner-settings-body">
-        <div className="planner-settings-row">
-          <label>Inizio giornata</label>
-          <input type="time" value={local.workdayStart}
-            onChange={e => setLocal(p => ({ ...p, workdayStart: e.target.value }))} />
-        </div>
-        <div className="planner-settings-row">
-          <label>Fine giornata</label>
-          <input type="time" value={local.workdayEnd}
-            onChange={e => setLocal(p => ({ ...p, workdayEnd: e.target.value }))} />
-        </div>
-        <div className="planner-settings-section-title">Progetti (mappa a liste To-Do)</div>
-        {local.projects.map(p => (
-          <div key={p.key} className="planner-settings-project">
-            <input type="color" value={p.color}
-              onChange={e => setProject(p.key, 'color', e.target.value)} />
-            <input type="text" value={p.name} placeholder="Nome progetto"
-              onChange={e => setProject(p.key, 'name', e.target.value)} />
-            <input
-              type="text"
-              value={(p.todoListNames || []).join(', ')}
-              placeholder="Nomi liste To-Do (virgola)"
-              onChange={e => setProject(p.key, 'todoListNames',
-                e.target.value.split(',').map(s => s.trim()).filter(Boolean))} />
-          </div>
-        ))}
-      </div>
-      <div className="planner-settings-footer">
-        <button className="planner-settings-save-btn" onClick={() => { onSave(local); onClose(); }}>
-          Salva impostazioni
-        </button>
-      </div>
-    </div>
-  );
-}
