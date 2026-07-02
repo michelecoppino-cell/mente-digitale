@@ -58,8 +58,9 @@ function extractJson(text) {
 // ── Action: generate-schedule ─────────────────────────────────────────────────
 
 async function generateSchedule(apiKey, { tasks, calEvents, workdayStart, workdayEnd, date }) {
+  const EIS_LABELS = { Q1: 'urgente+importante', Q2: 'importante', Q3: 'urgente', Q4: 'né urgente né importante' };
   const tasksText = (tasks || []).slice(0, 30).map((t, i) =>
-    `${i+1}. [${t.listName || ''}] ${t.taskTitle}${t.importance === 'high' ? ' ★' : ''}${t.dueDate ? ` (scadenza: ${t.dueDate.slice(0,10)})` : ''}`
+    `${i+1}. [${t.listName || ''}] ${t.taskTitle}${t.importance === 'high' ? ' ★' : ''}${t.dueDate ? ` (scadenza: ${t.dueDate.slice(0,10)})` : ''}${t.eisenhower ? ` [Eisenhower: ${EIS_LABELS[t.eisenhower] || t.eisenhower}]` : ''}`
   ).join('\n');
 
   const eventsText = (calEvents || []).length
@@ -77,7 +78,7 @@ TASK DA PIANIFICARE:
 ${tasksText}
 
 Regole:
-1. Pianifica i task più importanti (★, scadenze imminenti) al mattino
+1. Pianifica i task più importanti (★, scadenze imminenti, quadrante Eisenhower Q1/Q2) al mattino
 2. Lascia almeno 15 minuti tra meeting e task
 3. Raggruppa task dello stesso progetto quando possibile
 4. Ogni blocco task: 30–90 minuti
