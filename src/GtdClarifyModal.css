@@ -14,8 +14,8 @@
   background: var(--surface);
   border: 1px solid var(--border2);
   border-radius: 12px;
-  width: min(960px, 96vw);
-  max-height: 90vh;
+  width: min(1160px, 97vw);
+  max-height: 92vh;
   overflow-y: auto;
   overflow-x: auto;
   box-shadow: 0 20px 60px rgba(0,0,0,0.5);
@@ -41,7 +41,7 @@
 }
 .gtd-close:hover { color: var(--text); }
 
-.gtd-body { padding: 24px 28px 28px 20px; min-width: 720px; }
+.gtd-body { padding: 24px 28px 28px 20px; min-width: 900px; }
 
 /* ── Albero del diagramma ── */
 .gtd-flow {
@@ -74,11 +74,17 @@
   white-space: nowrap;
 }
 .gtd-flow-node.small { font-size: 11px; padding: 6px 12px; }
+.gtd-flow-node.static {
+  background: rgba(255,255,255,0.03);
+  border: 1px solid var(--border2);
+  color: var(--muted);
+  font-weight: 500;
+}
 
 .gtd-flow-branches {
   display: flex;
   justify-content: center;
-  gap: 20px;
+  gap: 14px;
   width: 100%;
   border-top: 1px solid var(--border2);
   padding-top: 14px;
@@ -86,11 +92,10 @@
 
 .gtd-flow-branch {
   position: relative;
-  flex: 1;
+  flex: 1 0 auto;
   display: flex;
   flex-direction: column;
   align-items: center;
-  min-width: 0;
 }
 .gtd-flow-branch::before {
   content: '';
@@ -125,7 +130,7 @@
 
 .gtd-leaf-btn {
   width: 100%;
-  min-width: 0;
+  min-width: 140px;
   display: flex;
   align-items: center;
   gap: 6px;
@@ -140,7 +145,7 @@
   text-align: left;
   transition: background 0.15s, border-color 0.15s;
 }
-.gtd-leaf-label { min-width: 0; overflow-wrap: break-word; }
+.gtd-leaf-label { min-width: 0; }
 .gtd-leaf-btn:hover { background: rgba(200,169,110,0.08); border-color: var(--accent); }
 .gtd-leaf.open .gtd-leaf-btn { border-color: var(--accent); background: rgba(200,169,110,0.1); }
 
@@ -178,6 +183,13 @@
   box-sizing: border-box;
 }
 .gtd-textarea:focus { outline: none; border-color: var(--accent); }
+
+.gtd-leaf-confirm {
+  font-size: 12px;
+  color: #86c07a;
+  text-align: center;
+  padding: 6px 0;
+}
 
 .gtd-select {
   background: var(--surface2);
