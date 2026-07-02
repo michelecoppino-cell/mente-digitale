@@ -7,6 +7,7 @@ import {
   createChecklistItem, updateChecklistItem, deleteChecklistItem,
 } from './api';
 import { cacheGet, cacheSet } from './cache';
+import Skeleton from './Skeleton';
 import './PlannerView.css';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -38,8 +39,12 @@ function slots(start, end) {
   while (cur < t2m(end)) { out.push(m2t(cur)); cur += 30; }
   return out;
 }
+// Data in formato YYYY-MM-DD nel fuso orario locale (toISOString darebbe UTC)
+function localDateStr(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
 function todayStr() {
-  return new Date().toISOString().split('T')[0];
+  return localDateStr(new Date());
 }
 function genId() {
   return Math.random().toString(36).slice(2) + Date.now().toString(36);
@@ -79,7 +84,7 @@ function getWeekDays(dateStr) {
   return Array.from({ length: 7 }, (_, i) => {
     const day = new Date(monday);
     day.setDate(monday.getDate() + i);
-    return day.toISOString().split('T')[0];
+    return localDateStr(day);
   });
 }
 
@@ -104,6 +109,7 @@ export default function PlannerView({ open, onClose, preloadedTasks = [], notebo
   const [poolWidth, setPoolWidth]           = useState(560);
   const [aiWidth, setAiWidth]               = useState(560);
   const [calOutOfRange, setCalOutOfRange]   = useState(false);
+  const [mobileTab, setMobileTab]           = useState('timeline'); // colonna visibile su schermi stretti
 
   const timelineBodyRef  = useRef(null);
   const saveTimerRef     = useRef(null);
@@ -257,6 +263,50 @@ export default function PlannerView({ open, onClose, preloadedTasks = [], notebo
     });
   }
 
+  // Mutazione su più giorni (vista settimana): aggiorna tutti i piani e salva
+  function mutatePlansMulti(updater) {
+    const next = updater(plansRef.current);
+    if (next === plansRef.current) return;
+    plansRef.current = next;
+    setPlans(next);
+    const cur = next[currentDateRef.current];
+    if (cur) setTodayPlan(cur);
+    setSaveStatus('saving');
+    clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = setTimeout(async () => {
+      try {
+        cacheSet('daily_plans', plansRef.current, PLANS_CACHE_TTL);
+        await saveDailyPlans(plansRef.current);
+        setSaveStatus('saved');
+      } catch (e) {
+        console.error('save plans', e);
+        setSaveStatus('error');
+      }
+    }, SAVE_DEBOUNCE);
+  }
+
+  function moveBlockBetweenDays(fromDay, blockId, toDay, newStartTime) {
+    mutatePlansMulti(all => {
+      const fromPlan = all[fromDay];
+      const block = fromPlan?.blocks.find(b => b.id === blockId);
+      if (!block) return all;
+      const dur       = t2m(block.endTime) - t2m(block.startTime);
+      const workStart = t2m(configRef.current.workdayStart);
+      const workEnd   = t2m(configRef.current.workdayEnd);
+      const startMin  = Math.max(workStart, Math.min(t2m(newStartTime), workEnd - 30));
+      const moved     = { ...block, startTime: m2t(startMin), endTime: m2t(Math.min(startMin + dur, workEnd)) };
+      const next = { ...all };
+      if (fromDay === toDay) {
+        next[fromDay] = { ...fromPlan, blocks: fromPlan.blocks.map(b => b.id === blockId ? moved : b) };
+      } else {
+        next[fromDay] = { ...fromPlan, blocks: fromPlan.blocks.filter(b => b.id !== blockId) };
+        const toPlan  = next[toDay] || { date: toDay, blocks: [], emailExtractedActions: [] };
+        next[toDay]   = { ...toPlan, blocks: [...toPlan.blocks, moved] };
+      }
+      return next;
+    });
+  }
+
   // ── DnD ─────────────────────────────────────────────────────────────────────
   function handleTimelineDragOver(e) {
     e.preventDefault();
@@ -276,13 +326,13 @@ export default function PlannerView({ open, onClose, preloadedTasks = [], notebo
     if (!dragOverTime) return;
     try {
       const data = JSON.parse(e.dataTransfer.getData('text/plain'));
-      if (data.type === 'task')   addBlock(data.task, dragOverTime, false);
+      if (data.type === 'task')   addBlock(data.task, dragOverTime);
       else if (data.type === 'block') moveBlock(data.blockId, dragOverTime);
-    } catch {}
+    } catch { /* payload drag non valido — ignora */ }
     setDragOverTime(null);
   }
 
-  function addBlock(task, startTime, fromRollover) {
+  function addBlock(task, startTime) {
     const proj    = findProject(task, configRef.current);
     const color   = proj?.color ?? listColorMapRef.current[(task._listName ?? '').toLowerCase()] ?? '#888';
     const endMin  = Math.min(t2m(startTime) + DEFAULT_DURATION, t2m(configRef.current.workdayEnd));
@@ -292,10 +342,9 @@ export default function PlannerView({ open, onClose, preloadedTasks = [], notebo
       projectKey: proj?.key || null, projectColor: color,
       startTime, endTime: m2t(endMin),
       completed: false, completedAt: null,
-      isAISuggested: false, subSteps: [], fromRollover: !!fromRollover,
+      isAISuggested: false, subSteps: [],
     };
     mutatePlan(prev => ({ ...prev, blocks: [...prev.blocks, newBlock] }));
-    if (fromRollover) setRolloverBlocks(prev => prev.filter(b => b.taskId !== task.id));
   }
 
   function moveBlock(blockId, newStartTime) {
@@ -320,7 +369,7 @@ export default function PlannerView({ open, onClose, preloadedTasks = [], notebo
       ),
     }));
     if (block.listId && block.taskId) {
-      try { await completeTask(block.listId, block.taskId); } catch {}
+      try { await completeTask(block.listId, block.taskId); } catch (e) { console.error('complete task', e); }
     }
   }
 
@@ -608,7 +657,7 @@ export default function PlannerView({ open, onClose, preloadedTasks = [], notebo
           <button className="planner-nav-btn" onClick={() => {
             const d = new Date(currentDate + 'T12:00:00');
             d.setDate(d.getDate() - (viewMode === 'week' ? 7 : 1));
-            setCurrentDate(d.toISOString().split('T')[0]);
+            setCurrentDate(localDateStr(d));
           }}>◀</button>
           <span className="planner-date">
             {viewMode === 'week' ? (() => {
@@ -622,7 +671,7 @@ export default function PlannerView({ open, onClose, preloadedTasks = [], notebo
           <button className="planner-nav-btn" onClick={() => {
             const d = new Date(currentDate + 'T12:00:00');
             d.setDate(d.getDate() + (viewMode === 'week' ? 7 : 1));
-            setCurrentDate(d.toISOString().split('T')[0]);
+            setCurrentDate(localDateStr(d));
           }}>▶</button>
           {currentDate !== todayStr() && (
             <button className="planner-today-btn" onClick={() => setCurrentDate(todayStr())}>Oggi</button>
@@ -659,6 +708,15 @@ export default function PlannerView({ open, onClose, preloadedTasks = [], notebo
         <SettingsPanel config={config} onSave={handleSaveConfig} onClose={() => setSettingsOpen(false)} />
       )}
 
+      {/* Tab colonne — visibili solo su mobile (CSS) */}
+      {viewMode === 'day' && (
+        <div className="planner-mobile-tabs">
+          <button className={mobileTab === 'pool' ? 'active' : ''} onClick={() => setMobileTab('pool')}>Task</button>
+          <button className={mobileTab === 'timeline' ? 'active' : ''} onClick={() => setMobileTab('timeline')}>Giornata</button>
+          <button className={mobileTab === 'panel' ? 'active' : ''} onClick={() => setMobileTab('panel')}>Dettagli</button>
+        </div>
+      )}
+
       {/* Body */}
       <div className="planner-body">
 
@@ -667,15 +725,15 @@ export default function PlannerView({ open, onClose, preloadedTasks = [], notebo
           weekDays={getWeekDays(currentDate)}
           plans={plans}
           calEvents={calEvents}
-          config={config}
           workStart={workStart}
           timeSlots={timeSlots}
           onDayClick={day => { setCurrentDate(day); setViewMode('day'); }}
+          onMoveBlock={moveBlockBetweenDays}
         />
       ) : (<>
 
         {/* ── Column 1: Task Pool ── */}
-        <div className="planner-pool" style={{ width: poolWidth }}>
+        <div className={`planner-pool${mobileTab === 'pool' ? ' mobile-active' : ''}`} style={{ width: poolWidth }}>
           <div className="planner-col-header">
             <span>Task</span>
             <div className="planner-filters">
@@ -711,7 +769,7 @@ export default function PlannerView({ open, onClose, preloadedTasks = [], notebo
                       key={task.id}
                       className={`planner-pool-task${isScheduled ? ' scheduled' : ''}${task.importance === 'high' ? ' important' : ''}${selectedTask?.id === task.id ? ' selected' : ''}`}
                       draggable={!isScheduled}
-                      onClick={() => { setSelectedTask(task); setRightPanel('detail'); }}
+                      onClick={() => { setSelectedTask(task); setRightPanel('detail'); setMobileTab('panel'); }}
                       onDragStart={isScheduled ? undefined : e => {
                         e.dataTransfer.setData('text/plain', JSON.stringify({ type: 'task', task }));
                         const c = group.color;
@@ -739,18 +797,16 @@ export default function PlannerView({ open, onClose, preloadedTasks = [], notebo
             ))}
 
             {poolTasks.length === 0 && (
-              <div className="planner-empty">
-                {preloadedTasks.length === 0
-                  ? 'Caricamento task in corso…'
-                  : 'Nessun task in questa lista'}
-              </div>
+              preloadedTasks.length === 0
+                ? <Skeleton rows={7} height={26} />
+                : <div className="planner-empty">Nessun task in questa lista</div>
             )}
           </div>
         </div>
 
         <div className="planner-col-resize" onMouseDown={handlePoolResizeStart} title="Ridimensiona" />
         {/* ── Column 2: Timeline ── */}
-        <div className="planner-timeline">
+        <div className={`planner-timeline${mobileTab === 'timeline' ? ' mobile-active' : ''}`}>
           <div className="planner-col-header">
             <span>
               {new Date(currentDate + 'T12:00:00').toLocaleDateString('it-IT', {
@@ -830,6 +886,7 @@ export default function PlannerView({ open, onClose, preloadedTasks = [], notebo
                     if (block.taskId && block.listId) {
                       setSelectedTask({ id: block.taskId, title: block.taskTitle, _listId: block.listId, _listName: block.listName });
                       setRightPanel('detail');
+                      setMobileTab('panel');
                     }
                   }}
                   onDragStart={e => {
@@ -906,7 +963,7 @@ export default function PlannerView({ open, onClose, preloadedTasks = [], notebo
 
         <div className="planner-col-resize" onMouseDown={handleAiResizeStart} title="Ridimensiona" />
         {/* ── Column 3: Detail / AI Panel ── */}
-        <div className="planner-ai-panel" style={{ width: aiWidth }}>
+        <div className={`planner-ai-panel${mobileTab === 'panel' ? ' mobile-active' : ''}`} style={{ width: aiWidth }}>
           <div className="planner-col-header">
             <div className="planner-panel-tabs">
               <button
@@ -951,8 +1008,7 @@ export default function PlannerView({ open, onClose, preloadedTasks = [], notebo
                             onClick={() => {
                               addBlock(
                                 { id: genId(), title: a.extractedAction, _listId: null, _listName: 'Email' },
-                                config.workdayStart,
-                                false
+                                config.workdayStart
                               );
                               dismissEmailAction(a.id);
                             }}>
@@ -1078,7 +1134,7 @@ function TaskDetailPanel({ task, onClose }) {
       }
       setNotes(body);
       setItems((full.checklistItems || []).sort((a, b) => a.isChecked - b.isChecked));
-    } catch {}
+    } catch (e) { console.error('load task detail', e); }
     setLoading(false);
   }
 
@@ -1088,7 +1144,7 @@ function TaskDetailPanel({ task, onClose }) {
     clearTimeout(notesTimerRef.current);
     notesTimerRef.current = setTimeout(async () => {
       setSavingNotes(true);
-      try { await updateTaskBody(task._listId, task.id, val); } catch {}
+      try { await updateTaskBody(task._listId, task.id, val); } catch (e) { console.error('save notes', e); }
       setSavingNotes(false);
     }, 1200);
   }
@@ -1096,12 +1152,12 @@ function TaskDetailPanel({ task, onClose }) {
   async function handleToggle(item) {
     const checked = !item.isChecked;
     setItems(prev => prev.map(i => i.id === item.id ? { ...i, isChecked: checked } : i));
-    try { await updateChecklistItem(task._listId, task.id, item.id, checked); } catch {}
+    try { await updateChecklistItem(task._listId, task.id, item.id, checked); } catch (e) { console.error('toggle checklist', e); }
   }
 
   async function handleDelete(itemId) {
     setItems(prev => prev.filter(i => i.id !== itemId));
-    try { await deleteChecklistItem(task._listId, task.id, itemId); } catch {}
+    try { await deleteChecklistItem(task._listId, task.id, itemId); } catch (e) { console.error('delete checklist', e); }
   }
 
   async function handleAdd(e) {
@@ -1128,7 +1184,7 @@ function TaskDetailPanel({ task, onClose }) {
       </div>
 
       {loading ? (
-        <div className="planner-task-detail-loading">Caricamento…</div>
+        <Skeleton rows={5} />
       ) : (
         <>
           <div className="planner-task-detail-section">
@@ -1175,8 +1231,34 @@ function TaskDetailPanel({ task, onClose }) {
 }
 
 // ── WeeklyTimeline ────────────────────────────────────────────────────────────
-function WeeklyTimeline({ weekDays, plans, calEvents, config, workStart, timeSlots, onDayClick }) {
+function WeeklyTimeline({ weekDays, plans, calEvents, workStart, timeSlots, onDayClick, onMoveBlock }) {
   const today = todayStr();
+  const [dragOver, setDragOver] = useState(null); // { day, min }
+  const workEnd = workStart + timeSlots.length * 30;
+
+  function slotFromEvent(e) {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const relY = e.clientY - rect.top;
+    const idx  = Math.floor(relY / SLOT_HEIGHT);
+    return Math.max(workStart, Math.min(workEnd - 30, workStart + idx * 30));
+  }
+
+  function handleColDragOver(e, day) {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    setDragOver({ day, min: slotFromEvent(e) });
+  }
+
+  function handleColDrop(e, day) {
+    e.preventDefault();
+    const min = slotFromEvent(e);
+    try {
+      const data = JSON.parse(e.dataTransfer.getData('text/plain'));
+      if (data.type === 'weekblock') onMoveBlock(data.fromDay, data.blockId, day, m2t(min));
+    } catch { /* payload drag non valido — ignora */ }
+    setDragOver(null);
+  }
+
   return (
     <div className="planner-week-wrap">
       <div className="planner-week-head">
@@ -1218,10 +1300,24 @@ function WeeklyTimeline({ weekDays, plans, calEvents, config, workStart, timeSlo
             !isAllDay(ev) && (ev.start?.dateTime || ev.start?.date || '').slice(0, 10) === day
           );
           return (
-            <div key={day} className={`planner-week-day-col${day === today ? ' today' : ''}`}>
+            <div
+              key={day}
+              className={`planner-week-day-col${day === today ? ' today' : ''}`}
+              onDragOver={e => handleColDragOver(e, day)}
+              onDragLeave={e => {
+                if (!e.currentTarget.contains(e.relatedTarget)) setDragOver(null);
+              }}
+              onDrop={e => handleColDrop(e, day)}>
               {timeSlots.map(slot => (
                 <div key={slot} className="planner-week-slot-row" style={{ height: SLOT_HEIGHT }} />
               ))}
+              {dragOver?.day === day && (
+                <div
+                  className="planner-week-drop-indicator"
+                  style={{ top: (dragOver.min - workStart) / 30 * SLOT_HEIGHT, height: SLOT_HEIGHT }}>
+                  {m2t(dragOver.min)}
+                </div>
+              )}
               {dayEvents.map((ev, i) => {
                 const evStart = isoToHHMM(ev.start?.dateTime || ev.start?.date);
                 const evEnd   = isoToHHMM(ev.end?.dateTime   || ev.end?.date);
@@ -1244,7 +1340,12 @@ function WeeklyTimeline({ weekDays, plans, calEvents, config, workStart, timeSlo
                   <div key={block.id}
                     className={`planner-week-task-block${block.completed ? ' completed' : ''}`}
                     style={{ top: top + 2, height, borderLeftColor: block.projectColor, background: `${block.projectColor}22` }}
-                    title={`${block.startTime}–${block.endTime} · ${block.taskTitle}`}>
+                    title={`${block.startTime}–${block.endTime} · ${block.taskTitle} (trascina per spostare)`}
+                    draggable={!block.completed}
+                    onDragStart={e => {
+                      e.stopPropagation();
+                      e.dataTransfer.setData('text/plain', JSON.stringify({ type: 'weekblock', blockId: block.id, fromDay: day }));
+                    }}>
                     <span className="planner-block-title">{block.taskTitle}</span>
                   </div>
                 );

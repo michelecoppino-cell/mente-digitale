@@ -1054,13 +1054,30 @@
   border-left: 3px solid;
   padding: 3px 4px;
   overflow: hidden;
-  cursor: pointer;
+  cursor: grab;
   z-index: 2;
   display: flex;
   flex-direction: column;
   box-sizing: border-box;
 }
-.planner-week-task-block.completed { opacity: 0.4; }
+.planner-week-task-block:active { cursor: grabbing; }
+.planner-week-task-block.completed { opacity: 0.4; cursor: default; }
+
+/* Indicatore di drop in vista settimana */
+.planner-week-drop-indicator {
+  position: absolute;
+  left: 2px;
+  right: 2px;
+  border: 1.5px dashed var(--accent);
+  border-radius: 4px;
+  background: rgba(200,169,110,0.1);
+  z-index: 3;
+  pointer-events: none;
+  font-size: 9px;
+  color: var(--accent);
+  padding: 2px 4px;
+  box-sizing: border-box;
+}
 .planner-week-task-block .planner-block-title {
   font-size: 9px;
   white-space: normal;
@@ -1188,4 +1205,50 @@
   border-color: var(--accent);
   color: var(--accent);
   background: rgba(200,169,110,0.08);
+}
+
+/* ── Tab colonne mobile ── */
+.planner-mobile-tabs { display: none; }
+
+@media (max-width: 768px) {
+  .planner-mobile-tabs {
+    display: flex;
+    gap: 6px;
+    padding: 8px 10px;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+  .planner-mobile-tabs button {
+    flex: 1;
+    background: none;
+    border: 1px solid var(--border2);
+    color: var(--muted);
+    padding: 7px 0;
+    border-radius: 7px;
+    font-size: 12px;
+    font-family: 'Outfit', sans-serif;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .planner-mobile-tabs button.active {
+    border-color: var(--accent);
+    color: var(--accent);
+    background: rgba(200,169,110,0.1);
+  }
+
+  /* Una colonna alla volta, a tutta larghezza */
+  .planner-col-resize { display: none; }
+  .planner-pool, .planner-timeline, .planner-ai-panel { display: none; }
+  .planner-pool.mobile-active,
+  .planner-timeline.mobile-active,
+  .planner-ai-panel.mobile-active {
+    display: flex;
+    width: 100% !important; /* vince sullo width inline del resize desktop */
+  }
+
+  /* Header più compatto */
+  .planner-header { flex-wrap: wrap; padding: 8px 10px; gap: 8px; }
+  .planner-date { min-width: 0; font-size: 14px; flex: 1; }
+  .planner-header-actions { gap: 6px; }
+  .planner-timeline-hint { display: none; }
 }

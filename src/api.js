@@ -37,6 +37,19 @@ async function call(path, options = {}, retries = 3) {
       await new Promise(r => setTimeout(r, (attempt + 1) * 1000));
     }
   }
+  throw new Error(`Graph error: tentativi esauriti per ${path}`);
+}
+
+// PUT di un file JSON nella root di OneDrive
+async function putDriveJson(filename, data) {
+  const token = await getTokenCached();
+  const r = await fetch(`${GRAPH}/me/drive/root:/${filename}:/content`, {
+    method: 'PUT',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(data, null, 2),
+  });
+  if (!r.ok) throw new Error(`Save ${filename} error ${r.status}`);
+  return r.json();
 }
 
 export async function getNotebooks() {
@@ -91,7 +104,7 @@ export async function getCalendarEvents(startDate, endDate, top = 50) {
 
   // Recupera tutti i calendari per distinguere condivisi da propri
   let calendars = [];
-  try { calendars = await getCalendars(); } catch {}
+  try { calendars = await getCalendars(); } catch { /* fallback: solo calendario default */ }
 
   if (!calendars.length) {
     // Fallback: solo calendario default
@@ -140,14 +153,7 @@ export async function loadIdentityDoc(type) {
 
 export async function saveIdentityDoc(type, data) {
   const filename = type === 'bussola' ? OD_BUSSOLA_FILE : OD_VISIONE_FILE;
-  const token = await getTokenCached();
-  const r = await fetch(`${GRAPH}/me/drive/root:/${filename}:/content`, {
-    method: 'PUT',
-    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify(data, null, 2),
-  });
-  if (!r.ok) throw new Error(`Save identity doc error ${r.status}`);
-  return r.json();
+  return putDriveJson(filename, data);
 }
 
 // ── OneDrive Links File ──
@@ -155,31 +161,16 @@ const OD_LINKS_FILE = 'mente-digitale-links.json';
 
 export async function loadODLinksFromCloud() {
   try {
-    const d = await call(`/me/drive/root:/${OD_LINKS_FILE}:/content`);
     // Graph restituisce il contenuto raw del file
-    return d;
-  } catch(e) {
+    return await call(`/me/drive/root:/${OD_LINKS_FILE}:/content`);
+  } catch {
     // File non esiste ancora
     return null;
   }
 }
 
 export async function saveODLinksToCloud(links) {
-  const json = JSON.stringify(links, null, 2);
-  const token = await getTokenCached();
-  const r = await fetch(
-    `https://graph.microsoft.com/v1.0/me/drive/root:/${OD_LINKS_FILE}:/content`,
-    {
-      method: 'PUT',
-      headers: {
-        Authorization: `Bearer ${token}`,
-        'Content-Type': 'application/json',
-      },
-      body: json,
-    }
-  );
-  if (!r.ok) throw new Error(`Save OD links error ${r.status}`);
-  return r.json();
+  return putDriveJson(OD_LINKS_FILE, links);
 }
 
 // ── OneDrive Planner Files ────────────────────────────────────────────────────
@@ -202,14 +193,7 @@ export async function saveDailyPlans(plans) {
   for (const [date, plan] of Object.entries(plans)) {
     if (new Date(date) >= cutoff) pruned[date] = plan;
   }
-  const token = await getTokenCached();
-  const r = await fetch(`${GRAPH}/me/drive/root:/${OD_DAILY_PLANS_FILE}:/content`, {
-    method: 'PUT',
-    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify(pruned, null, 2),
-  });
-  if (!r.ok) throw new Error(`Save daily plans error ${r.status}`);
-  return r.json();
+  return putDriveJson(OD_DAILY_PLANS_FILE, pruned);
 }
 
 export async function loadPlannerConfig() {
@@ -221,14 +205,7 @@ export async function loadPlannerConfig() {
 }
 
 export async function savePlannerConfig(config) {
-  const token = await getTokenCached();
-  const r = await fetch(`${GRAPH}/me/drive/root:/${OD_PLANNER_CFG_FILE}:/content`, {
-    method: 'PUT',
-    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify(config, null, 2),
-  });
-  if (!r.ok) throw new Error(`Save planner config error ${r.status}`);
-  return r.json();
+  return putDriveJson(OD_PLANNER_CFG_FILE, config);
 }
 
 export async function getTask(listId, taskId) {

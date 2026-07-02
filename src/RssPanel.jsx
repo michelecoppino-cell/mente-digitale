@@ -25,6 +25,12 @@ function isRecent(str) {
   return (Date.now() - d.getTime()) < 36 * 3600 * 1000;
 }
 
+// Converte l'HTML del feed in testo puro (il contenuto è esterno: mai renderizzarlo come HTML)
+function stripHtml(html) {
+  const doc = new DOMParser().parseFromString(html, 'text/html');
+  return (doc.body.textContent || '').replace(/\s+/g, ' ').trim();
+}
+
 // ── Briefing AI ──────────────────────────────────────────────────────────────
 const BRIEFING_SECTIONS = [
   { key: 'mondo',  label: '🌍 Mondo' },
@@ -206,8 +212,9 @@ export default function RssPanel({ open, onToggle }) {
                       )}
                     </div>
                     {expanded === i && item.description && (
-                      <div className="rss-item-desc"
-                        dangerouslySetInnerHTML={{ __html: item.description.replace(/<img[^>]*>/g, '').slice(0, 300) + '…' }} />
+                      <div className="rss-item-desc">
+                        {stripHtml(item.description).slice(0, 300)}…
+                      </div>
                     )}
                   </div>
                 ))}

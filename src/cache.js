@@ -7,7 +7,7 @@ export function cacheSet(key, data, ttlMs) {
       data,
       expires: Date.now() + ttlMs
     }));
-  } catch(e) {
+  } catch {
     // localStorage pieno — pulisci vecchie chiavi
     clearExpired();
   }
@@ -23,7 +23,7 @@ export function cacheGet(key) {
       return null;
     }
     return obj.data;
-  } catch(e) { return null; }
+  } catch { return null; }
 }
 
 export function cacheClear() {
@@ -40,7 +40,7 @@ function clearExpired() {
       try {
         const obj = JSON.parse(localStorage.getItem(k));
         if (Date.now() > obj.expires) localStorage.removeItem(k);
-      } catch(e) { localStorage.removeItem(k); }
+      } catch { localStorage.removeItem(k); }
     });
 }
 
