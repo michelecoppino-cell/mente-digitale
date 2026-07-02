@@ -92,7 +92,7 @@ function getWeekDays(dateStr) {
 }
 
 // ── Main PlannerView ──────────────────────────────────────────────────────────
-export default function PlannerView({ open, onClose, preloadedTasks = [], notebooks = [], sectionsMap = {} }) {
+export default function PlannerView({ open, onClose, preloadedTasks = [], notebooks = [], sectionsMap = {}, autoAddTask = null, onAutoAdded }) {
   const [currentDate, setCurrentDate]       = useState(todayStr);
   const [plans, setPlans]                   = useState({});
   const [config, setConfig]                 = useState(DEFAULT_CONFIG);
@@ -155,6 +155,13 @@ export default function PlannerView({ open, onClose, preloadedTasks = [], notebo
 
   // Reset filter when tasks list changes
   useEffect(() => { setProjectFilter('all'); }, [preloadedTasks]);
+
+  // Aggiunge automaticamente un task catturato da GTD al piano di oggi, una tantum
+  useEffect(() => {
+    if (!open || !autoAddTask) return;
+    addBlock(autoAddTask, configRef.current.workdayStart);
+    onAutoAdded?.();
+  }, [open, autoAddTask]); // eslint-disable-line
 
   async function initConfig() {
     try {

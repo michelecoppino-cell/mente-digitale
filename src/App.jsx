@@ -9,6 +9,7 @@ import Panel from './Panel';
 import SchedulePanel from './SchedulePanel';
 import RssPanel from './RssPanel';
 import PlannerView from './PlannerView';
+import GtdClarifyModal from './GtdClarifyModal';
 import { COLORS } from './config';
 import './App.css';
 
@@ -27,6 +28,8 @@ export default function App() {
   const [plannerOpen, setPlannerOpen] = useState(false);
   const [identityOpen, setIdentityOpen] = useState(null);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [gtdOpen, setGtdOpen] = useState(false);
+  const [pendingPlannerTask, setPendingPlannerTask] = useState(null);
   const pagesCache = useRef({});
   const tasksCache = useRef({});
   const [scheduledTasks, setScheduledTasks] = useState(null);
@@ -230,6 +233,14 @@ export default function App() {
               </svg>
             </button>
           )}
+          {account && (
+            <button className="search-btn" onClick={() => setGtdOpen(true)} title="Cattura pensiero (GTD)">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                <line x1="12" y1="5" x2="12" y2="19" />
+                <line x1="5" y1="12" x2="19" y2="12" />
+              </svg>
+            </button>
+          )}
           <div className="zoom-controls">
             <button className="zoom-btn" onClick={() => setZoom(z => Math.max(0.15, +(z - 0.2).toFixed(2)))}>−</button>
             <span className="zoom-label">{Math.round(zoom * 100)}%</span>
@@ -297,6 +308,19 @@ export default function App() {
           preloadedTasks={scheduledTasks || []}
           notebooks={notebooks}
           sectionsMap={sectionsMap}
+          autoAddTask={pendingPlannerTask}
+          onAutoAdded={() => setPendingPlannerTask(null)}
+        />
+        <GtdClarifyModal
+          open={gtdOpen}
+          onClose={() => setGtdOpen(false)}
+          todoLists={todoListsRef.current}
+          notebooks={notebooks}
+          sectionsMap={sectionsMap}
+          onTaskCreated={(task, { addToday }) => {
+            setScheduledTasks(prev => [...(prev || []), task]);
+            if (addToday) { setPendingPlannerTask(task); setPlannerOpen(true); }
+          }}
         />
         <SearchOverlay
           open={searchOpen}
