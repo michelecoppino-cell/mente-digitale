@@ -54,7 +54,8 @@ export function extractEmailCandidates(emails, max = 6) {
 // deciso lui stesso che quella riga è un'azione. Nessuna euristica necessaria,
 // nessun testo "indovinato". Richiede solo l'abitudine di taggare le righe
 // azionabili mentre si prendono appunti.
-const TODO_PARAGRAPH_RE = /<p[^>]*data-tag="([^"]*)"[^>]*>([\s\S]*?)<\/p>/gi;
+const TODO_PARAGRAPH_RE = /<p([^>]*)data-tag="([^"]*)"([^>]*)>([\s\S]*?)<\/p>/gi;
+const ID_ATTR_RE = /\bid="([^"]*)"/;
 
 function stripInlineHtml(fragment) {
   return fragment
@@ -72,15 +73,19 @@ export function extractOneNoteCandidates(pagesWithHtml, max = 8) {
     TODO_PARAGRAPH_RE.lastIndex = 0;
     let m;
     while ((m = TODO_PARAGRAPH_RE.exec(html))) {
-      const tag = m[1] || '';
+      const [fullMatch, preAttrs, tag, postAttrs, inner] = m;
       if (!tag.includes('to-do') || tag.includes('completed')) continue;
-      const text = stripInlineHtml(m[2]);
+      const text = stripInlineHtml(inner);
       if (!text) continue;
+      const idMatch = ID_ATTR_RE.exec(preAttrs) || ID_ATTR_RE.exec(postAttrs);
       out.push({
         source: 'onenote',
         title: p.title || 'Senza titolo',
         meta: p.lastModifiedDateTime ? p.lastModifiedDateTime.slice(0, 10) : '',
         extractedAction: text.slice(0, 120),
+        pageId: p.id,
+        elementId: idMatch ? idMatch[1] : null,
+        originalTagHtml: fullMatch,
       });
     }
   }

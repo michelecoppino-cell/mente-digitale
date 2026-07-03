@@ -127,6 +127,29 @@ export async function createNotePage(sectionId, title, contentText) {
   return r.json();
 }
 
+// PATCH del contenuto di una pagina OneNote: richiede multipart/form-data con
+// una parte "Commands" contenente l'array di comandi (target/action/content).
+export async function patchPageContent(pageId, commands) {
+  const token = await getTokenCached();
+  const form = new FormData();
+  form.append('Commands', new Blob([JSON.stringify(commands)], { type: 'application/json' }));
+  const r = await fetch(`${GRAPH}/me/onenote/pages/${pageId}/content`, {
+    method: 'PATCH',
+    headers: { Authorization: `Bearer ${token}` },
+    body: form,
+  });
+  if (!r.ok) throw new Error(`Patch page content error ${r.status}`);
+}
+
+// Spunta come completata la riga "Da fare" (data-tag="to-do") di una pagina
+// OneNote, sostituendo il tag con "to-do:completed" nell'HTML originale del
+// paragrafo — così la Daily Review non ripropone più un candidato già gestito.
+export async function markOneNoteTagDone(pageId, elementId, originalTagHtml) {
+  if (!pageId || !elementId || !originalTagHtml) return;
+  const content = originalTagHtml.replace(/data-tag="to-do"/, 'data-tag="to-do:completed"');
+  await patchPageContent(pageId, [{ target: `#${elementId}`, action: 'replace', content }]);
+}
+
 export async function getCalendars() {
   const d = await call('/me/calendars?$select=id,name,color,isDefaultCalendar,owner&$top=50');
   return d.value || [];

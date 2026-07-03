@@ -1,6 +1,6 @@
 export const CLIENT_ID = 'b639e8ea-2c30-4beb-8226-46e342721a50';
 export const REDIRECT_URI = window.location.origin + '/';
-export const SCOPES = ['Notes.Read', 'Notes.Read.All', 'Tasks.Read', 'Tasks.ReadWrite', 'Calendars.Read', 'Files.ReadWrite', 'Mail.Read'];
+export const SCOPES = ['Notes.Read', 'Notes.Read.All', 'Notes.ReadWrite', 'Tasks.Read', 'Tasks.ReadWrite', 'Calendars.Read', 'Files.ReadWrite', 'Mail.Read'];
 export const WORK_SCOPES = ['Calendars.Read'];
 export const COLORS = [
   '#7eb8c9','#c084a0','#86c07a',

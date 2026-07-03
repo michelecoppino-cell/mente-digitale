@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { initAuth, getAccount, login } from './auth';
-import { getNotebooks, getSections, getTodoLists, getTodoTasks, getPages, getRecentEmails, getPageContentHtml, createTask } from './api';
+import { getNotebooks, getSections, getTodoLists, getTodoTasks, getPages, getRecentEmails, getPageContentHtml, markOneNoteTagDone } from './api';
 import { cacheGet, cacheSet, cacheClear, TTL } from './cache';
 import { extractEmailCandidates, extractOneNoteCandidates } from './dailyReview';
 import MindMap from './MindMap';
@@ -79,6 +79,7 @@ export default function App() {
   const [reviewSuggestions, setReviewSuggestions] = useState([]);
   const [reviewOpen, setReviewOpen] = useState(false);
   const [reviewLoading, setReviewLoading] = useState(false);
+  const [gtdSeedText, setGtdSeedText] = useState('');
   const pagesCache = useRef({});
   const tasksCache = useRef({});
   const [scheduledTasks, setScheduledTasks] = useState(null);
@@ -211,19 +212,31 @@ export default function App() {
     setReviewLoading(false);
   }
 
-  async function handleAcceptSuggestion(suggestion, editedText) {
-    const list = todoListsRef.current[0];
-    if (!list) return;
-    try {
-      const task = await createTask(list.id, (editedText || suggestion.extractedAction).trim());
-      setScheduledTasks(prev => [...(prev || []), { ...task, _listId: list.id, _listName: list.displayName }]);
-      markSuggestionSeen(suggestion._sig);
-      setReviewSuggestions(prev => prev.filter(s => s.id !== suggestion.id));
-    } catch (e) { console.error('accept suggestion', e); }
+  // Se il candidato viene da OneNote, spunta subito la riga "Da fare" nella
+  // pagina di origine — sia che venga accettato sia che venga scartato, la
+  // Daily Review l'ha comunque "gestito" e non deve ripresentarlo.
+  function resolveOneNoteSuggestion(suggestion) {
+    if (suggestion.source !== 'onenote') return;
+    markOneNoteTagDone(suggestion.pageId, suggestion.elementId, suggestion.originalTagHtml)
+      .catch(e => console.error('mark onenote tag done', e));
+  }
+
+  // "Crea task" da un suggerimento non crea più un task al volo nella prima
+  // lista disponibile: apre il pannello GTD con il testo già pronto, così
+  // l'utente decide lui dove posizionarlo nel flusso (Farla, Progetto,
+  // Area/Ricorrenti, Risorse, Archivio...).
+  function handleAcceptSuggestion(suggestion, editedText) {
+    markSuggestionSeen(suggestion._sig);
+    resolveOneNoteSuggestion(suggestion);
+    setReviewSuggestions(prev => prev.filter(s => s.id !== suggestion.id));
+    setReviewOpen(false);
+    setGtdSeedText((editedText || suggestion.extractedAction || '').trim());
+    setGtdOpen(true);
   }
 
   function handleDismissSuggestion(suggestion) {
     markSuggestionSeen(suggestion._sig);
+    resolveOneNoteSuggestion(suggestion);
     setReviewSuggestions(prev => prev.filter(s => s.id !== suggestion.id));
   }
 
@@ -470,7 +483,8 @@ export default function App() {
         />
         <GtdClarifyModal
           open={gtdOpen}
-          onClose={() => setGtdOpen(false)}
+          onClose={() => { setGtdOpen(false); setGtdSeedText(''); }}
+          seedText={gtdSeedText}
           todoLists={todoListsRef.current}
           notebooks={notebooks}
           sectionsMap={sectionsMap}
