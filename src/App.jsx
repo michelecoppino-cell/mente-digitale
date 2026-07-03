@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
 import { initAuth, getAccount, login } from './auth';
-import { getNotebooks, getSections, getTodoLists, getTodoTasks, getPages, getRecentEmails, getRecentPages, getPageContentText, createTask } from './api';
+import { getNotebooks, getSections, getTodoLists, getTodoTasks, getPages, getRecentEmails, getRecentPages, getPageContentHtml, createTask } from './api';
 import { cacheGet, cacheSet, cacheClear, TTL } from './cache';
+import { extractEmailCandidates, extractOneNoteCandidates } from './dailyReview';
 import MindMap from './MindMap';
 import IdentityPanel from './IdentityPanel';
 import SearchOverlay from './SearchOverlay';
@@ -147,12 +148,12 @@ export default function App() {
     }
   }
 
-  // Campanella Daily Review: proposte di task da email Outlook recenti + pagine
-  // OneNote modificate di recente (MOM/appunti). Richiamata all'avvio e su
-  // "↺ Aggiorna tutto". Ogni proposta viene mostrata una sola volta: accettata o
-  // ignorata, la sua "firma" viene ricordata (localStorage, 7 giorni) così non
-  // ricompare più finché la pagina/email non cambia — nessuno sforzo manuale
-  // ripetuto sulla stessa cosa.
+  // Campanella Daily Review: proposte di task da email Outlook recenti + tag
+  // "Da fare" (Ctrl+1) nelle pagine OneNote modificate di recente. Richiamata
+  // all'avvio e su "↺ Aggiorna tutto". Interamente euristica/locale — nessuna
+  // chiamata AI, nessun costo. Ogni proposta viene mostrata una sola volta:
+  // accettata o ignorata, la sua "firma" viene ricordata (localStorage, 7
+  // giorni) così non ricompare più — nessuno sforzo manuale ripetuto.
   async function refreshDailyReview() {
     setReviewLoading(true);
     try {
@@ -161,27 +162,23 @@ export default function App() {
         getRecentPages(20).catch(e => { console.error('recent pages', e); return []; }),
       ]);
 
-      const recentPages = filterRecentPages(pages, NOTES_LOOKBACK_MS).slice(0, 6);
+      const recentPages = filterRecentPages(pages, NOTES_LOOKBACK_MS).slice(0, 10);
 
-      const notes = [];
+      const pagesWithHtml = [];
       for (const p of recentPages) {
         try {
-          const text = await getPageContentText(p.id);
-          if (text) notes.push({ title: p.title, lastModifiedDateTime: p.lastModifiedDateTime, text });
-          await new Promise(r => setTimeout(r, 150));
+          const html = await getPageContentHtml(p.id);
+          pagesWithHtml.push({ ...p, html });
+          await new Promise(r => setTimeout(r, 120));
         } catch (e) { console.error('page content', p.title, e); }
       }
 
-      if (!emails.length && !notes.length) { setReviewSuggestions([]); setReviewLoading(false); return; }
-
-      const res = await fetch('/api/daily-plan', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'daily-review-suggestions', emails: emails.slice(0, 20), notes }),
-      });
-      const data = await res.json();
       const seen = cacheGet('review_seen') || [];
-      const fresh = (data.actions || [])
+      const candidates = [
+        ...extractEmailCandidates(emails, 6),
+        ...extractOneNoteCandidates(pagesWithHtml, 8),
+      ];
+      const fresh = candidates
         .map(a => ({ ...a, id: Math.random().toString(36).slice(2) + Date.now().toString(36), _sig: suggestionSignature(a) }))
         .filter(a => !seen.includes(a._sig));
       setReviewSuggestions(fresh);
@@ -191,11 +188,11 @@ export default function App() {
     setReviewLoading(false);
   }
 
-  async function handleAcceptSuggestion(suggestion) {
+  async function handleAcceptSuggestion(suggestion, editedText) {
     const list = todoListsRef.current[0];
     if (!list) return;
     try {
-      const task = await createTask(list.id, suggestion.extractedAction);
+      const task = await createTask(list.id, (editedText || suggestion.extractedAction).trim());
       setScheduledTasks(prev => [...(prev || []), { ...task, _listId: list.id, _listName: list.displayName }]);
       markSuggestionSeen(suggestion._sig);
       setReviewSuggestions(prev => prev.filter(s => s.id !== suggestion.id));
@@ -362,16 +359,12 @@ export default function App() {
                     <div className="bell-empty">Nessuna proposta al momento.</div>
                   )}
                   {!reviewLoading && reviewSuggestions.map(s => (
-                    <div key={s.id} className="bell-item">
-                      <div className="bell-item-text">{s.extractedAction}</div>
-                      <div className="bell-item-meta">
-                        {s.source === 'onenote' ? '📓' : '📧'} {s.title?.slice(0, 40)}
-                      </div>
-                      <div className="bell-item-actions">
-                        <button className="bell-accept-btn" onClick={() => handleAcceptSuggestion(s)}>✓ Crea task</button>
-                        <button className="bell-dismiss-btn" onClick={() => handleDismissSuggestion(s)}>✕</button>
-                      </div>
-                    </div>
+                    <BellSuggestionItem
+                      key={s.id}
+                      suggestion={s}
+                      onAccept={handleAcceptSuggestion}
+                      onDismiss={handleDismissSuggestion}
+                    />
                   ))}
                 </div>
               )}
@@ -474,6 +467,30 @@ export default function App() {
         />
         </>
       )}
+    </div>
+  );
+}
+
+// Riga della campanella Daily Review: senza un LLM a ripulire il testo, il
+// titolo proposto (oggetto email o riga taggata "Da fare" in OneNote) resta
+// modificabile prima di creare il task.
+function BellSuggestionItem({ suggestion, onAccept, onDismiss }) {
+  const [text, setText] = useState(suggestion.extractedAction);
+
+  return (
+    <div className="bell-item">
+      <input
+        className="bell-item-input"
+        value={text}
+        onChange={e => setText(e.target.value)}
+      />
+      <div className="bell-item-meta">
+        {suggestion.source === 'onenote' ? '📓' : '📧'} {suggestion.title?.slice(0, 40)}
+      </div>
+      <div className="bell-item-actions">
+        <button className="bell-accept-btn" onClick={() => onAccept(suggestion, text)}>✓ Crea task</button>
+        <button className="bell-dismiss-btn" onClick={() => onDismiss(suggestion)}>✕</button>
+      </div>
     </div>
   );
 }

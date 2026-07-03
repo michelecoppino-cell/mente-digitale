@@ -76,20 +76,17 @@ export async function getRecentPages(top = 20) {
   return d.value || [];
 }
 
-// Contenuto testuale di una pagina OneNote (l'endpoint restituisce HTML, non JSON).
-export async function getPageContentText(pageId) {
+// Contenuto HTML grezzo di una pagina OneNote (l'endpoint restituisce HTML, non
+// JSON). Manteniamo l'HTML — non testo semplice — perché i tag nativi di OneNote
+// come "Da fare" (Ctrl+1) sono marcati con l'attributo data-tag sui paragrafi,
+// il segnale usato dall'euristica della Daily Review per trovare le azioni.
+export async function getPageContentHtml(pageId) {
   const token = await getTokenCached();
   const r = await fetch(`${GRAPH}/me/onenote/pages/${pageId}/content`, {
     headers: { Authorization: `Bearer ${token}` },
   });
   if (!r.ok) throw new Error(`Page content error ${r.status}`);
-  const html = await r.text();
-  return html
-    .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
-    .replace(/<[^>]+>/g, ' ')
-    .replace(/&nbsp;/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
+  return r.text();
 }
 
 export async function getTodoLists() {
