@@ -68,15 +68,6 @@ export async function getPages(sectionId) {
   return d.value || [];
 }
 
-// Pagine più recenti su TUTTI i taccuini in un'unica chiamata (endpoint "flat" di
-// Graph), usato dalla Daily Review per intercettare MOM/appunti recenti senza
-// dover enumerare notebook/sezioni. Niente $orderby/$select: l'API OneNote
-// risponde 400 se si ordina per lastModifiedDateTime — si ordina lato client.
-export async function getRecentPages(top = 30) {
-  const d = await call(`/me/onenote/pages?$top=${top}`);
-  return d.value || [];
-}
-
 // Contenuto HTML grezzo di una pagina OneNote (l'endpoint restituisce HTML, non
 // JSON). Manteniamo l'HTML — non testo semplice — perché i tag nativi di OneNote
 // come "Da fare" (Ctrl+1) sono marcati con l'attributo data-tag sui paragrafi,
