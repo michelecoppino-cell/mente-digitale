@@ -385,11 +385,16 @@ export default function PlannerView({ open, onClose, preloadedTasks = [], notebo
     mutatePlan(prev => ({ ...prev, blocks: prev.blocks.filter(b => b.id !== blockId) }));
   }
 
-  function incrementBlockPomodoro(blockId) {
+  function incrementBlockPomodoro(blockId, { focusedMinutes, interruptions } = {}) {
     mutatePlan(prev => ({
       ...prev,
       blocks: prev.blocks.map(b =>
-        b.id === blockId ? { ...b, pomodoros: (b.pomodoros || 0) + 1 } : b
+        b.id === blockId ? {
+          ...b,
+          pomodoros: (b.pomodoros || 0) + 1,
+          focusedMinutes: (b.focusedMinutes || 0) + (focusedMinutes || 0),
+          interruptions: (b.interruptions || 0) + (interruptions || 0),
+        } : b
       ),
     }));
   }
@@ -983,7 +988,7 @@ export default function PlannerView({ open, onClose, preloadedTasks = [], notebo
         <PomodoroTimer
           block={todayPlan.blocks.find(b => b.id === pomodoroBlockId)}
           onClose={() => setPomodoroBlockId(null)}
-          onCycleComplete={() => incrementBlockPomodoro(pomodoroBlockId)}
+          onCycleComplete={(stats) => incrementBlockPomodoro(pomodoroBlockId, stats)}
         />
       )}
 

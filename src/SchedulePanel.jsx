@@ -65,7 +65,7 @@ function evHeight(e, hh) {
   return Math.max(dur * hh, 14);
 }
 
-export default function SchedulePanel({ open, onClose, preloadedTasks, onSelectSection, sectionsMap }) {
+export default function SchedulePanel({ open, onClose, onExpand, preloadedTasks, onSelectSection, sectionsMap }) {
   const TODAY = todayMidnight();
   const [tasks, setTasks] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -206,6 +206,16 @@ export default function SchedulePanel({ open, onClose, preloadedTasks, onSelectS
     <div className={`schedule-panel ${open?'open':''}`}>
       <div className="schedule-head">
         <h2 className="schedule-panel-title">Attività</h2>
+        {onExpand && (
+          <button className="schedule-expand-btn" onClick={onExpand} title="Apri il Piano completo">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="15 3 21 3 21 9" />
+              <polyline points="9 21 3 21 3 15" />
+              <line x1="21" y1="3" x2="14" y2="10" />
+              <line x1="3" y1="21" x2="10" y2="14" />
+            </svg>
+          </button>
+        )}
       </div>
 
       <div className="schedule-panel-inner">

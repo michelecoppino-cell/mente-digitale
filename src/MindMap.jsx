@@ -1,11 +1,50 @@
 import { useEffect, useRef } from 'react';
 import * as d3 from 'd3';
+import { sectionRole } from './paraConfig';
 
 const FONT = 'Outfit, sans-serif';
 const OCRA = '#c8a96e';
 
+// Le 4 aree PARA come "gruppi" fissi al posto dei taccuini, quando
+// viewMode === 'para'. Colori distinti dal palette dell'app (config.js).
+const PARA_GROUPS = [
+  { id: 'para_projects', displayName: 'Progetti', color: '#7eb8c9', role: null },
+  { id: 'para_area', displayName: 'Aree/Ricorrenti', color: '#86c07a', role: 'area' },
+  { id: 'para_resources', displayName: 'Risorse/Idee', color: '#a084c8', role: 'resources' },
+  { id: 'para_archive', displayName: 'Archivio', color: '#c8907a', role: 'archive' },
+];
+
+// Costruisce l'elenco di "gruppi" (nodi centrali di primo livello) e, per
+// ciascuno, i suoi figli (sezioni) — in modalità 'workbook' i gruppi sono i
+// taccuini reali, in modalità 'para' sono le 4 aree PARA fisse.
+function buildGroups(viewMode, notebooks, sectionsMap) {
+  if (viewMode !== 'para') {
+    return notebooks.map(nb => ({
+      id: 'nb_' + nb.id,
+      displayName: nb.displayName,
+      color: nb._color,
+      children: (sectionsMap[nb.id] || []).map(s => ({ section: s, nb, label: s.displayName })),
+    }));
+  }
+
+  const childrenByGroup = { para_projects: [], para_area: [], para_resources: [], para_archive: [] };
+  notebooks.forEach(nb => {
+    (sectionsMap[nb.id] || []).forEach(s => {
+      const role = sectionRole(s.displayName);
+      if (!role) {
+        childrenByGroup.para_projects.push({ section: s, nb, label: s.displayName });
+      } else {
+        childrenByGroup['para_' + role].push({ section: s, nb, label: nb.displayName });
+      }
+    });
+  });
+
+  return PARA_GROUPS.map(g => ({ id: g.id, displayName: g.displayName, color: g.color, children: childrenByGroup[g.id] }));
+}
+
 export default function MindMap({
   notebooks, sectionsMap, todoListsMap, todoCountMap,
+  viewMode = 'workbook', onViewModeChange,
   onSelectSection, onExpandNotebook,
   externalZoom, onZoomChange,
   onIdentityOpen,
@@ -34,7 +73,7 @@ export default function MindMap({
     const allLoaded = notebooks.every(nb => sectionsMap[nb.id]);
     if (!allLoaded) return;
     buildGraph();
-  }, [notebooks, sectionsMap]);
+  }, [notebooks, sectionsMap, viewMode]);
 
   // Zoom esterno (solo da pulsanti, non da wheel D3)
   useEffect(() => {
@@ -57,7 +96,7 @@ export default function MindMap({
     };
     window.addEventListener('resize', onResize);
     return () => window.removeEventListener('resize', onResize);
-  }, [notebooks, sectionsMap]);
+  }, [notebooks, sectionsMap, viewMode]);
 
   function buildGraph() {
     const container = svgRef.current?.parentElement;
@@ -93,46 +132,47 @@ export default function MindMap({
     g.append('g').attr('class', 'nodes');
     g.append('g').attr('class', 'badges');
 
-    // Nodi base: taccuini + sezioni
+    // Nodi base: gruppi (taccuini reali o le 4 aree PARA) + sezioni
     const nodes = [];
     const links = [];
     const nbSpread = Math.min(W, H) * 0.10;
+    const groups = buildGroups(viewMode, notebooks, sectionsMap);
 
-    notebooks.forEach((nb, i) => {
-      const angle = (i / notebooks.length) * 2 * Math.PI - Math.PI / 2;
+    groups.forEach((grp, i) => {
+      const angle = (i / groups.length) * 2 * Math.PI - Math.PI / 2;
       nodes.push({
-        id: 'nb_' + nb.id,
+        id: grp.id,
+        groupId: grp.id,
         type: 'notebook',
-        label: nb.displayName,
-        color: nb._color,
-        nb,
+        label: grp.displayName,
+        color: grp.color,
         r: 46,
         shape: 'circle',
         fx: cx + nbSpread * Math.cos(angle),
         fy: cy + nbSpread * Math.sin(angle),
       });
 
-      (sectionsMap[nb.id] || []).forEach((s, si) => {
-        const nbAngle = (i / notebooks.length) * 2 * Math.PI - Math.PI / 2;
+      grp.children.forEach(({ section: s, nb, label }, si) => {
+        const nbAngle = (i / groups.length) * 2 * Math.PI - Math.PI / 2;
         const secStartR = Math.min(W, H) * 0.30;
-        const secTotal = (sectionsMap[nb.id] || []).length;
+        const secTotal = grp.children.length;
         const secAngle = nbAngle + (si - secTotal / 2) * 0.3;
-        const secLbl = s.displayName;
-        const secHas2Lines = secLbl.length > 8;
+        const secHas2Lines = label.length > 8;
         const secRh = secHas2Lines ? 30 : 20;
         nodes.push({
           id: 'sec_' + s.id,
           type: 'section',
-          label: secLbl,
-          color: nb._color,
+          label,
+          color: grp.color,
           section: s,
           nb,
+          groupId: grp.id,
           shape: 'rect',
           rw: 52, rh: secRh,
           x: cx + secStartR * Math.cos(secAngle),
           y: cy + secStartR * Math.sin(secAngle),
         });
-        links.push({ source: 'nb_' + nb.id, target: 'sec_' + s.id, type: 'nb-sec' });
+        links.push({ source: grp.id, target: 'sec_' + s.id, type: 'nb-sec' });
       });
     });
 
@@ -217,7 +257,7 @@ export default function MindMap({
     const W = container.offsetWidth;
     const H = container.offsetHeight;
 
-    const secNodes = st.nodes.filter(n => n.type === 'section' && n.nb?.id === nbNode.nb.id);
+    const secNodes = st.nodes.filter(n => n.type === 'section' && n.groupId === nbNode.groupId);
     const allNodes = [nbNode, ...secNodes];
 
     let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
@@ -590,31 +630,31 @@ export default function MindMap({
     if (!g) return;
     const st = stateRef.current;
 
-    const hullData = notebooks.flatMap(nb => {
-      const nbNode = st.nodes.find(n => n.id === 'nb_' + nb.id);
-      const secNodes = st.nodes.filter(n => n.type === 'section' && n.nb.id === nb.id);
-      if (!secNodes.length || !nbNode) return [];
+    const groupNodes = st.nodes.filter(n => n.type === 'notebook');
+    const hullData = groupNodes.flatMap(grpNode => {
+      const secNodes = st.nodes.filter(n => n.type === 'section' && n.groupId === grpNode.groupId);
+      if (!secNodes.length) return [];
       const pts = [];
       const addPts = (node, pad) => {
         const sz = node.shape === 'rect' ? Math.max(node.rw / 2, node.rh / 2) : (node.r || 18);
         for (let a = 0; a < 2 * Math.PI; a += Math.PI / 10)
           pts.push([(node.x || 0) + (sz + pad) * Math.cos(a), (node.y || 0) + (sz + pad) * Math.sin(a)]);
       };
-      addPts(nbNode, 24);
+      addPts(grpNode, 24);
       secNodes.forEach(n => addPts(n, 16));
-      st.nodes.filter(n => n.type === 'app' && n.nb.id === nb.id)
+      st.nodes.filter(n => n.type === 'app' && n.groupId === grpNode.groupId)
         .forEach(n => addPts(n, 10));
       try {
         const hull = d3.polygonHull(pts);
-        return hull ? [{ nb, hull }] : [];
+        return hull ? [{ groupId: grpNode.groupId, color: grpNode.color, hull }] : [];
       } catch { return []; }
     });
 
-    const sel = g.select('.hulls').selectAll('.hull').data(hullData, d => d.nb.id);
+    const sel = g.select('.hulls').selectAll('.hull').data(hullData, d => d.groupId);
     sel.enter().append('path').attr('class', 'hull')
       .merge(sel)
-      .attr('fill', d => d.nb._color + '09')
-      .attr('stroke', d => d.nb._color + '1a')
+      .attr('fill', d => d.color + '09')
+      .attr('stroke', d => d.color + '1a')
       .attr('stroke-width', 2.5)
       .attr('stroke-linejoin', 'round')
       .attr('d', d => `M${d.hull.join('L')}Z`);
