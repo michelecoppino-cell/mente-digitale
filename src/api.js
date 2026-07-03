@@ -70,9 +70,10 @@ export async function getPages(sectionId) {
 
 // Pagine più recenti su TUTTI i taccuini in un'unica chiamata (endpoint "flat" di
 // Graph), usato dalla Daily Review per intercettare MOM/appunti recenti senza
-// dover enumerare notebook/sezioni.
-export async function getRecentPages(top = 20) {
-  const d = await call(`/me/onenote/pages?$orderby=lastModifiedDateTime desc&$select=id,title,lastModifiedDateTime&$top=${top}`);
+// dover enumerare notebook/sezioni. Niente $orderby/$select: l'API OneNote
+// risponde 400 se si ordina per lastModifiedDateTime — si ordina lato client.
+export async function getRecentPages(top = 30) {
+  const d = await call(`/me/onenote/pages?$top=${top}`);
   return d.value || [];
 }
 
