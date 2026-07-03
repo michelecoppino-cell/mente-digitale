@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { initAuth, getAccount, login } from './auth';
-import { getNotebooks, getSections, getTodoLists, getTodoTasks, getPages, getRecentEmails, getRecentPages, getPageContentHtml, createTask } from './api';
+import { getNotebooks, getSections, getTodoLists, getTodoTasks, getPages, getRecentEmails, getPageContentHtml, createTask } from './api';
 import { cacheGet, cacheSet, cacheClear, TTL } from './cache';
 import { extractEmailCandidates, extractOneNoteCandidates } from './dailyReview';
 import MindMap from './MindMap';
@@ -35,6 +35,27 @@ function filterRecentPages(pages, lookbackMs) {
   return pages
     .filter(p => p.lastModifiedDateTime && new Date(p.lastModifiedDateTime).getTime() >= cutoff)
     .sort((a, b) => new Date(b.lastModifiedDateTime) - new Date(a.lastModifiedDateTime));
+}
+
+// L'endpoint "flat" /me/onenote/pages risponde 400 sugli account Microsoft
+// personali (MSA), a prescindere dai parametri della query. Si aggregano invece
+// le pagine passando per taccuini → sezioni → pagine, gli stessi endpoint già
+// usati con successo altrove nell'app (MindMap, Panel).
+async function collectAllOneNotePages() {
+  const notebooks = await getNotebooks();
+  const allPages = [];
+  for (const nb of notebooks) {
+    let sections = [];
+    try { sections = await getSections(nb.id); } catch (e) { console.error('sections', nb.displayName, e); continue; }
+    for (const sec of sections) {
+      try {
+        const pages = await getPages(sec.id);
+        allPages.push(...pages);
+      } catch (e) { console.error('pages', sec.displayName, e); }
+      await new Promise(r => setTimeout(r, 100));
+    }
+  }
+  return allPages;
 }
 
 export default function App() {
@@ -161,7 +182,7 @@ export default function App() {
     try {
       const [emails, pages] = await Promise.all([
         getRecentEmails().catch(e => { console.error('recent emails', e); return []; }),
-        getRecentPages(20).catch(e => { console.error('recent pages', e); return []; }),
+        collectAllOneNotePages().catch(e => { console.error('recent pages', e); return []; }),
       ]);
 
       const recentPages = filterRecentPages(pages, NOTES_LOOKBACK_MS).slice(0, 10);
