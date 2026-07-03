@@ -434,7 +434,7 @@ export default function App() {
             onExpand={() => { setScheduleOpen(false); setPlannerOpen(true); }}
             preloadedTasks={scheduledTasks}
             onSelectSection={handleSelectSection}
-            todoListsMap={todoListsMap}
+            notebooks={notebooks}
             sectionsMap={sectionsMap}
           />
           <MindMap
