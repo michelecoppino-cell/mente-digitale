@@ -32,7 +32,9 @@ function markSuggestionSeen(sig) {
 
 function filterRecentPages(pages, lookbackMs) {
   const cutoff = Date.now() - lookbackMs;
-  return pages.filter(p => p.lastModifiedDateTime && new Date(p.lastModifiedDateTime).getTime() >= cutoff);
+  return pages
+    .filter(p => p.lastModifiedDateTime && new Date(p.lastModifiedDateTime).getTime() >= cutoff)
+    .sort((a, b) => new Date(b.lastModifiedDateTime) - new Date(a.lastModifiedDateTime));
 }
 
 export default function App() {
