@@ -1,7 +1,10 @@
 /**
  * Cloudflare Pages Function — /api/daily-plan
- * Azioni: generate-schedule, daily-review-suggestions (email + OneNote), breakdown-task
+ * Azioni: generate-schedule, breakdown-task
  * Usa Claude API (claude-haiku-4-5-20251001)
+ *
+ * La Daily Review (proposte da email/OneNote) NON passa più da qui: è
+ * euristica locale in src/dailyReview.js, senza costi AI — vedi App.jsx.
  *
  * Env richiesta: ANTHROPIC_API_KEY (secret in Cloudflare Pages)
  */
@@ -104,57 +107,6 @@ Rispondi SOLO con un array JSON valido, nessun testo prima o dopo:
   return { blocks };
 }
 
-// ── Action: daily-review-suggestions (email Outlook + note OneNote) ───────────
-
-async function extractDailySuggestions(apiKey, { emails, notes }) {
-  const hasEmails = emails?.length > 0;
-  const hasNotes = notes?.length > 0;
-  if (!hasEmails && !hasNotes) return { actions: [] };
-
-  const emailsText = hasEmails ? emails.slice(0, 20).map((e, i) => {
-    const from = e.from?.emailAddress?.address || e.from || '';
-    return `Email ${i+1}:
-Da: ${from}
-Oggetto: ${e.subject || ''}
-Preview: ${(e.bodyPreview || '').slice(0, 200)}`;
-  }).join('\n\n') : '';
-
-  const notesText = hasNotes ? notes.slice(0, 8).map((n, i) => {
-    const modified = n.lastModifiedDateTime ? n.lastModifiedDateTime.slice(0, 10) : '';
-    return `Nota OneNote ${i+1} — "${n.title || 'Senza titolo'}" (modificata ${modified}):
-${(n.text || '').slice(0, 1500)}`;
-  }).join('\n\n') : '';
-
-  const prompt = `Sei un assistente che estrae action item per un Project Manager, analizzando email Outlook e note OneNote (inclusi appunti/verbali di riunione).
-
-${hasEmails ? `EMAIL RECENTI:\n${emailsText}\n` : ''}
-${hasNotes ? `NOTE ONENOTE RECENTI:\n${notesText}\n` : ''}
-
-Regole:
-1. Estrai solo action item chiari e specifici che richiedono un follow-up concreto (non FYI, non semplici osservazioni)
-2. Concentrati su scadenze, richieste esplicite, decisioni prese in riunione e deliverable
-3. Sii conciso (max 10 parole per action)
-4. Al massimo 2 action per fonte (email o nota)
-5. Ignora email di marketing/newsletter e note che sono solo appunti personali senza seguito
-
-Rispondi SOLO con un array JSON valido, nessun testo prima o dopo:
-[
-  {
-    "source": "email oppure onenote",
-    "title": "oggetto email o titolo pagina OneNote",
-    "meta": "mittente email oppure data di modifica della nota",
-    "extractedAction": "action item conciso"
-  }
-]
-
-Se non ci sono action item significativi, rispondi con [].`;
-
-  const text = await callClaude(apiKey, prompt, 1536);
-  const actions = extractJson(text);
-  if (!Array.isArray(actions)) return { actions: [] };
-  return { actions };
-}
-
 // ── Action: breakdown-task ────────────────────────────────────────────────────
 
 async function breakdownTask(apiKey, { taskTitle, listName, projectKey }) {
@@ -194,9 +146,6 @@ export async function onRequestPost(context) {
     switch (action) {
       case 'generate-schedule':
         return json(await generateSchedule(apiKey, payload));
-      case 'extract-email-actions':
-      case 'daily-review-suggestions':
-        return json(await extractDailySuggestions(apiKey, payload));
       case 'breakdown-task':
         return json(await breakdownTask(apiKey, payload));
       default:
