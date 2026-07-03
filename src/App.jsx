@@ -8,7 +8,6 @@ import IdentityPanel from './IdentityPanel';
 import SearchOverlay from './SearchOverlay';
 import Panel from './Panel';
 import SchedulePanel from './SchedulePanel';
-import RssPanel from './RssPanel';
 import PlannerView from './PlannerView';
 import GtdClarifyModal from './GtdClarifyModal';
 import EisenhowerTriage from './EisenhowerTriage';
@@ -69,8 +68,8 @@ export default function App() {
   const [sync, setSync] = useState({ state: 'idle', label: 'Non connesso' });
   const [zoom, setZoom] = useState(1);
   const [scheduleOpen, setScheduleOpen] = useState(false);
-  const [rssOpen, setRssOpen] = useState(false);
   const [plannerOpen, setPlannerOpen] = useState(false);
+  const [mapViewMode, setMapViewMode] = useState('workbook');
   const [identityOpen, setIdentityOpen] = useState(null);
   const [searchOpen, setSearchOpen] = useState(false);
   const [gtdOpen, setGtdOpen] = useState(false);
@@ -327,16 +326,7 @@ export default function App() {
   return (
     <div className="app">
       <header className="header">
-        <div className="header-left">
-          {account && (
-            <button
-              className={`planner-toggle-btn${plannerOpen ? ' active' : ''}`}
-              onClick={() => setPlannerOpen(o => !o)}
-              title="Pianificatore giornaliero">
-              📅 Piano
-            </button>
-          )}
-        </div>
+        <div className="header-left" />
         <div className="header-center">
           <h1 className="logo">Mente Digitale</h1>
         </div>
@@ -354,57 +344,6 @@ export default function App() {
                 <line x1="21" y1="21" x2="16.5" y2="16.5" />
               </svg>
             </button>
-          )}
-          {account && (
-            <button className="search-btn" onClick={() => setGtdOpen(true)} title="Cattura pensiero (GTD)">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                <line x1="12" y1="5" x2="12" y2="19" />
-                <line x1="5" y1="12" x2="19" y2="12" />
-              </svg>
-            </button>
-          )}
-          {account && (
-            <button
-              className={`search-btn${unclassifiedCount > 0 ? ' has-badge' : ''}`}
-              onClick={() => setEisenhowerOpen(true)}
-              title="Smistamento Eisenhower dei task non classificati">
-              🧭
-              {unclassifiedCount > 0 && <span className="header-badge">{unclassifiedCount}</span>}
-            </button>
-          )}
-          {account && (
-            <div className="bell-wrap">
-              <button
-                className={`search-btn${reviewSuggestions.length ? ' has-badge' : ''}`}
-                onClick={() => setReviewOpen(o => !o)}
-                title="Proposte Daily Review">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" />
-                  <path d="M13.73 21a2 2 0 0 1-3.46 0" />
-                </svg>
-                {reviewSuggestions.length > 0 && <span className="header-badge">{reviewSuggestions.length}</span>}
-              </button>
-              {reviewOpen && (
-                <div className="bell-dropdown">
-                  <div className="bell-dropdown-header">
-                    <span>Daily Review</span>
-                    <button onClick={() => setReviewOpen(false)}>✕</button>
-                  </div>
-                  {reviewLoading && <div className="bell-empty">Analisi email e OneNote in corso…</div>}
-                  {!reviewLoading && reviewSuggestions.length === 0 && (
-                    <div className="bell-empty">Nessuna proposta al momento.</div>
-                  )}
-                  {!reviewLoading && reviewSuggestions.map(s => (
-                    <BellSuggestionItem
-                      key={s.id}
-                      suggestion={s}
-                      onAccept={handleAcceptSuggestion}
-                      onDismiss={handleDismissSuggestion}
-                    />
-                  ))}
-                </div>
-              )}
-            </div>
           )}
           <div className="zoom-controls">
             <button className="zoom-btn" onClick={() => setZoom(z => Math.max(0.15, +(z - 0.2).toFixed(2)))}>−</button>
@@ -434,25 +373,71 @@ export default function App() {
         </div>
       ) : (
         <>
-        {!scheduleOpen && !plannerOpen && <button
-            className="alarm-btn"
-            onClick={() => setScheduleOpen(o => !o)}
-            title="Attività">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-              <circle cx="12" cy="13" r="7"/>
-              <polyline points="12 10 12 14 14 14"/>
-              <line x1="7" y1="4" x2="4.5" y2="6.5"/>
-              <line x1="17" y1="4" x2="19.5" y2="6.5"/>
-            </svg>
-          </button>}
+        {!scheduleOpen && !plannerOpen && (
+          <div className="floating-btn-stack">
+            <div className="bell-wrap">
+              <button
+                className={`floating-btn${reviewSuggestions.length ? ' has-badge' : ''}`}
+                onClick={() => setReviewOpen(o => !o)}
+                title="Proposte Daily Review">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" />
+                  <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+                </svg>
+                {reviewSuggestions.length > 0 && <span className="header-badge">{reviewSuggestions.length}</span>}
+              </button>
+              {reviewOpen && (
+                <div className="bell-dropdown">
+                  <div className="bell-dropdown-header">
+                    <span>Daily Review</span>
+                    <button onClick={() => setReviewOpen(false)}>✕</button>
+                  </div>
+                  {reviewLoading && <div className="bell-empty">Analisi email e OneNote in corso…</div>}
+                  {!reviewLoading && reviewSuggestions.length === 0 && (
+                    <div className="bell-empty">Nessuna proposta al momento.</div>
+                  )}
+                  {!reviewLoading && reviewSuggestions.map(s => (
+                    <BellSuggestionItem
+                      key={s.id}
+                      suggestion={s}
+                      onAccept={handleAcceptSuggestion}
+                      onDismiss={handleDismissSuggestion}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
+            <button
+              className="floating-btn"
+              onClick={() => setScheduleOpen(o => !o)}
+              title="Attività">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="13" r="7"/>
+                <polyline points="12 10 12 14 14 14"/>
+                <line x1="7" y1="4" x2="4.5" y2="6.5"/>
+                <line x1="17" y1="4" x2="19.5" y2="6.5"/>
+              </svg>
+            </button>
+          </div>
+        )}
         <div className="canvas-area" style={{ display: plannerOpen ? 'none' : undefined }}>
           <IdentityPanel open={identityOpen} onClose={() => setIdentityOpen(null)} />
-          <SchedulePanel open={scheduleOpen} onClose={() => setScheduleOpen(false)} preloadedTasks={scheduledTasks} onSelectSection={handleSelectSection} todoListsMap={todoListsMap} sectionsMap={sectionsMap} />
+          <SchedulePanel
+            open={scheduleOpen}
+            onClose={() => setScheduleOpen(false)}
+            onExpand={() => { setScheduleOpen(false); setPlannerOpen(true); }}
+            preloadedTasks={scheduledTasks}
+            onSelectSection={handleSelectSection}
+            todoListsMap={todoListsMap}
+            sectionsMap={sectionsMap}
+          />
           <MindMap
             notebooks={notebooks}
             sectionsMap={sectionsMap}
             todoListsMap={todoListsMap}
             todoCountMap={todoCountMap}
+            viewMode={mapViewMode}
+            onViewModeChange={setMapViewMode}
             onSelectSection={handleSelectSection}
             onExpandNotebook={handleExpandNotebook}
             externalZoom={zoom}
@@ -465,7 +450,23 @@ export default function App() {
             tasksCache={tasksCache}
             onClose={() => setSelected(null)}
           />
-          <RssPanel open={rssOpen} onToggle={() => setRssOpen(o => !o)} />
+          <div className="bottom-action-bar">
+            <button
+              className={`bottom-eis-btn${unclassifiedCount > 0 ? ' has-badge' : ''}`}
+              onClick={() => setEisenhowerOpen(true)}
+              title="Smistamento Eisenhower dei task non classificati">
+              🧭
+              {unclassifiedCount > 0 && <span className="header-badge">{unclassifiedCount}</span>}
+            </button>
+            <button className="bottom-gtd-btn" onClick={() => setGtdOpen(true)} title="Cattura pensiero (GTD)">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
+                <line x1="12" y1="5" x2="12" y2="19" />
+                <line x1="5" y1="12" x2="19" y2="12" />
+              </svg>
+              GTD
+            </button>
+            <div className="bottom-action-bar-spacer" />
+          </div>
         </div>
         <PlannerView
           open={plannerOpen}
