@@ -9,7 +9,8 @@ import {
 import { cacheGet, cacheSet } from './cache';
 import Skeleton from './Skeleton';
 import PomodoroTimer from './PomodoroTimer';
-import { EIS_QUADRANTS, parseEisenhower, quadrantInfo } from './eisenhower';
+import TaskPool from './TaskPool';
+import { DEFAULT_CONFIG, findProject, shadeColor } from './plannerShared';
 import './PlannerView.css';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -17,15 +18,6 @@ const SLOT_HEIGHT      = 32;  // px per 30-min slot (32 → ~12h visible at once
 const DEFAULT_DURATION = 60;  // minutes for newly dropped tasks
 const SAVE_DEBOUNCE    = 2000;
 const PLANS_CACHE_TTL  = 5 * 60 * 1000;
-
-const DEFAULT_CONFIG = {
-  projects: [
-    { key: 'p1', name: 'Progetto 1', color: '#7eb8c9', todoListNames: [] },
-    { key: 'p2', name: 'Progetto 2', color: '#c084a0', todoListNames: [] },
-  ],
-  workdayStart: '07:30',
-  workdayEnd: '19:30',
-};
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function t2m(t) {
@@ -57,25 +49,8 @@ function isoToHHMM(iso) {
   const d = new Date(iso);
   return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
 }
-function findProject(task, cfg) {
-  const name = (task._listName || '').toLowerCase();
-  for (const p of cfg.projects) {
-    if ((p.todoListNames || []).some(n => n.toLowerCase() === name)) return p;
-  }
-  return null;
-}
-
 function isAllDay(ev) {
   return ev.isAllDay || (!ev.start?.dateTime && !!ev.start?.date);
-}
-
-function shadeColor(hex, step) {
-  const num = parseInt((hex || '#888888').replace('#', ''), 16);
-  const f = 1 - step * 0.1;
-  const r = Math.min(255, Math.max(20, Math.round(((num >> 16) & 0xFF) * f)));
-  const g = Math.min(255, Math.max(20, Math.round(((num >> 8) & 0xFF) * f)));
-  const b = Math.min(255, Math.max(20, Math.round((num & 0xFF) * f)));
-  return `#${((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1)}`;
 }
 
 function getWeekDays(dateStr) {
@@ -97,9 +72,6 @@ export default function PlannerView({ open, onClose, preloadedTasks = [], notebo
   const [config, setConfig]                 = useState(DEFAULT_CONFIG);
   const [todayPlan, setTodayPlan]           = useState({ date: todayStr(), blocks: [], emailExtractedActions: [] });
   const [calEvents, setCalEvents]           = useState([]);
-  const [projectFilter, setProjectFilter]   = useState('all');
-  const [eisFilter, setEisFilter]           = useState('all');
-  const [poolViewMode, setPoolViewMode]     = useState('list'); // 'list' | 'quadrants'
   const [pomodoroBlockId, setPomodoroBlockId] = useState(null);
   const [saveStatus, setSaveStatus]         = useState('idle');
   const [breakdownModal, setBreakdownModal] = useState(null);
@@ -147,9 +119,6 @@ export default function PlannerView({ open, onClose, preloadedTasks = [], notebo
     if (!open) return;
     setTodayPlan(plansRef.current[currentDate] || { date: currentDate, blocks: [], emailExtractedActions: [] });
   }, [currentDate]); // eslint-disable-line
-
-  // Reset filter when tasks list changes
-  useEffect(() => { setProjectFilter('all'); }, [preloadedTasks]);
 
   // Aggiunge automaticamente un task catturato da GTD al piano di oggi, una tantum
   useEffect(() => {
@@ -539,40 +508,10 @@ export default function PlannerView({ open, onClose, preloadedTasks = [], notebo
   const listColorMapRef = useRef({});
   listColorMapRef.current = listColorMap;
 
-  const uniqueLists = (() => {
-    const seen = new Map();
-    for (const t of preloadedTasks) {
-      if (t._listName && !seen.has(t._listName)) {
-        const proj = findProject(t, config);
-        seen.set(t._listName, { name: t._listName, color: proj?.color || '#888' });
-      }
-    }
-    return Array.from(seen.values());
-  })();
-
-  const poolTasks = preloadedTasks.filter(t => {
-    if (projectFilter !== 'all' && t._listName !== projectFilter) return false;
-    if (eisFilter !== 'all' && parseEisenhower(t.body?.content) !== eisFilter) return false;
-    return true;
-  });
-
   const allDayEvents = calEvents.filter(isAllDay);
   const timedEvents  = calEvents.filter(ev => !isAllDay(ev));
 
-  const poolByProject = {};
-  for (const t of poolTasks) {
-    const proj  = findProject(t, config);
-    const key   = proj?.key ?? `list:${t._listName ?? 'altro'}`;
-    const name  = proj?.name ?? t._listName ?? 'Altro';
-    const color = proj?.color ?? listColorMap[(t._listName ?? '').toLowerCase()] ?? '#888';
-    if (!poolByProject[key]) poolByProject[key] = { name, color, tasks: [] };
-    poolByProject[key].tasks.push(t);
-  }
-
   const workStart = t2m(config.workdayStart);
-
-  // Task non ancora classificati secondo Eisenhower, nell'ambito del filtro progetto corrente
-  const unclassifiedPoolTasks = poolTasks.filter(t => !parseEisenhower(t.body?.content));
 
   function saveLabel() {
     const now = new Date().toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
@@ -649,155 +588,16 @@ export default function PlannerView({ open, onClose, preloadedTasks = [], notebo
 
         {/* ── Column 1: Task Pool ── */}
         <div className={`planner-pool${mobileTab === 'pool' ? ' mobile-active' : ''}`} style={{ width: poolWidth }}>
-          <div className="planner-col-header">
-            <span>Task</span>
-            <div className="planner-view-toggle">
-              <button className={poolViewMode === 'list' ? 'active' : ''} onClick={() => setPoolViewMode('list')}>Lista</button>
-              <button className={poolViewMode === 'quadrants' ? 'active' : ''} onClick={() => setPoolViewMode('quadrants')}>Quadranti</button>
-            </div>
-          </div>
-          <div className="planner-col-header">
-            <div className="planner-filters">
-              <button
-                className={`planner-filter-btn${projectFilter === 'all' ? ' active' : ''}`}
-                onClick={() => setProjectFilter('all')}>
-                Tutti
-              </button>
-              {uniqueLists.map(list => (
-                <button
-                  key={list.name}
-                  className={`planner-filter-btn${projectFilter === list.name ? ' active' : ''}`}
-                  style={{ '--proj-color': list.color }}
-                  onClick={() => setProjectFilter(prev => prev === list.name ? 'all' : list.name)}>
-                  {list.name}
-                </button>
-              ))}
-            </div>
-          </div>
-          {poolViewMode === 'list' && (
-            <div className="planner-col-header planner-eis-filter-row">
-              <div className="planner-filters">
-                <button
-                  className={`planner-filter-btn${eisFilter === 'all' ? ' active' : ''}`}
-                  onClick={() => setEisFilter('all')}>
-                  Tutti i quadranti
-                </button>
-                {EIS_QUADRANTS.map(q => (
-                  <button
-                    key={q.key}
-                    className={`planner-filter-btn${eisFilter === q.key ? ' active' : ''}`}
-                    style={{ '--proj-color': q.color }}
-                    onClick={() => setEisFilter(prev => prev === q.key ? 'all' : q.key)}
-                    title={q.label}>
-                    {q.key}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {poolViewMode === 'list' ? (
-            <div className="planner-pool-body">
-              {/* Pool by project */}
-              {Object.entries(poolByProject).map(([key, group]) => (
-                <div key={key} className="planner-pool-group">
-                  <div className="planner-pool-group-label" style={{ color: group.color }}>
-                    <span className="planner-group-dot" style={{ background: group.color }} />
-                    {group.name}
-                    <span className="planner-group-count">{group.tasks.length}</span>
-                  </div>
-                  {group.tasks.map(task => {
-                    const isScheduled = scheduledIds.has(task.id);
-                    const eisKey  = parseEisenhower(task.body?.content);
-                    const eisInfo = eisKey ? quadrantInfo(eisKey) : null;
-                    return (
-                      <div
-                        key={task.id}
-                        className={`planner-pool-task${isScheduled ? ' scheduled' : ''}${task.importance === 'high' ? ' important' : ''}${selectedTask?.id === task.id ? ' selected' : ''}`}
-                        draggable={!isScheduled}
-                        onClick={() => { setSelectedTask(task); setMobileTab('panel'); }}
-                        onDragStart={isScheduled ? undefined : e => {
-                          e.dataTransfer.setData('text/plain', JSON.stringify({ type: 'task', task }));
-                          const c = group.color;
-                          const ghost = document.createElement('div');
-                          ghost.textContent = task.title;
-                          Object.assign(ghost.style, {
-                            position: 'fixed', top: '-9999px', left: '-9999px',
-                            background: c, border: `1.5px dashed rgba(255,255,255,0.6)`,
-                            borderRadius: '6px', color: '#fff',
-                            padding: '5px 10px', fontSize: '11px', fontFamily: "'Outfit',sans-serif",
-                            whiteSpace: 'nowrap', maxWidth: '220px', overflow: 'hidden',
-                            textOverflow: 'ellipsis', opacity: '0.95',
-                          });
-                          document.body.appendChild(ghost);
-                          e.dataTransfer.setDragImage(ghost, 10, 10);
-                          requestAnimationFrame(() => ghost.parentNode?.removeChild(ghost));
-                        }}>
-                        <span className="planner-task-dot" style={{ background: group.color }} />
-                        <span className="planner-task-title">{task.title}</span>
-                        {eisInfo && (
-                          <span
-                            className="planner-eis-badge"
-                            style={{ '--q-color': eisInfo.color }}
-                            title={eisInfo.label}>
-                            {eisInfo.key}
-                          </span>
-                        )}
-                        {task.importance === 'high' && !isScheduled && <span className="planner-task-star">★</span>}
-                      </div>
-                    );
-                  })}
-                </div>
-              ))}
-
-              {poolTasks.length === 0 && (
-                preloadedTasks.length === 0
-                  ? <Skeleton rows={7} height={26} />
-                  : <div className="planner-empty">Nessun task in questa lista</div>
-              )}
-            </div>
-          ) : (
-            <div className="planner-pool-body planner-eis-grid-body">
-              {unclassifiedPoolTasks.length > 0 && (
-                <div className="planner-eis-unclassified-banner">
-                  ⚠️ Alcuni task non sono catalogati
-                </div>
-              )}
-              <div className="planner-eis-grid">
-                {EIS_QUADRANTS.map(q => {
-                  const tasks = poolTasks.filter(t => parseEisenhower(t.body?.content) === q.key);
-                  return (
-                    <div key={q.key} className="planner-eis-cell" style={{ '--q-color': q.color }}>
-                      <div className="planner-eis-cell-header">
-                        <span className="planner-eis-cell-key">{q.key}</span>
-                        <span className="planner-eis-cell-label">{q.label}</span>
-                      </div>
-                      <div className="planner-eis-cell-tasks">
-                        {tasks.map(task => {
-                          const isScheduled = scheduledIds.has(task.id);
-                          return (
-                            <div
-                              key={task.id}
-                              className={`planner-pool-task${isScheduled ? ' scheduled' : ''}${task.importance === 'high' ? ' important' : ''}${selectedTask?.id === task.id ? ' selected' : ''}`}
-                              draggable={!isScheduled}
-                              onClick={() => { setSelectedTask(task); setMobileTab('panel'); }}
-                              onDragStart={isScheduled ? undefined : e => {
-                                e.dataTransfer.setData('text/plain', JSON.stringify({ type: 'task', task }));
-                              }}>
-                              <span className="planner-task-title">{task.title}</span>
-                              {task._listName && <span className="planner-eis-grid-task-section">{task._listName}</span>}
-                              {task.importance === 'high' && !isScheduled && <span className="planner-task-star">★</span>}
-                            </div>
-                          );
-                        })}
-                        {tasks.length === 0 && <div className="planner-eis-cell-empty">Nessun task</div>}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
+          <TaskPool
+            title="Task"
+            tasks={preloadedTasks}
+            config={config}
+            notebooks={notebooks}
+            sectionsMap={sectionsMap}
+            scheduledIds={scheduledIds}
+            selectedTaskId={selectedTask?.id ?? null}
+            onTaskClick={task => { setSelectedTask(task); setMobileTab('panel'); }}
+          />
         </div>
 
         <div className="planner-col-resize" onMouseDown={handlePoolResizeStart} title="Ridimensiona" />

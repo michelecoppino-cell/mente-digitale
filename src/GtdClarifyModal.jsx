@@ -4,14 +4,16 @@ import { sectionRole } from './paraConfig';
 import './GtdClarifyModal.css';
 
 // Diagramma di flusso GTD "Chiarire" (David Allen), adattato al metodo PARA
-// usato nell'app:
-// «Cose» → Inbox → Che cos'è? (statici) → È attuabile?
-//   → No → Cestino / Risorse / Archivio
+// usato nell'app, sviluppato in verticale come il diagramma originale:
+// «Cose» → Inbox → Che cos'è? → [Cestino / Risorse / Archivio ← No] È attuabile?
 //   → Sì → Qual è la prossima azione? → Richiede meno di due minuti?
 //               ├─ Sì → Farla
 //               └─ No → Progetto (task) / Area-Ricorrenti (task)
+// Ogni foglia (Cestino/Risorse/Archivio/Farla/Progetto/Area) apre una finestra
+// pop-up con la scelta della destinazione e la descrizione completa, invece
+// di un modulo inline.
 export default function GtdClarifyModal({ open, onClose, todoLists = [], notebooks = [], sectionsMap = {}, onTaskCreated, seedText = '' }) {
-  const [openLeaf, setOpenLeaf] = useState(null);
+  const [activeLeaf, setActiveLeaf] = useState(null);
 
   // Sezioni PARA "Risorse/Idee" e "Archivio", una per taccuino che le possiede
   // — l'etichetta è il nome del taccuino (la sezione si chiama sempre uguale).
@@ -27,7 +29,7 @@ export default function GtdClarifyModal({ open, onClose, todoLists = [], noteboo
     return matches.length ? matches : todoLists;
   }, [todoLists]);
 
-  function handleClose() { setOpenLeaf(null); onClose(); }
+  function handleClose() { setActiveLeaf(null); onClose(); }
 
   async function submitLog() {
     // Cestino / Farla: nessun task o nota — si registra solo localmente il testo.
@@ -53,6 +55,15 @@ export default function GtdClarifyModal({ open, onClose, todoLists = [], noteboo
     onTaskCreated?.({ ...task, _listId: listId, _listName: list?.displayName || '' }, { addToday: false });
   }
 
+  const leaves = {
+    trash:     { id: 'trash', icon: '🗑', label: 'Cestino', kind: 'log', onSubmit: submitLog, confirmLabel: 'Scarta', confirmMsg: 'Scartato' },
+    resources: { id: 'resources', icon: '💡', label: 'Risorse', kind: 'section', sections: resourceSections, onSubmit: submitResource, confirmLabel: 'Crea pagina', confirmMsg: 'Pagina creata' },
+    archive:   { id: 'archive', icon: '📓', label: 'Archivio', kind: 'section', sections: archiveSections, onSubmit: submitArchive, confirmLabel: 'Crea pagina', confirmMsg: 'Pagina creata' },
+    doNow:     { id: 'doNow', icon: '⚡', label: 'Farla', kind: 'log', onSubmit: submitLog, confirmLabel: 'Fatto', confirmMsg: 'Fatto' },
+    project:   { id: 'project', icon: '🗂', label: 'Progetto', kind: 'list', todoLists: projectLists, onSubmit: submitProjectTask, confirmLabel: 'Crea task', confirmMsg: 'Task creato' },
+    area:      { id: 'area', icon: '🔁', label: 'Area/Ricorrenti', kind: 'list', todoLists: areaLists, onSubmit: submitAreaTask, confirmLabel: 'Crea task', confirmMsg: 'Task creato' },
+  };
+
   if (!open) return null;
 
   return (
@@ -75,67 +86,51 @@ export default function GtdClarifyModal({ open, onClose, todoLists = [], noteboo
             <div className="gtd-flow-node-wrap">
               <div className="gtd-flow-node static">Che cos'è?</div>
             </div>
-            <div className="gtd-flow-node-wrap">
+
+            {/* ── È attuabile? — le foglie "No" si aprono a sinistra ── */}
+            <div className="gtd-decision">
+              <div className="gtd-decision-side">
+                <div className="gtd-decision-side-label">No</div>
+                <div className="gtd-leaf-col">
+                  <GtdLeafBtn leaf={leaves.trash} onOpen={setActiveLeaf} />
+                  <GtdLeafBtn leaf={leaves.resources} onOpen={setActiveLeaf} />
+                  <GtdLeafBtn leaf={leaves.archive} onOpen={setActiveLeaf} />
+                </div>
+              </div>
+              <div className="gtd-decision-connector" />
               <div className="gtd-flow-node question">È attuabile?</div>
             </div>
 
-            <div className="gtd-flow-branches">
-              {/* ── No ── */}
-              <div className="gtd-flow-branch">
-                <div className="gtd-flow-branch-label">No</div>
-                <div className="gtd-flow-leaves">
-                  <GtdLeaf
-                    id="trash" icon="🗑" label="Cestino"
-                    openLeaf={openLeaf} setOpenLeaf={setOpenLeaf} seedText={seedText}
-                    kind="log" onSubmit={submitLog} confirmLabel="Scarta" confirmMsg="Scartato" />
-                  <GtdLeaf
-                    id="resources" icon="💡" label="Risorse"
-                    openLeaf={openLeaf} setOpenLeaf={setOpenLeaf} seedText={seedText}
-                    kind="section" sections={resourceSections} onSubmit={submitResource} confirmLabel="Crea pagina" confirmMsg="Pagina creata" />
-                  <GtdLeaf
-                    id="archive" icon="📓" label="Archivio"
-                    openLeaf={openLeaf} setOpenLeaf={setOpenLeaf} seedText={seedText}
-                    kind="section" sections={archiveSections} onSubmit={submitArchive} confirmLabel="Crea pagina" confirmMsg="Pagina creata" />
+            <div className="gtd-flow-node-wrap">
+              <div className="gtd-flow-node question small">Qual è la prossima azione?</div>
+            </div>
+            <div className="gtd-flow-node-wrap">
+              <div className="gtd-flow-node question small">&lt;2 minuti?</div>
+            </div>
+
+            {/* ── <2 minuti? — "Farla" a sinistra, Progetto/Area come esito finale ── */}
+            <div className="gtd-decision gtd-decision-end">
+              <div className="gtd-decision-side">
+                <div className="gtd-decision-side-label">Sì</div>
+                <div className="gtd-leaf-col">
+                  <GtdLeafBtn leaf={leaves.doNow} onOpen={setActiveLeaf} />
                 </div>
               </div>
-
-              {/* ── Sì ── */}
-              <div className="gtd-flow-branch">
-                <div className="gtd-flow-branch-label">Sì</div>
-                <div className="gtd-flow-node-wrap">
-                  <div className="gtd-flow-node question small">Qual è la prossima azione?</div>
-                </div>
-                <div className="gtd-flow-node-wrap">
-                  <div className="gtd-flow-node question small">&lt;2 minuti?</div>
-                </div>
-                <div className="gtd-flow-branches">
-                  <div className="gtd-flow-branch">
-                    <div className="gtd-flow-branch-label">Sì</div>
-                    <div className="gtd-flow-leaves">
-                      <GtdLeaf
-                        id="doNow" icon="⚡" label="Farla"
-                        openLeaf={openLeaf} setOpenLeaf={setOpenLeaf} seedText={seedText}
-                        kind="log" onSubmit={submitLog} confirmLabel="Fatto" confirmMsg="Fatto" />
-                    </div>
-                  </div>
-                  <div className="gtd-flow-branch">
-                    <div className="gtd-flow-branch-label">No</div>
-                    <div className="gtd-flow-leaves">
-                      <GtdLeaf
-                        id="project" icon="🗂" label="Progetto"
-                        openLeaf={openLeaf} setOpenLeaf={setOpenLeaf} seedText={seedText}
-                        kind="list" todoLists={projectLists} onSubmit={submitProjectTask} confirmLabel="Crea task" confirmMsg="Task creato" />
-                      <GtdLeaf
-                        id="area" icon="🔁" label="Area/Ricorrenti"
-                        openLeaf={openLeaf} setOpenLeaf={setOpenLeaf} seedText={seedText}
-                        kind="list" todoLists={areaLists} onSubmit={submitAreaTask} confirmLabel="Crea task" confirmMsg="Task creato" />
-                    </div>
-                  </div>
+              <div className="gtd-decision-connector" />
+              <div className="gtd-decision-side">
+                <div className="gtd-decision-side-label">No</div>
+                <div className="gtd-leaf-col">
+                  <GtdLeafBtn leaf={leaves.project} onOpen={setActiveLeaf} />
+                  <GtdLeafBtn leaf={leaves.area} onOpen={setActiveLeaf} />
                 </div>
               </div>
             </div>
           </div>
         </div>
+
+        {activeLeaf && (
+          <GtdLeafPopup leaf={activeLeaf} seedText={seedText} onClose={() => setActiveLeaf(null)} />
+        )}
       </div>
     </div>
   );
@@ -153,87 +148,98 @@ function paraSectionsByRole(notebooks, sectionsMap, role) {
   return out;
 }
 
-// ── GtdLeaf ───────────────────────────────────────────────────────────────────
-// Nodo terminale del diagramma: pulsante "+" che apre in linea un piccolo
-// modulo (testo + eventuale lista/sezione) per quella foglia. Le foglie di
-// tipo "log" (Cestino, Farla) non generano alcun task/nota: il testo serve solo
-// a confermare la scelta, nessuna chiamata a Graph.
-function GtdLeaf({ id, icon, label, openLeaf, setOpenLeaf, kind, todoLists = [], sections = [], onSubmit, confirmLabel, confirmMsg, seedText = '' }) {
-  const [text, setText] = useState('');
-  const [listId, setListId] = useState(todoLists[0]?.id || '');
-  const [sectionId, setSectionId] = useState(sections[0]?.id || '');
+// ── GtdLeafBtn ────────────────────────────────────────────────────────────────
+// Nodo terminale del diagramma: un semplice pulsante che apre la finestra
+// pop-up di quella foglia (nessun modulo inline).
+function GtdLeafBtn({ leaf, onOpen }) {
+  return (
+    <button className="gtd-leaf-btn" onClick={() => onOpen(leaf)}>
+      <span className="gtd-leaf-icon">{leaf.icon}</span>
+      <span className="gtd-leaf-label">{leaf.label}</span>
+      <span className="gtd-leaf-plus">+</span>
+    </button>
+  );
+}
+
+// ── GtdLeafPopup ──────────────────────────────────────────────────────────────
+// Finestra pop-up di una foglia: scelta della destinazione (lista/taccuino,
+// se prevista) e descrizione completa. Le foglie di tipo "log" (Cestino,
+// Farla) non generano alcun task/nota: il testo serve solo a confermare la
+// scelta, nessuna chiamata a Graph.
+function GtdLeafPopup({ leaf, seedText, onClose }) {
+  const [text, setText] = useState(seedText || '');
+  const [listId, setListId] = useState(leaf.todoLists?.[0]?.id || '');
+  const [sectionId, setSectionId] = useState(leaf.sections?.[0]?.id || '');
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState(false);
 
-  const isOpen = openLeaf === id;
-
-  function handleToggle() {
-    if (isOpen) { setOpenLeaf(null); return; }
-    setText(seedText || ''); setDone(false);
-    setListId(todoLists[0]?.id || '');
-    setSectionId(sections[0]?.id || '');
-    setOpenLeaf(id);
-  }
-
-  const needsList = kind === 'list';
-  const canSubmit = !busy && text.trim() &&
-    (!needsList || listId) &&
-    (kind !== 'section' || sectionId);
+  const needsList = leaf.kind === 'list';
+  const needsSection = leaf.kind === 'section';
+  const canSubmit = !busy && text.trim() && (!needsList || listId) && (!needsSection || sectionId);
 
   async function handleSubmit() {
     if (!canSubmit) return;
     setBusy(true);
     try {
-      if (kind === 'log') await onSubmit(text.trim());
-      else if (kind === 'list') await onSubmit(text.trim(), { listId });
-      else if (kind === 'section') await onSubmit(text.trim(), { sectionId });
+      if (leaf.kind === 'log') await leaf.onSubmit(text.trim());
+      else if (leaf.kind === 'list') await leaf.onSubmit(text.trim(), { listId });
+      else if (leaf.kind === 'section') await leaf.onSubmit(text.trim(), { sectionId });
       setBusy(false);
       setDone(true);
-      setTimeout(() => setOpenLeaf(null), 900);
+      setTimeout(onClose, 900);
     } catch (e) {
-      console.error('gtd leaf submit', id, e);
+      console.error('gtd leaf submit', leaf.id, e);
       setBusy(false);
     }
   }
 
   return (
-    <div className={`gtd-leaf${isOpen ? ' open' : ''}`}>
-      <button className="gtd-leaf-btn" onClick={handleToggle}>
-        <span className="gtd-leaf-icon">{icon}</span>
-        <span className="gtd-leaf-label">{label}</span>
-        <span className="gtd-leaf-plus">{isOpen ? '✕' : '+'}</span>
-      </button>
-      {isOpen && (
-        <div className="gtd-leaf-form">
+    <div className="gtd-popup-overlay" onClick={onClose}>
+      <div className="gtd-popup" onClick={e => e.stopPropagation()}>
+        <div className="gtd-popup-header">
+          <span className="gtd-popup-icon">{leaf.icon}</span>
+          <span className="gtd-popup-title">{leaf.label}</span>
+          <button className="gtd-popup-close" onClick={onClose} title="Chiudi">✕</button>
+        </div>
+        <div className="gtd-popup-body">
           {done ? (
-            <div className="gtd-leaf-confirm">✓ {confirmMsg}</div>
+            <div className="gtd-leaf-confirm">✓ {leaf.confirmMsg}</div>
           ) : (
             <>
-              <textarea
-                className="gtd-textarea"
-                autoFocus
-                rows={2}
-                value={text}
-                onChange={e => setText(e.target.value)}
-                placeholder="Descrivi l'idea…"
-              />
               {needsList && (
-                <select className="gtd-select" value={listId} onChange={e => setListId(e.target.value)}>
-                  {todoLists.map(l => <option key={l.id} value={l.id}>{l.displayName}</option>)}
-                </select>
+                <label className="gtd-popup-field">
+                  <span>Lista</span>
+                  <select className="gtd-select" value={listId} onChange={e => setListId(e.target.value)}>
+                    {leaf.todoLists.map(l => <option key={l.id} value={l.id}>{l.displayName}</option>)}
+                  </select>
+                </label>
               )}
-              {kind === 'section' && (
-                <select className="gtd-select" value={sectionId} onChange={e => setSectionId(e.target.value)}>
-                  {sections.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}
-                </select>
+              {needsSection && (
+                <label className="gtd-popup-field">
+                  <span>Taccuino</span>
+                  <select className="gtd-select" value={sectionId} onChange={e => setSectionId(e.target.value)}>
+                    {leaf.sections.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}
+                  </select>
+                </label>
               )}
+              <label className="gtd-popup-field">
+                <span>Descrizione</span>
+                <textarea
+                  className="gtd-textarea gtd-textarea-lg"
+                  autoFocus
+                  rows={7}
+                  value={text}
+                  onChange={e => setText(e.target.value)}
+                  placeholder="Descrivi l'idea per intero…"
+                />
+              </label>
               <button className="gtd-primary-btn" disabled={!canSubmit} onClick={handleSubmit}>
-                {busy ? '…' : confirmLabel}
+                {busy ? '…' : leaf.confirmLabel}
               </button>
             </>
           )}
         </div>
-      )}
+      </div>
     </div>
   );
 }
