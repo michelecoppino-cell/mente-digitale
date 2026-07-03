@@ -36,6 +36,25 @@
 .header-right { display: flex; align-items: center; gap: 18px; }
 
 /* Zoom controls */
+.map-view-toggle {
+  display: flex;
+  gap: 2px;
+  flex-shrink: 0;
+}
+.map-view-toggle button {
+  background: none;
+  border: 1px solid var(--border2);
+  color: var(--muted);
+  font-size: 10px;
+  font-family: 'Outfit', sans-serif;
+  padding: 3px 8px;
+  border-radius: 5px;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+.map-view-toggle button:hover { background: rgba(255,255,255,0.05); color: var(--text); }
+.map-view-toggle button.active { background: rgba(200,169,110,0.12); border-color: var(--accent); color: var(--accent); }
+
 .zoom-controls { display: flex; align-items: center; gap: 4px; }
 
 .zoom-btn {

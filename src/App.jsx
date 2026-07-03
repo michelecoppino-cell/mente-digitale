@@ -345,6 +345,12 @@ export default function App() {
               </svg>
             </button>
           )}
+          {account && (
+            <div className="map-view-toggle">
+              <button className={mapViewMode === 'workbook' ? 'active' : ''} onClick={() => setMapViewMode('workbook')} title="Vista per taccuino">Taccuini</button>
+              <button className={mapViewMode === 'para' ? 'active' : ''} onClick={() => setMapViewMode('para')} title="Vista PARA">PARA</button>
+            </div>
+          )}
           <div className="zoom-controls">
             <button className="zoom-btn" onClick={() => setZoom(z => Math.max(0.15, +(z - 0.2).toFixed(2)))}>−</button>
             <span className="zoom-label">{Math.round(zoom * 100)}%</span>
