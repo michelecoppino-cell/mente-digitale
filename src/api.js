@@ -266,6 +266,28 @@ export async function savePlannerConfig(config) {
   return putDriveJson(OD_PLANNER_CFG_FILE, config);
 }
 
+// ── OneDrive Pomodoro Stats ────────────────────────────────────────────────
+const OD_POMODORO_STATS_FILE = 'mente-digitale-pomodoro-stats.json';
+
+export async function loadPomodoroStats() {
+  try {
+    return await call(`/me/drive/root:/${OD_POMODORO_STATS_FILE}:/content`);
+  } catch {
+    return {};
+  }
+}
+
+export async function savePomodoroStats(stats) {
+  // Prune entries older than 90 days
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - 90);
+  const pruned = {};
+  for (const [date, entry] of Object.entries(stats)) {
+    if (new Date(date) >= cutoff) pruned[date] = entry;
+  }
+  return putDriveJson(OD_POMODORO_STATS_FILE, pruned);
+}
+
 export async function getTask(listId, taskId) {
   return call(`/me/todo/lists/${listId}/tasks/${taskId}?$expand=checklistItems`);
 }
