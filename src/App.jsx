@@ -379,17 +379,84 @@ export default function App() {
         </div>
       ) : (
         <>
-        {!scheduleOpen && !plannerOpen && (
-          <div className="floating-btn-stack">
+        <div className="canvas-area" style={{ display: plannerOpen ? 'none' : undefined }}>
+          <IdentityPanel open={identityOpen} onClose={() => setIdentityOpen(null)} />
+          <SchedulePanel
+            open={scheduleOpen}
+            onClose={() => setScheduleOpen(false)}
+            onExpand={() => { setScheduleOpen(false); setPlannerOpen(true); }}
+            preloadedTasks={scheduledTasks}
+            onSelectSection={handleSelectSection}
+            notebooks={notebooks}
+            sectionsMap={sectionsMap}
+          />
+          <MindMap
+            notebooks={notebooks}
+            sectionsMap={sectionsMap}
+            todoListsMap={todoListsMap}
+            todoCountMap={todoCountMap}
+            viewMode={mapViewMode}
+            onSelectSection={handleSelectSection}
+            onExpandNotebook={handleExpandNotebook}
+            externalZoom={zoom}
+            onZoomChange={setZoom}
+            onIdentityOpen={setIdentityOpen}
+          />
+          <Panel
+            selected={selected}
+            pagesCache={pagesCache}
+            tasksCache={tasksCache}
+            onClose={() => setSelected(null)}
+          />
+          {/* Dock unificato in basso: Eisenhower · GTD · Attività · Review.
+              Un solo contenitore centrato — niente più pile di bottoni
+              flottanti che si sovrappongono ai pannelli. */}
+          <div className="bottom-dock">
+            <button
+              className={`dock-btn${unclassifiedCount > 0 ? ' has-badge' : ''}`}
+              onClick={() => setEisenhowerOpen(true)}
+              title="Smistamento Eisenhower dei task non classificati">
+              <span className="dock-btn-icon">🧭</span>
+              <span className="dock-btn-label">Smista</span>
+              {unclassifiedCount > 0 && <span className="header-badge">{unclassifiedCount}</span>}
+            </button>
+            <div className="dock-sep" />
+            <button className="dock-gtd-btn" onClick={() => setGtdOpen(true)} title="Cattura pensiero (GTD)">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
+                <line x1="12" y1="5" x2="12" y2="19" />
+                <line x1="5" y1="12" x2="19" y2="12" />
+              </svg>
+              GTD
+            </button>
+            <div className="dock-sep" />
+            <button
+              className={`dock-btn${scheduleOpen ? ' active' : ''}`}
+              onClick={() => setScheduleOpen(o => !o)}
+              title="Pannello Attività (task)">
+              <span className="dock-btn-icon">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="3 5.5 4.5 7 7.5 4" />
+                  <line x1="10.5" y1="6" x2="21" y2="6" />
+                  <polyline points="3 11.5 4.5 13 7.5 10" />
+                  <line x1="10.5" y1="12" x2="21" y2="12" />
+                  <polyline points="3 17.5 4.5 19 7.5 16" />
+                  <line x1="10.5" y1="18" x2="21" y2="18" />
+                </svg>
+              </span>
+              <span className="dock-btn-label">Attività</span>
+            </button>
             <div className="bell-wrap">
               <button
-                className={`floating-btn${reviewSuggestions.length ? ' has-badge' : ''}`}
+                className={`dock-btn${reviewOpen ? ' active' : ''}${reviewSuggestions.length ? ' has-badge' : ''}`}
                 onClick={() => setReviewOpen(o => !o)}
                 title="Proposte Daily Review">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" />
-                  <path d="M13.73 21a2 2 0 0 1-3.46 0" />
-                </svg>
+                <span className="dock-btn-icon">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" />
+                    <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+                  </svg>
+                </span>
+                <span className="dock-btn-label">Review</span>
                 {reviewSuggestions.length > 0 && <span className="header-badge">{reviewSuggestions.length}</span>}
               </button>
               {reviewOpen && (
@@ -413,65 +480,6 @@ export default function App() {
                 </div>
               )}
             </div>
-            <button
-              className="floating-btn"
-              onClick={() => setScheduleOpen(o => !o)}
-              title="Attività">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                <circle cx="12" cy="13" r="7"/>
-                <polyline points="12 10 12 14 14 14"/>
-                <line x1="7" y1="4" x2="4.5" y2="6.5"/>
-                <line x1="17" y1="4" x2="19.5" y2="6.5"/>
-              </svg>
-            </button>
-          </div>
-        )}
-        <div className="canvas-area" style={{ display: plannerOpen ? 'none' : undefined }}>
-          <IdentityPanel open={identityOpen} onClose={() => setIdentityOpen(null)} />
-          <SchedulePanel
-            open={scheduleOpen}
-            onClose={() => setScheduleOpen(false)}
-            onExpand={() => { setScheduleOpen(false); setPlannerOpen(true); }}
-            preloadedTasks={scheduledTasks}
-            onSelectSection={handleSelectSection}
-            notebooks={notebooks}
-            sectionsMap={sectionsMap}
-          />
-          <MindMap
-            notebooks={notebooks}
-            sectionsMap={sectionsMap}
-            todoListsMap={todoListsMap}
-            todoCountMap={todoCountMap}
-            viewMode={mapViewMode}
-            onViewModeChange={setMapViewMode}
-            onSelectSection={handleSelectSection}
-            onExpandNotebook={handleExpandNotebook}
-            externalZoom={zoom}
-            onZoomChange={setZoom}
-            onIdentityOpen={setIdentityOpen}
-          />
-          <Panel
-            selected={selected}
-            pagesCache={pagesCache}
-            tasksCache={tasksCache}
-            onClose={() => setSelected(null)}
-          />
-          <div className="bottom-action-bar">
-            <button
-              className={`bottom-eis-btn${unclassifiedCount > 0 ? ' has-badge' : ''}`}
-              onClick={() => setEisenhowerOpen(true)}
-              title="Smistamento Eisenhower dei task non classificati">
-              🧭
-              {unclassifiedCount > 0 && <span className="header-badge">{unclassifiedCount}</span>}
-            </button>
-            <button className="bottom-gtd-btn" onClick={() => setGtdOpen(true)} title="Cattura pensiero (GTD)">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
-                <line x1="12" y1="5" x2="12" y2="19" />
-                <line x1="5" y1="12" x2="19" y2="12" />
-              </svg>
-              GTD
-            </button>
-            <div className="bottom-action-bar-spacer" />
           </div>
         </div>
         <PlannerView

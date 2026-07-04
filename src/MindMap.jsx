@@ -44,7 +44,7 @@ function buildGroups(viewMode, notebooks, sectionsMap) {
 
 export default function MindMap({
   notebooks, sectionsMap, todoListsMap, todoCountMap,
-  viewMode = 'workbook', onViewModeChange,
+  viewMode = 'workbook',
   onSelectSection, onExpandNotebook,
   externalZoom, onZoomChange,
   onIdentityOpen,
@@ -138,8 +138,19 @@ export default function MindMap({
     const nbSpread = Math.min(W, H) * 0.10;
     const groups = buildGroups(viewMode, notebooks, sectionsMap);
 
+    // Settori angolari pesati sul numero di sezioni: un gruppo affollato
+    // (es. "Progetti" in vista PARA) occupa più arco di cerchio di uno quasi
+    // vuoto (Aree/Risorse/Archivio), invece di spartirsi il piano in parti
+    // uguali e accalcarsi.
+    const weights = groups.map(g => Math.max(1, g.children.length));
+    const totalWeight = weights.reduce((a, b) => a + b, 0);
+    let angleAcc = -Math.PI / 2;
+
     groups.forEach((grp, i) => {
-      const angle = (i / groups.length) * 2 * Math.PI - Math.PI / 2;
+      const sector = (weights[i] / totalWeight) * 2 * Math.PI;
+      const angle  = angleAcc + sector / 2;
+      angleAcc += sector;
+
       nodes.push({
         id: grp.id,
         groupId: grp.id,
@@ -152,11 +163,16 @@ export default function MindMap({
         fy: cy + nbSpread * Math.sin(angle),
       });
 
+      const secTotal = grp.children.length;
+      // Passo angolare: dentro il proprio settore, mai oltre 0.3 rad a figlio
+      const step = secTotal > 1 ? Math.min(0.3, (sector * 0.85) / (secTotal - 1)) : 0;
+      // Gruppi affollati: figli alternati su due anelli per non sovrapporsi
+      const twoRings = secTotal > 8;
+
       grp.children.forEach(({ section: s, nb, label }, si) => {
-        const nbAngle = (i / groups.length) * 2 * Math.PI - Math.PI / 2;
-        const secStartR = Math.min(W, H) * 0.30;
-        const secTotal = grp.children.length;
-        const secAngle = nbAngle + (si - secTotal / 2) * 0.3;
+        const baseR = Math.min(W, H) * 0.30;
+        const secStartR = twoRings ? baseR * (si % 2 === 0 ? 1 : 1.45) : baseR;
+        const secAngle = angle + (si - (secTotal - 1) / 2) * step;
         const secHas2Lines = label.length > 8;
         const secRh = secHas2Lines ? 30 : 20;
         nodes.push({

@@ -1290,85 +1290,102 @@ body, .app {
 .schedule-panel { width: 385px; }
 .panel { width: 385px; z-index: 65; }
 
-/* ── Bottoni fluttuanti in basso a destra (campanella Daily Review + Attività) ──
-   Stanno a destra, simmetrici al bottone bussola della bottom-action-bar (a
-   sinistra), così le due pile non si sovrappongono mai, né su mobile né su
-   desktop. */
-.floating-btn-stack {
-  position: fixed;
-  right: calc(14px + env(safe-area-inset-right, 0px));
-  bottom: calc(48px + env(safe-area-inset-bottom, 0px));
+/* ── Dock unificato in basso (Eisenhower · GTD · Attività · Review) ──
+   Un solo contenitore centrato: niente più bottoni sparsi che si
+   sovrappongono ai pannelli o tra loro. */
+.bottom-dock {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: calc(14px + env(safe-area-inset-bottom, 0px));
   z-index: 100;
   display: flex;
-  flex-direction: column;
+  align-items: center;
   gap: 6px;
-}
-.floating-btn {
-  position: relative;
-  background: var(--surface);
+  padding: 6px 10px;
+  background: rgba(16, 18, 24, 0.88);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
   border: 1px solid var(--border2);
+  border-radius: 18px;
+  box-shadow: 0 12px 36px rgba(0,0,0,0.45);
+}
+
+.dock-sep {
+  width: 1px;
+  height: 30px;
+  background: var(--border);
+  flex-shrink: 0;
+}
+
+.dock-btn {
+  position: relative;
+  background: none;
+  border: none;
+  color: var(--muted);
+  min-width: 58px;
+  padding: 6px 10px;
+  border-radius: 12px;
   cursor: pointer;
-  color: var(--accent);
-  padding: 8px;
-  border-radius: 10px;
-  transition: background 0.15s, transform 0.15s;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  font-family: 'Outfit', sans-serif;
+  transition: background 0.15s, color 0.15s, transform 0.15s;
   -webkit-tap-highlight-color: transparent;
 }
-.floating-btn:hover { background: rgba(200,169,110,0.1); }
-.floating-btn.active { background: rgba(200,169,110,0.15); }
-.floating-btn:active { transform: scale(0.92); }
-.floating-btn .header-badge { top: -4px; right: -4px; }
-.floating-btn .bell-dropdown { left: auto; right: 0; bottom: calc(100% + 8px); top: auto; }
+.dock-btn:hover { background: rgba(255,255,255,0.06); color: var(--text); }
+.dock-btn:active { transform: scale(0.94); }
+.dock-btn.active { background: rgba(200,169,110,0.14); color: var(--accent); }
+.dock-btn.has-badge { color: var(--accent); }
+.dock-btn .header-badge { top: 0; right: 6px; }
 
-/* ── Barra azioni in basso (Eisenhower + GTD) ── */
-.bottom-action-bar {
-  position: absolute;
-  left: 0; right: 0; bottom: 0;
-  z-index: 40;
+.dock-btn-icon {
+  height: 18px;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 12px 24px;
-  padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px));
-  padding-left: calc(24px + env(safe-area-inset-left, 0px));
-  padding-right: calc(24px + env(safe-area-inset-right, 0px));
-  pointer-events: none;
+  justify-content: center;
+  font-size: 16px;
+  line-height: 1;
 }
-.bottom-action-bar > * { pointer-events: auto; }
-.bottom-action-bar-spacer { width: 44px; }
-
-.bottom-eis-btn {
-  background: var(--surface);
-  border: 1px solid var(--border2);
-  color: var(--muted);
-  width: 44px; height: 44px;
-  border-radius: 12px;
-  font-size: 18px;
-  cursor: pointer;
-  display: flex; align-items: center; justify-content: center;
-  transition: background 0.15s, color 0.15s, transform 0.15s;
-  box-shadow: 0 8px 24px rgba(0,0,0,0.35);
+.dock-btn-label {
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
 }
-.bottom-eis-btn:hover { background: rgba(255,255,255,0.06); color: var(--text); }
-.bottom-eis-btn:active { transform: scale(0.94); }
-.bottom-eis-btn.has-badge { border-color: var(--accent); color: var(--accent); }
 
-.bottom-gtd-btn {
+.dock-gtd-btn {
   background: var(--accent);
   border: none;
   color: #14110d;
-  padding: 14px 28px;
+  padding: 11px 22px;
   border-radius: 999px;
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 600;
   font-family: 'Outfit', sans-serif;
   cursor: pointer;
-  display: flex; align-items: center; gap: 8px;
+  display: flex; align-items: center; gap: 7px;
   transition: transform 0.15s, box-shadow 0.15s;
-  box-shadow: 0 10px 30px rgba(200,169,110,0.35);
+  box-shadow: 0 8px 24px rgba(200,169,110,0.35);
 }
-.bottom-gtd-btn:hover { transform: translateY(-1px); box-shadow: 0 14px 36px rgba(200,169,110,0.45); }
-.bottom-gtd-btn:active { transform: scale(0.96); }
+.dock-gtd-btn:hover { transform: translateY(-1px); box-shadow: 0 12px 30px rgba(200,169,110,0.45); }
+.dock-gtd-btn:active { transform: scale(0.96); }
+
+/* La tendina Daily Review si apre verso l'alto, sopra il dock */
+.bottom-dock .bell-dropdown {
+  left: auto;
+  right: 0;
+  bottom: calc(100% + 12px);
+  top: auto;
+}
+
+@media (max-width: 640px) {
+  .bottom-dock { gap: 2px; padding: 5px 6px; width: max-content; max-width: calc(100vw - 16px); }
+  .dock-btn { min-width: 48px; padding: 5px 6px; }
+  .dock-gtd-btn { padding: 10px 16px; font-size: 13px; }
+}
 
 /* ── Vista settimana calendario ── */
 .cal-week-grid {

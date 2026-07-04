@@ -82,18 +82,18 @@
   font-weight: 500;
 }
 
-/* ── Nodo decisionale con foglie a sinistra (È attuabile? / <2 minuti?) ──
-   Sviluppo verticale: le foglie "No" (Cestino/Risorse/Archivio) e "Sì/No"
-   della seconda decisione si aprono a lato invece di allungare il diagramma
-   in orizzontale. */
+/* ── Nodo decisionale "È attuabile?" ──
+   Le foglie "No" (Cestino/Risorse/Archivio) si aprono a sinistra; a destra
+   uno spaziatore invisibile identico tiene il nodo perfettamente centrato,
+   così la linea verticale del flusso resta dritta. */
 .gtd-decision {
   position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 12px;
+  gap: 0;
   width: 100%;
-  padding: 14px 0;
+  padding: 14px 0 0;
 }
 .gtd-decision::before {
   content: '';
@@ -104,13 +104,29 @@
   height: 14px;
   background: var(--border2);
 }
-.gtd-decision-end { padding-bottom: 4px; }
+/* Gambo "Sì" verso il basso: dal bordo inferiore del nodo (≈ centro
+   verticale + mezza altezza nodo) fino al fondo del blocco decisione, che è
+   più alto del nodo per via della colonna di foglie a sinistra. */
+.gtd-decision::after {
+  content: '';
+  position: absolute;
+  top: calc(50% + 26px);
+  bottom: 0;
+  left: 50%;
+  width: 1px;
+  background: var(--border2);
+}
 
 .gtd-decision-side {
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 6px;
+}
+.gtd-decision-side.ghost {
+  width: 150px;
+  flex-shrink: 0;
+  visibility: hidden;
 }
 
 .gtd-decision-side-label {
@@ -122,10 +138,50 @@
 }
 
 .gtd-decision-connector {
-  width: 20px;
+  width: 28px;
   height: 1px;
   background: var(--border2);
   flex-shrink: 0;
+}
+.gtd-decision-connector.ghost { background: transparent; }
+
+/* ── Ramo "Sì" verticale sotto "È attuabile?" ── */
+.gtd-branch-down {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+}
+.gtd-vline {
+  width: 1px;
+  height: 10px;
+  background: var(--border2);
+  flex-shrink: 0;
+}
+
+/* ── Biforcazione finale sotto "<2 minuti?" ──
+   Linea a T: gambo centrale (::after del nodo sopra), barra orizzontale e
+   discese verticali verso le etichette Sì / No. */
+.gtd-branch-split {
+  position: relative;
+  display: flex;
+  justify-content: space-around;
+  width: 100%;
+  padding-bottom: 4px;
+}
+.gtd-split-bar {
+  position: absolute;
+  top: 0;
+  left: 25%;
+  right: 25%;
+  height: 1px;
+  background: var(--border2);
+}
+.gtd-branch {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
 }
 
 .gtd-leaf-col {
@@ -277,6 +333,11 @@
 .gtd-primary-btn:disabled { opacity: 0.4; cursor: default; }
 
 @media (max-width: 640px) {
-  .gtd-decision { flex-wrap: wrap; gap: 8px; }
-  .gtd-leaf-btn { width: 132px; }
+  .gtd-overlay { padding: 10px; }
+  .gtd-body { padding: 16px 8px 20px; }
+  .gtd-decision-connector { width: 8px; }
+  .gtd-decision-side.ghost { width: 104px; }
+  .gtd-leaf-btn { width: 104px; font-size: 11px; padding: 7px 6px; }
+  .gtd-flow-node { font-size: 12px; padding: 7px 12px; }
+  .gtd-flow-node.small { font-size: 10px; padding: 5px 9px; }
 }

@@ -87,7 +87,8 @@ export default function GtdClarifyModal({ open, onClose, todoLists = [], noteboo
               <div className="gtd-flow-node static">Che cos'è?</div>
             </div>
 
-            {/* ── È attuabile? — le foglie "No" si aprono a sinistra ── */}
+            {/* ── È attuabile? — le foglie "No" si aprono a sinistra, il ramo
+                   "Sì" prosegue in verticale verso la prossima azione ── */}
             <div className="gtd-decision">
               <div className="gtd-decision-side">
                 <div className="gtd-decision-side-label">No</div>
@@ -99,6 +100,15 @@ export default function GtdClarifyModal({ open, onClose, todoLists = [], noteboo
               </div>
               <div className="gtd-decision-connector" />
               <div className="gtd-flow-node question">È attuabile?</div>
+              <div className="gtd-decision-connector ghost" />
+              <div className="gtd-decision-side ghost" aria-hidden="true" />
+            </div>
+
+            {/* Ramo "Sì" verso il basso */}
+            <div className="gtd-branch-down">
+              <div className="gtd-vline" />
+              <span className="gtd-decision-side-label">Sì</span>
+              <div className="gtd-vline" />
             </div>
 
             <div className="gtd-flow-node-wrap">
@@ -108,16 +118,18 @@ export default function GtdClarifyModal({ open, onClose, todoLists = [], noteboo
               <div className="gtd-flow-node question small">&lt;2 minuti?</div>
             </div>
 
-            {/* ── <2 minuti? — "Farla" a sinistra, Progetto/Area come esito finale ── */}
-            <div className="gtd-decision gtd-decision-end">
-              <div className="gtd-decision-side">
+            {/* ── <2 minuti? — biforcazione finale: Sì → Farla, No → Progetto/Area ── */}
+            <div className="gtd-branch-split">
+              <div className="gtd-split-bar" />
+              <div className="gtd-branch">
+                <div className="gtd-vline" />
                 <div className="gtd-decision-side-label">Sì</div>
                 <div className="gtd-leaf-col">
                   <GtdLeafBtn leaf={leaves.doNow} onOpen={setActiveLeaf} />
                 </div>
               </div>
-              <div className="gtd-decision-connector" />
-              <div className="gtd-decision-side">
+              <div className="gtd-branch">
+                <div className="gtd-vline" />
                 <div className="gtd-decision-side-label">No</div>
                 <div className="gtd-leaf-col">
                   <GtdLeafBtn leaf={leaves.project} onOpen={setActiveLeaf} />
