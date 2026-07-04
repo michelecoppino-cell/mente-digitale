@@ -1,20 +1,22 @@
-// Convenzione PARA: in ogni taccuino (workbook) l'utente crea al più tre
-// sezioni dal nome letterale fisso qui sotto. Tutte le altre sezioni sono
-// considerate "progetti attivi" — nessuna configurazione aggiuntiva richiesta,
-// basta rispettare i nomi.
-export const PARA_SECTION_NAMES = {
-  area: 'Area/Ricorrenti',
-  resources: 'Risorse/Idee',
-  archive: 'Archivio',
+// Convenzione PARA: in ogni taccuino (workbook) le sezioni il cui nome inizia
+// con uno dei prefissi qui sotto vengono assegnate al ruolo corrispondente
+// (es. "ARC-AUTO" e "ARC-LORENZO" → archive). OneNote non accetta "/" nei nomi
+// sezione, quindi si usa un prefisso invece del nome letterale fisso. Tutte le
+// altre sezioni sono considerate "progetti attivi" — nessuna configurazione
+// aggiuntiva richiesta, basta rispettare i prefissi.
+export const PARA_SECTION_PREFIXES = {
+  area: ['AREA'],
+  resources: ['RIS-', 'IDEE-'],
+  archive: ['ARC-'],
 };
-
-const ROLE_BY_LOWER_NAME = Object.fromEntries(
-  Object.entries(PARA_SECTION_NAMES).map(([role, name]) => [name.toLowerCase(), role])
-);
 
 // 'area' | 'resources' | 'archive' | null (progetto)
 export function sectionRole(displayName) {
-  return ROLE_BY_LOWER_NAME[(displayName || '').toLowerCase()] || null;
+  const name = (displayName || '').toUpperCase();
+  for (const [role, prefixes] of Object.entries(PARA_SECTION_PREFIXES)) {
+    if (prefixes.some(prefix => name.startsWith(prefix))) return role;
+  }
+  return null;
 }
 
 export function isParaSection(displayName) {

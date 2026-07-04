@@ -60,7 +60,7 @@ export default function GtdClarifyModal({ open, onClose, todoLists = [], noteboo
     resources: { id: 'resources', icon: '💡', label: 'Risorse', kind: 'section', sections: resourceSections, onSubmit: submitResource, confirmLabel: 'Crea pagina', confirmMsg: 'Pagina creata' },
     archive:   { id: 'archive', icon: '📓', label: 'Archivio', kind: 'section', sections: archiveSections, onSubmit: submitArchive, confirmLabel: 'Crea pagina', confirmMsg: 'Pagina creata' },
     doNow:     { id: 'doNow', icon: '⚡', label: 'Farla', kind: 'log', onSubmit: submitLog, confirmLabel: 'Fatto', confirmMsg: 'Fatto' },
-    project:   { id: 'project', icon: '🗂', label: 'Progetto', kind: 'list', todoLists: projectLists, onSubmit: submitProjectTask, confirmLabel: 'Crea task', confirmMsg: 'Task creato' },
+    project:   { id: 'project', icon: '🗂', label: 'Task ToDo', kind: 'list', todoLists: projectLists, onSubmit: submitProjectTask, confirmLabel: 'Crea task', confirmMsg: 'Task creato' },
     area:      { id: 'area', icon: '🔁', label: 'Area/Ricorrenti', kind: 'list', todoLists: areaLists, onSubmit: submitAreaTask, confirmLabel: 'Crea task', confirmMsg: 'Task creato' },
   };
 
