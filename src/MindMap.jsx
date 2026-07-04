@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 import * as d3 from 'd3';
-import { sectionRole } from './paraConfig';
+import { sectionRole, paraSectionLabel } from './paraConfig';
 
 const FONT = 'Outfit, sans-serif';
 const OCRA = '#c8a96e';
@@ -34,7 +34,7 @@ function buildGroups(viewMode, notebooks, sectionsMap) {
       if (!role) {
         childrenByGroup.para_projects.push({ section: s, nb, label: s.displayName });
       } else {
-        childrenByGroup['para_' + role].push({ section: s, nb, label: nb.displayName });
+        childrenByGroup['para_' + role].push({ section: s, nb, label: paraSectionLabel(s.displayName) });
       }
     });
   });
