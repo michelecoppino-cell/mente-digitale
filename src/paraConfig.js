@@ -10,15 +10,32 @@ export const PARA_SECTION_PREFIXES = {
   archive: ['ARC-'],
 };
 
-// 'area' | 'resources' | 'archive' | null (progetto)
-export function sectionRole(displayName) {
+function matchPrefix(displayName) {
   const name = (displayName || '').toUpperCase();
   for (const [role, prefixes] of Object.entries(PARA_SECTION_PREFIXES)) {
-    if (prefixes.some(prefix => name.startsWith(prefix))) return role;
+    const prefix = prefixes.find(p => name.startsWith(p));
+    if (prefix) return { role, prefix };
   }
   return null;
 }
 
+// 'area' | 'resources' | 'archive' | null (progetto)
+export function sectionRole(displayName) {
+  return matchPrefix(displayName)?.role || null;
+}
+
 export function isParaSection(displayName) {
   return sectionRole(displayName) !== null;
+}
+
+// Nome sezione depurato dal prefisso PARA (es. "ARC-AUTO" → "AUTO"), usato
+// come etichetta al posto del nome del taccuino nella vista PARA. Se la
+// sezione non è PARA, o non resta nulla dopo il prefisso, ritorna il nome
+// originale.
+export function paraSectionLabel(displayName) {
+  const name = displayName || '';
+  const match = matchPrefix(name);
+  if (!match) return name;
+  const rest = name.slice(match.prefix.length).replace(/^[\s\-_]+/, '');
+  return rest || name;
 }

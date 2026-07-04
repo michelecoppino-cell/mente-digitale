@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
 import { createTask, createNotePage } from './api';
-import { sectionRole } from './paraConfig';
+import { sectionRole, paraSectionLabel } from './paraConfig';
 import './GtdClarifyModal.css';
 
 // Diagramma di flusso GTD "Chiarire" (David Allen), adattato al metodo PARA
@@ -8,26 +8,22 @@ import './GtdClarifyModal.css';
 // «Cose» → Inbox → Che cos'è? → [Cestino / Risorse / Archivio ← No] È attuabile?
 //   → Sì → Qual è la prossima azione? → Richiede meno di due minuti?
 //               ├─ Sì → Farla
-//               └─ No → Progetto (task) / Area-Ricorrenti (task)
-// Ogni foglia (Cestino/Risorse/Archivio/Farla/Progetto/Area) apre una finestra
-// pop-up con la scelta della destinazione e la descrizione completa, invece
-// di un modulo inline.
+//               └─ No → Task ToDo (task) / Area-Ricorrenti (pagina)
+// Ogni foglia (Cestino/Risorse/Archivio/Farla/Task ToDo/Area) apre una
+// finestra pop-up con la scelta della destinazione e la descrizione
+// completa, invece di un modulo inline.
 export default function GtdClarifyModal({ open, onClose, todoLists = [], notebooks = [], sectionsMap = {}, onTaskCreated, seedText = '' }) {
   const [activeLeaf, setActiveLeaf] = useState(null);
 
-  // Sezioni PARA "Risorse/Idee" e "Archivio", una per taccuino che le possiede
-  // — l'etichetta è il nome del taccuino (la sezione si chiama sempre uguale).
+  // Sezioni PARA "Risorse/Idee", "Archivio" e "Area/Ricorrenti", una per
+  // taccuino che le possiede — l'etichetta è il nome della sezione depurato
+  // dal prefisso PARA (es. "ARC-AUTO" → "AUTO").
   const resourceSections = useMemo(() => paraSectionsByRole(notebooks, sectionsMap, 'resources'), [notebooks, sectionsMap]);
   const archiveSections = useMemo(() => paraSectionsByRole(notebooks, sectionsMap, 'archive'), [notebooks, sectionsMap]);
+  const areaSections = useMemo(() => paraSectionsByRole(notebooks, sectionsMap, 'area'), [notebooks, sectionsMap]);
 
   // Liste ToDo "progetto" = tutte tranne quelle che coincidono con un nome PARA.
   const projectLists = useMemo(() => todoLists.filter(l => !sectionRole(l.displayName)), [todoLists]);
-  // Liste ToDo "Area/Ricorrenti" — se nessuna combacia col nome letterale, si
-  // mostrano comunque tutte le liste per non bloccare l'utente.
-  const areaLists = useMemo(() => {
-    const matches = todoLists.filter(l => sectionRole(l.displayName) === 'area');
-    return matches.length ? matches : todoLists;
-  }, [todoLists]);
 
   function handleClose() { setActiveLeaf(null); onClose(); }
 
@@ -43,13 +39,11 @@ export default function GtdClarifyModal({ open, onClose, todoLists = [], noteboo
     await createNotePage(sectionId, text.slice(0, 60) || 'Nota', text);
   }
 
-  async function submitProjectTask(text, { listId }) {
-    const task = await createTask(listId, text);
-    const list = todoLists.find(l => l.id === listId);
-    onTaskCreated?.({ ...task, _listId: listId, _listName: list?.displayName || '' }, { addToday: false });
+  async function submitAreaPage(text, { sectionId }) {
+    await createNotePage(sectionId, text.slice(0, 60) || 'Nota', text);
   }
 
-  async function submitAreaTask(text, { listId }) {
+  async function submitProjectTask(text, { listId }) {
     const task = await createTask(listId, text);
     const list = todoLists.find(l => l.id === listId);
     onTaskCreated?.({ ...task, _listId: listId, _listName: list?.displayName || '' }, { addToday: false });
@@ -61,7 +55,7 @@ export default function GtdClarifyModal({ open, onClose, todoLists = [], noteboo
     archive:   { id: 'archive', icon: '📓', label: 'Archivio', kind: 'section', sections: archiveSections, onSubmit: submitArchive, confirmLabel: 'Crea pagina', confirmMsg: 'Pagina creata' },
     doNow:     { id: 'doNow', icon: '⚡', label: 'Farla', kind: 'log', onSubmit: submitLog, confirmLabel: 'Fatto', confirmMsg: 'Fatto' },
     project:   { id: 'project', icon: '🗂', label: 'Task ToDo', kind: 'list', todoLists: projectLists, onSubmit: submitProjectTask, confirmLabel: 'Crea task', confirmMsg: 'Task creato' },
-    area:      { id: 'area', icon: '🔁', label: 'Area/Ricorrenti', kind: 'list', todoLists: areaLists, onSubmit: submitAreaTask, confirmLabel: 'Crea task', confirmMsg: 'Task creato' },
+    area:      { id: 'area', icon: '🔁', label: 'Area/Ricorrenti', kind: 'section', sections: areaSections, onSubmit: submitAreaPage, confirmLabel: 'Crea pagina', confirmMsg: 'Pagina creata' },
   };
 
   if (!open) return null;
@@ -148,14 +142,15 @@ export default function GtdClarifyModal({ open, onClose, todoLists = [], noteboo
   );
 }
 
-// Sezioni PARA di un dato ruolo ('resources' | 'archive'), una per taccuino
-// che la possiede, etichettate col nome del taccuino (la sezione si chiama
-// sempre allo stesso modo, distinguerle per nome sezione non avrebbe senso).
+// Sezioni PARA di un dato ruolo ('area' | 'resources' | 'archive'), da tutti
+// i taccuini — un taccuino può averne più di una (es. "ARC-AUTO" e
+// "ARC-LORENZO" nello stesso taccuino) — etichettate col nome della sezione
+// depurato dal prefisso PARA.
 function paraSectionsByRole(notebooks, sectionsMap, role) {
   const out = [];
   for (const nb of notebooks) {
-    const sec = (sectionsMap[nb.id] || []).find(s => sectionRole(s.displayName) === role);
-    if (sec) out.push({ id: sec.id, label: nb.displayName });
+    const secs = (sectionsMap[nb.id] || []).filter(s => sectionRole(s.displayName) === role);
+    for (const sec of secs) out.push({ id: sec.id, label: paraSectionLabel(sec.displayName) });
   }
   return out;
 }
