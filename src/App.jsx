@@ -368,6 +368,14 @@ export default function App() {
     }
   }
 
+  // Richiamata sia alla chiusura definitiva del Pomodoro sia alla sua messa
+  // in pausa: il pannello sezione si chiude del tutto (non solo si restringe)
+  // e il Piano torna alla modalità normale, sbloccata.
+  function handleEndPomodoroFocus() {
+    setPomodoroFocus(false);
+    setSelected(null);
+  }
+
   async function handleRefresh() {
     setSelected(null);
     setNotebooks([]);
@@ -557,7 +565,7 @@ export default function App() {
           onTaskDeleted={handleTaskDeleted}
           onTaskRenamed={handleTaskRenamed}
           onStartFocus={handleStartPomodoroFocus}
-          onEndFocus={() => setPomodoroFocus(false)}
+          onEndFocus={handleEndPomodoroFocus}
           sectionPanelExpanded={pomodoroFocus}
         />
         <EisenhowerTriage
@@ -567,8 +575,10 @@ export default function App() {
         />
         {/* In modalità Piano il dock in basso (dentro .canvas-area, nascosta)
             non è visibile: si ripropone qui il pulsante GTD, fuori da quel
-            contenitore, come cerchio fisso in basso a destra. */}
-        {plannerOpen && (
+            contenitore, come cerchio fisso in basso a destra. Si spegne
+            durante il focus Pomodoro: stesso angolo dello schermo del widget
+            del timer, e la visualizzazione è comunque bloccata. */}
+        {plannerOpen && !pomodoroFocus && (
           <button className="gtd-fab" onClick={() => setGtdOpen(true)} title="Cattura pensiero (GTD)">+</button>
         )}
         <GtdClarifyModal

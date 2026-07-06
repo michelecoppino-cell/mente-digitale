@@ -1,7 +1,10 @@
 .pomodoro-widget {
   position: fixed;
-  right: 24px;
-  bottom: 24px;
+  /* Stesso angolo del "+" dorato (gtd-fab, 20px/46px): così il widget ne
+     copre sempre l'intera sagoma invece di lasciarlo sbucare di qualche
+     pixel dietro l'angolo, indipendentemente dallo z-index. */
+  right: 20px;
+  bottom: 20px;
   z-index: 500;
   background: var(--surface);
   border: 1px solid var(--border2);
