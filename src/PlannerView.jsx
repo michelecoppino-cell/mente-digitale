@@ -69,7 +69,7 @@ function getWeekDays(dateStr) {
 export default function PlannerView({
   open, onClose, preloadedTasks = [], notebooks = [], sectionsMap = {}, autoAddTask = null, onAutoAdded,
   onTaskCompleted, onTaskDeleted, onTaskRenamed,
-  onStartFocus, onEndFocus,
+  onStartFocus, onEndFocus, sectionPanelExpanded = false,
 }) {
   const [currentDate, setCurrentDate]       = useState(todayStr);
   const [plans, setPlans]                   = useState({});
@@ -593,7 +593,7 @@ export default function PlannerView({
       )}
 
       {/* Body */}
-      <div className="planner-body">
+      <div className={`planner-body${sectionPanelExpanded ? ' planner-body-reserve-panel' : ''}`}>
 
       {viewMode === 'month' ? (
         <MonthlyCalendar

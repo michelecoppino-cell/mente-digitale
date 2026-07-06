@@ -558,6 +558,7 @@ export default function App() {
           onTaskRenamed={handleTaskRenamed}
           onStartFocus={handleStartPomodoroFocus}
           onEndFocus={() => setPomodoroFocus(false)}
+          sectionPanelExpanded={pomodoroFocus}
         />
         <EisenhowerTriage
           open={eisenhowerOpen}
