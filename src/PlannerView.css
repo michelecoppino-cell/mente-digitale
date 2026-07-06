@@ -40,6 +40,7 @@
   transition: background 0.15s, color 0.15s;
 }
 .planner-nav-btn:hover { background: rgba(255,255,255,0.06); color: var(--text); }
+.planner-nav-btn:disabled { opacity: 0.4; cursor: default; }
 
 .planner-date {
   font-family: 'Playfair Display', serif;
@@ -62,6 +63,7 @@
   transition: background 0.15s;
 }
 .planner-today-btn:hover { background: rgba(200,169,110,0.1); }
+.planner-today-btn:disabled { opacity: 0.4; cursor: default; }
 
 .planner-header-actions {
   display: flex;
@@ -100,6 +102,7 @@
   margin-left: 4px;
 }
 .planner-close-btn:hover { background: rgba(255,255,255,0.06); color: var(--text); }
+.planner-close-btn:disabled { opacity: 0.4; cursor: default; }
 
 /* ── Body: 3 columns ── */
 .planner-body {
@@ -173,6 +176,13 @@
   display: flex;
   flex-direction: column;
   min-height: 0;
+}
+
+/* Blocco Pomodoro in corso: il pool resta visibile ma del tutto inerte —
+   solo il task già aperto nel pannello Dettagli resta modificabile. */
+.planner-pool.locked {
+  pointer-events: none;
+  opacity: 0.45;
 }
 
 .planner-pool-body {
@@ -529,6 +539,7 @@
   transition: opacity 0.15s;
 }
 .planner-block-check:hover { opacity: 0.7; }
+.planner-block-check:disabled { opacity: 0.35; cursor: default; }
 
 .planner-block-title {
   font-size: 11px;
@@ -563,6 +574,8 @@
   transition: background 0.12s, color 0.12s;
 }
 .planner-block-btn:hover { background: rgba(255,255,255,0.12); color: var(--text); }
+.planner-block-btn:disabled { opacity: 0.35; cursor: default; }
+.planner-block-btn:disabled:hover { background: none; color: var(--muted); }
 
 .planner-block-meta {
   display: flex;
@@ -884,6 +897,7 @@
   background: rgba(200,169,110,0.12);
   color: var(--accent);
 }
+.planner-view-toggle button:disabled { opacity: 0.4; cursor: default; }
 .planner-view-toggle button:hover:not(.active) {
   background: rgba(255,255,255,0.05);
   color: var(--text);

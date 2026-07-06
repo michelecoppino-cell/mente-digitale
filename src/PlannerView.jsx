@@ -78,6 +78,10 @@ export default function PlannerView({
   const [todayPlan, setTodayPlan]           = useState({ date: todayStr(), blocks: [], emailExtractedActions: [] });
   const [calEvents, setCalEvents]           = useState([]);
   const [pomodoroBlockId, setPomodoroBlockId] = useState(null);
+  const [pomodoroRunning, setPomodoroRunning] = useState(true);
+  // Bloccata solo mentre il Pomodoro è effettivamente in corso (non in pausa):
+  // premere "Pausa" riporta alla normale modalità Piano, sbloccata.
+  const locked = !!pomodoroBlockId && pomodoroRunning;
   const [saveStatus, setSaveStatus]         = useState('idle');
   const [breakdownModal, setBreakdownModal] = useState(null);
   const [dragOverTime, setDragOverTime]     = useState(null);
@@ -295,6 +299,7 @@ export default function PlannerView({
 
   // ── DnD ─────────────────────────────────────────────────────────────────────
   function handleTimelineDragOver(e) {
+    if (locked) return;
     e.preventDefault();
     e.dataTransfer.dropEffect = 'move';
     if (!timelineBodyRef.current) return;
@@ -309,7 +314,7 @@ export default function PlannerView({
 
   function handleTimelineDrop(e) {
     e.preventDefault();
-    if (!dragOverTime) return;
+    if (locked || !dragOverTime) return;
     try {
       const data = JSON.parse(e.dataTransfer.getData('text/plain'));
       if (data.type === 'task')   addBlock(data.task, dragOverTime);
@@ -547,7 +552,7 @@ export default function PlannerView({
       {/* Header */}
       <div className="planner-header">
         <div className="planner-header-left">
-          <button className="planner-nav-btn" onClick={() => {
+          <button className="planner-nav-btn" disabled={locked} onClick={() => {
             const d = new Date(currentDate + 'T12:00:00');
             if (viewMode === 'month') { setCurrentDate(localDateStr(new Date(d.getFullYear(), d.getMonth() - 1, 1))); return; }
             d.setDate(d.getDate() - (viewMode === 'week' ? 7 : 1));
@@ -564,23 +569,23 @@ export default function PlannerView({
                 weekday: 'long', day: 'numeric', month: 'long',
               })}
           </span>
-          <button className="planner-nav-btn" onClick={() => {
+          <button className="planner-nav-btn" disabled={locked} onClick={() => {
             const d = new Date(currentDate + 'T12:00:00');
             if (viewMode === 'month') { setCurrentDate(localDateStr(new Date(d.getFullYear(), d.getMonth() + 1, 1))); return; }
             d.setDate(d.getDate() + (viewMode === 'week' ? 7 : 1));
             setCurrentDate(localDateStr(d));
           }}>▶</button>
           {currentDate !== todayStr() && (
-            <button className="planner-today-btn" onClick={() => setCurrentDate(todayStr())}>Oggi</button>
+            <button className="planner-today-btn" disabled={locked} onClick={() => setCurrentDate(todayStr())}>Oggi</button>
           )}
           <div className="planner-view-toggle">
-            <button className={viewMode === 'day' ? 'active' : ''} onClick={() => setViewMode('day')}>Giorno</button>
-            <button className={viewMode === 'week' ? 'active' : ''} onClick={() => setViewMode('week')}>Settimana</button>
-            <button className={viewMode === 'month' ? 'active' : ''} onClick={() => setViewMode('month')}>Mese</button>
+            <button disabled={locked} className={viewMode === 'day' ? 'active' : ''} onClick={() => setViewMode('day')}>Giorno</button>
+            <button disabled={locked} className={viewMode === 'week' ? 'active' : ''} onClick={() => setViewMode('week')}>Settimana</button>
+            <button disabled={locked} className={viewMode === 'month' ? 'active' : ''} onClick={() => setViewMode('month')}>Mese</button>
           </div>
         </div>
         <div className="planner-header-actions">
-          <button className="planner-close-btn" onClick={onClose} title="Chiudi pianificatore">✕</button>
+          <button className="planner-close-btn" disabled={locked} onClick={onClose} title={locked ? 'Metti in pausa il Pomodoro per chiudere' : 'Chiudi pianificatore'}>✕</button>
         </div>
       </div>
 
@@ -616,8 +621,11 @@ export default function PlannerView({
         />
       ) : (<>
 
-        {/* ── Column 1: Task Pool ── */}
-        <div className={`planner-pool${mobileTab === 'pool' ? ' mobile-active' : ''}`} style={{ width: poolWidth }}>
+        {/* ── Column 1: Task Pool ──
+            Durante il blocco Pomodoro resta visibile ma del tutto non
+            interagibile: solo il task già aperto nel pannello Dettagli
+            si può modificare. */}
+        <div className={`planner-pool${mobileTab === 'pool' ? ' mobile-active' : ''}${locked ? ' locked' : ''}`} style={{ width: poolWidth }}>
           <TaskPool
             title="Task"
             tasks={preloadedTasks}
@@ -626,7 +634,8 @@ export default function PlannerView({
             sectionsMap={sectionsMap}
             scheduledIds={scheduledIds}
             selectedTaskId={selectedTask?.id ?? null}
-            onTaskClick={task => { setSelectedTask(task); setMobileTab('panel'); }}
+            draggable={!locked}
+            onTaskClick={locked ? undefined : task => { setSelectedTask(task); setMobileTab('panel'); }}
           />
         </div>
 
@@ -707,14 +716,14 @@ export default function PlannerView({
                   key={block.id}
                   className={`planner-block${block.completed ? ' completed' : ''}${block.isAISuggested ? ' ai-suggested' : ''}`}
                   style={{ top: top + 2, height, borderLeftColor: block.projectColor, background: block.projectColor }}
-                  draggable={!block.completed && resizingId !== block.id}
+                  draggable={!locked && !block.completed && resizingId !== block.id}
                   onClick={() => {
                     if (block.taskId && block.listId) {
                       setSelectedTask({ id: block.taskId, title: block.taskTitle, _listId: block.listId, _listName: block.listName });
                       setMobileTab('panel');
                     }
                   }}
-                  onDragStart={e => {
+                  onDragStart={locked ? undefined : e => {
                     e.stopPropagation();
                     e.dataTransfer.setData('text/plain', JSON.stringify({ type: 'block', blockId: block.id }));
                   }}>
@@ -723,6 +732,7 @@ export default function PlannerView({
                       className="planner-block-check"
                       style={{ color: block.completed ? '#86c07a' : block.projectColor }}
                       onClick={() => handleCompleteBlock(block.id)}
+                      disabled={locked}
                       title="Segna come completato">
                       {block.completed ? '✓' : '○'}
                     </button>
@@ -730,10 +740,11 @@ export default function PlannerView({
                     <div className="planner-block-actions">
                       <button
                         className="planner-block-btn"
-                        onClick={e => { e.stopPropagation(); setPomodoroBlockId(block.id); onStartFocus?.(block); }}
+                        onClick={e => { e.stopPropagation(); setPomodoroBlockId(block.id); setPomodoroRunning(true); onStartFocus?.(block); }}
+                        disabled={locked}
                         title="Avvia Pomodoro su questo blocco">🍅</button>
-                      <button className="planner-block-btn" onClick={() => handleBreakdownTask(block)} title="Scomponi in sottostep">🔀</button>
-                      <button className="planner-block-btn" onClick={() => handleRemoveBlock(block.id)} title="Rimuovi">✕</button>
+                      <button className="planner-block-btn" onClick={() => handleBreakdownTask(block)} disabled={locked} title="Scomponi in sottostep">🔀</button>
+                      <button className="planner-block-btn" onClick={() => handleRemoveBlock(block.id)} disabled={locked} title="Rimuovi">✕</button>
                     </div>
                   </div>
                   <div className="planner-block-meta">
@@ -760,7 +771,7 @@ export default function PlannerView({
                               className={`planner-substep-zone${s.completed ? ' done' : ''}`}
                               style={{ top: subTop, height: subHeight }}>
                               <span className="planner-substep-label">{s.title}</span>
-                              {i < n - 1 && (
+                              {i < n - 1 && !locked && (
                                 <div
                                   className="planner-substep-divider"
                                   onMouseDown={ev => handleSubSplitResizeStart(ev, block, i, height)}
@@ -772,7 +783,7 @@ export default function PlannerView({
                       </div>
                     );
                   })()}
-                  {!block.completed && (
+                  {!block.completed && !locked && (
                     <div className="planner-block-resize" onMouseDown={e => handleResizeStart(e, block)} />
                   )}
                 </div>
@@ -880,6 +891,11 @@ export default function PlannerView({
         block={todayPlan.blocks.find(b => b.id === pomodoroBlockId)}
         onClose={() => { setPomodoroBlockId(null); onEndFocus?.(); }}
         onCycleComplete={(stats) => incrementBlockPomodoro(pomodoroBlockId, stats)}
+        onRunningChange={running => {
+          setPomodoroRunning(running);
+          if (running) onStartFocus?.(todayPlan.blocks.find(b => b.id === pomodoroBlockId));
+          else onEndFocus?.();
+        }}
       />
     )}
     </>

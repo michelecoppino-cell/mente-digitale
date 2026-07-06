@@ -55,7 +55,7 @@ function fmt(sec) {
 // Durante il lavoro traccia le interruzioni (cambi di tab) per stimare i
 // minuti di concentrazione reale, salvati come statistiche giornaliere su
 // OneDrive.
-export default function PomodoroTimer({ block, onClose, onCycleComplete }) {
+export default function PomodoroTimer({ block, onClose, onCycleComplete, onRunningChange }) {
   const [phase, setPhase]         = useState('working'); // 'working' | 'break'
   const [secondsLeft, setSeconds] = useState(WORK_MIN * 60);
   const [running, setRunning]     = useState(true);
@@ -171,10 +171,20 @@ export default function PomodoroTimer({ block, onClose, onCycleComplete }) {
     setRunning(true);
   }
 
-  function toggle() { setRunning(r => !r); }
+  // Unico punto in cui la pausa/ripresa è una scelta esplicita dell'utente
+  // (a differenza delle pause automatiche di fine fase): notifica il parent
+  // così può chiudere/riaprire il pannello sezione e sbloccare/bloccare il Piano.
+  function toggle() {
+    setRunning(r => {
+      const next = !r;
+      onRunningChange?.(next);
+      return next;
+    });
+  }
 
   function reset() {
     setRunning(false);
+    onRunningChange?.(false);
     setPhase('working');
     setSeconds(WORK_MIN * 60);
     distractedSecondsRef.current = 0;
