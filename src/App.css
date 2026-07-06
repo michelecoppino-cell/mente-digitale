@@ -440,9 +440,14 @@
   overflow: hidden;
 }
 
-/* ── Panel (dettaglio sezione) — lato destro ── */
+/* ── Panel (dettaglio sezione) — lato destro ──
+   position: fixed (non absolute) perché il Panel ora è montato a livello di
+   App, fuori da .canvas-area, così può aprirsi sopra qualsiasi vista attiva
+   (vista principale o Piano) — es. focus Pomodoro dal Piano. L'header ha
+   z-index più alto e sfondo opaco, quindi copre visivamente la porzione
+   superiore del Panel senza bisogno di calcolarne l'altezza esatta. */
 .panel {
-  position: absolute;
+  position: fixed;
   right: 0; top: 0; bottom: 0;
   width: 290px;
   background: var(--surface);

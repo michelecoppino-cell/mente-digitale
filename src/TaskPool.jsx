@@ -12,7 +12,23 @@ const PARA_OPTIONS = [
   { key: 'resources',  label: 'Risorse' },
   { key: 'archive',    label: 'Archivio' },
 ];
-const ALL_PARA_KEYS = PARA_OPTIONS.map(o => o.key);
+
+// null = nessun filtro attivo (tutti inclusi); altrimenti un Set delle chiavi
+// incluse. Comportamento uniforme per le tre righe PARA/taccuino/sezione:
+// da "tutti" un click isola quell'unico elemento; da una selezione già
+// ristretta un click aggiunge/rimuove normalmente (multi-selezione).
+function toggleFilter(current, setter, key) {
+  if (current === null) { setter(new Set([key])); return; }
+  setter(prev => {
+    const next = new Set(prev);
+    if (next.has(key)) next.delete(key); else next.add(key);
+    return next;
+  });
+}
+
+function serializeFilter(f) {
+  return f === null ? 'null' : Array.from(f).sort().join(',');
+}
 
 // Vista "Task" — usata sia nella colonna sinistra della modalità piano sia,
 // identica, nel pannello Attività: un'unica implementazione, non due viste
@@ -27,10 +43,11 @@ export default function TaskPool({
   onTaskClick,
   draggable = true,
   showViewToggle = true,
+  showEisFilter = true,
   title = null,
 }) {
   // PARA: quali ruoli di sezione mostrare — di default solo i "progetti"
-  // (le sezioni senza prefisso PARA). null = nessun filtro (tutti inclusi).
+  // (le sezioni senza prefisso PARA).
   const [paraFilter, setParaFilter]       = useState(() => new Set(['project']));
   // Taccuino/sezione: null = "tutti" (nessun filtro attivo)
   const [workbookFilter, setWorkbookFilter] = useState(null);
@@ -45,6 +62,25 @@ export default function TaskPool({
     setPrevTasks(tasks);
     setParaFilter(new Set(['project']));
     setWorkbookFilter(null);
+    setSectionFilter(null);
+  }
+
+  // I filtri sono a cascata: restringere PARA o taccuino azzera le righe
+  // sottostanti (che altrimenti potrebbero restare bloccate su una
+  // combinazione ormai vuota) — confrontiamo la "firma" della selezione col
+  // render precedente, non l'istanza del Set, che cambia ad ogni toggle.
+  const paraSig = serializeFilter(paraFilter);
+  const [prevParaSig, setPrevParaSig] = useState(paraSig);
+  if (paraSig !== prevParaSig) {
+    setPrevParaSig(paraSig);
+    setWorkbookFilter(null);
+    setSectionFilter(null);
+  }
+
+  const workbookSig = serializeFilter(workbookFilter);
+  const [prevWorkbookSig, setPrevWorkbookSig] = useState(workbookSig);
+  if (workbookSig !== prevWorkbookSig) {
+    setPrevWorkbookSig(workbookSig);
     setSectionFilter(null);
   }
 
@@ -90,18 +126,28 @@ export default function TaskPool({
     };
   }
 
+  // Opzioni a cascata: il taccuino mostra solo ciò che resta dopo il filtro
+  // PARA; la sezione mostra solo ciò che resta dopo PARA + taccuino.
+  const paraFilteredTasks = tasks.filter(t =>
+    paraFilter === null || paraFilter.has(resolveTaskSection(t).role));
+
   const workbookOptions = (() => {
     const map = new Map();
-    for (const nb of notebooks) map.set(nb.id, { key: nb.id, name: nb.displayName, color: nb._color });
-    if (tasks.some(t => resolveTaskSection(t).notebookId === '__other__')) {
-      map.set('__other__', { key: '__other__', name: 'Altro', color: '#888' });
+    for (const t of paraFilteredTasks) {
+      const info = resolveTaskSection(t);
+      if (!map.has(info.notebookId)) {
+        map.set(info.notebookId, { key: info.notebookId, name: info.notebookName, color: info.color });
+      }
     }
     return Array.from(map.values());
   })();
 
+  const workbookFilteredTasks = paraFilteredTasks.filter(t =>
+    workbookFilter === null || workbookFilter.has(resolveTaskSection(t).notebookId));
+
   const sectionOptions = (() => {
     const map = new Map();
-    for (const t of tasks) {
+    for (const t of workbookFilteredTasks) {
       const info = resolveTaskSection(t);
       if (!map.has(info.sectionKey)) {
         map.set(info.sectionKey, { key: info.sectionKey, name: info.sectionName, color: info.color });
@@ -110,26 +156,8 @@ export default function TaskPool({
     return Array.from(map.values());
   })();
 
-  function toggleSetFilter(setter, allOptions, key) {
-    setter(prev => {
-      const base = prev === null ? new Set(allOptions.map(o => o.key)) : new Set(prev);
-      if (base.has(key)) base.delete(key); else base.add(key);
-      return base;
-    });
-  }
-
-  function toggleParaFilter(key) {
-    setParaFilter(prev => {
-      const next = new Set(prev);
-      if (next.has(key)) next.delete(key); else next.add(key);
-      return next;
-    });
-  }
-
-  const poolTasks = tasks.filter(t => {
+  const poolTasks = workbookFilteredTasks.filter(t => {
     const info = resolveTaskSection(t);
-    if (!paraFilter.has(info.role)) return false;
-    if (workbookFilter !== null && !workbookFilter.has(info.notebookId)) return false;
     if (sectionFilter !== null && !sectionFilter.has(info.sectionKey)) return false;
     if (eisFilter !== 'all' && parseEisenhower(t.body?.content) !== eisFilter) return false;
     return true;
@@ -182,15 +210,15 @@ export default function TaskPool({
       <div className="planner-col-header planner-para-filter-row">
         <div className="planner-filters">
           <button
-            className={`planner-filter-btn${paraFilter.size === ALL_PARA_KEYS.length ? ' active' : ''}`}
-            onClick={() => setParaFilter(new Set(ALL_PARA_KEYS))}>
+            className={`planner-filter-btn${paraFilter === null ? ' active' : ''}`}
+            onClick={() => setParaFilter(null)}>
             Tutti
           </button>
           {PARA_OPTIONS.map(o => (
             <button
               key={o.key}
-              className={`planner-filter-btn${paraFilter.has(o.key) ? ' active' : ''}`}
-              onClick={() => toggleParaFilter(o.key)}>
+              className={`planner-filter-btn${(paraFilter === null || paraFilter.has(o.key)) ? ' active' : ''}`}
+              onClick={() => toggleFilter(paraFilter, setParaFilter, o.key)}>
               {o.label}
             </button>
           ))}
@@ -210,7 +238,7 @@ export default function TaskPool({
               key={o.key}
               className={`planner-filter-btn${(workbookFilter === null || workbookFilter.has(o.key)) ? ' active' : ''}`}
               style={{ '--proj-color': o.color }}
-              onClick={() => toggleSetFilter(setWorkbookFilter, workbookOptions, o.key)}>
+              onClick={() => toggleFilter(workbookFilter, setWorkbookFilter, o.key)}>
               {o.name}
             </button>
           ))}
@@ -230,14 +258,14 @@ export default function TaskPool({
               key={o.key}
               className={`planner-filter-btn${(sectionFilter === null || sectionFilter.has(o.key)) ? ' active' : ''}`}
               style={{ '--proj-color': o.color }}
-              onClick={() => toggleSetFilter(setSectionFilter, sectionOptions, o.key)}>
+              onClick={() => toggleFilter(sectionFilter, setSectionFilter, o.key)}>
               {o.name}
             </button>
           ))}
         </div>
       </div>
 
-      {poolViewMode === 'list' && (
+      {showEisFilter && poolViewMode === 'list' && (
         <div className="planner-col-header planner-eis-filter-row">
           <div className="planner-filters">
             <button
