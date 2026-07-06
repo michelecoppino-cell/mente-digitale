@@ -107,6 +107,16 @@
   flex: 1;
   min-height: 0;
   overflow: hidden;
+  transition: padding-right 0.36s cubic-bezier(0.4,0,0.2,1);
+}
+
+/* Modalità focus Pomodoro: il pannello sezione (ToDo/OneNote/OneDrive) si
+   espande a 620px sopra la vista Piano (vedi .panel.panel-expanded in
+   App.css) — riserviamo qui lo stesso spazio così la colonna Timeline
+   (flex: 1) si restringe e la colonna Dettagli si sposta a sinistra invece
+   di finire coperta dal pannello sezione. */
+.planner-body-reserve-panel {
+  padding-right: 620px;
 }
 
 /* ── Column headers ── */
