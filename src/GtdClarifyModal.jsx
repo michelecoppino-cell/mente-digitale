@@ -5,13 +5,13 @@ import './GtdClarifyModal.css';
 
 // Diagramma di flusso GTD "Chiarire" (David Allen), adattato al metodo PARA
 // usato nell'app, sviluppato in verticale come il diagramma originale:
-// «Cose» → Inbox → Che cos'è? → [Cestino / Risorse / Archivio ← No] È attuabile?
-//   → Sì → Qual è la prossima azione? → Richiede meno di due minuti?
-//               ├─ Sì → Farla
-//               └─ No → Task ToDo (task) / Area-Ricorrenti (pagina)
-// Ogni foglia (Cestino/Risorse/Archivio/Farla/Task ToDo/Area) apre una
-// finestra pop-up con la scelta della destinazione e la descrizione
-// completa, invece di un modulo inline.
+// Inbox → Che cos'è? → [Cestino / Risorse / Archivio ← No] È un'azione?
+//   → Sì → Richiede meno di due minuti?
+//               ├─ Sì → Falla
+//               └─ No → Task progetti / Task Area / Task risorse-idee (task)
+// Ogni foglia (Cestino/Risorse/Archivio/Falla/Task progetti/Task Area/Task
+// risorse-idee) apre una finestra pop-up con la scelta della destinazione e
+// la descrizione completa, invece di un modulo inline.
 export default function GtdClarifyModal({ open, onClose, todoLists = [], notebooks = [], sectionsMap = {}, onTaskCreated, seedText = '' }) {
   const [activeLeaf, setActiveLeaf] = useState(null);
 
@@ -20,10 +20,12 @@ export default function GtdClarifyModal({ open, onClose, todoLists = [], noteboo
   // dal prefisso PARA (es. "ARC-AUTO" → "AUTO").
   const resourceSections = useMemo(() => paraSectionsByRole(notebooks, sectionsMap, 'resources'), [notebooks, sectionsMap]);
   const archiveSections = useMemo(() => paraSectionsByRole(notebooks, sectionsMap, 'archive'), [notebooks, sectionsMap]);
-  const areaSections = useMemo(() => paraSectionsByRole(notebooks, sectionsMap, 'area'), [notebooks, sectionsMap]);
 
   // Liste ToDo "progetto" = tutte tranne quelle che coincidono con un nome PARA.
   const projectLists = useMemo(() => todoLists.filter(l => !sectionRole(l.displayName)), [todoLists]);
+  // Liste ToDo dei gruppi "AREA" e "RISORSE IDEE" (stesso prefisso PARA usato per le sezioni OneNote).
+  const areaLists = useMemo(() => todoLists.filter(l => sectionRole(l.displayName) === 'area'), [todoLists]);
+  const resourceLists = useMemo(() => todoLists.filter(l => sectionRole(l.displayName) === 'resources'), [todoLists]);
 
   function handleClose() { setActiveLeaf(null); onClose(); }
 
@@ -39,10 +41,6 @@ export default function GtdClarifyModal({ open, onClose, todoLists = [], noteboo
     await createNotePage(sectionId, text.slice(0, 60) || 'Nota', text);
   }
 
-  async function submitAreaPage(text, { sectionId }) {
-    await createNotePage(sectionId, text.slice(0, 60) || 'Nota', text);
-  }
-
   async function submitProjectTask(text, { listId }) {
     const task = await createTask(listId, text);
     const list = todoLists.find(l => l.id === listId);
@@ -50,12 +48,13 @@ export default function GtdClarifyModal({ open, onClose, todoLists = [], noteboo
   }
 
   const leaves = {
-    trash:     { id: 'trash', icon: '🗑', label: 'Cestino', kind: 'log', onSubmit: submitLog, confirmLabel: 'Scarta', confirmMsg: 'Scartato' },
-    resources: { id: 'resources', icon: '💡', label: 'Risorse', kind: 'section', sections: resourceSections, onSubmit: submitResource, confirmLabel: 'Crea pagina', confirmMsg: 'Pagina creata' },
-    archive:   { id: 'archive', icon: '📓', label: 'Archivio', kind: 'section', sections: archiveSections, onSubmit: submitArchive, confirmLabel: 'Crea pagina', confirmMsg: 'Pagina creata' },
-    doNow:     { id: 'doNow', icon: '⚡', label: 'Farla', kind: 'log', onSubmit: submitLog, confirmLabel: 'Fatto', confirmMsg: 'Fatto' },
-    project:   { id: 'project', icon: '🗂', label: 'Task ToDo', kind: 'list', todoLists: projectLists, onSubmit: submitProjectTask, confirmLabel: 'Crea task', confirmMsg: 'Task creato' },
-    area:      { id: 'area', icon: '🔁', label: 'Area/Ricorrenti', kind: 'section', sections: areaSections, onSubmit: submitAreaPage, confirmLabel: 'Crea pagina', confirmMsg: 'Pagina creata' },
+    trash:        { id: 'trash', icon: '🗑', label: 'Cestino', kind: 'log', onSubmit: submitLog, confirmLabel: 'Scarta', confirmMsg: 'Scartato' },
+    resources:    { id: 'resources', icon: '💡', label: 'Risorse', kind: 'section', sections: resourceSections, onSubmit: submitResource, confirmLabel: 'Crea pagina', confirmMsg: 'Pagina creata' },
+    archive:      { id: 'archive', icon: '📓', label: 'Archivio', kind: 'section', sections: archiveSections, onSubmit: submitArchive, confirmLabel: 'Crea pagina', confirmMsg: 'Pagina creata' },
+    doNow:        { id: 'doNow', icon: '⚡', label: 'Falla', kind: 'log', onSubmit: submitLog, confirmLabel: 'Fatto', confirmMsg: 'Fatto' },
+    project:      { id: 'project', icon: '🗂', label: 'Task progetti', kind: 'list', todoLists: projectLists, onSubmit: submitProjectTask, confirmLabel: 'Crea task', confirmMsg: 'Task creato' },
+    area:         { id: 'area', icon: '🔁', label: 'Task Area', kind: 'list', todoLists: areaLists, onSubmit: submitProjectTask, confirmLabel: 'Crea task', confirmMsg: 'Task creato' },
+    resourceTask: { id: 'resourceTask', icon: '📌', label: 'Task risorse/idee', kind: 'list', todoLists: resourceLists, onSubmit: submitProjectTask, confirmLabel: 'Crea task', confirmMsg: 'Task creato' },
   };
 
   if (!open) return null;
@@ -70,19 +69,16 @@ export default function GtdClarifyModal({ open, onClose, todoLists = [], noteboo
 
         <div className="gtd-body">
           <div className="gtd-flow">
-            {/* Box statici — solo per fedeltà visiva al diagramma originale */}
-            <div className="gtd-flow-node-wrap">
-              <div className="gtd-flow-node static small">«Cose»</div>
-            </div>
+            {/* Box statico — solo per fedeltà visiva al diagramma originale */}
             <div className="gtd-flow-node-wrap">
               <div className="gtd-flow-node static">Inbox</div>
             </div>
             <div className="gtd-flow-node-wrap">
-              <div className="gtd-flow-node static">Che cos'è?</div>
+              <div className="gtd-flow-node">Che cos'è?</div>
             </div>
 
-            {/* ── È attuabile? — le foglie "No" si aprono a sinistra, il ramo
-                   "Sì" prosegue in verticale verso la prossima azione ── */}
+            {/* ── È un'azione? — le foglie "No" si aprono a sinistra, il ramo
+                   "Sì" prosegue in verticale verso <2 minuti? ── */}
             <div className="gtd-decision">
               <div className="gtd-decision-side">
                 <div className="gtd-decision-side-label">No</div>
@@ -93,7 +89,7 @@ export default function GtdClarifyModal({ open, onClose, todoLists = [], noteboo
                 </div>
               </div>
               <div className="gtd-decision-connector" />
-              <div className="gtd-flow-node question">È attuabile?</div>
+              <div className="gtd-flow-node question">È un'azione?</div>
               <div className="gtd-decision-connector ghost" />
               <div className="gtd-decision-side ghost" aria-hidden="true" />
             </div>
@@ -106,13 +102,10 @@ export default function GtdClarifyModal({ open, onClose, todoLists = [], noteboo
             </div>
 
             <div className="gtd-flow-node-wrap">
-              <div className="gtd-flow-node question small">Qual è la prossima azione?</div>
-            </div>
-            <div className="gtd-flow-node-wrap">
               <div className="gtd-flow-node question small">&lt;2 minuti?</div>
             </div>
 
-            {/* ── <2 minuti? — biforcazione finale: Sì → Farla, No → Progetto/Area ── */}
+            {/* ── <2 minuti? — biforcazione finale: Sì → Falla, No → Task progetti/Area/Risorse-idee ── */}
             <div className="gtd-branch-split">
               <div className="gtd-split-bar" />
               <div className="gtd-branch">
@@ -128,6 +121,7 @@ export default function GtdClarifyModal({ open, onClose, todoLists = [], noteboo
                 <div className="gtd-leaf-col">
                   <GtdLeafBtn leaf={leaves.project} onOpen={setActiveLeaf} />
                   <GtdLeafBtn leaf={leaves.area} onOpen={setActiveLeaf} />
+                  <GtdLeafBtn leaf={leaves.resourceTask} onOpen={setActiveLeaf} />
                 </div>
               </div>
             </div>

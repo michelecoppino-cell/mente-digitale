@@ -1381,6 +1381,33 @@ body, .app {
 .dock-gtd-btn:hover { transform: translateY(-1px); box-shadow: 0 12px 30px rgba(200,169,110,0.45); }
 .dock-gtd-btn:active { transform: scale(0.96); }
 
+/* Pulsante GTD in modalità Piano: la dock in basso è dentro .canvas-area
+   (nascosta col Piano aperto), quindi qui si ripropone come cerchio fisso
+   in basso a destra — stesso stile (giallo, testo nero), solo più piccolo. */
+.gtd-fab {
+  position: fixed;
+  right: calc(20px + env(safe-area-inset-right, 0px));
+  bottom: calc(20px + env(safe-area-inset-bottom, 0px));
+  z-index: 100;
+  width: 46px;
+  height: 46px;
+  background: var(--accent);
+  border: none;
+  color: #14110d;
+  border-radius: 50%;
+  font-size: 22px;
+  font-weight: 700;
+  font-family: 'Outfit', sans-serif;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 8px 24px rgba(200,169,110,0.35);
+  transition: transform 0.15s, box-shadow 0.15s;
+}
+.gtd-fab:hover { transform: translateY(-1px); box-shadow: 0 12px 30px rgba(200,169,110,0.45); }
+.gtd-fab:active { transform: scale(0.94); }
+
 /* La tendina Daily Review si apre verso l'alto, sopra il dock */
 .bottom-dock .bell-dropdown {
   left: auto;
