@@ -1095,13 +1095,32 @@
 .planner-checklist-item.checked .planner-checklist-text {
   text-decoration: line-through; color: var(--muted);
 }
+.planner-checklist-item.drag-over {
+  border-top: 1px solid var(--accent);
+}
+.planner-checklist-handle {
+  flex-shrink: 0; width: 12px; text-align: center; color: var(--muted);
+  cursor: grab; font-size: 11px; opacity: 0; transition: opacity 0.15s;
+}
+.planner-checklist-item:hover .planner-checklist-handle { opacity: 0.6; }
 .planner-checklist-check {
   background: none; border: none; color: var(--muted); cursor: pointer;
   font-size: 12px; padding: 0; flex-shrink: 0; width: 18px; text-align: center;
   transition: color 0.12s;
 }
 .planner-checklist-check:hover { color: var(--accent); }
-.planner-checklist-text { flex: 1; font-size: 11px; color: var(--text); line-height: 1.3; }
+.planner-checklist-text { flex: 1; font-size: 11px; color: var(--text); line-height: 1.3; cursor: text; }
+.planner-checklist-edit-input { flex: 1; margin: 0; padding: 2px 4px; }
+.planner-checklist-move {
+  display: flex; flex-direction: column; flex-shrink: 0; opacity: 0; transition: opacity 0.15s;
+}
+.planner-checklist-item:hover .planner-checklist-move { opacity: 1; }
+.planner-checklist-move-btn {
+  background: none; border: none; color: var(--muted); cursor: pointer;
+  font-size: 8px; line-height: 1; padding: 1px 2px;
+}
+.planner-checklist-move-btn:hover:not(:disabled) { color: var(--accent); }
+.planner-checklist-move-btn:disabled { opacity: 0.25; cursor: default; }
 .planner-checklist-delete {
   background: none; border: none; color: var(--muted); cursor: pointer;
   font-size: 10px; padding: 0; opacity: 0; flex-shrink: 0; transition: opacity 0.15s;

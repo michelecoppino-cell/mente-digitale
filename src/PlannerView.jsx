@@ -4,7 +4,8 @@ import {
   loadPlannerConfig,
   completeTask, getCalendarEvents,
   getTask, updateTaskBody, updateTaskTitle, deleteTask,
-  createChecklistItem, updateChecklistItem, deleteChecklistItem,
+  createChecklistItem, updateChecklistItem, renameChecklistItem, deleteChecklistItem,
+  reorderChecklistItems,
 } from './api';
 import { cacheGet, cacheSet } from './cache';
 import Skeleton from './Skeleton';
@@ -895,6 +896,11 @@ function TaskDetailPanel({ task, onClose, onCompleted, onDeleted, onRenamed }) {
   const [items, setItems]             = useState([]);
   const [newItemText, setNewItemText] = useState('');
   const [savingNotes, setSavingNotes] = useState(false);
+  const [editingItemId, setEditingItemId] = useState(null);
+  const [itemDraft, setItemDraft]     = useState('');
+  const [reordering, setReordering]   = useState(false);
+  const dragIndexRef                  = useRef(null);
+  const [dragOverIndex, setDragOverIndex] = useState(null);
   const notesTimerRef                 = useRef(null);
 
   useEffect(() => { setTitleDraft(task.title); setEditingTitle(false); load(); }, [task.id]); // eslint-disable-line
@@ -948,6 +954,57 @@ function TaskDetailPanel({ task, onClose, onCompleted, onDeleted, onRenamed }) {
     } catch {
       setItems(prev => prev.filter(i => i.id !== tmp.id));
     }
+  }
+
+  function startItemRename(item) {
+    setEditingItemId(item.id);
+    setItemDraft(item.displayName);
+  }
+
+  async function submitItemRename() {
+    const item = items.find(i => i.id === editingItemId);
+    setEditingItemId(null);
+    const text = itemDraft.trim();
+    if (!item || !text || text === item.displayName) return;
+    setItems(prev => prev.map(i => i.id === item.id ? { ...i, displayName: text } : i));
+    try {
+      await renameChecklistItem(task._listId, task.id, item.id, text);
+    } catch (e) {
+      console.error('rename checklist item', e);
+      setItems(prev => prev.map(i => i.id === item.id ? { ...i, displayName: item.displayName } : i));
+    }
+  }
+
+  async function persistReorder(reordered) {
+    setItems(reordered);
+    setReordering(true);
+    try {
+      const created = await reorderChecklistItems(task._listId, task.id, reordered);
+      setItems(created.sort((a, b) => a.isChecked - b.isChecked));
+    } catch (e) {
+      console.error('reorder checklist items', e);
+      await load();
+    }
+    setReordering(false);
+  }
+
+  function moveItem(index, dir) {
+    const next = index + dir;
+    if (next < 0 || next >= items.length || reordering) return;
+    const reordered = [...items];
+    [reordered[index], reordered[next]] = [reordered[next], reordered[index]];
+    persistReorder(reordered);
+  }
+
+  function handleItemDrop(index) {
+    const from = dragIndexRef.current;
+    dragIndexRef.current = null;
+    setDragOverIndex(null);
+    if (from === null || from === index || reordering) return;
+    const reordered = [...items];
+    const [moved] = reordered.splice(from, 1);
+    reordered.splice(index, 0, moved);
+    persistReorder(reordered);
   }
 
   function submitRename() {
@@ -1027,12 +1084,41 @@ function TaskDetailPanel({ task, onClose, onCompleted, onDeleted, onRenamed }) {
 
           <div className="planner-task-detail-section">
             <div className="planner-task-detail-section-label">Sottoattività ({items.length})</div>
-            {items.map(item => (
-              <div key={item.id} className={`planner-checklist-item${item.isChecked ? ' checked' : ''}`}>
+            {items.map((item, index) => (
+              <div
+                key={item.id}
+                className={`planner-checklist-item${item.isChecked ? ' checked' : ''}${dragOverIndex === index ? ' drag-over' : ''}`}
+                draggable
+                onDragStart={() => { dragIndexRef.current = index; }}
+                onDragOver={e => { e.preventDefault(); setDragOverIndex(index); }}
+                onDragLeave={() => setDragOverIndex(prev => prev === index ? null : prev)}
+                onDrop={e => { e.preventDefault(); handleItemDrop(index); }}
+                onDragEnd={() => { dragIndexRef.current = null; setDragOverIndex(null); }}>
+                <span className="planner-checklist-handle" title="Trascina per riordinare">⠿</span>
                 <button className="planner-checklist-check" onClick={() => handleToggle(item)}>
                   {item.isChecked ? '✓' : '○'}
                 </button>
-                <span className="planner-checklist-text">{item.displayName}</span>
+                {editingItemId === item.id ? (
+                  <input
+                    autoFocus
+                    className="planner-checklist-input planner-checklist-edit-input"
+                    value={itemDraft}
+                    onChange={e => setItemDraft(e.target.value)}
+                    onBlur={submitItemRename}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter') submitItemRename();
+                      if (e.key === 'Escape') setEditingItemId(null);
+                    }}
+                  />
+                ) : (
+                  <span className="planner-checklist-text" onClick={() => startItemRename(item)} title="Clicca per rinominare">
+                    {item.displayName}
+                  </span>
+                )}
+                <div className="planner-checklist-move">
+                  <button className="planner-checklist-move-btn" onClick={() => moveItem(index, -1)} disabled={index === 0 || reordering} title="Sposta su">▲</button>
+                  <button className="planner-checklist-move-btn" onClick={() => moveItem(index, 1)} disabled={index === items.length - 1 || reordering} title="Sposta giù">▼</button>
+                </div>
                 <button className="planner-checklist-delete" onClick={() => handleDelete(item.id)}>✕</button>
               </div>
             ))}
