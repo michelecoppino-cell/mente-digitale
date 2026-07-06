@@ -16,7 +16,10 @@ import { COLORS } from './config';
 import './App.css';
 
 const REVIEW_SEEN_TTL = 7 * 24 * 60 * 60 * 1000;      // 7 giorni
-const NOTES_LOOKBACK_MS = 2 * 24 * 60 * 60 * 1000;    // ultime 48h
+const NOTES_LOOKBACK_MS = 2 * 24 * 60 * 60 * 1000;    // fallback alla prima scansione: ultime 48h
+const REVIEW_LAST_CHECK_KEY = 'review_last_check';
+const REVIEW_LAST_CHECK_TTL = 30 * 24 * 60 * 60 * 1000; // 30 giorni
+const REVIEW_PAGES_CAP = 40; // tetto di sicurezza sulle pagine il cui contenuto viene scaricato per intero
 
 function suggestionSignature(a) {
   return `${a.source || 'email'}::${a.title || ''}::${a.extractedAction || ''}`;
@@ -29,10 +32,14 @@ function markSuggestionSeen(sig) {
   }
 }
 
-function filterRecentPages(pages, lookbackMs) {
-  const cutoff = Date.now() - lookbackMs;
+// cutoffMs: timestamp assoluto, non una durata — così la Daily Review può
+// scansionare solo le pagine modificate dall'ultimo controllo riuscito in poi
+// (vedi refreshDailyReview), invece di rifare sempre l'intera finestra delle
+// ultime 48h. Copertura più ampia nel tempo, senza riscaricare da capo il
+// contenuto di pagine già viste.
+function filterRecentPages(pages, cutoffMs) {
   return pages
-    .filter(p => p.lastModifiedDateTime && new Date(p.lastModifiedDateTime).getTime() >= cutoff)
+    .filter(p => p.lastModifiedDateTime && new Date(p.lastModifiedDateTime).getTime() >= cutoffMs)
     .sort((a, b) => new Date(b.lastModifiedDateTime) - new Date(a.lastModifiedDateTime));
 }
 
@@ -186,7 +193,14 @@ export default function App() {
         collectAllOneNotePages().catch(e => { console.error('recent pages', e); return []; }),
       ]);
 
-      const recentPages = filterRecentPages(pages, NOTES_LOOKBACK_MS).slice(0, 10);
+      // Scansiona solo le pagine modificate dall'ultimo controllo riuscito in
+      // poi — non più sempre e solo le ultime 48h. Il primo avvio (o dopo una
+      // pausa lunga) ricade sul lookback di 48h con un tetto di sicurezza sul
+      // numero di pagine scaricate per intero; le volte successive, essendo
+      // l'intervallo corto, restano leggere.
+      const lastCheck = cacheGet(REVIEW_LAST_CHECK_KEY);
+      const cutoffMs  = lastCheck || (Date.now() - NOTES_LOOKBACK_MS);
+      const recentPages = filterRecentPages(pages, cutoffMs).slice(0, REVIEW_PAGES_CAP);
 
       const pagesWithHtml = [];
       for (const p of recentPages) {
@@ -206,6 +220,7 @@ export default function App() {
         .map(a => ({ ...a, id: Math.random().toString(36).slice(2) + Date.now().toString(36), _sig: suggestionSignature(a) }))
         .filter(a => !seen.includes(a._sig));
       setReviewSuggestions(fresh);
+      cacheSet(REVIEW_LAST_CHECK_KEY, Date.now(), REVIEW_LAST_CHECK_TTL);
     } catch (e) {
       console.error('daily review', e);
     }
@@ -336,11 +351,10 @@ export default function App() {
     }
   }
 
-  // Modalità focus Pomodoro: chiude il Piano e mostra Attività (sx) + Mente
-  // Digitale (centro) + pannello sezione esteso (dx) per l'attività in corso.
+  // Modalità focus Pomodoro: apre (esteso) il pannello della sezione
+  // collegata all'attività in corso, sopra alla vista attuale — senza
+  // chiudere il Piano né cambiare vista.
   function handleStartPomodoroFocus(block) {
-    setPlannerOpen(false);
-    setScheduleOpen(true);
     setPomodoroFocus(true);
     if (!block?.listName) return;
     const lower = block.listName.toLowerCase();
@@ -446,13 +460,6 @@ export default function App() {
             onZoomChange={setZoom}
             onIdentityOpen={setIdentityOpen}
           />
-          <Panel
-            selected={selected}
-            pagesCache={pagesCache}
-            tasksCache={tasksCache}
-            onClose={() => { setSelected(null); setPomodoroFocus(false); }}
-            expanded={pomodoroFocus}
-          />
           {/* Dock unificato in basso: Eisenhower · GTD · Attività · Review.
               Un solo contenitore centrato — niente più pile di bottoni
               flottanti che si sovrappongono ai pannelli. */}
@@ -527,6 +534,17 @@ export default function App() {
             </div>
           </div>
         </div>
+        {/* Pannello sezione (ToDo/OneNote/OneDrive) — fisso rispetto al
+            viewport, non alla vista corrente: così può aprirsi/restare aperto
+            sia dalla vista principale sia dal Piano (es. focus Pomodoro),
+            senza dover chiudere/cambiare vista. */}
+        <Panel
+          selected={selected}
+          pagesCache={pagesCache}
+          tasksCache={tasksCache}
+          onClose={() => { setSelected(null); setPomodoroFocus(false); }}
+          expanded={pomodoroFocus}
+        />
         <PlannerView
           open={plannerOpen}
           onClose={() => setPlannerOpen(false)}
