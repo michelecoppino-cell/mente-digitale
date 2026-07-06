@@ -79,6 +79,7 @@ export default function App() {
   const [reviewOpen, setReviewOpen] = useState(false);
   const [reviewLoading, setReviewLoading] = useState(false);
   const [gtdSeedText, setGtdSeedText] = useState('');
+  const [pomodoroFocus, setPomodoroFocus] = useState(false);
   const pagesCache = useRef({});
   const tasksCache = useRef({});
   const [scheduledTasks, setScheduledTasks] = useState(null);
@@ -310,6 +311,49 @@ export default function App() {
     setSelected({ type: 'section', data: section, nb, listId: todoList?.id || null, listName: todoList?.displayName || null, initialTab: appKey.toLowerCase() });
   }
 
+  // Aggiorna la lista globale dei task (e la cache del Panel di sezione) dopo
+  // un completamento/eliminazione/rinomina fatti dal pannello Piano, così
+  // Task Pool, Panel e Smistamento Eisenhower restano coerenti senza dover
+  // ricaricare tutto da Graph.
+  function handleTaskCompleted(listId, taskId) {
+    setScheduledTasks(prev => (prev || []).filter(t => t.id !== taskId));
+    if (tasksCache.current[listId]) {
+      tasksCache.current[listId] = tasksCache.current[listId].filter(t => t.id !== taskId);
+    }
+  }
+
+  function handleTaskDeleted(listId, taskId) {
+    setScheduledTasks(prev => (prev || []).filter(t => t.id !== taskId));
+    if (tasksCache.current[listId]) {
+      tasksCache.current[listId] = tasksCache.current[listId].filter(t => t.id !== taskId);
+    }
+  }
+
+  function handleTaskRenamed(listId, taskId, newTitle) {
+    setScheduledTasks(prev => (prev || []).map(t => t.id === taskId ? { ...t, title: newTitle } : t));
+    if (tasksCache.current[listId]) {
+      tasksCache.current[listId] = tasksCache.current[listId].map(t => t.id === taskId ? { ...t, title: newTitle } : t);
+    }
+  }
+
+  // Modalità focus Pomodoro: chiude il Piano e mostra Attività (sx) + Mente
+  // Digitale (centro) + pannello sezione esteso (dx) per l'attività in corso.
+  function handleStartPomodoroFocus(block) {
+    setPlannerOpen(false);
+    setScheduleOpen(true);
+    setPomodoroFocus(true);
+    if (!block?.listName) return;
+    const lower = block.listName.toLowerCase();
+    for (const [nbId, sects] of Object.entries(sectionsMap)) {
+      const sec = sects.find(s => s.displayName.toLowerCase() === lower);
+      if (sec) {
+        const nb = notebooks.find(n => n.id === nbId) || { id: nbId };
+        handleSelectSection(sec, nb, 'todo');
+        return;
+      }
+    }
+  }
+
   async function handleRefresh() {
     setSelected(null);
     setNotebooks([]);
@@ -406,7 +450,8 @@ export default function App() {
             selected={selected}
             pagesCache={pagesCache}
             tasksCache={tasksCache}
-            onClose={() => setSelected(null)}
+            onClose={() => { setSelected(null); setPomodoroFocus(false); }}
+            expanded={pomodoroFocus}
           />
           {/* Dock unificato in basso: Eisenhower · GTD · Attività · Review.
               Un solo contenitore centrato — niente più pile di bottoni
@@ -490,6 +535,11 @@ export default function App() {
           sectionsMap={sectionsMap}
           autoAddTask={pendingPlannerTask}
           onAutoAdded={() => setPendingPlannerTask(null)}
+          onTaskCompleted={handleTaskCompleted}
+          onTaskDeleted={handleTaskDeleted}
+          onTaskRenamed={handleTaskRenamed}
+          onStartFocus={handleStartPomodoroFocus}
+          onEndFocus={() => setPomodoroFocus(false)}
         />
         <EisenhowerTriage
           open={eisenhowerOpen}

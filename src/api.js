@@ -108,6 +108,19 @@ export async function createTask(listId, title, opts = {}) {
   });
 }
 
+export async function updateTaskTitle(listId, taskId, title) {
+  return call(`/me/todo/lists/${listId}/tasks/${taskId}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ title })
+  });
+}
+
+export async function deleteTask(listId, taskId) {
+  return call(`/me/todo/lists/${listId}/tasks/${taskId}`, {
+    method: 'DELETE',
+  });
+}
+
 function escapeHtml(s) {
   return (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }

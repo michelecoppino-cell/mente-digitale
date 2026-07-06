@@ -18,7 +18,7 @@ function saveLocal(obj) {
   try { localStorage.setItem(LOCAL_KEY, JSON.stringify(obj)); } catch { /* quota piena — ignora */ }
 }
 
-export default function Panel({ selected, pagesCache, tasksCache, onClose }) {
+export default function Panel({ selected, pagesCache, tasksCache, onClose, expanded = false }) {
   const [pages, setPages] = useState([]);
   const [tasks, setTasks] = useState([]);
   const [noDeadlineTasks, setNoDeadlineTasks] = useState([]);
@@ -196,7 +196,7 @@ export default function Panel({ selected, pagesCache, tasksCache, onClose }) {
   const allTasks = [...tasks, ...noDeadlineTasks];
 
   return (
-    <div className="panel open">
+    <div className={`panel open${expanded ? ' panel-expanded' : ''}`}>
       <div className="panel-head">
         <div className="panel-title" style={{ color }}>{data.displayName}</div>
       </div>

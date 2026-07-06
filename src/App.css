@@ -1290,6 +1290,9 @@ body, .app {
 .schedule-panel { width: 385px; }
 .panel { width: 385px; z-index: 65; }
 
+/* Modalità focus Pomodoro: pannello sezione (ToDo/OneNote/OneDrive) esteso */
+.panel.panel-expanded { width: 620px; }
+
 /* ── Dock unificato in basso (Eisenhower · GTD · Attività · Review) ──
    Un solo contenitore centrato: niente più bottoni sparsi che si
    sovrappongono ai pannelli o tra loro. */

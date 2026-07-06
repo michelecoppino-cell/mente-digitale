@@ -3,7 +3,7 @@ import {
   loadDailyPlans, saveDailyPlans,
   loadPlannerConfig,
   completeTask, getCalendarEvents,
-  getTask, updateTaskBody,
+  getTask, updateTaskBody, updateTaskTitle, deleteTask,
   createChecklistItem, updateChecklistItem, deleteChecklistItem,
 } from './api';
 import { cacheGet, cacheSet } from './cache';
@@ -66,7 +66,11 @@ function getWeekDays(dateStr) {
 }
 
 // ── Main PlannerView ──────────────────────────────────────────────────────────
-export default function PlannerView({ open, onClose, preloadedTasks = [], notebooks = [], sectionsMap = {}, autoAddTask = null, onAutoAdded }) {
+export default function PlannerView({
+  open, onClose, preloadedTasks = [], notebooks = [], sectionsMap = {}, autoAddTask = null, onAutoAdded,
+  onTaskCompleted, onTaskDeleted, onTaskRenamed,
+  onStartFocus, onEndFocus,
+}) {
   const [currentDate, setCurrentDate]       = useState(todayStr);
   const [plans, setPlans]                   = useState({});
   const [config, setConfig]                 = useState(DEFAULT_CONFIG);
@@ -350,7 +354,10 @@ export default function PlannerView({ open, onClose, preloadedTasks = [], notebo
       ),
     }));
     if (block.listId && block.taskId) {
-      try { await completeTask(block.listId, block.taskId); } catch (e) { console.error('complete task', e); }
+      try {
+        await completeTask(block.listId, block.taskId);
+        onTaskCompleted?.(block.listId, block.taskId);
+      } catch (e) { console.error('complete task', e); }
     }
   }
 
@@ -525,11 +532,16 @@ export default function PlannerView({ open, onClose, preloadedTasks = [], notebo
     return '';
   }
 
-  if (!open) return null;
+  // Il piano resta montato (invisibile via CSS, non smontato) mentre un
+  // Pomodoro è in corso: così il timer e le sue statistiche sopravvivono alla
+  // chiusura della vista Piano quando si passa alla modalità "focus" (Attività
+  // a sx, Mente Digitale al centro, sezione a dx).
+  if (!open && !pomodoroBlockId) return null;
 
   // ── Render ────────────────────────────────────────────────────────────────────
   return (
-    <div className="planner-view">
+    <>
+    <div className="planner-view" style={{ display: open ? undefined : 'none' }}>
 
       {/* Header */}
       <div className="planner-header">
@@ -717,7 +729,7 @@ export default function PlannerView({ open, onClose, preloadedTasks = [], notebo
                     <div className="planner-block-actions">
                       <button
                         className="planner-block-btn"
-                        onClick={e => { e.stopPropagation(); setPomodoroBlockId(block.id); }}
+                        onClick={e => { e.stopPropagation(); setPomodoroBlockId(block.id); onStartFocus?.(block); }}
                         title="Avvia Pomodoro su questo blocco">🍅</button>
                       <button className="planner-block-btn" onClick={() => handleBreakdownTask(block)} title="Scomponi in sottostep">🔀</button>
                       <button className="planner-block-btn" onClick={() => handleRemoveBlock(block.id)} title="Rimuovi">✕</button>
@@ -790,6 +802,9 @@ export default function PlannerView({ open, onClose, preloadedTasks = [], notebo
               <TaskDetailPanel
                 task={selectedTask}
                 onClose={() => setSelectedTask(null)}
+                onCompleted={() => { onTaskCompleted?.(selectedTask._listId, selectedTask.id); setSelectedTask(null); }}
+                onDeleted={() => { onTaskDeleted?.(selectedTask._listId, selectedTask.id); setSelectedTask(null); }}
+                onRenamed={title => { onTaskRenamed?.(selectedTask._listId, selectedTask.id, title); setSelectedTask(prev => prev && ({ ...prev, title })); }}
               />
             ) : (
               <div className="planner-detail-empty">
@@ -800,14 +815,6 @@ export default function PlannerView({ open, onClose, preloadedTasks = [], notebo
         </div>
       </>)}
       </div>
-
-      {pomodoroBlockId && (
-        <PomodoroTimer
-          block={todayPlan.blocks.find(b => b.id === pomodoroBlockId)}
-          onClose={() => setPomodoroBlockId(null)}
-          onCycleComplete={(stats) => incrementBlockPomodoro(pomodoroBlockId, stats)}
-        />
-      )}
 
       {/* Breakdown modal */}
       {breakdownModal && (
@@ -863,19 +870,34 @@ export default function PlannerView({ open, onClose, preloadedTasks = [], notebo
         </div>
       )}
     </div>
+
+    {/* Renderizzato fuori dal contenitore nascosto via CSS: resta visibile e
+        attivo (interval del timer, statistiche) anche quando il Piano è
+        chiuso e si passa alla modalità focus. */}
+    {pomodoroBlockId && (
+      <PomodoroTimer
+        block={todayPlan.blocks.find(b => b.id === pomodoroBlockId)}
+        onClose={() => { setPomodoroBlockId(null); onEndFocus?.(); }}
+        onCycleComplete={(stats) => incrementBlockPomodoro(pomodoroBlockId, stats)}
+      />
+    )}
+    </>
   );
 }
 
 // ── TaskDetailPanel ───────────────────────────────────────────────────────────
-function TaskDetailPanel({ task, onClose }) {
+function TaskDetailPanel({ task, onClose, onCompleted, onDeleted, onRenamed }) {
   const [loading, setLoading]         = useState(true);
+  const [editingTitle, setEditingTitle] = useState(false);
+  const [titleDraft, setTitleDraft]   = useState(task.title);
+  const [working, setWorking]         = useState(false);
   const [notes, setNotes]             = useState('');
   const [items, setItems]             = useState([]);
   const [newItemText, setNewItemText] = useState('');
   const [savingNotes, setSavingNotes] = useState(false);
   const notesTimerRef                 = useRef(null);
 
-  useEffect(() => { load(); }, [task.id]); // eslint-disable-line
+  useEffect(() => { setTitleDraft(task.title); setEditingTitle(false); load(); }, [task.id]); // eslint-disable-line
 
   async function load() {
     setLoading(true);
@@ -928,11 +950,61 @@ function TaskDetailPanel({ task, onClose }) {
     }
   }
 
+  function submitRename() {
+    const title = titleDraft.trim();
+    setEditingTitle(false);
+    if (!title || title === task.title) { setTitleDraft(task.title); return; }
+    setTitleDraft(title);
+    updateTaskTitle(task._listId, task.id, title)
+      .then(() => onRenamed?.(title))
+      .catch(e => { console.error('rename task', e); setTitleDraft(task.title); });
+  }
+
+  async function handleCompleteTask() {
+    setWorking(true);
+    try {
+      await completeTask(task._listId, task.id);
+      onCompleted?.();
+    } catch (e) { console.error('complete task', e); }
+    setWorking(false);
+  }
+
+  async function handleDeleteTask() {
+    if (!window.confirm(`Eliminare definitivamente il task "${task.title}"? L'operazione non è reversibile.`)) return;
+    setWorking(true);
+    try {
+      await deleteTask(task._listId, task.id);
+      onDeleted?.();
+    } catch (e) { console.error('delete task', e); }
+    setWorking(false);
+  }
+
   return (
     <div className="planner-task-detail">
       <div className="planner-task-detail-header">
-        <div className="planner-task-detail-title">{task.title}</div>
+        {editingTitle ? (
+          <input
+            autoFocus
+            className="planner-task-detail-title-input"
+            value={titleDraft}
+            onChange={e => setTitleDraft(e.target.value)}
+            onBlur={submitRename}
+            onKeyDown={e => {
+              if (e.key === 'Enter') submitRename();
+              if (e.key === 'Escape') { setTitleDraft(task.title); setEditingTitle(false); }
+            }}
+          />
+        ) : (
+          <div className="planner-task-detail-title" onClick={() => setEditingTitle(true)} title="Clicca per rinominare">
+            {task.title}
+          </div>
+        )}
         <div className="planner-task-detail-meta">{task._listName}</div>
+        <div className="planner-task-detail-header-actions">
+          <button className="planner-task-detail-action" onClick={() => setEditingTitle(true)} disabled={working} title="Rinomina">✎</button>
+          <button className="planner-task-detail-action" onClick={handleCompleteTask} disabled={working} title="Segna come completato">✓</button>
+          <button className="planner-task-detail-action danger" onClick={handleDeleteTask} disabled={working} title="Elimina task">🗑</button>
+        </div>
         <button className="planner-task-detail-close" onClick={onClose} title="Chiudi">✕</button>
       </div>
 
