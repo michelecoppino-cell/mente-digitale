@@ -565,6 +565,12 @@ export default function App() {
           onClose={() => setEisenhowerOpen(false)}
           tasks={scheduledTasks || []}
         />
+        {/* In modalità Piano il dock in basso (dentro .canvas-area, nascosta)
+            non è visibile: si ripropone qui il pulsante GTD, fuori da quel
+            contenitore, come cerchio fisso in basso a destra. */}
+        {plannerOpen && (
+          <button className="gtd-fab" onClick={() => setGtdOpen(true)} title="Cattura pensiero (GTD)">+</button>
+        )}
         <GtdClarifyModal
           open={gtdOpen}
           onClose={() => { setGtdOpen(false); setGtdSeedText(''); }}
