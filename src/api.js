@@ -326,10 +326,38 @@ export async function updateChecklistItem(listId, taskId, itemId, isChecked) {
   });
 }
 
+export async function renameChecklistItem(listId, taskId, itemId, displayName) {
+  return call(`/me/todo/lists/${listId}/tasks/${taskId}/checklistItems/${itemId}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ displayName }),
+  });
+}
+
 export async function deleteChecklistItem(listId, taskId, itemId) {
   return call(`/me/todo/lists/${listId}/tasks/${taskId}/checklistItems/${itemId}`, {
     method: 'DELETE',
   });
+}
+
+// Graph non espone un campo di ordinamento per i checklistItem: l'unico modo
+// per persistere un nuovo ordine è ricrearli nella sequenza voluta (l'ordine
+// restituito da Graph segue quello di creazione) ed eliminare gli originali.
+export async function reorderChecklistItems(listId, taskId, orderedItems) {
+  const base = `/me/todo/lists/${listId}/tasks/${taskId}/checklistItems`;
+  const created = [];
+  try {
+    for (const item of orderedItems) {
+      created.push(await call(base, {
+        method: 'POST',
+        body: JSON.stringify({ displayName: item.displayName, isChecked: item.isChecked }),
+      }));
+    }
+  } catch (e) {
+    await Promise.all(created.map(c => call(`${base}/${c.id}`, { method: 'DELETE' }).catch(() => {})));
+    throw e;
+  }
+  await Promise.all(orderedItems.map(item => call(`${base}/${item.id}`, { method: 'DELETE' }).catch(() => {})));
+  return created;
 }
 
 export async function getRecentEmails() {
