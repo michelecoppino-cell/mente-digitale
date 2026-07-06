@@ -62,6 +62,7 @@ export default function PomodoroTimer({ block, onClose, onCycleComplete, onRunni
   const [phaseEndInfo, setPhaseEndInfo] = useState(null); // { phase, focusedMinutes, interruptions } | null
   const [todayStats, setTodayStats] = useState(null);
   const intervalRef = useRef(null);
+  const endAtRef = useRef(null); // timestamp assoluto di fine fase, per non derivare dal conteggio dei tick
   const titleFlashRef = useRef(null);
   const originalTitleRef = useRef(document.title);
   const hiddenAtRef = useRef(null);
@@ -97,14 +98,22 @@ export default function PomodoroTimer({ block, onClose, onCycleComplete, onRunni
     return () => document.removeEventListener('visibilitychange', onVisibilityChange);
   }, [phase, running]);
 
+  // Il conto alla rovescia si basa su un timestamp di fine assoluto, non su un
+  // decremento per tick: i browser rallentano/saltano i setInterval quando la
+  // tab è in background, e contare -1 per tick fa "perdere" quel tempo per
+  // sempre (il timer sembra rallentare ogni volta che si riapre la tab).
+  // Ricalcolando da Date.now() ad ogni tick il timer si autocorregge.
   useEffect(() => {
     if (!running) return;
+    endAtRef.current = Date.now() + secondsLeft * 1000;
     intervalRef.current = setInterval(() => {
-      setSeconds(s => {
-        if (s > 1) return s - 1;
+      const remaining = Math.round((endAtRef.current - Date.now()) / 1000);
+      if (remaining > 0) {
+        setSeconds(remaining);
+      } else {
+        setSeconds(0);
         handlePhaseEnd();
-        return 0;
-      });
+      }
     }, 1000);
     return () => clearInterval(intervalRef.current);
   }, [running, phase]); // eslint-disable-line
