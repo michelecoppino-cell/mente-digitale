@@ -83,11 +83,14 @@ export default function PlannerView({
   const [todayPlan, setTodayPlan]           = useState({ date: todayStr(), blocks: [], emailExtractedActions: [] });
   const [calEvents, setCalEvents]           = useState([]);
   const [pomodoroStatsMap, setPomodoroStatsMap] = useState({});
-  const [pomodoroBlockId, setPomodoroBlockId] = useState(null);
+  // Il Pomodoro è solo un indicatore di concentrazione, scollegato da
+  // qualunque task/blocco: si avvia/ferma dal pulsante volante, non da un
+  // task specifico.
+  const [pomodoroActive, setPomodoroActive] = useState(false);
   const [pomodoroRunning, setPomodoroRunning] = useState(true);
   // Bloccata solo mentre il Pomodoro è effettivamente in corso (non in pausa):
   // premere "Pausa" riporta alla normale modalità Piano, sbloccata.
-  const locked = !!pomodoroBlockId && pomodoroRunning;
+  const locked = pomodoroActive && pomodoroRunning;
   const [saveStatus, setSaveStatus]         = useState('idle');
   const [breakdownModal, setBreakdownModal] = useState(null);
   const [dragOverTime, setDragOverTime]     = useState(null);
@@ -386,18 +389,7 @@ export default function PlannerView({
     mutatePlan(prev => ({ ...prev, blocks: prev.blocks.filter(b => b.id !== blockId) }));
   }
 
-  function incrementBlockPomodoro(blockId, { focusedMinutes, interruptions, sessions } = {}) {
-    mutatePlan(prev => ({
-      ...prev,
-      blocks: prev.blocks.map(b =>
-        b.id === blockId ? {
-          ...b,
-          pomodoros: (b.pomodoros || 0) + 1,
-          focusedMinutes: (b.focusedMinutes || 0) + (focusedMinutes || 0),
-          interruptions: (b.interruptions || 0) + (interruptions || 0),
-        } : b
-      ),
-    }));
+  function recordPomodoroSession({ focusedMinutes, interruptions, sessions } = {}) {
     setPomodoroStatsMap(prev => {
       const prevDay = prev[currentDateRef.current] || { pomodori: 0, focusedMinutes: 0, interruptions: 0, sessions: [] };
       return {
@@ -570,7 +562,7 @@ export default function PlannerView({
   // Pomodoro è in corso: così il timer e le sue statistiche sopravvivono alla
   // chiusura della vista Piano quando si passa alla modalità "focus" (Attività
   // a sx, Mente Digitale al centro, sezione a dx).
-  if (!open && !pomodoroBlockId) return null;
+  if (!open && !pomodoroActive) return null;
 
   // ── Render ────────────────────────────────────────────────────────────────────
   return (
@@ -789,11 +781,6 @@ export default function PlannerView({
                     </button>
                     <span className="planner-block-title">{block.taskTitle}</span>
                     <div className="planner-block-actions">
-                      <button
-                        className="planner-block-btn"
-                        onClick={e => { e.stopPropagation(); setPomodoroBlockId(block.id); setPomodoroRunning(true); onStartFocus?.(block); }}
-                        disabled={locked}
-                        title="Avvia Pomodoro su questo blocco">🍅</button>
                       <button className="planner-block-btn" onClick={() => handleBreakdownTask(block)} disabled={locked} title="Scomponi in sottostep">🔀</button>
                       <button className="planner-block-btn" onClick={() => handleRemoveBlock(block.id)} disabled={locked} title="Rimuovi">✕</button>
                     </div>
@@ -802,7 +789,6 @@ export default function PlannerView({
                     <span>{block.startTime}–{block.endTime}</span>
                     {block.listName && <span>{block.listName}</span>}
                     {block.isAISuggested && <span className="planner-ai-badge">AI</span>}
-                    {block.pomodoros > 0 && <span title="Pomodori completati">🍅×{block.pomodoros}</span>}
                   </div>
                   {block.subSteps?.length > 0 && (() => {
                     const n = block.subSteps.length;
@@ -939,17 +925,25 @@ export default function PlannerView({
       )}
     </div>
 
+    {/* Pulsante volante per avviare il Pomodoro, a fianco del "+" dorato GTD:
+        solo indicatore di concentrazione, scollegato da qualunque task. */}
+    {open && !pomodoroActive && (
+      <button
+        className="pomodoro-fab"
+        onClick={() => { setPomodoroActive(true); setPomodoroRunning(true); onStartFocus?.(); }}
+        title="Avvia Pomodoro">🍅</button>
+    )}
+
     {/* Renderizzato fuori dal contenitore nascosto via CSS: resta visibile e
         attivo (interval del timer, statistiche) anche quando il Piano è
         chiuso e si passa alla modalità focus. */}
-    {pomodoroBlockId && (
+    {pomodoroActive && (
       <PomodoroTimer
-        block={todayPlan.blocks.find(b => b.id === pomodoroBlockId)}
-        onClose={() => { setPomodoroBlockId(null); onEndFocus?.(); }}
-        onCycleComplete={(stats) => incrementBlockPomodoro(pomodoroBlockId, stats)}
+        onClose={() => { setPomodoroActive(false); onEndFocus?.(); }}
+        onCycleComplete={recordPomodoroSession}
         onRunningChange={running => {
           setPomodoroRunning(running);
-          if (running) onStartFocus?.(todayPlan.blocks.find(b => b.id === pomodoroBlockId));
+          if (running) onStartFocus?.();
           else onEndFocus?.();
         }}
       />

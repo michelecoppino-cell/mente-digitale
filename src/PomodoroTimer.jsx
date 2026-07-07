@@ -55,7 +55,7 @@ function fmt(sec) {
 // Durante il lavoro traccia le interruzioni (cambi di tab) per stimare i
 // minuti di concentrazione reale, salvati come statistiche giornaliere su
 // OneDrive.
-export default function PomodoroTimer({ block, onClose, onCycleComplete, onRunningChange }) {
+export default function PomodoroTimer({ onClose, onCycleComplete, onRunningChange }) {
   const [phase, setPhase]         = useState('working'); // 'working' | 'break'
   const [secondsLeft, setSeconds] = useState(WORK_MIN * 60);
   const [running, setRunning]     = useState(true);
@@ -261,7 +261,6 @@ export default function PomodoroTimer({ block, onClose, onCycleComplete, onRunni
           </span>
           <button className="pomodoro-close" onClick={onClose} title="Chiudi">✕</button>
         </div>
-        {block?.taskTitle && <div className="pomodoro-task">{block.taskTitle}</div>}
         <div className="pomodoro-time">{fmt(secondsLeft)}</div>
         <div className="pomodoro-actions">
           <button className="pomodoro-btn" onClick={toggle}>{running ? '⏸ Pausa' : '▶ Avvia'}</button>
