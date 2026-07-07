@@ -59,12 +59,6 @@ function fmtFocusTotal(min) {
   const m = Math.max(0, Math.round(min || 0));
   return `${Math.floor(m / 60)}:${String(m % 60).padStart(2, '0')}`;
 }
-// Etichetta compatta per la colonna a sx delle ore (minuti concentrati per blocco).
-function fmtFocusChip(min) {
-  const m = Math.max(0, Math.round(min || 0));
-  return m < 60 ? `${m}m` : `${Math.floor(m / 60)}h${String(m % 60).padStart(2, '0')}`;
-}
-
 function getWeekDays(dateStr) {
   const d = new Date(dateStr + 'T12:00:00');
   const dow = d.getDay();
@@ -392,7 +386,7 @@ export default function PlannerView({
     mutatePlan(prev => ({ ...prev, blocks: prev.blocks.filter(b => b.id !== blockId) }));
   }
 
-  function incrementBlockPomodoro(blockId, { focusedMinutes, interruptions } = {}) {
+  function incrementBlockPomodoro(blockId, { focusedMinutes, interruptions, sessions } = {}) {
     mutatePlan(prev => ({
       ...prev,
       blocks: prev.blocks.map(b =>
@@ -405,13 +399,14 @@ export default function PlannerView({
       ),
     }));
     setPomodoroStatsMap(prev => {
-      const prevDay = prev[currentDateRef.current] || { pomodori: 0, focusedMinutes: 0, interruptions: 0 };
+      const prevDay = prev[currentDateRef.current] || { pomodori: 0, focusedMinutes: 0, interruptions: 0, sessions: [] };
       return {
         ...prev,
         [currentDateRef.current]: {
           pomodori: prevDay.pomodori + 1,
           focusedMinutes: prevDay.focusedMinutes + (focusedMinutes || 0),
           interruptions: prevDay.interruptions + (interruptions || 0),
+          sessions: [...(prevDay.sessions || []), ...(sessions || [])],
         },
       };
     });
@@ -681,9 +676,6 @@ export default function PlannerView({
                 weekday: 'short', day: 'numeric', month: 'short',
               })}
             </span>
-            <span className="planner-focus-total" title="Totale concentrazione Pomodoro">
-              🍅 {fmtFocusTotal(dayFocusMinutes)}
-            </span>
             <span className="planner-timeline-hint">Trascina qui i task →</span>
           </div>
           {calOutOfRange && (
@@ -706,6 +698,29 @@ export default function PlannerView({
             onDragLeave={e => {
               if (!timelineBodyRef.current?.contains(e.relatedTarget)) setDragOverTime(null);
             }}>
+
+            {/* Colonna Pomodoro: totale giornaliero in alto + fasce orarie reali */}
+            <div className="planner-focus-daytotal" title="Totale concentrazione Pomodoro">
+              <span>🍅</span>
+              <span>{fmtFocusTotal(dayFocusMinutes)}</span>
+            </div>
+            {(pomodoroStatsMap[currentDate]?.sessions || []).map((s, i) => {
+              const sStart = new Date(s.start);
+              const sEnd   = new Date(s.end);
+              const startMin = sStart.getHours() * 60 + sStart.getMinutes();
+              const endMin   = sEnd.getHours() * 60 + sEnd.getMinutes();
+              const workEnd  = t2m(config.workdayEnd);
+              if (endMin <= workStart || startMin >= workEnd) return null;
+              const top    = Math.max(0, (Math.max(startMin, workStart) - workStart) / 30 * SLOT_HEIGHT);
+              const height = Math.max(3, (Math.min(endMin, workEnd) - Math.max(startMin, workStart)) / 30 * SLOT_HEIGHT);
+              return (
+                <div
+                  key={`focus-${i}`}
+                  className="planner-focus-bar"
+                  style={{ top, height }}
+                  title={`${isoToHHMM(s.start)}–${isoToHHMM(s.end)} concentrato`} />
+              );
+            })}
 
             {/* Slot grid lines (also define total height) */}
             {timeSlots.map(slot => (
@@ -749,14 +764,6 @@ export default function PlannerView({
               const height   = Math.max(SLOT_HEIGHT - 4, (endMin - startMin) / 30 * SLOT_HEIGHT - 4);
               return (
                 <Fragment key={block.id}>
-                {block.pomodoros > 0 && (
-                  <div
-                    className="planner-focus-chip"
-                    style={{ top: top + 2, height }}
-                    title={`${Math.round(block.focusedMinutes || 0)} min concentrato su questo blocco`}>
-                    {fmtFocusChip(block.focusedMinutes)}
-                  </div>
-                )}
                 <div
                   className={`planner-block${block.completed ? ' completed' : ''}${block.isAISuggested ? ' ai-suggested' : ''}`}
                   style={{ top: top + 2, height, borderLeftColor: block.projectColor, background: block.projectColor }}
