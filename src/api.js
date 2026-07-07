@@ -115,6 +115,14 @@ export async function updateTaskTitle(listId, taskId, title) {
   });
 }
 
+export async function updateTaskDueDate(listId, taskId, dueDate) {
+  const payload = { dueDateTime: dueDate ? { dateTime: dueDate, timeZone: 'UTC' } : null };
+  return call(`/me/todo/lists/${listId}/tasks/${taskId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload)
+  });
+}
+
 export async function deleteTask(listId, taskId) {
   return call(`/me/todo/lists/${listId}/tasks/${taskId}`, {
     method: 'DELETE',

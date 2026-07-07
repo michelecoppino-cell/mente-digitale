@@ -351,29 +351,21 @@ export default function App() {
     }
   }
 
-  // Modalità focus Pomodoro: apre (esteso) il pannello della sezione
-  // collegata all'attività in corso, sopra alla vista attuale — senza
-  // chiudere il Piano né cambiare vista.
-  function handleStartPomodoroFocus(block) {
-    setPomodoroFocus(true);
-    if (!block?.listName) return;
-    const lower = block.listName.toLowerCase();
-    for (const [nbId, sects] of Object.entries(sectionsMap)) {
-      const sec = sects.find(s => s.displayName.toLowerCase() === lower);
-      if (sec) {
-        const nb = notebooks.find(n => n.id === nbId) || { id: nbId };
-        handleSelectSection(sec, nb, 'todo');
-        return;
-      }
+  function handleTaskDueDateChanged(listId, taskId, dueDateTime) {
+    setScheduledTasks(prev => (prev || []).map(t => t.id === taskId ? { ...t, dueDateTime } : t));
+    if (tasksCache.current[listId]) {
+      tasksCache.current[listId] = tasksCache.current[listId].map(t => t.id === taskId ? { ...t, dueDateTime } : t);
     }
   }
 
-  // Richiamata sia alla chiusura definitiva del Pomodoro sia alla sua messa
-  // in pausa: il pannello sezione si chiude del tutto (non solo si restringe)
-  // e il Piano torna alla modalità normale, sbloccata.
+  // Solo per nascondere il FAB GTD durante il focus Pomodoro (stesso angolo
+  // del widget del timer): il Piano resta invariato, nessun pannello si apre.
+  function handleStartPomodoroFocus() {
+    setPomodoroFocus(true);
+  }
+
   function handleEndPomodoroFocus() {
     setPomodoroFocus(false);
-    setSelected(null);
   }
 
   async function handleRefresh() {
@@ -550,8 +542,7 @@ export default function App() {
           selected={selected}
           pagesCache={pagesCache}
           tasksCache={tasksCache}
-          onClose={() => { setSelected(null); setPomodoroFocus(false); }}
-          expanded={pomodoroFocus}
+          onClose={() => setSelected(null)}
         />
         <PlannerView
           open={plannerOpen}
@@ -559,14 +550,15 @@ export default function App() {
           preloadedTasks={scheduledTasks || []}
           notebooks={notebooks}
           sectionsMap={sectionsMap}
+          pagesCache={pagesCache}
           autoAddTask={pendingPlannerTask}
           onAutoAdded={() => setPendingPlannerTask(null)}
           onTaskCompleted={handleTaskCompleted}
           onTaskDeleted={handleTaskDeleted}
           onTaskRenamed={handleTaskRenamed}
+          onTaskDueChanged={handleTaskDueDateChanged}
           onStartFocus={handleStartPomodoroFocus}
           onEndFocus={handleEndPomodoroFocus}
-          sectionPanelExpanded={pomodoroFocus}
         />
         <EisenhowerTriage
           open={eisenhowerOpen}

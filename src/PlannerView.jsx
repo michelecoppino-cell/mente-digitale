@@ -1,16 +1,17 @@
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useRef, useMemo, Fragment } from 'react';
 import {
   loadDailyPlans, saveDailyPlans,
   loadPlannerConfig,
   completeTask, getCalendarEvents,
-  getTask, updateTaskBody, updateTaskTitle, deleteTask,
+  getTask, updateTaskBody, updateTaskTitle, updateTaskDueDate, deleteTask,
   createChecklistItem, updateChecklistItem, renameChecklistItem, deleteChecklistItem,
-  reorderChecklistItems,
+  reorderChecklistItems, loadPomodoroStats,
 } from './api';
 import { cacheGet, cacheSet } from './cache';
 import Skeleton from './Skeleton';
 import PomodoroTimer from './PomodoroTimer';
 import TaskPool from './TaskPool';
+import SectionResources from './SectionResources';
 import { DEFAULT_CONFIG, findProject, shadeColor } from './plannerShared';
 import './PlannerView.css';
 
@@ -53,6 +54,16 @@ function isoToHHMM(iso) {
 function isAllDay(ev) {
   return ev.isAllDay || (!ev.start?.dateTime && !!ev.start?.date);
 }
+// Totale di giornata nell'header della colonna Timeline — formato ore:minuti.
+function fmtFocusTotal(min) {
+  const m = Math.max(0, Math.round(min || 0));
+  return `${Math.floor(m / 60)}:${String(m % 60).padStart(2, '0')}`;
+}
+// Etichetta compatta per la colonna a sx delle ore (minuti concentrati per blocco).
+function fmtFocusChip(min) {
+  const m = Math.max(0, Math.round(min || 0));
+  return m < 60 ? `${m}m` : `${Math.floor(m / 60)}h${String(m % 60).padStart(2, '0')}`;
+}
 
 function getWeekDays(dateStr) {
   const d = new Date(dateStr + 'T12:00:00');
@@ -68,15 +79,16 @@ function getWeekDays(dateStr) {
 
 // ── Main PlannerView ──────────────────────────────────────────────────────────
 export default function PlannerView({
-  open, onClose, preloadedTasks = [], notebooks = [], sectionsMap = {}, autoAddTask = null, onAutoAdded,
-  onTaskCompleted, onTaskDeleted, onTaskRenamed,
-  onStartFocus, onEndFocus, sectionPanelExpanded = false,
+  open, onClose, preloadedTasks = [], notebooks = [], sectionsMap = {}, pagesCache = null, autoAddTask = null, onAutoAdded,
+  onTaskCompleted, onTaskDeleted, onTaskRenamed, onTaskDueChanged,
+  onStartFocus, onEndFocus,
 }) {
   const [currentDate, setCurrentDate]       = useState(todayStr);
   const [plans, setPlans]                   = useState({});
   const [config, setConfig]                 = useState(DEFAULT_CONFIG);
   const [todayPlan, setTodayPlan]           = useState({ date: todayStr(), blocks: [], emailExtractedActions: [] });
   const [calEvents, setCalEvents]           = useState([]);
+  const [pomodoroStatsMap, setPomodoroStatsMap] = useState({});
   const [pomodoroBlockId, setPomodoroBlockId] = useState(null);
   const [pomodoroRunning, setPomodoroRunning] = useState(true);
   // Bloccata solo mentre il Pomodoro è effettivamente in corso (non in pausa):
@@ -106,7 +118,7 @@ export default function PlannerView({
   // ── Load config + plans once on open; scroll to now ─────────────────────────
   useEffect(() => {
     if (!open) return;
-    Promise.all([initConfig(), initPlans()]);
+    Promise.all([initConfig(), initPlans(), initPomodoroStats()]);
     requestAnimationFrame(() => {
       if (!timelineBodyRef.current) return;
       const now = new Date();
@@ -157,6 +169,15 @@ export default function PlannerView({
       setTodayPlan(dayPlan);
 
     } catch (e) { console.error('planner plans load', e); }
+  }
+
+  // Statistiche giornaliere Pomodoro (minuti concentrati) — mostrate come
+  // colonna a sx delle ore e totale nell'header della Timeline.
+  async function initPomodoroStats() {
+    try {
+      const stats = await loadPomodoroStats();
+      setPomodoroStatsMap(stats || {});
+    } catch (e) { console.error('pomodoro stats load', e); }
   }
 
   // Fetch a 6-month window once; subsequent calls filter from the in-memory/cache ref.
@@ -383,6 +404,17 @@ export default function PlannerView({
         } : b
       ),
     }));
+    setPomodoroStatsMap(prev => {
+      const prevDay = prev[currentDateRef.current] || { pomodori: 0, focusedMinutes: 0, interruptions: 0 };
+      return {
+        ...prev,
+        [currentDateRef.current]: {
+          pomodori: prevDay.pomodori + 1,
+          focusedMinutes: prevDay.focusedMinutes + (focusedMinutes || 0),
+          interruptions: prevDay.interruptions + (interruptions || 0),
+        },
+      };
+    });
   }
 
   function handleResizeStart(e, block) {
@@ -529,6 +561,7 @@ export default function PlannerView({
   const timedEvents  = calEvents.filter(ev => !isAllDay(ev));
 
   const workStart = t2m(config.workdayStart);
+  const dayFocusMinutes = pomodoroStatsMap[currentDate]?.focusedMinutes || 0;
 
   function saveLabel() {
     const now = new Date().toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
@@ -599,7 +632,7 @@ export default function PlannerView({
       )}
 
       {/* Body */}
-      <div className={`planner-body${sectionPanelExpanded ? ' planner-body-reserve-panel' : ''}`}>
+      <div className="planner-body">
 
       {viewMode === 'month' ? (
         <MonthlyCalendar
@@ -647,6 +680,9 @@ export default function PlannerView({
               {new Date(currentDate + 'T12:00:00').toLocaleDateString('it-IT', {
                 weekday: 'short', day: 'numeric', month: 'short',
               })}
+            </span>
+            <span className="planner-focus-total" title="Totale concentrazione Pomodoro">
+              🍅 {fmtFocusTotal(dayFocusMinutes)}
             </span>
             <span className="planner-timeline-hint">Trascina qui i task →</span>
           </div>
@@ -712,8 +748,16 @@ export default function PlannerView({
               const top      = Math.max(0, (startMin - workStart) / 30 * SLOT_HEIGHT);
               const height   = Math.max(SLOT_HEIGHT - 4, (endMin - startMin) / 30 * SLOT_HEIGHT - 4);
               return (
+                <Fragment key={block.id}>
+                {block.pomodoros > 0 && (
+                  <div
+                    className="planner-focus-chip"
+                    style={{ top: top + 2, height }}
+                    title={`${Math.round(block.focusedMinutes || 0)} min concentrato su questo blocco`}>
+                    {fmtFocusChip(block.focusedMinutes)}
+                  </div>
+                )}
                 <div
-                  key={block.id}
                   className={`planner-block${block.completed ? ' completed' : ''}${block.isAISuggested ? ' ai-suggested' : ''}`}
                   style={{ top: top + 2, height, borderLeftColor: block.projectColor, background: block.projectColor }}
                   draggable={!locked && !block.completed && resizingId !== block.id}
@@ -787,6 +831,7 @@ export default function PlannerView({
                     <div className="planner-block-resize" onMouseDown={e => handleResizeStart(e, block)} />
                   )}
                 </div>
+                </Fragment>
               );
             })}
 
@@ -813,10 +858,14 @@ export default function PlannerView({
             {selectedTask ? (
               <TaskDetailPanel
                 task={selectedTask}
+                notebooks={notebooks}
+                sectionsMap={sectionsMap}
+                pagesCache={pagesCache}
                 onClose={() => setSelectedTask(null)}
                 onCompleted={() => { onTaskCompleted?.(selectedTask._listId, selectedTask.id); setSelectedTask(null); }}
                 onDeleted={() => { onTaskDeleted?.(selectedTask._listId, selectedTask.id); setSelectedTask(null); }}
                 onRenamed={title => { onTaskRenamed?.(selectedTask._listId, selectedTask.id, title); setSelectedTask(prev => prev && ({ ...prev, title })); }}
+                onDueChanged={dueDateTime => onTaskDueChanged?.(selectedTask._listId, selectedTask.id, dueDateTime)}
               />
             ) : (
               <div className="planner-detail-empty">
@@ -903,7 +952,7 @@ export default function PlannerView({
 }
 
 // ── TaskDetailPanel ───────────────────────────────────────────────────────────
-function TaskDetailPanel({ task, onClose, onCompleted, onDeleted, onRenamed }) {
+function TaskDetailPanel({ task, notebooks = [], sectionsMap = {}, pagesCache = null, onClose, onCompleted, onDeleted, onRenamed, onDueChanged }) {
   const [loading, setLoading]         = useState(true);
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft]   = useState(task.title);
@@ -918,6 +967,20 @@ function TaskDetailPanel({ task, onClose, onCompleted, onDeleted, onRenamed }) {
   const dragIndexRef                  = useRef(null);
   const [dragOverIndex, setDragOverIndex] = useState(null);
   const notesTimerRef                 = useRef(null);
+  const [dueDraft, setDueDraft]       = useState('');
+  const [savingDue, setSavingDue]     = useState(false);
+
+  // Sezione OneNote collegata alla lista ToDo del task (per nome, come nel
+  // resto dell'app) — usata per mostrare qui sotto i riquadri OneNote/OneDrive.
+  const { section, notebook } = useMemo(() => {
+    const lower = (task._listName || '').toLowerCase();
+    if (!lower) return { section: null, notebook: null };
+    for (const [nbId, sects] of Object.entries(sectionsMap)) {
+      const sec = sects.find(s => s.displayName.toLowerCase() === lower);
+      if (sec) return { section: sec, notebook: notebooks.find(n => n.id === nbId) || { id: nbId } };
+    }
+    return { section: null, notebook: null };
+  }, [task._listName, notebooks, sectionsMap]);
 
   useEffect(() => { setTitleDraft(task.title); setEditingTitle(false); load(); }, [task.id]); // eslint-disable-line
 
@@ -931,8 +994,20 @@ function TaskDetailPanel({ task, onClose, onCompleted, onDeleted, onRenamed }) {
       }
       setNotes(body);
       setItems((full.checklistItems || []).sort((a, b) => a.isChecked - b.isChecked));
+      setDueDraft(full.dueDateTime?.dateTime ? full.dueDateTime.dateTime.slice(0, 10) : '');
     } catch (e) { console.error('load task detail', e); }
     setLoading(false);
+  }
+
+  async function handleDueChange(e) {
+    const val = e.target.value;
+    setDueDraft(val);
+    setSavingDue(true);
+    try {
+      await updateTaskDueDate(task._listId, task.id, val || null);
+      onDueChanged?.(val ? { dateTime: val, timeZone: 'UTC' } : null);
+    } catch (err) { console.error('save due date', err); }
+    setSavingDue(false);
   }
 
   function handleNotesChange(e) {
@@ -1073,6 +1148,16 @@ function TaskDetailPanel({ task, onClose, onCompleted, onDeleted, onRenamed }) {
           </div>
         )}
         <div className="planner-task-detail-meta">{task._listName}</div>
+        <div className="planner-task-detail-due">
+          <span>📅 Scadenza</span>
+          <input
+            type="date"
+            className="planner-task-detail-due-input"
+            value={dueDraft}
+            onChange={handleDueChange}
+          />
+          {savingDue && <span className="planner-saving-dot">●</span>}
+        </div>
         <div className="planner-task-detail-header-actions">
           <button className="planner-task-detail-action" onClick={() => setEditingTitle(true)} disabled={working} title="Rinomina">✎</button>
           <button className="planner-task-detail-action" onClick={handleCompleteTask} disabled={working} title="Segna come completato">✓</button>
@@ -1151,6 +1236,8 @@ function TaskDetailPanel({ task, onClose, onCompleted, onDeleted, onRenamed }) {
               </button>
             </form>
           </div>
+
+          <SectionResources section={section} notebook={notebook} pagesCache={pagesCache} />
         </>
       )}
     </div>
@@ -1353,7 +1440,7 @@ function WeeklyTimeline({ weekDays, plans, calEvents, workStart, timeSlots, onDa
                 return (
                   <div key={block.id}
                     className={`planner-week-task-block${block.completed ? ' completed' : ''}`}
-                    style={{ top: top + 2, height, borderLeftColor: block.projectColor, background: `${block.projectColor}22` }}
+                    style={{ top: top + 2, height, borderLeftColor: block.projectColor, background: `${block.projectColor}4d` }}
                     title={`${block.startTime}–${block.endTime} · ${block.taskTitle} (trascina per spostare)`}
                     draggable={!block.completed}
                     onDragStart={e => {

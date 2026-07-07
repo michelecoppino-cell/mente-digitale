@@ -113,15 +113,6 @@
   transition: padding-right 0.36s cubic-bezier(0.4,0,0.2,1);
 }
 
-/* Modalità focus Pomodoro: il pannello sezione (ToDo/OneNote/OneDrive) si
-   espande a 620px sopra la vista Piano (vedi .panel.panel-expanded in
-   App.css) — riserviamo qui lo stesso spazio così la colonna Timeline
-   (flex: 1) si restringe e la colonna Dettagli si sposta a sinistra invece
-   di finire coperta dal pannello sezione. */
-.planner-body-reserve-panel {
-  padding-right: 620px;
-}
-
 /* ── Column headers ── */
 .planner-col-header {
   display: flex;
@@ -301,6 +292,22 @@
   letter-spacing: 0.03em;
 }
 
+.planner-due-badge {
+  font-size: 9px;
+  font-weight: 600;
+  color: var(--muted);
+  border: 1px solid var(--border2);
+  border-radius: 3px;
+  padding: 0 4px;
+  flex-shrink: 0;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+.planner-due-badge.overdue {
+  color: #c07a7a;
+  border-color: #c07a7a;
+}
+
 .planner-empty {
   font-size: 11px;
   color: var(--muted);
@@ -420,6 +427,8 @@
   flex: 1;
   overflow-y: auto;
   position: relative;
+  box-sizing: border-box;
+  padding-left: 46px; /* spazio per la colonna del tempo concentrato Pomodoro */
   scrollbar-width: thin;
   scrollbar-color: var(--border2) transparent;
 }
@@ -456,10 +465,39 @@
   height: 100%;
 }
 
+/* Colonna a sx delle ore: minuti concentrati in Pomodoro per blocco, allineati
+   verticalmente al blocco stesso — vive nel padding-left di .planner-timeline-body. */
+.planner-focus-chip {
+  position: absolute;
+  left: 2px;
+  width: 40px;
+  border-radius: 4px;
+  background: rgba(200,169,110,0.1);
+  border: 1px solid rgba(200,169,110,0.3);
+  color: var(--accent);
+  font-size: 9px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  overflow: hidden;
+  z-index: 1;
+  box-sizing: border-box;
+}
+
+.planner-focus-total {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--accent);
+  letter-spacing: 0;
+  text-transform: none;
+}
+
 /* Calendar events — absolute within timeline-body */
 .planner-cal-event {
   position: absolute;
-  left: 40px;
+  left: 92px;
   right: 6px;
   border-radius: 4px;
   background: rgba(255,255,255,0.07);
@@ -496,7 +534,7 @@
 /* Task blocks — absolute within timeline-body */
 .planner-block {
   position: absolute;
-  left: 40px;
+  left: 92px;
   right: 6px;
   border-radius: 5px;
   border-left: 3px solid;
@@ -670,7 +708,7 @@
 /* Drop indicator */
 .planner-drop-indicator {
   position: absolute;
-  left: 40px;
+  left: 92px;
   right: 6px;
   background: rgba(200,169,110,0.12);
   border: 1.5px dashed var(--accent);
@@ -915,14 +953,14 @@
 .planner-week-head {
   display: flex;
   flex-shrink: 0;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--border2);
   background: rgba(8,10,14,0.95);
 }
 
 .planner-week-gutter {
   width: 44px;
   flex-shrink: 0;
-  border-right: 1px solid var(--border);
+  border-right: 1px solid var(--border2);
 }
 
 .planner-week-day-header {
@@ -930,15 +968,15 @@
   padding: 8px 4px;
   text-align: center;
   font-size: 11px;
-  font-weight: 500;
-  color: var(--muted);
+  font-weight: 600;
+  color: rgba(255,255,255,0.75);
   cursor: pointer;
-  border-left: 1px solid var(--border);
+  border-left: 1px solid var(--border2);
   transition: color 0.15s, background 0.15s;
   text-transform: capitalize;
 }
-.planner-week-day-header:hover { color: var(--text); background: rgba(255,255,255,0.03); }
-.planner-week-day-header.today { color: var(--accent); font-weight: 600; }
+.planner-week-day-header:hover { color: var(--text); background: rgba(255,255,255,0.06); }
+.planner-week-day-header.today { color: var(--accent); font-weight: 700; background: rgba(200,169,110,0.1); }
 
 .planner-week-body {
   display: flex;
@@ -951,14 +989,14 @@
 .planner-week-gutter-col {
   width: 44px;
   flex-shrink: 0;
-  border-right: 1px solid var(--border);
+  border-right: 1px solid var(--border2);
 }
 
 .planner-week-slot-label {
-  font-size: 9px;
-  color: var(--muted);
+  font-size: 10px;
+  color: rgba(255,255,255,0.7);
   padding: 3px 4px 0;
-  border-bottom: 1px solid rgba(255,255,255,0.04);
+  border-bottom: 1px solid rgba(255,255,255,0.1);
   user-select: none;
   line-height: 1;
   box-sizing: border-box;
@@ -967,13 +1005,13 @@
 .planner-week-day-col {
   flex: 1;
   position: relative;
-  border-left: 1px solid var(--border);
+  border-left: 1px solid var(--border2);
   min-width: 0;
 }
-.planner-week-day-col.today { background: rgba(200,169,110,0.025); }
+.planner-week-day-col.today { background: rgba(200,169,110,0.08); }
 
 .planner-week-slot-row {
-  border-bottom: 1px solid rgba(255,255,255,0.04);
+  border-bottom: 1px solid rgba(255,255,255,0.1);
   box-sizing: border-box;
 }
 
@@ -983,8 +1021,8 @@
   left: 2px;
   right: 2px;
   border-radius: 3px;
-  background: rgba(255,255,255,0.07);
-  border-left: 3px solid rgba(255,255,255,0.3);
+  background: rgba(255,255,255,0.14);
+  border-left: 3px solid rgba(255,255,255,0.55);
   padding: 2px 4px;
   overflow: hidden;
   pointer-events: none;
@@ -1056,6 +1094,21 @@
 }
 .planner-task-detail-title-input:focus { outline: none; }
 .planner-task-detail-meta { font-size: 10px; color: var(--muted); margin-top: 2px; }
+.planner-task-detail-due {
+  display: flex; align-items: center; gap: 6px;
+  margin-top: 6px; font-size: 10px; color: var(--muted);
+}
+.planner-task-detail-due-input {
+  background: rgba(255,255,255,0.04);
+  border: 1px solid var(--border2);
+  border-radius: 4px;
+  color: var(--text);
+  font-size: 10px;
+  font-family: 'Outfit', sans-serif;
+  padding: 2px 5px;
+  color-scheme: dark;
+}
+.planner-task-detail-due-input:focus { outline: none; border-color: var(--accent); }
 .planner-task-detail-header-actions { display: flex; gap: 4px; margin-top: 8px; }
 .planner-task-detail-action {
   background: none;
@@ -1247,10 +1300,10 @@
 .planner-month-dow {
   text-align: center;
   font-size: 10px;
-  font-weight: 600;
+  font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: var(--muted);
+  color: rgba(255,255,255,0.7);
   padding: 4px 0;
 }
 
@@ -1265,8 +1318,8 @@
 }
 
 .planner-month-cell {
-  background: rgba(255,255,255,0.02);
-  border: 1px solid var(--border);
+  background: rgba(255,255,255,0.04);
+  border: 1px solid var(--border2);
   border-radius: 8px;
   padding: 5px 6px;
   min-width: 0;
@@ -1277,14 +1330,14 @@
   overflow: hidden;
   transition: background 0.12s, border-color 0.12s;
 }
-.planner-month-cell:hover { background: rgba(255,255,255,0.05); border-color: var(--border2); }
+.planner-month-cell:hover { background: rgba(255,255,255,0.09); border-color: rgba(255,255,255,0.22); }
 .planner-month-cell.empty { background: none; border-color: transparent; cursor: default; }
-.planner-month-cell.today { border-color: rgba(200,169,110,0.5); background: rgba(200,169,110,0.05); }
+.planner-month-cell.today { border-color: rgba(200,169,110,0.7); background: rgba(200,169,110,0.1); }
 
 .planner-month-daynum {
   font-size: 11px;
-  font-weight: 600;
-  color: var(--muted);
+  font-weight: 700;
+  color: rgba(255,255,255,0.85);
   line-height: 1;
   flex-shrink: 0;
 }
@@ -1315,16 +1368,16 @@
   min-width: 0;
 }
 .planner-month-chip.event {
-  background: rgba(200,169,110,0.12);
+  background: rgba(200,169,110,0.2);
   color: var(--accent);
 }
 .planner-month-chip.block {
-  background: rgba(255,255,255,0.05);
+  background: rgba(255,255,255,0.1);
   color: var(--text);
-  border-left: 2px solid #888;
+  border-left: 3px solid #888;
 }
 .planner-month-chip.block.completed { opacity: 0.45; text-decoration: line-through; }
-.planner-month-chip-time { flex-shrink: 0; font-size: 9px; opacity: 0.75; }
+.planner-month-chip-time { flex-shrink: 0; font-size: 9px; opacity: 0.85; }
 .planner-month-chip-title {
   min-width: 0;
   overflow: hidden;
@@ -1333,7 +1386,7 @@
 }
 .planner-month-more {
   font-size: 9px;
-  color: var(--muted);
+  color: rgba(255,255,255,0.65);
   padding: 0 4px;
 }
 
