@@ -1,6 +1,5 @@
 import { useState, useMemo } from 'react';
 import { createTask, createNotePage, createCalendarEvent } from './api';
-import { cacheRemove } from './cache';
 import { sectionRole, paraSectionLabel } from './paraConfig';
 import './GtdClarifyModal.css';
 
@@ -13,7 +12,7 @@ import './GtdClarifyModal.css';
 // Ogni foglia (Cestino/Risorse/Archivio/Falla/Task progetti/Task Area/Task
 // risorse-idee) apre una finestra pop-up con la scelta della destinazione e
 // la descrizione completa, invece di un modulo inline.
-export default function GtdClarifyModal({ open, onClose, todoLists = [], notebooks = [], sectionsMap = {}, onTaskCreated, seedText = '' }) {
+export default function GtdClarifyModal({ open, onClose, todoLists = [], notebooks = [], sectionsMap = {}, onTaskCreated, onEventCreated, seedText = '' }) {
   const [activeLeaf, setActiveLeaf] = useState(null);
   const [eventLeaf, setEventLeaf] = useState(null);
 
@@ -134,7 +133,7 @@ export default function GtdClarifyModal({ open, onClose, todoLists = [], noteboo
           <GtdLeafPopup leaf={activeLeaf} seedText={seedText} onClose={() => setActiveLeaf(null)} />
         )}
         {eventLeaf && (
-          <GtdEventPopup leaf={eventLeaf} seedText={seedText} onClose={() => setEventLeaf(null)} />
+          <GtdEventPopup leaf={eventLeaf} seedText={seedText} onEventCreated={onEventCreated} onClose={() => setEventLeaf(null)} />
         )}
       </div>
     </div>
@@ -167,7 +166,8 @@ function GtdLeafBtn({ leaf, onOpen, onOpenEvent }) {
       </button>
       {onOpenEvent && (
         <button className="gtd-leaf-event-btn" onClick={() => onOpenEvent(leaf)} title="Crea scadenza a calendario">
-          +
+          <span className="gtd-leaf-event-icon">📅</span>
+          <span className="gtd-leaf-event-plus">+</span>
         </button>
       )}
     </div>
@@ -265,7 +265,7 @@ function GtdLeafPopup({ leaf, seedText, onClose }) {
 // task/nota), la seconda si scrive a mano — stessa convenzione letta da
 // deadlineReminders.js/refreshDeadlineReminders in App.jsx, che trasforma
 // l'evento in un task nella lista dell'Area quando il reminder scatta.
-function GtdEventPopup({ leaf, seedText, onClose }) {
+function GtdEventPopup({ leaf, seedText, onEventCreated, onClose }) {
   const options = leaf.kind === 'list' ? leaf.todoLists : leaf.sections;
   const [targetId, setTargetId] = useState(options?.[0]?.id || '');
   const [title, setTitle] = useState(seedText || '');
@@ -281,6 +281,14 @@ function GtdEventPopup({ leaf, seedText, onClose }) {
 
   const canSubmit = !busy && targetId && title.trim() && deadlineDate && taskDate && taskDate <= deadlineDate;
 
+  // Apre subito il calendario nativo del browser al click, invece di
+  // richiedere di scrivere la data a mano — basta cliccare il giorno.
+  // showPicker() richiede un gesto utente diretto: solo onClick, non onFocus
+  // (il focus può arrivare anche senza un gesto e il browser lo rifiuta).
+  function openDatePicker(e) {
+    try { e.target.showPicker?.(); } catch { /* alcuni browser/contesti lo rifiutano: resta l'icona nativa */ }
+  }
+
   async function handleSubmit() {
     if (!canSubmit) return;
     setBusy(true);
@@ -289,13 +297,13 @@ function GtdEventPopup({ leaf, seedText, onClose }) {
       const reminderMinutesBeforeStart = Math.max(0, Math.round(
         (new Date(`${deadlineDate}T00:00:00Z`) - new Date(`${taskDate}T00:00:00Z`)) / 60000
       ));
-      await createCalendarEvent({
+      const event = await createCalendarEvent({
         subject: `[${prefixName}] ${title.trim()}`,
         startDate: deadlineDate,
         reminderMinutesBeforeStart,
         body: notes.trim() || undefined,
       });
-      cacheRemove(`sec_events_${prefixName}`);
+      onEventCreated?.(event);
       setBusy(false);
       setDone(true);
       setTimeout(onClose, 900);
@@ -343,11 +351,24 @@ function GtdEventPopup({ leaf, seedText, onClose }) {
               </label>
               <label className="gtd-popup-field">
                 <span>Data scadenza</span>
-                <input className="gtd-select" type="date" value={deadlineDate} onChange={e => setDeadlineDate(e.target.value)} />
+                <input
+                  className="gtd-select"
+                  type="date"
+                  value={deadlineDate}
+                  onChange={e => setDeadlineDate(e.target.value)}
+                  onClick={openDatePicker}
+                />
               </label>
               <label className="gtd-popup-field">
                 <span>Diventa task dal</span>
-                <input className="gtd-select" type="date" value={taskDate} max={deadlineDate || undefined} onChange={e => setTaskDate(e.target.value)} />
+                <input
+                  className="gtd-select"
+                  type="date"
+                  value={taskDate}
+                  max={deadlineDate || undefined}
+                  onChange={e => setTaskDate(e.target.value)}
+                  onClick={openDatePicker}
+                />
               </label>
               <label className="gtd-popup-field">
                 <span>Note evento</span>

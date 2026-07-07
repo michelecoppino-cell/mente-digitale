@@ -124,7 +124,7 @@
   gap: 6px;
 }
 .gtd-decision-side.ghost {
-  width: 176px; /* larghezza foglia (150px) + gap + pulsante evento (22px) */
+  width: 178px; /* larghezza foglia (150px) + gap + pulsante evento (24px) */
   flex-shrink: 0;
   visibility: hidden;
 }
@@ -192,27 +192,48 @@
 
 /* ── Foglie (nodi terminali) ──
    Ogni foglia che genera qualcosa (task/nota) ha anche un secondo pulsante
-   "+" rosso affiancato, per creare invece una scadenza a calendario (vedi
-   GtdEventPopup) — stesso rosso già usato per il quadrante Q1 di Eisenhower. */
+   affiancato, per creare invece una scadenza a calendario (vedi
+   GtdEventPopup): un calendarietto grigio con un "+" giallo in un angolo,
+   per distinguerlo a colpo d'occhio dal "+" del task/nota. */
 .gtd-leaf-row {
   display: flex;
   align-items: stretch;
   gap: 4px;
 }
 .gtd-leaf-event-btn {
+  position: relative;
   flex-shrink: 0;
-  width: 22px;
-  background: rgba(192,122,122,0.08);
-  border: 1px solid rgba(192,122,122,0.5);
-  color: #c07a7a;
+  width: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  background: rgba(255,255,255,0.02);
+  border: 1px solid var(--border2);
   border-radius: 7px;
-  font-weight: 700;
-  font-size: 13px;
   cursor: pointer;
-  font-family: 'Outfit', sans-serif;
   transition: background 0.15s, border-color 0.15s;
 }
-.gtd-leaf-event-btn:hover { background: rgba(192,122,122,0.18); border-color: #c07a7a; }
+.gtd-leaf-event-btn:hover { background: rgba(255,255,255,0.06); border-color: var(--muted); }
+.gtd-leaf-event-icon {
+  font-size: 13px;
+  filter: grayscale(1) brightness(1.15);
+  opacity: 0.85;
+}
+.gtd-leaf-event-plus {
+  position: absolute;
+  bottom: -3px;
+  right: -3px;
+  width: 11px;
+  height: 11px;
+  line-height: 11px;
+  border-radius: 50%;
+  background: var(--surface);
+  color: #e0c34a;
+  font-size: 10px;
+  font-weight: 800;
+  text-align: center;
+}
 
 .gtd-leaf-btn {
   width: 150px;
@@ -359,6 +380,14 @@
   text-transform: none;
   letter-spacing: normal;
 }
+/* Icona del calendario nativo visibile anche sul tema scuro, e cliccabile su
+   tutto il campo (vedi openDatePicker in GtdEventPopup) invece che solo sulla
+   piccola icona. */
+input[type="date"].gtd-select { cursor: pointer; }
+input[type="date"].gtd-select::-webkit-calendar-picker-indicator {
+  filter: invert(0.7);
+  cursor: pointer;
+}
 
 .gtd-primary-btn {
   background: none;
@@ -378,9 +407,10 @@
   .gtd-overlay { padding: 10px; }
   .gtd-body { padding: 16px 8px 20px; }
   .gtd-decision-connector { width: 8px; }
-  .gtd-decision-side.ghost { width: 126px; }
+  .gtd-decision-side.ghost { width: 128px; }
   .gtd-leaf-btn { width: 104px; font-size: 11px; padding: 7px 6px; }
-  .gtd-leaf-event-btn { width: 18px; font-size: 12px; }
+  .gtd-leaf-event-btn { width: 20px; }
+  .gtd-leaf-event-icon { font-size: 11px; }
   .gtd-flow-node { font-size: 12px; padding: 7px 12px; }
   .gtd-flow-node.small { font-size: 10px; padding: 5px 9px; }
 }

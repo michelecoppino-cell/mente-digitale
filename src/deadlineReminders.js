@@ -28,3 +28,13 @@ export function reminderMarker(eventId, eventStartIso) {
 export function hasReminderMarker(task, marker) {
   return !!task.body?.content?.includes(marker);
 }
+
+// Filtra localmente (nessuna chiamata Graph) gli eventi il cui titolo inizia
+// con "[NomeSezione]" — usata dal Pannello sezione sull'elenco di eventi già
+// precaricato una volta sola in App.jsx (preloadSectionCalendarEvents),
+// invece di interrogare Calendario a ogni apertura del pannello.
+export function filterEventsBySectionPrefix(events, sectionName) {
+  if (!sectionName) return [];
+  const prefix = `[${sectionName.toLowerCase()}]`;
+  return (events || []).filter(e => (e.subject || '').toLowerCase().startsWith(prefix));
+}
