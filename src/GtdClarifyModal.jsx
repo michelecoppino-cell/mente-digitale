@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react';
-import { createTask, createNotePage } from './api';
+import { createTask, createNotePage, createCalendarEvent } from './api';
+import { cacheRemove } from './cache';
 import { sectionRole, paraSectionLabel } from './paraConfig';
 import './GtdClarifyModal.css';
 
@@ -14,6 +15,7 @@ import './GtdClarifyModal.css';
 // la descrizione completa, invece di un modulo inline.
 export default function GtdClarifyModal({ open, onClose, todoLists = [], notebooks = [], sectionsMap = {}, onTaskCreated, seedText = '' }) {
   const [activeLeaf, setActiveLeaf] = useState(null);
+  const [eventLeaf, setEventLeaf] = useState(null);
 
   // Sezioni PARA "Risorse/Idee", "Archivio" e "Area/Ricorrenti", una per
   // taccuino che le possiede — l'etichetta è il nome della sezione depurato
@@ -27,7 +29,7 @@ export default function GtdClarifyModal({ open, onClose, todoLists = [], noteboo
   const areaLists = useMemo(() => todoLists.filter(l => sectionRole(l.displayName) === 'area'), [todoLists]);
   const resourceLists = useMemo(() => todoLists.filter(l => sectionRole(l.displayName) === 'resources'), [todoLists]);
 
-  function handleClose() { setActiveLeaf(null); onClose(); }
+  function handleClose() { setActiveLeaf(null); setEventLeaf(null); onClose(); }
 
   async function submitLog() {
     // Cestino / Farla: nessun task o nota — si registra solo localmente il testo.
@@ -84,8 +86,8 @@ export default function GtdClarifyModal({ open, onClose, todoLists = [], noteboo
                 <div className="gtd-decision-side-label">No</div>
                 <div className="gtd-leaf-col">
                   <GtdLeafBtn leaf={leaves.trash} onOpen={setActiveLeaf} />
-                  <GtdLeafBtn leaf={leaves.resources} onOpen={setActiveLeaf} />
-                  <GtdLeafBtn leaf={leaves.archive} onOpen={setActiveLeaf} />
+                  <GtdLeafBtn leaf={leaves.resources} onOpen={setActiveLeaf} onOpenEvent={setEventLeaf} />
+                  <GtdLeafBtn leaf={leaves.archive} onOpen={setActiveLeaf} onOpenEvent={setEventLeaf} />
                 </div>
               </div>
               <div className="gtd-decision-connector" />
@@ -119,9 +121,9 @@ export default function GtdClarifyModal({ open, onClose, todoLists = [], noteboo
                 <div className="gtd-vline" />
                 <div className="gtd-decision-side-label">No</div>
                 <div className="gtd-leaf-col">
-                  <GtdLeafBtn leaf={leaves.project} onOpen={setActiveLeaf} />
-                  <GtdLeafBtn leaf={leaves.area} onOpen={setActiveLeaf} />
-                  <GtdLeafBtn leaf={leaves.resourceTask} onOpen={setActiveLeaf} />
+                  <GtdLeafBtn leaf={leaves.project} onOpen={setActiveLeaf} onOpenEvent={setEventLeaf} />
+                  <GtdLeafBtn leaf={leaves.area} onOpen={setActiveLeaf} onOpenEvent={setEventLeaf} />
+                  <GtdLeafBtn leaf={leaves.resourceTask} onOpen={setActiveLeaf} onOpenEvent={setEventLeaf} />
                 </div>
               </div>
             </div>
@@ -130,6 +132,9 @@ export default function GtdClarifyModal({ open, onClose, todoLists = [], noteboo
 
         {activeLeaf && (
           <GtdLeafPopup leaf={activeLeaf} seedText={seedText} onClose={() => setActiveLeaf(null)} />
+        )}
+        {eventLeaf && (
+          <GtdEventPopup leaf={eventLeaf} seedText={seedText} onClose={() => setEventLeaf(null)} />
         )}
       </div>
     </div>
@@ -144,7 +149,7 @@ function paraSectionsByRole(notebooks, sectionsMap, role) {
   const out = [];
   for (const nb of notebooks) {
     const secs = (sectionsMap[nb.id] || []).filter(s => sectionRole(s.displayName) === role);
-    for (const sec of secs) out.push({ id: sec.id, label: paraSectionLabel(sec.displayName) });
+    for (const sec of secs) out.push({ id: sec.id, label: paraSectionLabel(sec.displayName), name: sec.displayName });
   }
   return out;
 }
@@ -152,13 +157,20 @@ function paraSectionsByRole(notebooks, sectionsMap, role) {
 // ── GtdLeafBtn ────────────────────────────────────────────────────────────────
 // Nodo terminale del diagramma: un semplice pulsante che apre la finestra
 // pop-up di quella foglia (nessun modulo inline).
-function GtdLeafBtn({ leaf, onOpen }) {
+function GtdLeafBtn({ leaf, onOpen, onOpenEvent }) {
   return (
-    <button className="gtd-leaf-btn" onClick={() => onOpen(leaf)}>
-      <span className="gtd-leaf-icon">{leaf.icon}</span>
-      <span className="gtd-leaf-label">{leaf.label}</span>
-      <span className="gtd-leaf-plus">+</span>
-    </button>
+    <div className="gtd-leaf-row">
+      <button className="gtd-leaf-btn" onClick={() => onOpen(leaf)}>
+        <span className="gtd-leaf-icon">{leaf.icon}</span>
+        <span className="gtd-leaf-label">{leaf.label}</span>
+        <span className="gtd-leaf-plus">+</span>
+      </button>
+      {onOpenEvent && (
+        <button className="gtd-leaf-event-btn" onClick={() => onOpenEvent(leaf)} title="Crea scadenza a calendario">
+          +
+        </button>
+      )}
+    </div>
   );
 }
 
@@ -236,6 +248,120 @@ function GtdLeafPopup({ leaf, seedText, onClose }) {
               </label>
               <button className="gtd-primary-btn" disabled={!canSubmit} onClick={handleSubmit}>
                 {busy ? '…' : leaf.confirmLabel}
+              </button>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── GtdEventPopup ─────────────────────────────────────────────────────────────
+// Alternativa al task/nota: crea un evento Calendario tutto il giorno con
+// reminder nativo — la scadenza vera e propria (assicurazione, salute,
+// tasse...). Il titolo è sempre "[NomeSezione] Titolo": la prima parte è
+// compilata con la sezione/lista scelta (stessa selezione del popup
+// task/nota), la seconda si scrive a mano — stessa convenzione letta da
+// deadlineReminders.js/refreshDeadlineReminders in App.jsx, che trasforma
+// l'evento in un task nella lista dell'Area quando il reminder scatta.
+function GtdEventPopup({ leaf, seedText, onClose }) {
+  const options = leaf.kind === 'list' ? leaf.todoLists : leaf.sections;
+  const [targetId, setTargetId] = useState(options?.[0]?.id || '');
+  const [title, setTitle] = useState(seedText || '');
+  const [deadlineDate, setDeadlineDate] = useState('');
+  const [taskDate, setTaskDate] = useState('');
+  const [notes, setNotes] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [done, setDone] = useState(false);
+  const [error, setError] = useState('');
+
+  const target = (options || []).find(o => o.id === targetId);
+  const prefixName = target ? (leaf.kind === 'list' ? target.displayName : target.name) : '';
+
+  const canSubmit = !busy && targetId && title.trim() && deadlineDate && taskDate && taskDate <= deadlineDate;
+
+  async function handleSubmit() {
+    if (!canSubmit) return;
+    setBusy(true);
+    setError('');
+    try {
+      const reminderMinutesBeforeStart = Math.max(0, Math.round(
+        (new Date(`${deadlineDate}T00:00:00Z`) - new Date(`${taskDate}T00:00:00Z`)) / 60000
+      ));
+      await createCalendarEvent({
+        subject: `[${prefixName}] ${title.trim()}`,
+        startDate: deadlineDate,
+        reminderMinutesBeforeStart,
+        body: notes.trim() || undefined,
+      });
+      cacheRemove(`sec_events_${prefixName}`);
+      setBusy(false);
+      setDone(true);
+      setTimeout(onClose, 900);
+    } catch (e) {
+      console.error('gtd event submit', leaf.id, e);
+      setError("Errore nella creazione dell'evento");
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="gtd-popup-overlay" onClick={onClose}>
+      <div className="gtd-popup" onClick={e => e.stopPropagation()}>
+        <div className="gtd-popup-header">
+          <span className="gtd-popup-icon">📅</span>
+          <span className="gtd-popup-title">{leaf.label} — Scadenza a calendario</span>
+          <button className="gtd-popup-close" onClick={onClose} title="Chiudi">✕</button>
+        </div>
+        <div className="gtd-popup-body">
+          {done ? (
+            <div className="gtd-leaf-confirm">✓ Evento creato</div>
+          ) : (
+            <>
+              <label className="gtd-popup-field">
+                <span>{leaf.kind === 'list' ? 'Lista' : 'Taccuino'}</span>
+                <select className="gtd-select" value={targetId} onChange={e => setTargetId(e.target.value)}>
+                  {(options || []).map(o => (
+                    <option key={o.id} value={o.id}>{leaf.kind === 'list' ? o.displayName : o.label}</option>
+                  ))}
+                </select>
+              </label>
+              <label className="gtd-popup-field">
+                <span>Titolo evento</span>
+                <div className="gtd-event-title-row">
+                  <span className="gtd-event-prefix">{prefixName ? `[${prefixName}]` : '…'}</span>
+                  <input
+                    className="gtd-select"
+                    type="text"
+                    autoFocus
+                    value={title}
+                    onChange={e => setTitle(e.target.value)}
+                    placeholder="Titolo della scadenza"
+                  />
+                </div>
+              </label>
+              <label className="gtd-popup-field">
+                <span>Data scadenza</span>
+                <input className="gtd-select" type="date" value={deadlineDate} onChange={e => setDeadlineDate(e.target.value)} />
+              </label>
+              <label className="gtd-popup-field">
+                <span>Diventa task dal</span>
+                <input className="gtd-select" type="date" value={taskDate} max={deadlineDate || undefined} onChange={e => setTaskDate(e.target.value)} />
+              </label>
+              <label className="gtd-popup-field">
+                <span>Note evento</span>
+                <textarea
+                  className="gtd-textarea"
+                  rows={4}
+                  value={notes}
+                  onChange={e => setNotes(e.target.value)}
+                  placeholder="Note facoltative…"
+                />
+              </label>
+              {error && <div className="gtd-error">{error}</div>}
+              <button className="gtd-primary-btn" disabled={!canSubmit} onClick={handleSubmit}>
+                {busy ? '…' : 'Crea evento'}
               </button>
             </>
           )}

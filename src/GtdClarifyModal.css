@@ -124,7 +124,7 @@
   gap: 6px;
 }
 .gtd-decision-side.ghost {
-  width: 150px;
+  width: 176px; /* larghezza foglia (150px) + gap + pulsante evento (22px) */
   flex-shrink: 0;
   visibility: hidden;
 }
@@ -190,7 +190,30 @@
   gap: 6px;
 }
 
-/* ── Foglie (nodi terminali) ── */
+/* ── Foglie (nodi terminali) ──
+   Ogni foglia che genera qualcosa (task/nota) ha anche un secondo pulsante
+   "+" rosso affiancato, per creare invece una scadenza a calendario (vedi
+   GtdEventPopup) — stesso rosso già usato per il quadrante Q1 di Eisenhower. */
+.gtd-leaf-row {
+  display: flex;
+  align-items: stretch;
+  gap: 4px;
+}
+.gtd-leaf-event-btn {
+  flex-shrink: 0;
+  width: 22px;
+  background: rgba(192,122,122,0.08);
+  border: 1px solid rgba(192,122,122,0.5);
+  color: #c07a7a;
+  border-radius: 7px;
+  font-weight: 700;
+  font-size: 13px;
+  cursor: pointer;
+  font-family: 'Outfit', sans-serif;
+  transition: background 0.15s, border-color 0.15s;
+}
+.gtd-leaf-event-btn:hover { background: rgba(192,122,122,0.18); border-color: #c07a7a; }
+
 .gtd-leaf-btn {
   width: 150px;
   display: flex;
@@ -296,6 +319,25 @@
 .gtd-textarea:focus { outline: none; border-color: var(--accent); }
 .gtd-textarea-lg { font-size: 13px; }
 
+.gtd-event-title-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.gtd-event-prefix {
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.gtd-error {
+  font-size: 11px;
+  color: #c07a7a;
+  text-align: center;
+}
+
 .gtd-leaf-confirm {
   font-size: 12px;
   color: #86c07a;
@@ -336,8 +378,9 @@
   .gtd-overlay { padding: 10px; }
   .gtd-body { padding: 16px 8px 20px; }
   .gtd-decision-connector { width: 8px; }
-  .gtd-decision-side.ghost { width: 104px; }
+  .gtd-decision-side.ghost { width: 126px; }
   .gtd-leaf-btn { width: 104px; font-size: 11px; padding: 7px 6px; }
+  .gtd-leaf-event-btn { width: 18px; font-size: 12px; }
   .gtd-flow-node { font-size: 12px; padding: 7px 12px; }
   .gtd-flow-node.small { font-size: 10px; padding: 5px 9px; }
 }
