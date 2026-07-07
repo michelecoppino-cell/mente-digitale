@@ -26,10 +26,6 @@ export function cacheGet(key) {
   } catch { return null; }
 }
 
-export function cacheRemove(key) {
-  try { localStorage.removeItem(PREFIX + key); } catch { /* noop */ }
-}
-
 export function cacheClear() {
   // Cancella tutte le chiavi della app
   Object.keys(localStorage)

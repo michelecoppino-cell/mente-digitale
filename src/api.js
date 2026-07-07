@@ -91,6 +91,15 @@ export async function getTodoTasks(listId) {
   return d.value;
 }
 
+// Task di una lista indipendentemente dallo stato (anche completati), solo
+// id+body: usata per il controllo anti-duplicati delle scadenze ricorrenti
+// (refreshDeadlineReminders in App.jsx) — getTodoTasks esclude i completati,
+// e uno spuntato non deve poter essere ricreato al giro successivo.
+export async function getTasksForDeadlineDedup(listId) {
+  const d = await call(`/me/todo/lists/${listId}/tasks?$select=id,body&$top=200`);
+  return d.value || [];
+}
+
 export async function completeTask(listId, taskId) {
   return call(`/me/todo/lists/${listId}/tasks/${taskId}`, {
     method: 'PATCH',
@@ -215,18 +224,6 @@ export async function getCalendarEvents(startDate, endDate, top = 50) {
     const bt = b.start?.dateTime || b.start?.date || '';
     return at.localeCompare(bt);
   });
-}
-
-// Eventi Calendario il cui titolo inizia con "[NomeSezione]" — la stessa
-// convenzione usata per le scadenze ricorrenti (vedi deadlineReminders.js),
-// mostrati nel Pannello sezione insieme ai task ToDo.
-export async function getSectionCalendarEvents(sectionName, monthsAhead = 18) {
-  if (!sectionName) return [];
-  const start = new Date(); start.setMonth(start.getMonth() - 1);
-  const end = new Date(); end.setMonth(end.getMonth() + monthsAhead);
-  const events = await getCalendarEvents(start, end, 250);
-  const prefix = `[${sectionName.toLowerCase()}]`;
-  return events.filter(e => (e.subject || '').toLowerCase().startsWith(prefix));
 }
 
 // Crea un evento Calendario tutto il giorno con reminder nativo — sorgente

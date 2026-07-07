@@ -1,20 +1,21 @@
 import { useState, useEffect } from 'react';
-import { getPages, getTodoTasks, createTask, completeTask, getSectionCalendarEvents } from './api';
-import { cacheGet, cacheSet, TTL } from './cache';
-import { parseReminderSubject } from './deadlineReminders';
+import { getPages, getTodoTasks, createTask, completeTask } from './api';
+import { filterEventsBySectionPrefix, parseReminderSubject } from './deadlineReminders';
 import Skeleton from './Skeleton';
 import OneDriveBox from './OneDriveBox';
 import { formatDueDate } from './plannerShared';
 import { openProtocol } from './protocolLink';
 
-export default function Panel({ selected, pagesCache, tasksCache, onClose }) {
+// calendarEvents: elenco già precaricato in App.jsx (preloadSectionCalendarEvents,
+// un'unica chiamata Graph in coda dopo task/pagine) — qui si filtra solo
+// localmente per prefisso "[NomeSezione]", nessuna nuova richiesta di rete a
+// ogni apertura del pannello (era il collo di bottiglia lento lamentato).
+export default function Panel({ selected, pagesCache, tasksCache, calendarEvents, onClose }) {
   const [pages, setPages] = useState([]);
   const [tasks, setTasks] = useState([]);
   const [noDeadlineTasks, setNoDeadlineTasks] = useState([]);
-  const [calendarEvents, setCalendarEvents] = useState([]);
   const [loadingPages, setLoadingPages] = useState(false);
   const [loadingTasks, setLoadingTasks] = useState(false);
-  const [loadingEvents, setLoadingEvents] = useState(false);
   const [newTask, setNewTask] = useState('');
   const [adding, setAdding] = useState(false);
 
@@ -22,13 +23,11 @@ export default function Panel({ selected, pagesCache, tasksCache, onClose }) {
     setPages([]);
     setTasks([]);
     setNoDeadlineTasks([]);
-    setCalendarEvents([]);
     setNewTask('');
     if (!selected) return;
     setTimeout(() => {
       loadPages(selected.data.id);
       if (selected.listId) loadTasks(selected.listId);
-      if (selected.data.displayName) loadCalendarEvents(selected.data.displayName);
     }, 0);
   }, [selected]);
 
@@ -59,20 +58,6 @@ export default function Panel({ selected, pagesCache, tasksCache, onClose }) {
       splitTasks(all);
     } catch(e) { console.error(e); }
     setLoadingTasks(false);
-  }
-
-  async function loadCalendarEvents(sectionName) {
-    setLoadingEvents(true);
-    try {
-      const cacheKey = `sec_events_${sectionName}`;
-      let events = cacheGet(cacheKey);
-      if (!events) {
-        events = await getSectionCalendarEvents(sectionName);
-        cacheSet(cacheKey, events, TTL.TASKS);
-      }
-      setCalendarEvents(events);
-    } catch (e) { console.error('section calendar events', e); }
-    setLoadingEvents(false);
   }
 
   function splitTasks(all) {
@@ -114,8 +99,8 @@ export default function Panel({ selected, pagesCache, tasksCache, onClose }) {
   const { data, nb, listId } = selected;
   const color = nb?._color || '#c8a96e';
   const allTasks = [...tasks, ...noDeadlineTasks];
-  const sortedEvents = [...calendarEvents].sort((a, b) =>
-    (a.start?.dateTime || a.start?.date || '').localeCompare(b.start?.dateTime || b.start?.date || ''));
+  const sortedEvents = filterEventsBySectionPrefix(calendarEvents, data.displayName)
+    .sort((a, b) => (a.start?.dateTime || a.start?.date || '').localeCompare(b.start?.dateTime || b.start?.date || ''));
 
   return (
     <div className="panel open">
@@ -145,12 +130,12 @@ export default function Panel({ selected, pagesCache, tasksCache, onClose }) {
                   {adding ? '…' : '+'}
                 </button>
               </div>
-              {(loadingTasks || loadingEvents) && <Skeleton rows={4} />}
+              {loadingTasks && <Skeleton rows={4} />}
               <div className="panel-col-body">
                 {sortedEvents.map(ev => <CalendarEventRow key={ev.id} event={ev} color={color} />)}
                 {tasks.map(t => <TaskRow key={t.id} task={t} color={color} onComplete={handleComplete} />)}
                 {noDeadlineTasks.map(t => <TaskRow key={t.id} task={t} color={color} onComplete={handleComplete} />)}
-                {!loadingTasks && !loadingEvents && !allTasks.length && !sortedEvents.length && (
+                {!loadingTasks && !allTasks.length && !sortedEvents.length && (
                   <div className="panel-empty">Nessuna attività</div>
                 )}
               </div>

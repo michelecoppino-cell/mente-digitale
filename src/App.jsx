@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { initAuth, getAccount, login } from './auth';
-import { getNotebooks, getSections, getTodoLists, getTodoTasks, getPages, getRecentEmails, getPageContentHtml, markOneNoteTagDone, getReminders, createTask } from './api';
+import { getNotebooks, getSections, getTodoLists, getTodoTasks, getPages, getRecentEmails, getPageContentHtml, markOneNoteTagDone, getReminders, createTask, getCalendarEvents, getTasksForDeadlineDedup } from './api';
 import { cacheGet, cacheSet, cacheClear, TTL } from './cache';
 import { extractEmailCandidates, extractOneNoteCandidates } from './dailyReview';
 import { parseReminderSubject, reminderMarker, hasReminderMarker } from './deadlineReminders';
@@ -95,6 +95,7 @@ export default function App() {
   const pagesCache = useRef({});
   const tasksCache = useRef({});
   const [scheduledTasks, setScheduledTasks] = useState(null);
+  const [sectionCalendarEvents, setSectionCalendarEvents] = useState([]);
   const preloadQueueRef = useRef([]);
   const preloadRunningRef = useRef(false);
   const todoListsRef = useRef([]);
@@ -179,6 +180,12 @@ export default function App() {
       refreshDailyReview();
       refreshDeadlineReminders(todoLists);
 
+      // Precarica in coda (dopo task/pagine) tutti gli eventi Calendario dei
+      // prossimi mesi in un'unica chiamata: il Pannello sezione li filtra poi
+      // localmente per prefisso "[NomeSezione]", senza dover interrogare
+      // Graph a ogni apertura (era il collo di bottiglia lento lamentato).
+      setTimeout(() => preloadSectionCalendarEvents(), 3000);
+
     } catch (e) {
       console.error('load', e);
       setSync({ state: 'error', label: 'Errore caricamento' });
@@ -262,7 +269,7 @@ export default function App() {
         const marker = reminderMarker(r.eventId, startIso);
 
         if (!tasksByListId[list.id]) {
-          tasksByListId[list.id] = await getTodoTasks(list.id).catch(e => { console.error('deadline tasks', list.displayName, e); return []; });
+          tasksByListId[list.id] = await getTasksForDeadlineDedup(list.id).catch(e => { console.error('deadline tasks', list.displayName, e); return []; });
         }
         if (tasksByListId[list.id].some(t => hasReminderMarker(t, marker))) continue;
 
@@ -278,6 +285,20 @@ export default function App() {
     } catch (e) {
       console.error('deadline reminders', e);
     }
+  }
+
+  // Eventi Calendario dei prossimi mesi, precaricati in un'unica chiamata (in
+  // coda dopo task/pagine, vedi load()) invece che dal Pannello sezione a ogni
+  // apertura — era il collo di bottiglia lento lamentato, perché ripeteva
+  // l'intera scansione multi-calendario a ogni click. Il Pannello ora filtra
+  // solo localmente per prefisso "[NomeSezione]" (vedi deadlineReminders.js).
+  async function preloadSectionCalendarEvents() {
+    try {
+      const start = new Date(); start.setMonth(start.getMonth() - 1);
+      const end = new Date(); end.setMonth(end.getMonth() + 18);
+      const events = await getCalendarEvents(start, end, 250);
+      setSectionCalendarEvents(events);
+    } catch (e) { console.error('section calendar events preload', e); }
   }
 
   // Se il candidato viene da OneNote, spunta subito la riga "Da fare" nella
@@ -595,6 +616,7 @@ export default function App() {
           selected={selected}
           pagesCache={pagesCache}
           tasksCache={tasksCache}
+          calendarEvents={sectionCalendarEvents}
           onClose={() => setSelected(null)}
         />
         <PlannerView
@@ -637,6 +659,7 @@ export default function App() {
             setScheduledTasks(prev => [...(prev || []), task]);
             if (addToday) { setPendingPlannerTask(task); setPlannerOpen(true); }
           }}
+          onEventCreated={event => setSectionCalendarEvents(prev => [...(prev || []), event])}
         />
         <SearchOverlay
           open={searchOpen}
