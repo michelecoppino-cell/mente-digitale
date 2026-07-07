@@ -1401,3 +1401,27 @@
   .planner-month-grid { grid-auto-rows: minmax(64px, 1fr); }
   .planner-month-chip-time { display: none; }
 }
+
+/* Pulsante volante per avviare il Pomodoro — stesso stile e riga del "+"
+   dorato GTD (App.css .gtd-fab), affiancato a sinistra dello stesso. */
+.pomodoro-fab {
+  position: fixed;
+  right: calc(20px + 46px + 12px + env(safe-area-inset-right, 0px));
+  bottom: calc(20px + env(safe-area-inset-bottom, 0px));
+  z-index: 100;
+  width: 46px;
+  height: 46px;
+  background: var(--accent);
+  border: none;
+  color: #14110d;
+  border-radius: 50%;
+  font-size: 20px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.35);
+  transition: transform 0.15s, box-shadow 0.15s;
+}
+.pomodoro-fab:hover { transform: translateY(-1px); box-shadow: 0 12px 30px rgba(200,169,110,0.45); }
+.pomodoro-fab:active { transform: scale(0.94); }

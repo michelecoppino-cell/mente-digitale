@@ -37,15 +37,6 @@
 }
 .pomodoro-close:hover { color: var(--text); }
 
-.pomodoro-task {
-  font-size: 11px;
-  color: var(--muted);
-  margin-bottom: 8px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .pomodoro-time {
   font-family: 'Playfair Display', serif;
   font-size: 34px;
