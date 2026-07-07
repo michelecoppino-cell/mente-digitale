@@ -179,7 +179,7 @@ export async function getCalendars() {
 export async function getCalendarEvents(startDate, endDate, top = 50) {
   const start = startDate.toISOString();
   const end = endDate.toISOString();
-  const params = `startDateTime=${start}&endDateTime=${end}&$orderby=start/dateTime&$top=${top}&$select=subject,start,end,isAllDay`;
+  const params = `startDateTime=${start}&endDateTime=${end}&$orderby=start/dateTime&$top=${top}&$select=subject,start,end,isAllDay,webLink`;
 
   // Recupera tutti i calendari per distinguere condivisi da propri
   let calendars = [];
@@ -214,6 +214,39 @@ export async function getCalendarEvents(startDate, endDate, top = 50) {
     const at = a.start?.dateTime || a.start?.date || '';
     const bt = b.start?.dateTime || b.start?.date || '';
     return at.localeCompare(bt);
+  });
+}
+
+// Eventi Calendario il cui titolo inizia con "[NomeSezione]" — la stessa
+// convenzione usata per le scadenze ricorrenti (vedi deadlineReminders.js),
+// mostrati nel Pannello sezione insieme ai task ToDo.
+export async function getSectionCalendarEvents(sectionName, monthsAhead = 18) {
+  if (!sectionName) return [];
+  const start = new Date(); start.setMonth(start.getMonth() - 1);
+  const end = new Date(); end.setMonth(end.getMonth() + monthsAhead);
+  const events = await getCalendarEvents(start, end, 250);
+  const prefix = `[${sectionName.toLowerCase()}]`;
+  return events.filter(e => (e.subject || '').toLowerCase().startsWith(prefix));
+}
+
+// Crea un evento Calendario tutto il giorno con reminder nativo — sorgente
+// di una scadenza ricorrente (vedi deadlineReminders.js/refreshDeadlineReminders
+// in App.jsx, che la trasforma in task ToDo quando il reminder scatta).
+export async function createCalendarEvent({ subject, startDate, reminderMinutesBeforeStart, body }) {
+  const end = new Date(`${startDate}T00:00:00Z`);
+  end.setUTCDate(end.getUTCDate() + 1);
+  const payload = {
+    subject,
+    isAllDay: true,
+    start: { dateTime: `${startDate}T00:00:00`, timeZone: 'UTC' },
+    end: { dateTime: `${end.toISOString().slice(0, 10)}T00:00:00`, timeZone: 'UTC' },
+    isReminderOn: true,
+    reminderMinutesBeforeStart,
+    ...(body ? { body: { contentType: 'text', content: body } } : {}),
+  };
+  return call('/me/events', {
+    method: 'POST',
+    body: JSON.stringify(payload),
   });
 }
 

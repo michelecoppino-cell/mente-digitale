@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react';
-import { getPages, getTodoTasks, createTask, completeTask } from './api';
+import { getPages, getTodoTasks, createTask, completeTask, getSectionCalendarEvents } from './api';
+import { cacheGet, cacheSet, TTL } from './cache';
+import { parseReminderSubject } from './deadlineReminders';
 import Skeleton from './Skeleton';
 import OneDriveBox from './OneDriveBox';
 import { formatDueDate } from './plannerShared';
@@ -9,8 +11,10 @@ export default function Panel({ selected, pagesCache, tasksCache, onClose }) {
   const [pages, setPages] = useState([]);
   const [tasks, setTasks] = useState([]);
   const [noDeadlineTasks, setNoDeadlineTasks] = useState([]);
+  const [calendarEvents, setCalendarEvents] = useState([]);
   const [loadingPages, setLoadingPages] = useState(false);
   const [loadingTasks, setLoadingTasks] = useState(false);
+  const [loadingEvents, setLoadingEvents] = useState(false);
   const [newTask, setNewTask] = useState('');
   const [adding, setAdding] = useState(false);
 
@@ -18,11 +22,13 @@ export default function Panel({ selected, pagesCache, tasksCache, onClose }) {
     setPages([]);
     setTasks([]);
     setNoDeadlineTasks([]);
+    setCalendarEvents([]);
     setNewTask('');
     if (!selected) return;
     setTimeout(() => {
       loadPages(selected.data.id);
       if (selected.listId) loadTasks(selected.listId);
+      if (selected.data.displayName) loadCalendarEvents(selected.data.displayName);
     }, 0);
   }, [selected]);
 
@@ -53,6 +59,20 @@ export default function Panel({ selected, pagesCache, tasksCache, onClose }) {
       splitTasks(all);
     } catch(e) { console.error(e); }
     setLoadingTasks(false);
+  }
+
+  async function loadCalendarEvents(sectionName) {
+    setLoadingEvents(true);
+    try {
+      const cacheKey = `sec_events_${sectionName}`;
+      let events = cacheGet(cacheKey);
+      if (!events) {
+        events = await getSectionCalendarEvents(sectionName);
+        cacheSet(cacheKey, events, TTL.TASKS);
+      }
+      setCalendarEvents(events);
+    } catch (e) { console.error('section calendar events', e); }
+    setLoadingEvents(false);
   }
 
   function splitTasks(all) {
@@ -94,6 +114,8 @@ export default function Panel({ selected, pagesCache, tasksCache, onClose }) {
   const { data, nb, listId } = selected;
   const color = nb?._color || '#c8a96e';
   const allTasks = [...tasks, ...noDeadlineTasks];
+  const sortedEvents = [...calendarEvents].sort((a, b) =>
+    (a.start?.dateTime || a.start?.date || '').localeCompare(b.start?.dateTime || b.start?.date || ''));
 
   return (
     <div className="panel open">
@@ -103,11 +125,13 @@ export default function Panel({ selected, pagesCache, tasksCache, onClose }) {
 
       <div className="panel-body panel-3col">
 
-        {/* ── ToDo ── */}
+        {/* ── ToDo/Calendario ── */}
         <div className="panel-col">
           <div className="panel-col-header" style={{ color }}>
-            <span>ToDo</span>
-            {allTasks.length > 0 && <span className="panel-col-count">{allTasks.length}</span>}
+            <span>ToDo/Calendario</span>
+            {(allTasks.length + sortedEvents.length) > 0 && (
+              <span className="panel-col-count">{allTasks.length + sortedEvents.length}</span>
+            )}
           </div>
           {listId ? (
             <>
@@ -121,11 +145,14 @@ export default function Panel({ selected, pagesCache, tasksCache, onClose }) {
                   {adding ? '…' : '+'}
                 </button>
               </div>
-              {loadingTasks && <Skeleton rows={4} />}
+              {(loadingTasks || loadingEvents) && <Skeleton rows={4} />}
               <div className="panel-col-body">
+                {sortedEvents.map(ev => <CalendarEventRow key={ev.id} event={ev} color={color} />)}
                 {tasks.map(t => <TaskRow key={t.id} task={t} color={color} onComplete={handleComplete} />)}
                 {noDeadlineTasks.map(t => <TaskRow key={t.id} task={t} color={color} onComplete={handleComplete} />)}
-                {!loadingTasks && !allTasks.length && <div className="panel-empty">Nessuna attività</div>}
+                {!loadingTasks && !loadingEvents && !allTasks.length && !sortedEvents.length && (
+                  <div className="panel-empty">Nessuna attività</div>
+                )}
               </div>
             </>
           ) : (
@@ -225,6 +252,29 @@ export function PageTree({ pages }) {
   }
 
   return <>{tree.map(n => renderNode(n, 0))}</>;
+}
+
+// Evento Calendario di scadenza (titolo "[NomeSezione] Titolo", vedi
+// deadlineReminders.js): mostrato nella stessa colonna dei task ToDo,
+// distinto da un'icona calendario invece del pallino di completamento —
+// non è completabile da qui, si spunta il task che genera quando scatta.
+function CalendarEventRow({ event, color }) {
+  const parsed = parseReminderSubject(event.subject);
+  const label = parsed?.title || event.subject;
+  const due = formatDueDate(event.start);
+
+  return (
+    <div className="task-row-item">
+      <span className="cal-event-icon" style={{ color: color + 'aa' }}>📅</span>
+      <div
+        className="task-row-content"
+        onClick={() => event.webLink && openProtocol(event.webLink)}
+        style={{ cursor: event.webLink ? 'pointer' : 'default' }}>
+        <div className="task-title">{label}</div>
+        {due && <div className="task-due">{due}</div>}
+      </div>
+    </div>
+  );
 }
 
 function TaskRow({ task, color, onComplete }) {

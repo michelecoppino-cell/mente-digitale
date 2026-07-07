@@ -1065,6 +1065,13 @@
 .task-row-item:last-child { border-bottom: none; }
 .task-row-item.completing { opacity: 0.4; }
 .task-row-content { flex: 1; min-width: 0; }
+.cal-event-icon {
+  width: 14px;
+  flex-shrink: 0;
+  text-align: center;
+  font-size: 11px;
+  margin-top: 2px;
+}
 
 /* ── RSS Bar ── */
 .rss-bar {
