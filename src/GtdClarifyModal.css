@@ -191,17 +191,17 @@
 }
 
 /* ── Foglie (nodi terminali) ──
-   Ogni foglia che genera qualcosa (task/nota) ha anche un secondo pulsante
-   affiancato, per creare invece una scadenza a calendario (vedi
-   GtdEventPopup): un calendarietto grigio con un "+" giallo in un angolo,
-   per distinguerlo a colpo d'occhio dal "+" del task/nota. */
+   Ogni foglia che genera qualcosa (pagina/task) mostra un badge coerente
+   con l'app di destinazione — icona + "+" giallo nell'angolo, stesso
+   linguaggio visivo per OneNote/ToDo/Calendario. Le foglie di tipo "list"
+   hanno anche un secondo pulsante affiancato, per creare invece una
+   scadenza a calendario (vedi GtdEventPopup). */
 .gtd-leaf-row {
   display: flex;
   align-items: stretch;
   gap: 4px;
 }
 .gtd-leaf-event-btn {
-  position: relative;
   flex-shrink: 0;
   width: 24px;
   display: flex;
@@ -215,15 +215,38 @@
   transition: background 0.15s, border-color 0.15s;
 }
 .gtd-leaf-event-btn:hover { background: rgba(255,255,255,0.06); border-color: var(--muted); }
-.gtd-leaf-event-icon {
-  font-size: 13px;
-  filter: grayscale(1) brightness(1.15);
-  opacity: 0.85;
+
+.gtd-mini-badge {
+  position: relative;
+  flex-shrink: 0;
+  width: 15px;
+  height: 15px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
-.gtd-leaf-event-plus {
+.gtd-mini-icon {
+  font-size: 13px;
+  line-height: 1;
+}
+.gtd-mini-icon-calendar { filter: grayscale(1) brightness(1.15); opacity: 0.85; }
+.gtd-mini-icon-todo { font-size: 12px; font-weight: 800; color: #4bacc6; }
+.gtd-mini-icon-onenote {
+  width: 12px;
+  height: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #7719aa;
+  color: #fff;
+  font-size: 8px;
+  font-weight: 800;
+  border-radius: 3px;
+}
+.gtd-mini-plus {
   position: absolute;
   bottom: -3px;
-  right: -3px;
+  right: -4px;
   width: 11px;
   height: 11px;
   line-height: 11px;
@@ -410,7 +433,7 @@ input[type="date"].gtd-select::-webkit-calendar-picker-indicator {
   .gtd-decision-side.ghost { width: 128px; }
   .gtd-leaf-btn { width: 104px; font-size: 11px; padding: 7px 6px; }
   .gtd-leaf-event-btn { width: 20px; }
-  .gtd-leaf-event-icon { font-size: 11px; }
+  .gtd-mini-icon { font-size: 11px; }
   .gtd-flow-node { font-size: 12px; padding: 7px 12px; }
   .gtd-flow-node.small { font-size: 10px; padding: 5px 9px; }
 }

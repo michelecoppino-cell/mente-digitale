@@ -5,26 +5,32 @@ import './GtdClarifyModal.css';
 
 // Diagramma di flusso GTD "Chiarire" (David Allen), adattato al metodo PARA
 // usato nell'app, sviluppato in verticale come il diagramma originale:
-// Inbox → Che cos'è? → [Cestino / Risorse / Archivio ← No] È un'azione?
+// Inbox → Che cos'è? → [Cestino / Progetti / Risorse-Idee / Aree ← No,
+//   solo pagina OneNote] È un'azione?
 //   → Sì → Richiede meno di due minuti?
 //               ├─ Sì → Falla
-//               └─ No → Task progetti / Task Area / Task risorse-idee (task)
-// Ogni foglia (Cestino/Risorse/Archivio/Falla/Task progetti/Task Area/Task
-// risorse-idee) apre una finestra pop-up con la scelta della destinazione e
-// la descrizione completa, invece di un modulo inline.
+//               └─ No → Progetti / Risorse-Idee / Aree (task ToDo, con
+//                       opzione di creare invece una scadenza a calendario)
+// Le tre destinazioni PARA (Progetti/Risorse-Idee/Aree) compaiono in
+// entrambi i rami con la stessa icona: cambia solo cosa creano, coerente
+// con la posizione nel diagramma — non azionabile → solo riferimento
+// (OneNote); azionabile → task (ToDo/Calendario). Ogni foglia apre una
+// finestra pop-up con la scelta della destinazione e la descrizione
+// completa, invece di un modulo inline.
 export default function GtdClarifyModal({ open, onClose, todoLists = [], notebooks = [], sectionsMap = {}, onTaskCreated, onEventCreated, seedText = '' }) {
   const [activeLeaf, setActiveLeaf] = useState(null);
   const [eventLeaf, setEventLeaf] = useState(null);
 
-  // Sezioni PARA "Risorse/Idee", "Archivio" e "Area/Ricorrenti", una per
-  // taccuino che le possiede — l'etichetta è il nome della sezione depurato
-  // dal prefisso PARA (es. "ARC-AUTO" → "AUTO").
+  // Sezioni OneNote delle tre destinazioni PARA (ramo "No", solo pagine di
+  // riferimento): "Progetti" sono le sezioni senza prefisso, "Risorse/Idee" e
+  // "Aree" quelle con prefisso PARA — etichetta depurata dal prefisso
+  // (es. "ARC-AUTO" → "AUTO", ma qui non si usa più Archivio).
+  const projectSections = useMemo(() => paraSectionsByRole(notebooks, sectionsMap, null), [notebooks, sectionsMap]);
   const resourceSections = useMemo(() => paraSectionsByRole(notebooks, sectionsMap, 'resources'), [notebooks, sectionsMap]);
-  const archiveSections = useMemo(() => paraSectionsByRole(notebooks, sectionsMap, 'archive'), [notebooks, sectionsMap]);
+  const areaSections = useMemo(() => paraSectionsByRole(notebooks, sectionsMap, 'area'), [notebooks, sectionsMap]);
 
-  // Liste ToDo "progetto" = tutte tranne quelle che coincidono con un nome PARA.
+  // Stesse tre destinazioni PARA come liste ToDo (ramo "Sì", task azionabili).
   const projectLists = useMemo(() => todoLists.filter(l => !sectionRole(l.displayName)), [todoLists]);
-  // Liste ToDo dei gruppi "AREA" e "RISORSE IDEE" (stesso prefisso PARA usato per le sezioni OneNote).
   const areaLists = useMemo(() => todoLists.filter(l => sectionRole(l.displayName) === 'area'), [todoLists]);
   const resourceLists = useMemo(() => todoLists.filter(l => sectionRole(l.displayName) === 'resources'), [todoLists]);
 
@@ -38,24 +44,24 @@ export default function GtdClarifyModal({ open, onClose, todoLists = [], noteboo
     await createNotePage(sectionId, text.slice(0, 60) || 'Idea', text);
   }
 
-  async function submitArchive(text, { sectionId }) {
-    await createNotePage(sectionId, text.slice(0, 60) || 'Nota', text);
-  }
-
   async function submitProjectTask(text, { listId }) {
     const task = await createTask(listId, text);
     const list = todoLists.find(l => l.id === listId);
     onTaskCreated?.({ ...task, _listId: listId, _listName: list?.displayName || '' }, { addToday: false });
   }
 
+  // Stessa icona per la stessa destinazione PARA in entrambi i rami (cambia
+  // solo cosa crea il pulsante, non l'icona): 🗂 Progetti, 💡 Risorse/Idee,
+  // 🔁 Aree (coerente con "Aree/Ricorrenti" già usato nella vista PARA).
   const leaves = {
     trash:        { id: 'trash', icon: '🗑', label: 'Cestino', kind: 'log', onSubmit: submitLog, confirmLabel: 'Scarta', confirmMsg: 'Scartato' },
-    resources:    { id: 'resources', icon: '💡', label: 'Risorse', kind: 'section', sections: resourceSections, onSubmit: submitResource, confirmLabel: 'Crea pagina', confirmMsg: 'Pagina creata' },
-    archive:      { id: 'archive', icon: '📓', label: 'Archivio', kind: 'section', sections: archiveSections, onSubmit: submitArchive, confirmLabel: 'Crea pagina', confirmMsg: 'Pagina creata' },
+    projectNote:  { id: 'projectNote', icon: '🗂', label: 'Progetti', kind: 'section', sections: projectSections, onSubmit: submitResource, confirmLabel: 'Crea pagina', confirmMsg: 'Pagina creata' },
+    resourceNote: { id: 'resourceNote', icon: '💡', label: 'Risorse/Idee', kind: 'section', sections: resourceSections, onSubmit: submitResource, confirmLabel: 'Crea pagina', confirmMsg: 'Pagina creata' },
+    areaNote:     { id: 'areaNote', icon: '🔁', label: 'Aree', kind: 'section', sections: areaSections, onSubmit: submitResource, confirmLabel: 'Crea pagina', confirmMsg: 'Pagina creata' },
     doNow:        { id: 'doNow', icon: '⚡', label: 'Falla', kind: 'log', onSubmit: submitLog, confirmLabel: 'Fatto', confirmMsg: 'Fatto' },
-    project:      { id: 'project', icon: '🗂', label: 'Task progetti', kind: 'list', todoLists: projectLists, onSubmit: submitProjectTask, confirmLabel: 'Crea task', confirmMsg: 'Task creato' },
-    area:         { id: 'area', icon: '🔁', label: 'Task Area', kind: 'list', todoLists: areaLists, onSubmit: submitProjectTask, confirmLabel: 'Crea task', confirmMsg: 'Task creato' },
-    resourceTask: { id: 'resourceTask', icon: '📌', label: 'Task risorse/idee', kind: 'list', todoLists: resourceLists, onSubmit: submitProjectTask, confirmLabel: 'Crea task', confirmMsg: 'Task creato' },
+    project:      { id: 'project', icon: '🗂', label: 'Progetti', kind: 'list', todoLists: projectLists, onSubmit: submitProjectTask, confirmLabel: 'Crea task', confirmMsg: 'Task creato' },
+    resourceTask: { id: 'resourceTask', icon: '💡', label: 'Risorse/Idee', kind: 'list', todoLists: resourceLists, onSubmit: submitProjectTask, confirmLabel: 'Crea task', confirmMsg: 'Task creato' },
+    area:         { id: 'area', icon: '🔁', label: 'Aree', kind: 'list', todoLists: areaLists, onSubmit: submitProjectTask, confirmLabel: 'Crea task', confirmMsg: 'Task creato' },
   };
 
   if (!open) return null;
@@ -85,8 +91,9 @@ export default function GtdClarifyModal({ open, onClose, todoLists = [], noteboo
                 <div className="gtd-decision-side-label">No</div>
                 <div className="gtd-leaf-col">
                   <GtdLeafBtn leaf={leaves.trash} onOpen={setActiveLeaf} />
-                  <GtdLeafBtn leaf={leaves.resources} onOpen={setActiveLeaf} onOpenEvent={setEventLeaf} />
-                  <GtdLeafBtn leaf={leaves.archive} onOpen={setActiveLeaf} onOpenEvent={setEventLeaf} />
+                  <GtdLeafBtn leaf={leaves.projectNote} onOpen={setActiveLeaf} />
+                  <GtdLeafBtn leaf={leaves.resourceNote} onOpen={setActiveLeaf} />
+                  <GtdLeafBtn leaf={leaves.areaNote} onOpen={setActiveLeaf} />
                 </div>
               </div>
               <div className="gtd-decision-connector" />
@@ -121,8 +128,8 @@ export default function GtdClarifyModal({ open, onClose, todoLists = [], noteboo
                 <div className="gtd-decision-side-label">No</div>
                 <div className="gtd-leaf-col">
                   <GtdLeafBtn leaf={leaves.project} onOpen={setActiveLeaf} onOpenEvent={setEventLeaf} />
-                  <GtdLeafBtn leaf={leaves.area} onOpen={setActiveLeaf} onOpenEvent={setEventLeaf} />
                   <GtdLeafBtn leaf={leaves.resourceTask} onOpen={setActiveLeaf} onOpenEvent={setEventLeaf} />
+                  <GtdLeafBtn leaf={leaves.area} onOpen={setActiveLeaf} onOpenEvent={setEventLeaf} />
                 </div>
               </div>
             </div>
@@ -140,10 +147,11 @@ export default function GtdClarifyModal({ open, onClose, todoLists = [], noteboo
   );
 }
 
-// Sezioni PARA di un dato ruolo ('area' | 'resources' | 'archive'), da tutti
-// i taccuini — un taccuino può averne più di una (es. "ARC-AUTO" e
-// "ARC-LORENZO" nello stesso taccuino) — etichettate col nome della sezione
-// depurato dal prefisso PARA.
+// Sezioni PARA di un dato ruolo ('area' | 'resources' | 'archive' | null per
+// le sezioni senza prefisso, cioè "Progetti"), da tutti i taccuini — un
+// taccuino può averne più di una (es. "ARC-AUTO" e "ARC-LORENZO" nello
+// stesso taccuino) — etichettate col nome della sezione depurato dal
+// prefisso PARA.
 function paraSectionsByRole(notebooks, sectionsMap, role) {
   const out = [];
   for (const nb of notebooks) {
@@ -155,23 +163,48 @@ function paraSectionsByRole(notebooks, sectionsMap, role) {
 
 // ── GtdLeafBtn ────────────────────────────────────────────────────────────────
 // Nodo terminale del diagramma: un semplice pulsante che apre la finestra
-// pop-up di quella foglia (nessun modulo inline).
+// pop-up di quella foglia (nessun modulo inline). Il badge finale indica
+// dove finisce il contenuto — coerente con l'icona usata per il pulsante
+// gemello "scadenza a calendario": OneNote (sezione) e ToDo (lista) hanno
+// lo stesso linguaggio visivo, icona dell'app + "+" giallo nell'angolo.
 function GtdLeafBtn({ leaf, onOpen, onOpenEvent }) {
   return (
     <div className="gtd-leaf-row">
       <button className="gtd-leaf-btn" onClick={() => onOpen(leaf)}>
         <span className="gtd-leaf-icon">{leaf.icon}</span>
         <span className="gtd-leaf-label">{leaf.label}</span>
-        <span className="gtd-leaf-plus">+</span>
+        <LeafPlusBadge kind={leaf.kind} />
       </button>
       {onOpenEvent && (
         <button className="gtd-leaf-event-btn" onClick={() => onOpenEvent(leaf)} title="Crea scadenza a calendario">
-          <span className="gtd-leaf-event-icon">📅</span>
-          <span className="gtd-leaf-event-plus">+</span>
+          <span className="gtd-mini-badge">
+            <span className="gtd-mini-icon gtd-mini-icon-calendar">📅</span>
+            <span className="gtd-mini-plus">+</span>
+          </span>
         </button>
       )}
     </div>
   );
+}
+
+function LeafPlusBadge({ kind }) {
+  if (kind === 'section') {
+    return (
+      <span className="gtd-mini-badge">
+        <span className="gtd-mini-icon gtd-mini-icon-onenote">N</span>
+        <span className="gtd-mini-plus">+</span>
+      </span>
+    );
+  }
+  if (kind === 'list') {
+    return (
+      <span className="gtd-mini-badge">
+        <span className="gtd-mini-icon gtd-mini-icon-todo">✓</span>
+        <span className="gtd-mini-plus">+</span>
+      </span>
+    );
+  }
+  return <span className="gtd-leaf-plus">+</span>;
 }
 
 // ── GtdLeafPopup ──────────────────────────────────────────────────────────────
