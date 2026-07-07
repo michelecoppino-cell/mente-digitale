@@ -48,7 +48,10 @@ function genId() {
 function isoToHHMM(iso) {
   if (!iso) return null;
   if (!iso.includes('T')) return iso.slice(0, 5);
-  const d = new Date(iso);
+  // Graph restituisce dateTime in UTC senza suffisso 'Z': senza forzarlo,
+  // new Date() lo interpreterebbe come ora locale (evento anticipato di 1-2h).
+  const hasTZ = /Z$|[+-]\d{2}:\d{2}$/.test(iso);
+  const d = new Date(hasTZ ? iso : iso + 'Z');
   return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
 }
 function isAllDay(ev) {
