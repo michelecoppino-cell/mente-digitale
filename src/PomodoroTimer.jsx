@@ -68,9 +68,21 @@ export default function PomodoroTimer({ block, onClose, onCycleComplete, onRunni
   const hiddenAtRef = useRef(null);
   const distractedSecondsRef = useRef(0);
   const interruptionsRef = useRef(0);
+  // Fasce orarie reali (wall-clock) in cui il timer è stato attivo durante
+  // la fase di lavoro corrente — usate per disegnare le barre rosse nella
+  // timeline del Piano (a differenza di focusedMinutes, qui contano anche
+  // le distrazioni: solo la pausa esplicita apre un buco).
+  const activeStartRef = useRef(null);
+  const sessionIntervalsRef = useRef([]);
 
   useEffect(() => {
     if (Notification?.permission === 'default') Notification.requestPermission();
+  }, []);
+
+  // Il timer parte già running=true in fase 'working': apre il primo
+  // sotto-intervallo al mount.
+  useEffect(() => {
+    activeStartRef.current = Date.now();
   }, []);
 
   useEffect(() => {
@@ -135,15 +147,16 @@ export default function PomodoroTimer({ block, onClose, onCycleComplete, onRunni
     return () => clearInterval(titleFlashRef.current);
   }, [phaseEndInfo]);
 
-  async function persistStats(focusedMinutes, interruptions) {
+  async function persistStats(focusedMinutes, interruptions, sessions) {
     try {
       const stats = await loadPomodoroStats();
       const key = todayKey();
-      const prev = stats[key] || { pomodori: 0, focusedMinutes: 0, interruptions: 0 };
+      const prev = stats[key] || { pomodori: 0, focusedMinutes: 0, interruptions: 0, sessions: [] };
       const next = {
         pomodori: prev.pomodori + 1,
         focusedMinutes: prev.focusedMinutes + focusedMinutes,
         interruptions: prev.interruptions + interruptions,
+        sessions: [...(prev.sessions || []), ...sessions],
       };
       stats[key] = next;
       await savePomodoroStats(stats);
@@ -154,13 +167,22 @@ export default function PomodoroTimer({ block, onClose, onCycleComplete, onRunni
   function handlePhaseEnd() {
     beepBurst();
     if (phase === 'working') {
+      if (activeStartRef.current) {
+        sessionIntervalsRef.current.push({ start: activeStartRef.current, end: Date.now() });
+        activeStartRef.current = null;
+      }
+      const sessions = sessionIntervalsRef.current.map(iv => ({
+        start: new Date(iv.start).toISOString(),
+        end: new Date(iv.end).toISOString(),
+      }));
+      sessionIntervalsRef.current = [];
       const distractedSeconds = distractedSecondsRef.current;
       const interruptions = interruptionsRef.current;
       const focusedMinutes = Math.max(0, WORK_MIN - distractedSeconds / 60);
       distractedSecondsRef.current = 0;
       interruptionsRef.current = 0;
-      onCycleComplete?.({ focusedMinutes, interruptions });
-      persistStats(focusedMinutes, interruptions);
+      onCycleComplete?.({ focusedMinutes, interruptions, sessions });
+      persistStats(focusedMinutes, interruptions, sessions);
       notify('Pomodoro completato 🍅', 'Pausa di 5 minuti — stacca un attimo.');
       setPhaseEndInfo({ phase: 'working', focusedMinutes, interruptions });
       setPhase('break');
@@ -176,8 +198,10 @@ export default function PomodoroTimer({ block, onClose, onCycleComplete, onRunni
   }
 
   function dismissPhaseEnd() {
+    const resumingWork = phaseEndInfo?.phase === 'break';
     setPhaseEndInfo(null);
     setRunning(true);
+    if (resumingWork) activeStartRef.current = Date.now();
   }
 
   // Unico punto in cui la pausa/ripresa è una scelta esplicita dell'utente
@@ -186,6 +210,14 @@ export default function PomodoroTimer({ block, onClose, onCycleComplete, onRunni
   function toggle() {
     setRunning(r => {
       const next = !r;
+      if (phase === 'working') {
+        if (!next && activeStartRef.current) {
+          sessionIntervalsRef.current.push({ start: activeStartRef.current, end: Date.now() });
+          activeStartRef.current = null;
+        } else if (next) {
+          activeStartRef.current = Date.now();
+        }
+      }
       onRunningChange?.(next);
       return next;
     });
@@ -198,6 +230,8 @@ export default function PomodoroTimer({ block, onClose, onCycleComplete, onRunni
     setSeconds(WORK_MIN * 60);
     distractedSecondsRef.current = 0;
     interruptionsRef.current = 0;
+    sessionIntervalsRef.current = [];
+    activeStartRef.current = null;
   }
 
   return (

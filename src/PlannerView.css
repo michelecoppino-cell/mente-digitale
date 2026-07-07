@@ -465,33 +465,40 @@
   height: 100%;
 }
 
-/* Colonna a sx delle ore: minuti concentrati in Pomodoro per blocco, allineati
-   verticalmente al blocco stesso — vive nel padding-left di .planner-timeline-body. */
-.planner-focus-chip {
+/* Colonna a sx delle ore: fasce orarie reali in cui il Pomodoro era attivo,
+   allineate all'asse del tempo — vive nel padding-left di .planner-timeline-body. */
+.planner-focus-bar {
   position: absolute;
-  left: 2px;
-  width: 40px;
-  border-radius: 4px;
-  background: rgba(200,169,110,0.1);
-  border: 1px solid rgba(200,169,110,0.3);
-  color: var(--accent);
-  font-size: 9px;
-  font-weight: 600;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  text-align: center;
-  overflow: hidden;
+  left: 4px;
+  width: 34px;
+  border-radius: 3px;
+  background: rgba(217,83,79,0.55);
+  border: 1px solid rgba(217,83,79,0.85);
   z-index: 1;
   box-sizing: border-box;
+  pointer-events: none;
 }
 
-.planner-focus-total {
-  font-size: 11px;
-  font-weight: 600;
+/* Totale giornaliero, fissato in cima alla stessa colonna. */
+.planner-focus-daytotal {
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  width: 34px;
+  padding: 3px 2px;
+  border-radius: 4px;
+  background: var(--surface2);
+  border: 1px solid rgba(200,169,110,0.4);
   color: var(--accent);
-  letter-spacing: 0;
-  text-transform: none;
+  font-size: 10px;
+  font-weight: 600;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  line-height: 1.2;
+  z-index: 2;
+  box-sizing: border-box;
 }
 
 /* Calendar events — absolute within timeline-body */
