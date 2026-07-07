@@ -368,6 +368,16 @@ export async function reorderChecklistItems(listId, taskId, orderedItems) {
   return created;
 }
 
+// Elenco dei reminder (di eventi Calendario) che scattano nella finestra di
+// tempo indicata — usato per far comparire un task To-Do nell'Area giusta nel
+// momento esatto in cui il preavviso di una scadenza (assicurazione, salute,
+// tasse...) si attiva, senza dover ricalcolare noi il lead time impostato su
+// ogni evento (vedi deadlineReminders.js).
+export async function getReminders(startISO, endISO) {
+  const d = await call(`/me/reminderView(startDateTime='${startISO}',endDateTime='${endISO}')`);
+  return d?.value || [];
+}
+
 export async function getRecentEmails() {
   const yesterday = new Date();
   yesterday.setDate(yesterday.getDate() - 1);
