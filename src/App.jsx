@@ -1,8 +1,9 @@
 import { useState, useEffect, useRef } from 'react';
 import { initAuth, getAccount, login } from './auth';
-import { getNotebooks, getSections, getTodoLists, getTodoTasks, getPages, getRecentEmails, getPageContentHtml, markOneNoteTagDone } from './api';
+import { getNotebooks, getSections, getTodoLists, getTodoTasks, getPages, getRecentEmails, getPageContentHtml, markOneNoteTagDone, getReminders, createTask } from './api';
 import { cacheGet, cacheSet, cacheClear, TTL } from './cache';
 import { extractEmailCandidates, extractOneNoteCandidates } from './dailyReview';
+import { parseReminderSubject, reminderMarker, hasReminderMarker } from './deadlineReminders';
 import MindMap from './MindMap';
 import IdentityPanel from './IdentityPanel';
 import SearchOverlay from './SearchOverlay';
@@ -20,6 +21,10 @@ const NOTES_LOOKBACK_MS = 2 * 24 * 60 * 60 * 1000;    // fallback alla prima sca
 const REVIEW_LAST_CHECK_KEY = 'review_last_check';
 const REVIEW_LAST_CHECK_TTL = 30 * 24 * 60 * 60 * 1000; // 30 giorni
 const REVIEW_PAGES_CAP = 40; // tetto di sicurezza sulle pagine il cui contenuto viene scaricato per intero
+
+const DEADLINE_LAST_CHECK_KEY = 'deadline_reminders_last_check';
+const DEADLINE_LAST_CHECK_TTL = 30 * 24 * 60 * 60 * 1000; // 30 giorni
+const DEADLINE_LOOKBACK_MS = 7 * 24 * 60 * 60 * 1000;     // fallback alla prima scansione: ultimi 7 giorni
 
 function suggestionSignature(a) {
   return `${a.source || 'email'}::${a.title || ''}::${a.extractedAction || ''}`;
@@ -172,6 +177,7 @@ export default function App() {
       }, 2000);
 
       refreshDailyReview();
+      refreshDeadlineReminders(todoLists);
 
     } catch (e) {
       console.error('load', e);
@@ -225,6 +231,53 @@ export default function App() {
       console.error('daily review', e);
     }
     setReviewLoading(false);
+  }
+
+  // Scadenze ricorrenti (assicurazioni, salute, tasse...): un evento Calendario
+  // ricorrente intitolato "[NOME-LISTA] Titolo", con reminder nativo impostato
+  // con l'anticipo desiderato, fa comparire un task nella lista To-Do di
+  // quell'Area nel momento in cui il reminder scatta — letto tramite
+  // reminderView sulla finestra dall'ultimo controllo riuscito a oggi.
+  // Nessuna proposta da accettare: il task compare direttamente, coerente con
+  // l'uso quotidiano di To-Do (resta lì finché non lo spunti).
+  async function refreshDeadlineReminders(todoLists) {
+    try {
+      const lastCheck = cacheGet(DEADLINE_LAST_CHECK_KEY);
+      const startISO = new Date(lastCheck || (Date.now() - DEADLINE_LOOKBACK_MS)).toISOString();
+      const endISO = new Date().toISOString();
+
+      const reminders = await getReminders(startISO, endISO);
+      if (!reminders.length) { cacheSet(DEADLINE_LAST_CHECK_KEY, Date.now(), DEADLINE_LAST_CHECK_TTL); return; }
+
+      const listByName = new Map((todoLists || []).map(l => [l.displayName.toLowerCase(), l]));
+      const tasksByListId = {};
+
+      for (const r of reminders) {
+        const parsed = parseReminderSubject(r.eventSubject);
+        if (!parsed) continue;
+        const list = listByName.get(parsed.listName.toLowerCase());
+        if (!list) continue;
+
+        const startIso = r.eventStartTime?.dateTime ? new Date(r.eventStartTime.dateTime).toISOString() : '';
+        const marker = reminderMarker(r.eventId, startIso);
+
+        if (!tasksByListId[list.id]) {
+          tasksByListId[list.id] = await getTodoTasks(list.id).catch(e => { console.error('deadline tasks', list.displayName, e); return []; });
+        }
+        if (tasksByListId[list.id].some(t => hasReminderMarker(t, marker))) continue;
+
+        try {
+          const dueDate = startIso ? startIso.slice(0, 19) : undefined;
+          const task = await createTask(list.id, parsed.title, { body: marker, ...(dueDate ? { dueDate } : {}) });
+          tasksByListId[list.id].push(task);
+          setScheduledTasks(prev => [...(prev || []), { ...task, _listName: list.displayName, _listId: list.id }]);
+        } catch (e) { console.error('create deadline task', parsed.title, e); }
+      }
+
+      cacheSet(DEADLINE_LAST_CHECK_KEY, Date.now(), DEADLINE_LAST_CHECK_TTL);
+    } catch (e) {
+      console.error('deadline reminders', e);
+    }
   }
 
   // Se il candidato viene da OneNote, spunta subito la riga "Da fare" nella
