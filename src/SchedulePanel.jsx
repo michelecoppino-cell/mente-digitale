@@ -82,7 +82,6 @@ export default function SchedulePanel({ open, onClose, onExpand, preloadedTasks,
             selectedTaskId={selectedTaskId}
             onTaskClick={handleTaskClick}
             draggable={false}
-            showEisFilter={false}
           />
         </div>
       </div>

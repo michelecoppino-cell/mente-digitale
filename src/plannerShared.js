@@ -27,3 +27,27 @@ export function shadeColor(hex, step) {
   const b = Math.min(255, Math.max(20, Math.round((num & 0xFF) * f)));
   return `#${((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1)}`;
 }
+
+// Scadenza dei task ToDo (dueDateTime) — formattazione e ordinamento condivisi
+// tra TaskPool e Panel, così la data appare identica ovunque venga mostrata.
+export function formatDueDate(dueDateTime) {
+  const iso = dueDateTime?.dateTime;
+  if (!iso) return null;
+  const d = new Date(iso.endsWith('Z') ? iso : iso + 'Z');
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate()).toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit' });
+}
+
+// Timestamp per ordinare per scadenza — i task senza scadenza vanno in fondo.
+export function dueDateSortValue(dueDateTime) {
+  const iso = dueDateTime?.dateTime;
+  if (!iso) return Infinity;
+  return new Date(iso.endsWith('Z') ? iso : iso + 'Z').getTime();
+}
+
+export function isTaskOverdue(dueDateTime) {
+  const iso = dueDateTime?.dateTime;
+  if (!iso) return false;
+  const d = new Date(iso.endsWith('Z') ? iso : iso + 'Z');
+  const dueDay = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  return dueDay.getTime() < new Date().setHours(0, 0, 0, 0);
+}

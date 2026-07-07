@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import Skeleton from './Skeleton';
-import { EIS_QUADRANTS, parseEisenhower, quadrantInfo } from './eisenhower';
-import { DEFAULT_CONFIG, findProject, shadeColor } from './plannerShared';
+import { EIS_QUADRANTS, parseEisenhower } from './eisenhower';
+import { DEFAULT_CONFIG, findProject, shadeColor, formatDueDate, dueDateSortValue, isTaskOverdue } from './plannerShared';
 import { sectionRole } from './paraConfig';
 
 const EMPTY_SET = new Set();
@@ -43,7 +43,6 @@ export default function TaskPool({
   onTaskClick,
   draggable = true,
   showViewToggle = true,
-  showEisFilter = true,
   title = null,
 }) {
   // PARA: quali ruoli di sezione mostrare — di default solo i "progetti"
@@ -52,7 +51,6 @@ export default function TaskPool({
   // Taccuino/sezione: null = "tutti" (nessun filtro attivo)
   const [workbookFilter, setWorkbookFilter] = useState(null);
   const [sectionFilter, setSectionFilter]   = useState(null);
-  const [eisFilter, setEisFilter]         = useState('all');
   const [poolViewMode, setPoolViewMode]   = useState('list');
 
   // Azzera i filtri quando cambia la lista task (nuovo giorno, nuovo
@@ -159,7 +157,6 @@ export default function TaskPool({
   const poolTasks = workbookFilteredTasks.filter(t => {
     const info = resolveTaskSection(t);
     if (sectionFilter !== null && !sectionFilter.has(info.sectionKey)) return false;
-    if (eisFilter !== 'all' && parseEisenhower(t.body?.content) !== eisFilter) return false;
     return true;
   });
 
@@ -172,6 +169,14 @@ export default function TaskPool({
     if (!poolByProject[key]) poolByProject[key] = { name, color, tasks: [] };
     poolByProject[key].tasks.push(t);
   }
+
+  function colorForTask(t) {
+    const proj = findProject(t, config);
+    return proj?.color ?? listColorMap[(t._listName ?? '').toLowerCase()] ?? '#888';
+  }
+
+  const deadlineSortedTasks = [...poolTasks].sort((a, b) =>
+    dueDateSortValue(a.dueDateTime) - dueDateSortValue(b.dueDateTime));
 
   const unclassifiedPoolTasks = poolTasks.filter(t => !parseEisenhower(t.body?.content));
 
@@ -201,6 +206,7 @@ export default function TaskPool({
             <div className="planner-view-toggle">
               <button className={poolViewMode === 'list' ? 'active' : ''} onClick={() => setPoolViewMode('list')}>Lista</button>
               <button className={poolViewMode === 'quadrants' ? 'active' : ''} onClick={() => setPoolViewMode('quadrants')}>Quadranti</button>
+              <button className={poolViewMode === 'deadline' ? 'active' : ''} onClick={() => setPoolViewMode('deadline')}>Scadenza</button>
             </div>
           )}
         </div>
@@ -265,28 +271,6 @@ export default function TaskPool({
         </div>
       </div>
 
-      {showEisFilter && poolViewMode === 'list' && (
-        <div className="planner-col-header planner-eis-filter-row">
-          <div className="planner-filters">
-            <button
-              className={`planner-filter-btn${eisFilter === 'all' ? ' active' : ''}`}
-              onClick={() => setEisFilter('all')}>
-              Tutti i quadranti
-            </button>
-            {EIS_QUADRANTS.map(q => (
-              <button
-                key={q.key}
-                className={`planner-filter-btn${eisFilter === q.key ? ' active' : ''}`}
-                style={{ '--proj-color': q.color }}
-                onClick={() => setEisFilter(prev => prev === q.key ? 'all' : q.key)}
-                title={q.label}>
-                {q.key}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-
       {poolViewMode === 'list' ? (
         <div className="planner-pool-body">
           {Object.entries(poolByProject).map(([key, group]) => (
@@ -296,31 +280,18 @@ export default function TaskPool({
                 {group.name}
                 <span className="planner-group-count">{group.tasks.length}</span>
               </div>
-              {group.tasks.map(task => {
-                const isScheduled = scheduledIds.has(task.id);
-                const eisKey  = parseEisenhower(task.body?.content);
-                const eisInfo = eisKey ? quadrantInfo(eisKey) : null;
-                return (
-                  <div
-                    key={task.id}
-                    className={`planner-pool-task${isScheduled ? ' scheduled' : ''}${task.importance === 'high' ? ' important' : ''}${selectedTaskId === task.id ? ' selected' : ''}`}
-                    draggable={draggable && !isScheduled}
-                    onClick={() => onTaskClick?.(task)}
-                    onDragStart={draggable && !isScheduled ? e => handleDragStart(e, task, group.color) : undefined}>
-                    <span className="planner-task-dot" style={{ background: group.color }} />
-                    <span className="planner-task-title">{task.title}</span>
-                    {eisInfo && (
-                      <span
-                        className="planner-eis-badge"
-                        style={{ '--q-color': eisInfo.color }}
-                        title={eisInfo.label}>
-                        {eisInfo.key}
-                      </span>
-                    )}
-                    {task.importance === 'high' && !isScheduled && <span className="planner-task-star">★</span>}
-                  </div>
-                );
-              })}
+              {group.tasks.map(task => (
+                <PoolTaskRow
+                  key={task.id}
+                  task={task}
+                  color={group.color}
+                  isScheduled={scheduledIds.has(task.id)}
+                  selected={selectedTaskId === task.id}
+                  draggable={draggable}
+                  onTaskClick={onTaskClick}
+                  onDragStart={handleDragStart}
+                />
+              ))}
             </div>
           ))}
 
@@ -330,7 +301,7 @@ export default function TaskPool({
               : <div className="planner-empty">Nessun task in questa lista</div>
           )}
         </div>
-      ) : (
+      ) : poolViewMode === 'quadrants' ? (
         <div className="planner-pool-body planner-eis-grid-body">
           {unclassifiedPoolTasks.length > 0 && (
             <div className="planner-eis-unclassified-banner">
@@ -347,21 +318,19 @@ export default function TaskPool({
                     <span className="planner-eis-cell-label">{q.label}</span>
                   </div>
                   <div className="planner-eis-cell-tasks">
-                    {qTasks.map(task => {
-                      const isScheduled = scheduledIds.has(task.id);
-                      return (
-                        <div
-                          key={task.id}
-                          className={`planner-pool-task${isScheduled ? ' scheduled' : ''}${task.importance === 'high' ? ' important' : ''}${selectedTaskId === task.id ? ' selected' : ''}`}
-                          draggable={draggable && !isScheduled}
-                          onClick={() => onTaskClick?.(task)}
-                          onDragStart={draggable && !isScheduled ? e => handleDragStart(e, task, q.color) : undefined}>
-                          <span className="planner-task-title">{task.title}</span>
-                          {task._listName && <span className="planner-eis-grid-task-section">{task._listName}</span>}
-                          {task.importance === 'high' && !isScheduled && <span className="planner-task-star">★</span>}
-                        </div>
-                      );
-                    })}
+                    {qTasks.map(task => (
+                      <PoolTaskRow
+                        key={task.id}
+                        task={task}
+                        color={q.color}
+                        isScheduled={scheduledIds.has(task.id)}
+                        selected={selectedTaskId === task.id}
+                        draggable={draggable}
+                        onTaskClick={onTaskClick}
+                        onDragStart={handleDragStart}
+                        showListName
+                      />
+                    ))}
                     {qTasks.length === 0 && <div className="planner-eis-cell-empty">Nessun task</div>}
                   </div>
                 </div>
@@ -369,7 +338,49 @@ export default function TaskPool({
             })}
           </div>
         </div>
+      ) : (
+        <div className="planner-pool-body">
+          {deadlineSortedTasks.map(task => (
+            <PoolTaskRow
+              key={task.id}
+              task={task}
+              color={colorForTask(task)}
+              isScheduled={scheduledIds.has(task.id)}
+              selected={selectedTaskId === task.id}
+              draggable={draggable}
+              onTaskClick={onTaskClick}
+              onDragStart={handleDragStart}
+              showListName
+            />
+          ))}
+
+          {poolTasks.length === 0 && (
+            tasks.length === 0
+              ? <Skeleton rows={7} height={26} />
+              : <div className="planner-empty">Nessun task in questa lista</div>
+          )}
+        </div>
       )}
+    </div>
+  );
+}
+
+function PoolTaskRow({ task, color, isScheduled, selected, draggable, onTaskClick, onDragStart, showListName = false }) {
+  const due = formatDueDate(task.dueDateTime);
+  const overdue = isTaskOverdue(task.dueDateTime);
+  return (
+    <div
+      className={`planner-pool-task${isScheduled ? ' scheduled' : ''}${task.importance === 'high' ? ' important' : ''}${selected ? ' selected' : ''}`}
+      draggable={draggable && !isScheduled}
+      onClick={() => onTaskClick?.(task)}
+      onDragStart={draggable && !isScheduled ? e => onDragStart(e, task, color) : undefined}>
+      <span className="planner-task-dot" style={{ background: color }} />
+      <span className="planner-task-title">{task.title}</span>
+      {showListName && task._listName && <span className="planner-eis-grid-task-section">{task._listName}</span>}
+      {due && (
+        <span className={`planner-due-badge${overdue ? ' overdue' : ''}`} title={`Scadenza: ${due}`}>{due}</span>
+      )}
+      {task.importance === 'high' && !isScheduled && <span className="planner-task-star">★</span>}
     </div>
   );
 }

@@ -1,24 +1,11 @@
 import { useState, useEffect } from 'react';
-import { getPages, getTodoTasks, createTask, completeTask, loadODLinksFromCloud, saveODLinksToCloud } from './api';
+import { getPages, getTodoTasks, createTask, completeTask } from './api';
 import Skeleton from './Skeleton';
+import OneDriveBox from './OneDriveBox';
+import { formatDueDate } from './plannerShared';
+import { openProtocol } from './protocolLink';
 
-const LOCAL_KEY = 'onedrive_links_v2';
-
-function loadLocal() {
-  try { return JSON.parse(localStorage.getItem(LOCAL_KEY) || '{}'); } catch { return {}; }
-}
-
-function openProtocol(url) {
-  if (!url) return;
-  const a = document.createElement('a');
-  a.href = url;
-  a.click();
-}
-function saveLocal(obj) {
-  try { localStorage.setItem(LOCAL_KEY, JSON.stringify(obj)); } catch { /* quota piena — ignora */ }
-}
-
-export default function Panel({ selected, pagesCache, tasksCache, onClose, expanded = false }) {
+export default function Panel({ selected, pagesCache, tasksCache, onClose }) {
   const [pages, setPages] = useState([]);
   const [tasks, setTasks] = useState([]);
   const [noDeadlineTasks, setNoDeadlineTasks] = useState([]);
@@ -26,27 +13,6 @@ export default function Panel({ selected, pagesCache, tasksCache, onClose, expan
   const [loadingTasks, setLoadingTasks] = useState(false);
   const [newTask, setNewTask] = useState('');
   const [adding, setAdding] = useState(false);
-  const [odLinks, setOdLinks] = useState(loadLocal());
-  const [odSyncing, setOdSyncing] = useState(false);
-  const [addingOD, setAddingOD] = useState(false);
-  const [newODName, setNewODName] = useState('');
-  const [newODUrl, setNewODUrl] = useState('');
-  const [newODUrlPc, setNewODUrlPc] = useState('');
-  const [editingOD, setEditingOD] = useState(null); // { sectionId, idx }
-
-  // Carica link da OneDrive cloud all'avvio
-  useEffect(() => {
-    async function syncFromCloud() {
-      try {
-        const cloudLinks = await loadODLinksFromCloud();
-        if (cloudLinks && typeof cloudLinks === 'object') {
-          setOdLinks(cloudLinks);
-          saveLocal(cloudLinks);
-        }
-      } catch (e) { console.error('OD links sync', e); }
-    }
-    syncFromCloud();
-  }, []);
 
   useEffect(() => {
     setPages([]);
@@ -123,80 +89,14 @@ export default function Panel({ selected, pagesCache, tasksCache, onClose, expan
     } catch(e) { console.error(e); }
   }
 
-  async function handleAddODLink() {
-    if (editingOD) { await handleSaveEdit(); return; }
-    if (!newODName.trim() || !selected) return;
-    const key = selected.data.id;
-    const existing = odLinks[key] || [];
-    const updated = [...existing, {
-      name: newODName.trim(),
-      url: newODUrl.trim() || null,
-      urlPc: newODUrlPc.trim() || null,
-    }];
-    const next = { ...odLinks, [key]: updated };
-    setOdLinks(next);
-    saveLocal(next);
-    setNewODName('');
-    setNewODUrl('');
-    setNewODUrlPc('');
-    setEditingOD(null);
-    setAddingOD(false);
-    // Salva su cloud in background
-    setOdSyncing(true);
-    try { await saveODLinksToCloud(next); } catch(e) { console.error('OD sync error', e); }
-    setOdSyncing(false);
-  }
-
-
-
-  function handleStartEdit(sectionId, idx) {
-    const link = odLinks[sectionId]?.[idx];
-    if (!link) return;
-    setNewODName(link.name);
-    setNewODUrl(link.url || '');
-    setNewODUrlPc(link.urlPc || '');
-    setEditingOD({ sectionId, idx });
-    setAddingOD(true);
-  }
-
-  async function handleSaveEdit() {
-    if (!editingOD) return;
-    const { sectionId, idx } = editingOD;
-    const existing = odLinks[sectionId] || [];
-    const updated = existing.map((l, i) => i === idx ? {
-      name: newODName.trim(),
-      url: newODUrl.trim() || null,
-      urlPc: newODUrlPc.trim() || null,
-    } : l);
-    const next = { ...odLinks, [sectionId]: updated };
-    setOdLinks(next);
-    saveLocal(next);
-    setNewODName(''); setNewODUrl(''); setNewODUrlPc('');
-    setEditingOD(null); setAddingOD(false);
-    setOdSyncing(true);
-    try { await saveODLinksToCloud(next); } catch (e) { console.error('OD sync error', e); }
-    setOdSyncing(false);
-  }
-
-  async function handleRemoveODLink(sectionId, idx) {
-    const existing = odLinks[sectionId] || [];
-    const updated = existing.filter((_, i) => i !== idx);
-    const next = { ...odLinks, [sectionId]: updated };
-    setOdLinks(next);
-    saveLocal(next);
-    // Salva su cloud in background
-    try { await saveODLinksToCloud(next); } catch(e) { console.error('OD sync error', e); }
-  }
-
   if (!selected) return <div className="panel" />;
 
   const { data, nb, listId } = selected;
   const color = nb?._color || '#c8a96e';
-  const sectionODLinks = odLinks[data.id] || [];
   const allTasks = [...tasks, ...noDeadlineTasks];
 
   return (
-    <div className={`panel open${expanded ? ' panel-expanded' : ''}`}>
+    <div className="panel open">
       <div className="panel-head">
         <div className="panel-title" style={{ color }}>{data.displayName}</div>
       </div>
@@ -254,46 +154,7 @@ export default function Panel({ selected, pagesCache, tasksCache, onClose, expan
 
         {/* ── OneDrive ── */}
         <div className="panel-col">
-          <div className="panel-col-header" style={{ color }}>
-            <span>OneDrive</span>
-            {odSyncing && <span style={{fontSize:9,color:'var(--muted)',marginLeft:4}}>↑</span>}
-            <button className="od-add-btn" onClick={() => setAddingOD(a => !a)} title="Aggiungi link">+</button>
-          </div>
-          {addingOD && (
-            <div className="od-add-form">
-              <input className="od-input" placeholder="Nome cartella"
-                value={newODName} onChange={e => setNewODName(e.target.value)} />
-              <input className="od-input" placeholder="Link web (1drv.ms o onedrive.com)"
-                value={newODUrl} onChange={e => setNewODUrl(e.target.value)} />
-              <input className="od-input" placeholder="Percorso PC (C:\Users\...)"
-                value={newODUrlPc} onChange={e => setNewODUrlPc(e.target.value)}
-                onKeyDown={e => e.key === 'Enter' && handleAddODLink()} />
-              <div className="od-form-btns">
-                <button className="od-save-btn" style={{ color }} onClick={handleAddODLink}>Salva</button>
-                <button className="od-cancel-btn" onClick={() => setAddingOD(false)}>Annulla</button>
-              </div>
-            </div>
-          )}
-          <div className="panel-col-body">
-            {sectionODLinks.map((link, i) => (
-              <div key={i} className="od-link-row">
-                <span className="od-link-name">☁ {link.name}</span>
-                <div className="od-link-btns">
-                  {link.url && (
-                    <button className="od-open-btn" onClick={() => window.open(link.url, '_blank')} title="Apri su mobile/web">📱</button>
-                  )}
-                  {link.urlPc && (
-                    <CopyBtn text={link.urlPc} />
-                  )}
-                  <button className="od-edit-btn" onClick={() => handleStartEdit(data.id, i)} title="Modifica">✎</button>
-                  <button className="od-remove-btn" onClick={() => handleRemoveODLink(data.id, i)}>✕</button>
-                </div>
-              </div>
-            ))}
-            {!sectionODLinks.length && !addingOD && (
-              <div className="panel-empty">Nessun link · premi + per aggiungere</div>
-            )}
-          </div>
+          <OneDriveBox sectionId={data.id} color={color} />
         </div>
 
       </div>
@@ -302,7 +163,7 @@ export default function Panel({ selected, pagesCache, tasksCache, onClose, expan
   );
 }
 
-function PageTree({ pages }) {
+export function PageTree({ pages }) {
   const [expanded, setExpanded] = useState({});
 
   // Ordina per order (posizione in OneNote)
@@ -366,43 +227,11 @@ function PageTree({ pages }) {
   return <>{tree.map(n => renderNode(n, 0))}</>;
 }
 
-function CopyBtn({ text }) {
-  const [copied, setCopied] = useState(false);
-  async function handleCopy() {
-    try {
-      await navigator.clipboard.writeText(text);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-    } catch {
-      // Fallback per browser che non supportano clipboard API
-      const el = document.createElement('textarea');
-      el.value = text;
-      document.body.appendChild(el);
-      el.select();
-      document.execCommand('copy');
-      document.body.removeChild(el);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-    }
-  }
-  return (
-    <button className="od-open-btn" onClick={handleCopy}
-      title={copied ? 'Copiato!' : 'Copia percorso PC'}
-      style={{ color: copied ? '#86c07a' : 'var(--muted)' }}>
-      {copied ? '✓' : '⊡'}
-    </button>
-  );
-}
-
 function TaskRow({ task, color, onComplete }) {
   const [completing, setCompleting] = useState(false);
   const isImportant = task.importance === 'high';
   const appUrl = `ms-to-do://tasks/id/${task.id}`;
-  const due = task.dueDateTime?.dateTime
-    ? (() => {
-        const d = new Date(task.dueDateTime.dateTime.endsWith('Z') ? task.dueDateTime.dateTime : task.dueDateTime.dateTime + 'Z');
-        return new Date(d.getFullYear(), d.getMonth(), d.getDate()).toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit' });
-      })() : null;
+  const due = formatDueDate(task.dueDateTime);
 
   async function handleComplete(e) {
     e.stopPropagation();
