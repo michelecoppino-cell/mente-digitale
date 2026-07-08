@@ -63,6 +63,12 @@ function fmtFocusTotal(min) {
   const m = Math.max(0, Math.round(min || 0));
   return `${Math.floor(m / 60)}:${String(m % 60).padStart(2, '0')}`;
 }
+const SESSION_TYPE_LABELS = {
+  focus: 'concentrato',
+  personal: 'pausa personale',
+  office: 'interruzione ufficio',
+  client: 'interruzione cliente',
+};
 function getWeekDays(dateStr) {
   const d = new Date(dateStr + 'T12:00:00');
   const dow = d.getDay();
@@ -92,6 +98,13 @@ export default function PlannerView({
   // task specifico.
   const [pomodoroActive, setPomodoroActive] = useState(false);
   const [pomodoroRunning, setPomodoroRunning] = useState(true);
+  // Fascia oraria ancora aperta (non persistita) del Pomodoro in corso —
+  // usata per disegnare nella colonna Timeline la barra che cresce live
+  // verso "adesso", invece di apparire solo a fascia chiusa.
+  const [activeInterval, setActiveInterval] = useState(null); // { start, type } | null
+  // Orologio che avanza ogni 15s: fa crescere la barra live e sposta la
+  // linea ocra dell'ora corrente.
+  const [nowTick, setNowTick] = useState(() => Date.now());
   // Bloccata solo mentre il Pomodoro è effettivamente in corso (non in pausa):
   // premere "Pausa" riporta alla normale modalità Piano, sbloccata.
   const locked = pomodoroActive && pomodoroRunning;
@@ -150,6 +163,13 @@ export default function PlannerView({
     addBlock(autoAddTask, configRef.current.workdayStart);
     onAutoAdded?.();
   }, [open, autoAddTask]); // eslint-disable-line
+
+  // Fa avanzare la linea dell'ora corrente e la barra live del Pomodoro.
+  useEffect(() => {
+    if (!open) return;
+    const id = setInterval(() => setNowTick(Date.now()), 15000);
+    return () => clearInterval(id);
+  }, [open]);
 
   async function initConfig() {
     try {
@@ -445,17 +465,33 @@ export default function PlannerView({
     mutatePlan(prev => ({ ...prev, blocks: prev.blocks.filter(b => b.id !== blockId) }));
   }
 
-  function recordPomodoroSession({ focusedMinutes, interruptions, sessions } = {}) {
+  // Un pomodoro intero (25 min di lavoro) si è completato: aggiorna i totali
+  // giornalieri. La fascia oraria in sé arriva già via recordSessionClosed,
+  // non aspetta più questo evento.
+  function recordPomodoroSession({ focusedMinutes, interruptions } = {}) {
     setPomodoroStatsMap(prev => {
       const prevDay = prev[currentDateRef.current] || { pomodori: 0, focusedMinutes: 0, interruptions: 0, sessions: [] };
       return {
         ...prev,
         [currentDateRef.current]: {
+          ...prevDay,
           pomodori: prevDay.pomodori + 1,
           focusedMinutes: prevDay.focusedMinutes + (focusedMinutes || 0),
           interruptions: prevDay.interruptions + (interruptions || 0),
-          sessions: [...(prevDay.sessions || []), ...(sessions || [])],
         },
+      };
+    });
+  }
+
+  // Una fascia oraria (lavoro o pausa) si è chiusa e va disegnata subito
+  // sulla timeline, senza aspettare il completamento di un pomodoro intero.
+  function recordSessionClosed(session) {
+    const day = localDateStr(new Date(session.start));
+    setPomodoroStatsMap(prev => {
+      const prevDay = prev[day] || { pomodori: 0, focusedMinutes: 0, interruptions: 0, sessions: [] };
+      return {
+        ...prev,
+        [day]: { ...prevDay, sessions: [...(prevDay.sessions || []), session] },
       };
     });
   }
@@ -764,14 +800,44 @@ export default function PlannerView({
               if (endMin <= workStart || startMin >= workEnd) return null;
               const top    = Math.max(0, (Math.max(startMin, workStart) - workStart) / 30 * SLOT_HEIGHT);
               const height = Math.max(3, (Math.min(endMin, workEnd) - Math.max(startMin, workStart)) / 30 * SLOT_HEIGHT);
+              const type = s.type || 'focus';
               return (
                 <div
                   key={`focus-${i}`}
-                  className="planner-focus-bar"
+                  className={`planner-focus-bar ${type}`}
                   style={{ top, height }}
-                  title={`${isoToHHMM(s.start)}–${isoToHHMM(s.end)} concentrato`} />
+                  title={`${isoToHHMM(s.start)}–${isoToHHMM(s.end)} · ${SESSION_TYPE_LABELS[type] || SESSION_TYPE_LABELS.focus}`} />
               );
             })}
+            {/* Fascia ancora aperta: cresce live verso "adesso" invece di comparire solo a fascia chiusa */}
+            {activeInterval && localDateStr(new Date(activeInterval.start)) === currentDate && (() => {
+              const sStart = new Date(activeInterval.start);
+              const startMin = sStart.getHours() * 60 + sStart.getMinutes();
+              const nowD = new Date(nowTick);
+              const endMin = nowD.getHours() * 60 + nowD.getMinutes();
+              const workEnd = t2m(config.workdayEnd);
+              if (endMin <= workStart || startMin >= workEnd) return null;
+              const top    = Math.max(0, (Math.max(startMin, workStart) - workStart) / 30 * SLOT_HEIGHT);
+              const height = Math.max(3, (Math.min(endMin, workEnd) - Math.max(startMin, workStart)) / 30 * SLOT_HEIGHT);
+              const type = activeInterval.type || 'focus';
+              const startHHMM = `${String(sStart.getHours()).padStart(2, '0')}:${String(sStart.getMinutes()).padStart(2, '0')}`;
+              return (
+                <div
+                  key="focus-live"
+                  className={`planner-focus-bar live ${type}`}
+                  style={{ top, height }}
+                  title={`${startHHMM}– · ${SESSION_TYPE_LABELS[type] || SESSION_TYPE_LABELS.focus}`} />
+              );
+            })()}
+            {/* Linea dell'ora corrente — solo sul giorno di oggi */}
+            {currentDate === todayStr() && (() => {
+              const nowD = new Date(nowTick);
+              const nowMin = nowD.getHours() * 60 + nowD.getMinutes();
+              const workEnd = t2m(config.workdayEnd);
+              if (nowMin < workStart || nowMin > workEnd) return null;
+              const top = (nowMin - workStart) / 30 * SLOT_HEIGHT;
+              return <div className="planner-now-line" style={{ top }} />;
+            })()}
 
             {/* Slot grid lines (also define total height) */}
             {timeSlots.map(slot => (
@@ -1012,8 +1078,10 @@ export default function PlannerView({
         chiuso e si passa alla modalità focus. */}
     {pomodoroActive && (
       <PomodoroTimer
-        onClose={() => { setPomodoroActive(false); onEndFocus?.(); }}
+        onClose={() => { setPomodoroActive(false); setActiveInterval(null); onEndFocus?.(); }}
         onCycleComplete={recordPomodoroSession}
+        onSessionClosed={recordSessionClosed}
+        onActiveIntervalChange={setActiveInterval}
         onRunningChange={running => {
           setPomodoroRunning(running);
           if (running) onStartFocus?.();
