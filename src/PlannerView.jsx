@@ -2,12 +2,13 @@ import { useState, useEffect, useRef, useMemo, Fragment } from 'react';
 import {
   loadDailyPlans, saveDailyPlans,
   loadPlannerConfig,
-  completeTask, getCalendarEvents,
+  completeTask, getCalendarEvents, getCalendars,
+  createCalendarEvent, updateCalendarEvent, deleteCalendarEvent, moveCalendarEvent,
   getTask, updateTaskBody, updateTaskTitle, updateTaskDueDate, deleteTask,
   createChecklistItem, updateChecklistItem, renameChecklistItem, deleteChecklistItem,
   reorderChecklistItems, loadPomodoroStats,
 } from './api';
-import { cacheGet, cacheSet } from './cache';
+import { cacheGet, cacheSet, cacheDel } from './cache';
 import Skeleton from './Skeleton';
 import PomodoroTimer from './PomodoroTimer';
 import TaskPool from './TaskPool';
@@ -104,6 +105,8 @@ export default function PlannerView({
   const [aiWidth, setAiWidth]               = useState(560);
   const [calOutOfRange, setCalOutOfRange]   = useState(false);
   const [mobileTab, setMobileTab]           = useState('timeline'); // colonna visibile su schermi stretti
+  const [calendarsList, setCalendarsList]   = useState([]);
+  const [calModal, setCalModal]             = useState(null); // { mode: 'create'|'edit', event }
 
   const timelineBodyRef  = useRef(null);
   const saveTimerRef     = useRef(null);
@@ -118,7 +121,7 @@ export default function PlannerView({
   // ── Load config + plans once on open; scroll to now ─────────────────────────
   useEffect(() => {
     if (!open) return;
-    Promise.all([initConfig(), initPlans(), initPomodoroStats()]);
+    Promise.all([initConfig(), initPlans(), initPomodoroStats(), initCalendarsList()]);
     requestAnimationFrame(() => {
       if (!timelineBodyRef.current) return;
       const now = new Date();
@@ -243,6 +246,56 @@ export default function PlannerView({
       return d >= viewStart && d <= viewEnd;
     });
     setCalEvents(filtered);
+  }
+
+  async function initCalendarsList() {
+    try {
+      const cals = await getCalendars();
+      setCalendarsList(cals);
+    } catch (e) { console.error('calendars load', e); }
+  }
+
+  // Forza un refetch dal server dopo una modifica (crea/modifica/elimina evento).
+  async function refreshCalEvents() {
+    allCalEventsRef.current = [];
+    cacheDel('cal_events_bulk');
+    await fetchCalEventsAll();
+  }
+
+  function openCreateEventModal(dateStr) {
+    setCalModal({ mode: 'create', defaultDate: dateStr || currentDate });
+  }
+
+  function openEditEventModal(ev) {
+    setCalModal({ mode: 'edit', event: ev });
+  }
+
+  async function handleSaveCalEvent(form) {
+    const { calendarId, subject, startDate, endDate, startTime, endTime } = form;
+    if (calModal?.mode === 'edit') {
+      const ev = calModal.event;
+      const defaultCalId = calendarsList.find(c => c.isDefaultCalendar)?.id || calendarsList[0]?.id || null;
+      const originCalId  = ev._calId || defaultCalId;
+      const targetCalId  = calendarId || defaultCalId;
+      let targetEventId  = ev.id;
+      if (originCalId !== targetCalId) {
+        const moved = await moveCalendarEvent(ev._calId || null, ev.id, targetCalId);
+        targetEventId = moved?.id || ev.id;
+      }
+      await updateCalendarEvent(targetCalId, targetEventId, { subject, startDate, endDate, startTime, endTime });
+    } else {
+      await createCalendarEvent({ calendarId, subject, startDate, endDate, startTime, endTime });
+    }
+    setCalModal(null);
+    await refreshCalEvents();
+  }
+
+  async function handleDeleteCalEvent() {
+    if (calModal?.mode !== 'edit') return;
+    const ev = calModal.event;
+    await deleteCalendarEvent(ev._calId, ev.id);
+    setCalModal(null);
+    await refreshCalEvents();
   }
 
   // ── Save ────────────────────────────────────────────────────────────────────
@@ -608,6 +661,7 @@ export default function PlannerView({
           </div>
         </div>
         <div className="planner-header-actions">
+          <button className="planner-action-btn accent" disabled={locked} onClick={() => openCreateEventModal(currentDate)} title="Nuovo evento calendario">+ Evento</button>
           <button className="planner-close-btn" disabled={locked} onClick={onClose} title={locked ? 'Metti in pausa il Pomodoro per chiudere' : 'Chiudi pianificatore'}>✕</button>
         </div>
       </div>
@@ -631,6 +685,7 @@ export default function PlannerView({
           calEvents={calEvents}
           calOutOfRange={calOutOfRange}
           onDayClick={day => { setCurrentDate(day); setViewMode('day'); }}
+          onEventClick={openEditEventModal}
         />
       ) : viewMode === 'week' ? (
         <WeeklyTimeline
@@ -641,6 +696,7 @@ export default function PlannerView({
           timeSlots={timeSlots}
           onDayClick={day => { setCurrentDate(day); setViewMode('day'); }}
           onMoveBlock={moveBlockBetweenDays}
+          onEventClick={openEditEventModal}
         />
       ) : (<>
 
@@ -681,7 +737,7 @@ export default function PlannerView({
           {allDayEvents.length > 0 && (
             <div className="planner-allday-strip">
               {allDayEvents.map((ev, i) => (
-                <span key={i} className="planner-allday-chip" title={ev.subject}>{ev.subject}</span>
+                <span key={i} className="planner-allday-chip" onClick={() => openEditEventModal(ev)} title={ev.subject}>{ev.subject}</span>
               ))}
             </div>
           )}
@@ -728,7 +784,7 @@ export default function PlannerView({
               </div>
             ))}
 
-            {/* Calendar events — absolute, read-only */}
+            {/* Calendar events — absolute, editabili al click */}
             {timedEvents.map((ev, i) => {
               const evStart = isoToHHMM(ev.start?.dateTime || ev.start?.date);
               const evEnd   = isoToHHMM(ev.end?.dateTime   || ev.end?.date);
@@ -744,7 +800,8 @@ export default function PlannerView({
                   key={`cal-${i}`}
                   className={`planner-cal-event${ev._isShared ? ' shared' : ''}`}
                   style={{ top, height }}
-                  title={`${evStart}–${evEnd} · ${ev.subject}${ev._calName ? ` (${ev._calName})` : ''}`}>
+                  onClick={e => { e.stopPropagation(); openEditEventModal(ev); }}
+                  title={`${evStart}–${evEnd} · ${ev.subject}${ev._calName ? ` (${ev._calName})` : ''} — clicca per modificare`}>
                   <span className="planner-event-time">{evStart}–{evEnd}</span>
                   <span className="planner-event-title">{ev.subject}</span>
                 </div>
@@ -926,6 +983,19 @@ export default function PlannerView({
           </div>
         </div>
       )}
+
+      {/* Add/edit calendar event modal */}
+      {calModal && (
+        <CalendarEventModal
+          mode={calModal.mode}
+          event={calModal.event}
+          defaultDate={calModal.defaultDate}
+          calendars={calendarsList}
+          onClose={() => setCalModal(null)}
+          onSave={handleSaveCalEvent}
+          onDelete={handleDeleteCalEvent}
+        />
+      )}
     </div>
 
     {/* Pulsante volante per avviare il Pomodoro, a fianco del "+" dorato GTD:
@@ -952,6 +1022,132 @@ export default function PlannerView({
       />
     )}
     </>
+  );
+}
+
+// ── CalendarEventModal ────────────────────────────────────────────────────────
+// Crea o modifica un evento su uno qualsiasi dei calendari collegati (non solo
+// quello di default) — usato dal pulsante "+ Evento" e dal click su un evento
+// nella Timeline, in Settimana o in Mese.
+function CalendarEventModal({ mode, event, defaultDate, calendars, onClose, onSave, onDelete }) {
+  const defaultCalId = calendars.find(c => c.isDefaultCalendar)?.id || calendars[0]?.id || '';
+  const eventIsAllDay = event ? isAllDay(event) : false;
+
+  const [calendarId, setCalendarId] = useState(event?._calId ?? defaultCalId);
+  const [subject, setSubject]       = useState(event?.subject || '');
+  const [allDay, setAllDay]         = useState(eventIsAllDay);
+  const [date, setDate]             = useState(
+    event ? (event.start?.dateTime || event.start?.date || '').slice(0, 10) : (defaultDate || todayStr())
+  );
+  const [startTime, setStartTime]   = useState(event && !eventIsAllDay ? isoToHHMM(event.start?.dateTime) : '09:00');
+  const [endTime, setEndTime]       = useState(event && !eventIsAllDay ? isoToHHMM(event.end?.dateTime) : '10:00');
+  const [busy, setBusy]             = useState(false);
+  const [error, setError]           = useState('');
+
+  // Se i calendari arrivano dopo l'apertura del modale (rete lenta), seleziona
+  // il default non appena disponibile invece di lasciare il campo vuoto.
+  useEffect(() => {
+    if (!calendarId && defaultCalId) setCalendarId(defaultCalId);
+  }, [defaultCalId]); // eslint-disable-line
+
+  const canSubmit = subject.trim() && date && calendarId && (allDay || (startTime && endTime && startTime < endTime));
+
+  function openPicker(e) {
+    try { e.target.showPicker?.(); } catch { /* alcuni browser/contesti lo rifiutano */ }
+  }
+
+  async function handleSubmit() {
+    if (!canSubmit || busy) return;
+    setBusy(true);
+    setError('');
+    try {
+      await onSave({
+        calendarId,
+        subject: subject.trim(),
+        startDate: date,
+        endDate: date,
+        startTime: allDay ? null : startTime,
+        endTime: allDay ? null : endTime,
+      });
+    } catch (e) {
+      console.error('cal event save', e);
+      setError('Errore nel salvataggio dell’evento');
+      setBusy(false);
+    }
+  }
+
+  async function handleDelete() {
+    if (busy) return;
+    setBusy(true);
+    setError('');
+    try {
+      await onDelete();
+    } catch (e) {
+      console.error('cal event delete', e);
+      setError('Errore nell’eliminazione dell’evento');
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="planner-modal-overlay" onClick={busy ? undefined : onClose}>
+      <div className="planner-modal" onClick={e => e.stopPropagation()}>
+        <div className="planner-modal-header">
+          <span>{mode === 'edit' ? 'Modifica evento' : 'Nuovo evento'}</span>
+          <button onClick={onClose} disabled={busy}>✕</button>
+        </div>
+        <div className="planner-modal-body planner-event-form">
+          <label className="planner-modal-field">
+            <span>Calendario</span>
+            <select className="planner-modal-select" value={calendarId} onChange={e => setCalendarId(e.target.value)}>
+              {calendars.map(c => (
+                <option key={c.id} value={c.id}>{c.name}{c.isDefaultCalendar ? ' (predefinito)' : ''}</option>
+              ))}
+            </select>
+          </label>
+          <label className="planner-modal-field">
+            <span>Titolo</span>
+            <input
+              className="planner-modal-select"
+              type="text"
+              autoFocus
+              value={subject}
+              onChange={e => setSubject(e.target.value)}
+              placeholder="Titolo evento"
+            />
+          </label>
+          <label className="planner-modal-field">
+            <span>Data</span>
+            <input className="planner-modal-select" type="date" value={date} onChange={e => setDate(e.target.value)} onClick={openPicker} />
+          </label>
+          <label className="planner-modal-checkbox-field">
+            <input type="checkbox" checked={allDay} onChange={e => setAllDay(e.target.checked)} />
+            <span>Tutto il giorno</span>
+          </label>
+          {!allDay && (
+            <div className="planner-event-time-row">
+              <label className="planner-modal-field">
+                <span>Inizio</span>
+                <input className="planner-modal-select" type="time" value={startTime} onChange={e => setStartTime(e.target.value)} onClick={openPicker} />
+              </label>
+              <label className="planner-modal-field">
+                <span>Fine</span>
+                <input className="planner-modal-select" type="time" value={endTime} onChange={e => setEndTime(e.target.value)} onClick={openPicker} />
+              </label>
+            </div>
+          )}
+          {error && <div className="planner-modal-error">{error}</div>}
+          <div className="planner-event-form-actions">
+            {mode === 'edit' && (
+              <button className="planner-event-delete-btn" disabled={busy} onClick={handleDelete}>Elimina</button>
+            )}
+            <button className="planner-modal-apply-btn" disabled={!canSubmit || busy} onClick={handleSubmit}>
+              {busy ? '…' : (mode === 'edit' ? 'Salva modifiche' : 'Crea evento')}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -1251,7 +1447,7 @@ function TaskDetailPanel({ task, notebooks = [], sectionsMap = {}, pagesCache = 
 // ── MonthlyCalendar ───────────────────────────────────────────────────────────
 // Vista "Mese" della modalità piano: calendario mensile con eventi Outlook e
 // blocchi pianificati. Cliccando un giorno si passa alla vista Giorno.
-function MonthlyCalendar({ currentDate, plans, calEvents, calOutOfRange, onDayClick }) {
+function MonthlyCalendar({ currentDate, plans, calEvents, calOutOfRange, onDayClick, onEventClick }) {
   const today = todayStr();
   const d = new Date(currentDate + 'T12:00:00');
   const first = new Date(d.getFullYear(), d.getMonth(), 1);
@@ -1296,6 +1492,7 @@ function MonthlyCalendar({ currentDate, plans, calEvents, calOutOfRange, onDayCl
               kind: 'event',
               title: ev.subject,
               time: isAllDay(ev) ? null : isoToHHMM(ev.start?.dateTime),
+              ev,
             })),
             ...dayBlocks.map(b => ({
               kind: 'block',
@@ -1320,6 +1517,7 @@ function MonthlyCalendar({ currentDate, plans, calEvents, calOutOfRange, onDayCl
                     key={j}
                     className={`planner-month-chip ${it.kind}${it.completed ? ' completed' : ''}`}
                     style={it.color ? { borderLeftColor: it.color } : undefined}
+                    onClick={it.kind === 'event' ? e => { e.stopPropagation(); onEventClick(it.ev); } : undefined}
                     title={`${it.time ? it.time + ' · ' : ''}${it.title}`}>
                     {it.time && <span className="planner-month-chip-time">{it.time}</span>}
                     <span className="planner-month-chip-title">{it.title}</span>
@@ -1336,7 +1534,7 @@ function MonthlyCalendar({ currentDate, plans, calEvents, calOutOfRange, onDayCl
 }
 
 // ── WeeklyTimeline ────────────────────────────────────────────────────────────
-function WeeklyTimeline({ weekDays, plans, calEvents, workStart, timeSlots, onDayClick, onMoveBlock }) {
+function WeeklyTimeline({ weekDays, plans, calEvents, workStart, timeSlots, onDayClick, onMoveBlock, onEventClick }) {
   const today = todayStr();
   const [dragOver, setDragOver] = useState(null); // { day, min }
   const workEnd = workStart + timeSlots.length * 30;
@@ -1387,7 +1585,7 @@ function WeeklyTimeline({ weekDays, plans, calEvents, workStart, timeSlots, onDa
           return (
             <div key={day} className="planner-week-allday-col">
               {dayAllDay.map((ev, i) => (
-                <span key={i} className="planner-allday-chip" title={ev.subject}>{ev.subject}</span>
+                <span key={i} className="planner-allday-chip" onClick={() => onEventClick(ev)} title={ev.subject}>{ev.subject}</span>
               ))}
             </div>
           );
@@ -1432,7 +1630,8 @@ function WeeklyTimeline({ weekDays, plans, calEvents, workStart, timeSlots, onDa
                 return (
                   <div key={i} className="planner-week-cal-event"
                     style={{ top, height }}
-                    title={`${evStart}–${evEnd} · ${ev.subject}`}>
+                    onClick={e => { e.stopPropagation(); onEventClick(ev); }}
+                    title={`${evStart}–${evEnd} · ${ev.subject} (clicca per modificare)`}>
                     <span className="planner-event-time">{evStart}</span>
                     <span className="planner-event-title">{ev.subject}</span>
                   </div>
