@@ -1033,7 +1033,7 @@ function CalendarEventModal({ mode, event, defaultDate, calendars, onClose, onSa
   const defaultCalId = calendars.find(c => c.isDefaultCalendar)?.id || calendars[0]?.id || '';
   const eventIsAllDay = event ? isAllDay(event) : false;
 
-  const [calendarId, setCalendarId] = useState(event?._calId ?? defaultCalId);
+  const [calendarId, setCalendarId] = useState(event?._calId ?? '');
   const [subject, setSubject]       = useState(event?.subject || '');
   const [allDay, setAllDay]         = useState(eventIsAllDay);
   const [date, setDate]             = useState(
@@ -1044,13 +1044,11 @@ function CalendarEventModal({ mode, event, defaultDate, calendars, onClose, onSa
   const [busy, setBusy]             = useState(false);
   const [error, setError]           = useState('');
 
-  // Se i calendari arrivano dopo l'apertura del modale (rete lenta), seleziona
-  // il default non appena disponibile invece di lasciare il campo vuoto.
-  useEffect(() => {
-    if (!calendarId && defaultCalId) setCalendarId(defaultCalId);
-  }, [defaultCalId]); // eslint-disable-line
+  // Se i calendari arrivano dopo l'apertura del modale (rete lenta), il valore
+  // effettivo ricade sul default appena disponibile invece di restare vuoto.
+  const effectiveCalendarId = calendarId || defaultCalId;
 
-  const canSubmit = subject.trim() && date && calendarId && (allDay || (startTime && endTime && startTime < endTime));
+  const canSubmit = subject.trim() && date && effectiveCalendarId && (allDay || (startTime && endTime && startTime < endTime));
 
   function openPicker(e) {
     try { e.target.showPicker?.(); } catch { /* alcuni browser/contesti lo rifiutano */ }
@@ -1062,7 +1060,7 @@ function CalendarEventModal({ mode, event, defaultDate, calendars, onClose, onSa
     setError('');
     try {
       await onSave({
-        calendarId,
+        calendarId: effectiveCalendarId,
         subject: subject.trim(),
         startDate: date,
         endDate: date,
@@ -1071,7 +1069,7 @@ function CalendarEventModal({ mode, event, defaultDate, calendars, onClose, onSa
       });
     } catch (e) {
       console.error('cal event save', e);
-      setError('Errore nel salvataggio dell’evento');
+      setError(e?.message ? `Errore nel salvataggio: ${e.message}` : 'Errore nel salvataggio dell’evento');
       setBusy(false);
     }
   }
@@ -1084,7 +1082,7 @@ function CalendarEventModal({ mode, event, defaultDate, calendars, onClose, onSa
       await onDelete();
     } catch (e) {
       console.error('cal event delete', e);
-      setError('Errore nell’eliminazione dell’evento');
+      setError(e?.message ? `Errore nell’eliminazione: ${e.message}` : 'Errore nell’eliminazione dell’evento');
       setBusy(false);
     }
   }
@@ -1099,7 +1097,7 @@ function CalendarEventModal({ mode, event, defaultDate, calendars, onClose, onSa
         <div className="planner-modal-body planner-event-form">
           <label className="planner-modal-field">
             <span>Calendario</span>
-            <select className="planner-modal-select" value={calendarId} onChange={e => setCalendarId(e.target.value)}>
+            <select className="planner-modal-select" value={effectiveCalendarId} onChange={e => setCalendarId(e.target.value)}>
               {calendars.map(c => (
                 <option key={c.id} value={c.id}>{c.name}{c.isDefaultCalendar ? ' (predefinito)' : ''}</option>
               ))}

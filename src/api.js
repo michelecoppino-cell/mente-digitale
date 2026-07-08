@@ -17,25 +17,38 @@ export function invalidateTokenCache() { _cachedToken = null; _cachedTokenExp = 
 
 async function call(path, options = {}, retries = 3) {
   for (let attempt = 0; attempt < retries; attempt++) {
+    let r;
     try {
       const token = await getTokenCached();
-      const r = await fetch(GRAPH + path, {
+      r = await fetch(GRAPH + path, {
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
         ...options
       });
-      if (r.status === 204) return null;
-      if (r.status === 429 || r.status === 503 || r.status === 504) {
-        const retry = r.headers.get('Retry-After');
-        const wait = retry ? parseInt(retry) * 1000 : (attempt + 1) * 1000;
-        await new Promise(r => setTimeout(r, wait));
-        continue;
-      }
-      if (!r.ok) throw new Error(`Graph error ${r.status}`);
-      return r.json();
-    } catch(e) {
+    } catch (e) {
       if (attempt === retries - 1) throw e;
-      await new Promise(r => setTimeout(r, (attempt + 1) * 1000));
+      await new Promise(res => setTimeout(res, (attempt + 1) * 1000));
+      continue;
     }
+    if (r.status === 204) return null;
+    if (r.status === 429 || r.status === 503 || r.status === 504) {
+      const retry = r.headers.get('Retry-After');
+      const wait = retry ? parseInt(retry) * 1000 : (attempt + 1) * 1000;
+      await new Promise(res => setTimeout(res, wait));
+      continue;
+    }
+    if (!r.ok) {
+      // Espone il messaggio d'errore di Graph (error.code/message) invece del
+      // solo status code — senza questo un 400 non dice nulla sul perché.
+      let detail = '';
+      try {
+        const errBody = await r.json();
+        if (errBody?.error?.message) {
+          detail = ` — ${errBody.error.code ? errBody.error.code + ': ' : ''}${errBody.error.message}`;
+        }
+      } catch { /* corpo non-JSON o vuoto */ }
+      throw new Error(`Graph error ${r.status}${detail}`);
+    }
+    return r.json();
   }
   throw new Error(`Graph error: tentativi esauriti per ${path}`);
 }
