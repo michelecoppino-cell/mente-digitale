@@ -973,7 +973,7 @@ export default function PlannerView({
             <span>📋 Dettagli</span>
             <span className={`planner-save-status ${saveStatus}`}>{saveLabel()}</span>
           </div>
-          <div className="planner-ai-body">
+          <div className={`planner-ai-body${pomodoroActive ? ' pomodoro-clearance' : ''}`}>
             {selectedTask ? (
               <TaskDetailPanel
                 task={selectedTask}

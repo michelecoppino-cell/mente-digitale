@@ -788,6 +788,14 @@
   scrollbar-color: var(--border2) transparent;
 }
 
+/* Con il widget Pomodoro attivo (fisso in basso a destra, stesso angolo di
+   questa colonna) riserva spazio in fondo così gli ultimi elementi
+   (es. link OneDrive/OneNote in fondo ai Dettagli) restano raggiungibili
+   scrollando invece di finire coperti in modo permanente. */
+.planner-ai-body.pomodoro-clearance {
+  padding-bottom: 260px;
+}
+
 .planner-save-status {
   font-size: 10px;
   font-weight: 400;
