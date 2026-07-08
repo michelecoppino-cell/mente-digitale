@@ -501,37 +501,44 @@
   box-sizing: border-box;
 }
 
-/* Calendar events — absolute within timeline-body */
+/* Calendar events — absolute within timeline-body; sopra i task blocks
+   (z-index maggiore) e cliccabili per aprire il modale di modifica. */
 .planner-cal-event {
   position: absolute;
   left: 92px;
   right: 6px;
   border-radius: 4px;
-  background: rgba(255,255,255,0.07);
-  border-left: 3px solid rgba(255,255,255,0.35);
+  background: rgba(126,184,201,0.24);
+  border-left: 3px solid rgba(126,184,201,0.95);
   padding: 3px 6px;
   overflow: hidden;
-  pointer-events: none;
-  z-index: 1;
+  pointer-events: auto;
+  cursor: pointer;
+  z-index: 2;
   display: flex;
   flex-direction: column;
   gap: 1px;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.35);
+  transition: background 0.15s;
 }
+.planner-cal-event:hover { background: rgba(126,184,201,0.36); }
 .planner-cal-event.shared {
-  background: rgba(255,255,255,0.05);
-  border-left-color: rgba(255,255,255,0.2);
+  background: rgba(126,184,201,0.15);
+  border-left-color: rgba(126,184,201,0.6);
 }
+.planner-cal-event.shared:hover { background: rgba(126,184,201,0.24); }
 
 .planner-event-time {
   font-size: 9px;
-  color: rgba(255,255,255,0.5);
+  color: rgba(255,255,255,0.8);
   line-height: 1.2;
   flex-shrink: 0;
 }
 
 .planner-event-title {
   font-size: 10px;
-  color: rgba(255,255,255,0.75);
+  font-weight: 500;
+  color: #fff;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -548,7 +555,7 @@
   padding: 4px 7px;
   overflow: hidden;
   cursor: grab;
-  z-index: 2;
+  z-index: 1;
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -844,6 +851,80 @@
   width: 100%;
 }
 .planner-modal-apply-btn:hover { background: rgba(200,169,110,0.1); }
+.planner-modal-apply-btn:disabled { opacity: 0.4; cursor: default; }
+
+/* ── Add/edit calendar event form ── */
+.planner-event-form { display: flex; flex-direction: column; gap: 12px; }
+.planner-modal-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.planner-modal-select {
+  background: var(--surface2);
+  border: 1px solid var(--border2);
+  border-radius: 6px;
+  color: var(--text);
+  font-size: 12px;
+  font-family: 'Outfit', sans-serif;
+  padding: 6px 8px;
+  width: 100%;
+  box-sizing: border-box;
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: normal;
+}
+.planner-modal-select:focus { outline: none; border-color: var(--accent); }
+input[type="date"].planner-modal-select,
+input[type="time"].planner-modal-select { cursor: pointer; }
+input[type="date"].planner-modal-select::-webkit-calendar-picker-indicator,
+input[type="time"].planner-modal-select::-webkit-calendar-picker-indicator {
+  filter: invert(0.7);
+  cursor: pointer;
+}
+.planner-modal-checkbox-field {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+  color: var(--text);
+  cursor: pointer;
+}
+.planner-event-time-row {
+  display: flex;
+  gap: 10px;
+}
+.planner-event-time-row .planner-modal-field { flex: 1; }
+.planner-modal-error {
+  font-size: 11px;
+  color: #c07a7a;
+  text-align: center;
+}
+.planner-event-form-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 4px;
+}
+.planner-event-form-actions .planner-modal-apply-btn { width: auto; flex: 1; }
+.planner-event-delete-btn {
+  background: none;
+  border: 1px solid rgba(192,122,122,0.5);
+  color: #c07a7a;
+  padding: 7px 14px;
+  border-radius: 7px;
+  font-size: 12px;
+  cursor: pointer;
+  font-family: 'Outfit', sans-serif;
+  transition: background 0.15s;
+}
+.planner-event-delete-btn:hover:not(:disabled) { background: rgba(192,122,122,0.12); }
+.planner-event-delete-btn:disabled { opacity: 0.4; cursor: default; }
 
 /* ── Calendar out-of-range banner ── */
 .planner-cal-outofrange {
@@ -870,9 +951,9 @@
   min-height: 28px;
 }
 .planner-allday-chip {
-  background: rgba(126,184,201,0.12);
-  border: 1px solid rgba(126,184,201,0.28);
-  color: #7eb8c9;
+  background: rgba(126,184,201,0.22);
+  border: 1px solid rgba(126,184,201,0.5);
+  color: #cdeef6;
   border-radius: 3px;
   padding: 1px 7px;
   font-size: 10px;
@@ -880,7 +961,10 @@
   overflow: hidden;
   max-width: 200px;
   text-overflow: ellipsis;
+  cursor: pointer;
+  transition: background 0.15s;
 }
+.planner-allday-chip:hover { background: rgba(126,184,201,0.34); }
 
 /* All-day row in week view */
 .planner-week-allday-row {
@@ -1022,23 +1106,27 @@
   box-sizing: border-box;
 }
 
-/* Calendar events in week view */
+/* Calendar events in week view — sopra i task blocks, cliccabili per modificare */
 .planner-week-cal-event {
   position: absolute;
   left: 2px;
   right: 2px;
   border-radius: 3px;
-  background: rgba(255,255,255,0.14);
-  border-left: 3px solid rgba(255,255,255,0.55);
+  background: rgba(126,184,201,0.26);
+  border-left: 3px solid rgba(126,184,201,0.95);
   padding: 2px 4px;
   overflow: hidden;
-  pointer-events: none;
-  z-index: 1;
+  pointer-events: auto;
+  cursor: pointer;
+  z-index: 2;
   display: flex;
   flex-direction: column;
   gap: 1px;
   box-sizing: border-box;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.35);
+  transition: background 0.15s;
 }
+.planner-week-cal-event:hover { background: rgba(126,184,201,0.38); }
 
 /* Task blocks in week view */
 .planner-week-task-block {
@@ -1050,7 +1138,7 @@
   padding: 3px 4px;
   overflow: hidden;
   cursor: grab;
-  z-index: 2;
+  z-index: 1;
   display: flex;
   flex-direction: column;
   box-sizing: border-box;
@@ -1375,9 +1463,12 @@
   min-width: 0;
 }
 .planner-month-chip.event {
-  background: rgba(200,169,110,0.2);
-  color: var(--accent);
+  background: rgba(126,184,201,0.26);
+  color: #b7e0ec;
+  cursor: pointer;
+  transition: background 0.15s;
 }
+.planner-month-chip.event:hover { background: rgba(126,184,201,0.4); }
 .planner-month-chip.block {
   background: rgba(255,255,255,0.1);
   color: var(--text);

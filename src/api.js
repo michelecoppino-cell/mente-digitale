@@ -188,7 +188,7 @@ export async function getCalendars() {
 export async function getCalendarEvents(startDate, endDate, top = 50) {
   const start = startDate.toISOString();
   const end = endDate.toISOString();
-  const params = `startDateTime=${start}&endDateTime=${end}&$orderby=start/dateTime&$top=${top}&$select=subject,start,end,isAllDay,webLink`;
+  const params = `startDateTime=${start}&endDateTime=${end}&$orderby=start/dateTime&$top=${top}&$select=id,subject,start,end,isAllDay,webLink`;
 
   // Recupera tutti i calendari per distinguere condivisi da propri
   let calendars = [];
@@ -211,7 +211,9 @@ export async function getCalendarEvents(startDate, endDate, top = 50) {
           const isOwn = !userEmail || (cal.owner?.address || '').toLowerCase() === userEmail;
           return (d.value || []).map(e => ({
             ...e,
+            _calId:     cal.id,
             _calName:   cal.name,
+            _calColor:  cal.color,
             _isShared:  !isOwn,
           }));
         })
@@ -226,24 +228,92 @@ export async function getCalendarEvents(startDate, endDate, top = 50) {
   });
 }
 
-// Crea un evento Calendario tutto il giorno con reminder nativo — sorgente
-// di una scadenza ricorrente (vedi deadlineReminders.js/refreshDeadlineReminders
-// in App.jsx, che la trasforma in task ToDo quando il reminder scatta).
-export async function createCalendarEvent({ subject, startDate, reminderMinutesBeforeStart, body }) {
-  const end = new Date(`${startDate}T00:00:00Z`);
-  end.setUTCDate(end.getUTCDate() + 1);
-  const payload = {
-    subject,
-    isAllDay: true,
-    start: { dateTime: `${startDate}T00:00:00`, timeZone: 'UTC' },
-    end: { dateTime: `${end.toISOString().slice(0, 10)}T00:00:00`, timeZone: 'UTC' },
-    isReminderOn: true,
-    reminderMinutesBeforeStart,
-    ...(body ? { body: { contentType: 'text', content: body } } : {}),
-  };
-  return call('/me/events', {
+function eventsBasePath(calendarId) {
+  return calendarId ? `/me/calendars/${calendarId}/events` : '/me/events';
+}
+
+// Converte data+ora locale (fuso del browser) in una stringa dateTime senza
+// suffisso, coerente col fuso 'UTC' dichiarato nel payload — così un evento
+// creato per le 9:00 locali torna a schermo come 9:00 (vedi isoToHHMM in
+// PlannerView.jsx, che tratta i dateTime senza 'Z' come UTC).
+function localToUtcDateTime(dateStr, timeStr) {
+  return new Date(`${dateStr}T${timeStr}:00`).toISOString().slice(0, 19);
+}
+
+// Crea un evento Calendario — tutto il giorno (con reminder nativo, usato
+// dalla scadenza GTD) oppure con orario, su un calendario a scelta (default:
+// calendario principale dell'utente).
+export async function createCalendarEvent({
+  calendarId, subject, startDate, endDate, startTime, endTime,
+  reminderMinutesBeforeStart, body,
+}) {
+  let payload;
+  if (startTime && endTime) {
+    payload = {
+      subject,
+      isAllDay: false,
+      start: { dateTime: localToUtcDateTime(startDate, startTime), timeZone: 'UTC' },
+      end:   { dateTime: localToUtcDateTime(endDate || startDate, endTime), timeZone: 'UTC' },
+      ...(body ? { body: { contentType: 'text', content: body } } : {}),
+    };
+  } else {
+    const end = new Date(`${startDate}T00:00:00Z`);
+    end.setUTCDate(end.getUTCDate() + 1);
+    payload = {
+      subject,
+      isAllDay: true,
+      start: { dateTime: `${startDate}T00:00:00`, timeZone: 'UTC' },
+      end: { dateTime: `${end.toISOString().slice(0, 10)}T00:00:00`, timeZone: 'UTC' },
+      ...(reminderMinutesBeforeStart != null ? { isReminderOn: true, reminderMinutesBeforeStart } : {}),
+      ...(body ? { body: { contentType: 'text', content: body } } : {}),
+    };
+  }
+  return call(eventsBasePath(calendarId), {
     method: 'POST',
     body: JSON.stringify(payload),
+  });
+}
+
+// Modifica un evento esistente (stesso calendario). Per spostarlo su un altro
+// calendario usare prima moveCalendarEvent.
+export async function updateCalendarEvent(calendarId, eventId, {
+  subject, startDate, endDate, startTime, endTime,
+}) {
+  const isAllDay = !startTime || !endTime;
+  let payload;
+  if (isAllDay) {
+    const end = new Date(`${endDate || startDate}T00:00:00Z`);
+    end.setUTCDate(end.getUTCDate() + 1);
+    payload = {
+      subject,
+      isAllDay: true,
+      start: { dateTime: `${startDate}T00:00:00`, timeZone: 'UTC' },
+      end:   { dateTime: `${end.toISOString().slice(0, 10)}T00:00:00`, timeZone: 'UTC' },
+    };
+  } else {
+    payload = {
+      subject,
+      isAllDay: false,
+      start: { dateTime: localToUtcDateTime(startDate, startTime), timeZone: 'UTC' },
+      end:   { dateTime: localToUtcDateTime(endDate || startDate, endTime), timeZone: 'UTC' },
+    };
+  }
+  return call(`${eventsBasePath(calendarId)}/${eventId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function deleteCalendarEvent(calendarId, eventId) {
+  return call(`${eventsBasePath(calendarId)}/${eventId}`, { method: 'DELETE' });
+}
+
+// Sposta un evento su un altro calendario — necessario perché Graph non
+// permette di cambiare calendario con una semplice PATCH.
+export async function moveCalendarEvent(calendarId, eventId, destinationCalendarId) {
+  return call(`${eventsBasePath(calendarId)}/${eventId}/move`, {
+    method: 'POST',
+    body: JSON.stringify({ destinationId: destinationCalendarId }),
   });
 }
 
