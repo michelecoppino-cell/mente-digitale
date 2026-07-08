@@ -13,6 +13,14 @@
   width: 200px;
   box-shadow: 0 12px 40px rgba(0,0,0,0.5);
   font-family: 'Outfit', sans-serif;
+  transition: right 0.15s ease;
+}
+
+/* Quando il pannello di sezione (ToDo/OneNote/OneDrive, largo 385px) è
+   aperto, il widget si sposta alla sua sinistra invece di coprirne gli
+   ultimi elementi della colonna OneDrive. */
+.app:has(.panel.open) .pomodoro-widget {
+  right: calc(385px + 20px + 12px);
 }
 
 .pomodoro-header {
