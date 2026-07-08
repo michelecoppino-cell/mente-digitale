@@ -10,6 +10,10 @@
   --muted: #5a6278;
   --accent: #c8a96e;
   --r: 8px;
+  /* Colonna Pomodoro: focus = rosso (inline in PlannerView.css), tipi di pausa: */
+  --break-personal: #e6c94d;
+  --break-office: #9d7fd6;
+  --break-client: #5b8fd9;
 }
 
 * { margin: 0; padding: 0; box-sizing: border-box; }

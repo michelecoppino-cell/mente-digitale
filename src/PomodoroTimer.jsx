@@ -55,10 +55,18 @@ function fmt(sec) {
 // Durante il lavoro traccia le interruzioni (cambi di tab) per stimare i
 // minuti di concentrazione reale, salvati come statistiche giornaliere su
 // OneDrive.
-export default function PomodoroTimer({ onClose, onCycleComplete, onRunningChange }) {
+//
+// La fascia oraria "attiva" (lavoro o uno dei tre tipi di pausa) viene
+// chiusa e salvata subito quando cambia tipo, invece di aspettare la fine
+// di un pomodoro intero: prima, se l'utente non completava mai un ciclo
+// pieno, nessuna fascia veniva mai persistita e la colonna restava vuota.
+// `onActiveIntervalChange` inoltre notifica il parent della fascia ancora
+// aperta così la colonna può disegnarla live, crescente verso "adesso".
+export default function PomodoroTimer({ onClose, onCycleComplete, onRunningChange, onSessionClosed, onActiveIntervalChange }) {
   const [phase, setPhase]         = useState('working'); // 'working' | 'break'
   const [secondsLeft, setSeconds] = useState(WORK_MIN * 60);
   const [running, setRunning]     = useState(true);
+  const [activeType, setActiveType] = useState('focus'); // 'focus' | 'personal' | 'office' | 'client'
   const [phaseEndInfo, setPhaseEndInfo] = useState(null); // { phase, focusedMinutes, interruptions } | null
   const [todayStats, setTodayStats] = useState(null);
   const intervalRef = useRef(null);
@@ -68,12 +76,12 @@ export default function PomodoroTimer({ onClose, onCycleComplete, onRunningChang
   const hiddenAtRef = useRef(null);
   const distractedSecondsRef = useRef(0);
   const interruptionsRef = useRef(0);
-  // Fasce orarie reali (wall-clock) in cui il timer è stato attivo durante
-  // la fase di lavoro corrente — usate per disegnare le barre rosse nella
-  // timeline del Piano (a differenza di focusedMinutes, qui contano anche
-  // le distrazioni: solo la pausa esplicita apre un buco).
+  // Fascia oraria (wall-clock) attualmente aperta — usata per disegnare la
+  // barra nella colonna Pomodoro del Piano (a differenza di focusedMinutes,
+  // qui conta il tempo reale trascorso: solo la pausa esplicita, senza
+  // scegliere un tipo, apre un vero buco).
   const activeStartRef = useRef(null);
-  const sessionIntervalsRef = useRef([]);
+  const activeTypeRef  = useRef('focus');
 
   useEffect(() => {
     if (Notification?.permission === 'default') Notification.requestPermission();
@@ -83,7 +91,13 @@ export default function PomodoroTimer({ onClose, onCycleComplete, onRunningChang
   // sotto-intervallo al mount.
   useEffect(() => {
     activeStartRef.current = Date.now();
-  }, []);
+    activeTypeRef.current = 'focus';
+    onActiveIntervalChange?.({ start: activeStartRef.current, type: 'focus' });
+    // Se il widget viene chiuso mentre una fascia è ancora aperta, la salva
+    // comunque invece di perderla — altrimenti chiudere a metà pomodoro non
+    // lascia mai traccia sulla timeline.
+    return () => { closeInterval(); };
+  }, []); // eslint-disable-line
 
   useEffect(() => {
     loadPomodoroStats()
@@ -147,16 +161,29 @@ export default function PomodoroTimer({ onClose, onCycleComplete, onRunningChang
     return () => clearInterval(titleFlashRef.current);
   }, [phaseEndInfo]);
 
-  async function persistStats(focusedMinutes, interruptions, sessions) {
+  async function persistSessions(sessions) {
+    if (!sessions.length) return;
+    try {
+      const stats = await loadPomodoroStats();
+      const key = todayKey();
+      const prev = stats[key] || { pomodori: 0, focusedMinutes: 0, interruptions: 0, sessions: [] };
+      const next = { ...prev, sessions: [...(prev.sessions || []), ...sessions] };
+      stats[key] = next;
+      await savePomodoroStats(stats);
+      setTodayStats(next);
+    } catch (e) { console.error('save pomodoro session', e); }
+  }
+
+  async function persistCycleStats(focusedMinutes, interruptions) {
     try {
       const stats = await loadPomodoroStats();
       const key = todayKey();
       const prev = stats[key] || { pomodori: 0, focusedMinutes: 0, interruptions: 0, sessions: [] };
       const next = {
+        ...prev,
         pomodori: prev.pomodori + 1,
         focusedMinutes: prev.focusedMinutes + focusedMinutes,
         interruptions: prev.interruptions + interruptions,
-        sessions: [...(prev.sessions || []), ...sessions],
       };
       stats[key] = next;
       await savePomodoroStats(stats);
@@ -164,25 +191,48 @@ export default function PomodoroTimer({ onClose, onCycleComplete, onRunningChang
     } catch (e) { console.error('save pomodoro stats', e); }
   }
 
-  function handlePhaseEnd() {
+  // Chiude la fascia oraria attualmente aperta (se c'è) e la salva subito
+  // come sessione — non aspetta più la fine di un pomodoro intero.
+  async function closeInterval() {
+    if (!activeStartRef.current) return;
+    const session = {
+      start: new Date(activeStartRef.current).toISOString(),
+      end: new Date().toISOString(),
+      type: activeTypeRef.current,
+    };
+    activeStartRef.current = null;
+    onActiveIntervalChange?.(null);
+    onSessionClosed?.(session);
+    await persistSessions([session]);
+  }
+
+  // Chiude la fascia in corso e ne apre una nuova del tipo scelto: usata sia
+  // per riprendere il lavoro ('focus') sia per segnare una pausa personale,
+  // un'interruzione ufficio o cliente. Solo il lavoro fa scorrere il conto
+  // alla rovescia — le pause lo mettono in pausa ma restano visibili e
+  // colorate sulla timeline invece di lasciare un buco.
+  async function switchTo(type) {
+    await closeInterval();
+    activeStartRef.current = Date.now();
+    activeTypeRef.current = type;
+    setActiveType(type);
+    onActiveIntervalChange?.({ start: activeStartRef.current, type });
+    const nextRunning = type === 'focus';
+    setRunning(nextRunning);
+    onRunningChange?.(nextRunning);
+  }
+
+  async function handlePhaseEnd() {
     beepBurst();
     if (phase === 'working') {
-      if (activeStartRef.current) {
-        sessionIntervalsRef.current.push({ start: activeStartRef.current, end: Date.now() });
-        activeStartRef.current = null;
-      }
-      const sessions = sessionIntervalsRef.current.map(iv => ({
-        start: new Date(iv.start).toISOString(),
-        end: new Date(iv.end).toISOString(),
-      }));
-      sessionIntervalsRef.current = [];
+      await closeInterval();
       const distractedSeconds = distractedSecondsRef.current;
       const interruptions = interruptionsRef.current;
       const focusedMinutes = Math.max(0, WORK_MIN - distractedSeconds / 60);
       distractedSecondsRef.current = 0;
       interruptionsRef.current = 0;
-      onCycleComplete?.({ focusedMinutes, interruptions, sessions });
-      persistStats(focusedMinutes, interruptions, sessions);
+      onCycleComplete?.({ focusedMinutes, interruptions });
+      await persistCycleStats(focusedMinutes, interruptions);
       notify('Pomodoro completato 🍅', 'Pausa di 5 minuti — stacca un attimo.');
       setPhaseEndInfo({ phase: 'working', focusedMinutes, interruptions });
       setPhase('break');
@@ -201,37 +251,27 @@ export default function PomodoroTimer({ onClose, onCycleComplete, onRunningChang
     const resumingWork = phaseEndInfo?.phase === 'break';
     setPhaseEndInfo(null);
     setRunning(true);
-    if (resumingWork) activeStartRef.current = Date.now();
+    if (resumingWork) {
+      activeStartRef.current = Date.now();
+      activeTypeRef.current = 'focus';
+      setActiveType('focus');
+      onActiveIntervalChange?.({ start: activeStartRef.current, type: 'focus' });
+    }
   }
 
-  // Unico punto in cui la pausa/ripresa è una scelta esplicita dell'utente
-  // (a differenza delle pause automatiche di fine fase): notifica il parent
-  // così può chiudere/riaprire il pannello sezione e sbloccare/bloccare il Piano.
+  // Unico punto in cui la pausa/ripresa del lavoro è una scelta esplicita
+  // dell'utente (a differenza delle pause automatiche di fine fase): notifica
+  // il parent così può chiudere/riaprire il pannello sezione e
+  // sbloccare/bloccare il Piano. Una pausa "secca" (senza scegliere un tipo)
+  // resta un vuoto sulla timeline, come le pause automatiche di fine ciclo.
   function toggle() {
-    setRunning(r => {
-      const next = !r;
-      if (phase === 'working') {
-        if (!next && activeStartRef.current) {
-          sessionIntervalsRef.current.push({ start: activeStartRef.current, end: Date.now() });
-          activeStartRef.current = null;
-        } else if (next) {
-          activeStartRef.current = Date.now();
-        }
-      }
-      onRunningChange?.(next);
-      return next;
-    });
-  }
-
-  function reset() {
-    setRunning(false);
-    onRunningChange?.(false);
-    setPhase('working');
-    setSeconds(WORK_MIN * 60);
-    distractedSecondsRef.current = 0;
-    interruptionsRef.current = 0;
-    sessionIntervalsRef.current = [];
-    activeStartRef.current = null;
+    if (running && activeType === 'focus') {
+      closeInterval();
+      setRunning(false);
+      onRunningChange?.(false);
+    } else {
+      switchTo('focus');
+    }
   }
 
   return (
@@ -256,15 +296,30 @@ export default function PomodoroTimer({ onClose, onCycleComplete, onRunningChang
       )}
       <div className="pomodoro-widget">
         <div className="pomodoro-header">
-          <span className={`pomodoro-phase ${phase}`}>
-            {phase === 'working' ? '🍅 Lavoro' : '☕ Pausa'}
+          <span className={`pomodoro-phase ${phase} ${activeType}`}>
+            {activeType === 'personal' ? '🟡 Pausa personale'
+              : activeType === 'office' ? '🟣 Interruzione ufficio'
+              : activeType === 'client' ? '🔵 Interruzione cliente'
+              : phase === 'working' ? '🍅 Lavoro' : '☕ Pausa'}
           </span>
           <button className="pomodoro-close" onClick={onClose} title="Chiudi">✕</button>
         </div>
         <div className="pomodoro-time">{fmt(secondsLeft)}</div>
         <div className="pomodoro-actions">
-          <button className="pomodoro-btn" onClick={toggle}>{running ? '⏸ Pausa' : '▶ Avvia'}</button>
-          <button className="pomodoro-btn secondary" onClick={reset}>↺ Reset</button>
+          <button className="pomodoro-btn" onClick={toggle}>
+            {running && activeType === 'focus' ? '⏸ Pausa' : '▶ Riprendi lavoro'}
+          </button>
+        </div>
+        <div className="pomodoro-breaks">
+          <button
+            className={`pomodoro-break-btn personal${activeType === 'personal' ? ' active' : ''}`}
+            onClick={() => switchTo('personal')} title="Pausa personale">Personale</button>
+          <button
+            className={`pomodoro-break-btn office${activeType === 'office' ? ' active' : ''}`}
+            onClick={() => switchTo('office')} title="Interruzione ufficio">Ufficio</button>
+          <button
+            className={`pomodoro-break-btn client${activeType === 'client' ? ' active' : ''}`}
+            onClick={() => switchTo('client')} title="Interruzione cliente">Cliente</button>
         </div>
         {todayStats && (
           <div className="pomodoro-stats">

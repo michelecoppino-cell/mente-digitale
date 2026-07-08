@@ -478,6 +478,47 @@
   box-sizing: border-box;
   pointer-events: none;
 }
+/* focus (lavoro) è il rosso di default sopra; le pause hanno un colore per tipo. */
+.planner-focus-bar.personal {
+  background: rgba(230,201,77,0.5);
+  border-color: rgba(230,201,77,0.85);
+}
+.planner-focus-bar.office {
+  background: rgba(157,127,214,0.5);
+  border-color: rgba(157,127,214,0.85);
+}
+.planner-focus-bar.client {
+  background: rgba(91,143,217,0.5);
+  border-color: rgba(91,143,217,0.85);
+}
+/* Fascia ancora aperta: cresce ad ogni tick verso "adesso". */
+.planner-focus-bar.live {
+  transition: height 0.6s linear;
+}
+
+/* Linea dell'ora corrente — attraversa tutta la larghezza della timeline,
+   allineata alla stessa scala minuti→px delle barre/blocchi sopra. */
+.planner-now-line {
+  position: absolute;
+  left: 0;
+  right: 6px;
+  height: 2px;
+  background: var(--accent);
+  box-shadow: 0 0 5px rgba(200,169,110,0.65);
+  z-index: 4;
+  pointer-events: none;
+}
+.planner-now-line::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 50%;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+  transform: translate(-50%, -50%);
+}
 
 /* Totale giornaliero, fissato in cima alla stessa colonna. */
 .planner-focus-daytotal {
