@@ -76,6 +76,12 @@
 }
 .pomodoro-btn:hover { background: rgba(200,169,110,0.1); }
 
+.pomodoro-btn-secondary {
+  border-color: var(--border2);
+  color: var(--muted);
+}
+.pomodoro-btn-secondary:hover { background: rgba(255,255,255,0.06); color: var(--text); }
+
 .pomodoro-breaks {
   display: flex;
   gap: 5px;

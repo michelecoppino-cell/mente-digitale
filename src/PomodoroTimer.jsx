@@ -228,7 +228,11 @@ export default function PomodoroTimer({ onClose, onCycleComplete, onRunningChang
       await closeInterval();
       const distractedSeconds = distractedSecondsRef.current;
       const interruptions = interruptionsRef.current;
-      const focusedMinutes = Math.max(0, WORK_MIN - distractedSeconds / 60);
+      // Usa il tempo di lavoro effettivamente trascorso (non sempre WORK_MIN
+      // intero: la fase può finire anche prima, se l'utente salta alla
+      // pausa manualmente col bottone "Inizia pausa ora").
+      const elapsedMinutes = (WORK_MIN * 60 - secondsLeft) / 60;
+      const focusedMinutes = Math.max(0, elapsedMinutes - distractedSeconds / 60);
       distractedSecondsRef.current = 0;
       interruptionsRef.current = 0;
       onCycleComplete?.({ focusedMinutes, interruptions });
@@ -274,6 +278,16 @@ export default function PomodoroTimer({ onClose, onCycleComplete, onRunningChang
     }
   }
 
+  // Forza subito la fine della fase corrente (lavoro→pausa o pausa→lavoro)
+  // invece di aspettare che il conto alla rovescia arrivi a zero: copre i
+  // casi in cui la pausa va iniziata prima o terminata prima del previsto.
+  // Passa dallo stesso `handlePhaseEnd` del fine-fase automatico, così
+  // overlay, notifiche e statistiche restano coerenti in entrambi i casi.
+  function skipPhase() {
+    clearInterval(intervalRef.current);
+    handlePhaseEnd();
+  }
+
   return (
     <>
       {phaseEndInfo && (
@@ -309,6 +323,19 @@ export default function PomodoroTimer({ onClose, onCycleComplete, onRunningChang
           <button className="pomodoro-btn" onClick={toggle}>
             {running && activeType === 'focus' ? '⏸ Pausa' : '▶ Riprendi lavoro'}
           </button>
+          {phase === 'working' ? (
+            <button
+              className="pomodoro-btn pomodoro-btn-secondary"
+              onClick={skipPhase}
+              title="Inizia subito la pausa, senza aspettare la fine del conto alla rovescia"
+            >☕ Pausa ora</button>
+          ) : (
+            <button
+              className="pomodoro-btn pomodoro-btn-secondary"
+              onClick={skipPhase}
+              title="Termina subito la pausa e torna al lavoro"
+            >🍅 Fine pausa</button>
+          )}
         </div>
         <div className="pomodoro-breaks">
           <button
