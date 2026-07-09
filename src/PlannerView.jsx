@@ -273,11 +273,11 @@ export default function PlannerView({
 
   // Calendari esclusi dalla visualizzazione. finché l'utente non tocca il
   // filtro (hiddenCalendarIds === null) si nasconde di default il calendario
-  // "compleanni", riconosciuto per nome tra quelli restituiti da Graph.
+  // "Birthday calendar" restituito da Graph.
   function getHiddenCalendarIds() {
     const hidden = configRef.current.hiddenCalendarIds;
     if (hidden === null || hidden === undefined) {
-      return calendarsList.filter(c => /compleann/i.test(c.name || '')).map(c => c.id);
+      return calendarsList.filter(c => (c.name || '').trim().toLowerCase() === 'birthday calendar').map(c => c.id);
     }
     return hidden;
   }

@@ -694,8 +694,8 @@
   left: 92px;
   right: 6px;
   border-radius: 4px;
-  background: rgba(126,184,201,0.24);
-  border-left: 3px solid rgba(126,184,201,0.95);
+  background: #4a90a4;
+  border-left: 3px solid #3a7688;
   padding: 3px 6px;
   overflow: hidden;
   pointer-events: auto;
@@ -707,12 +707,12 @@
   box-shadow: 0 1px 4px rgba(0,0,0,0.35);
   transition: background 0.15s;
 }
-.planner-cal-event:hover { background: rgba(126,184,201,0.36); }
+.planner-cal-event:hover { background: #57a3b8; }
 .planner-cal-event.shared {
-  background: rgba(126,184,201,0.15);
-  border-left-color: rgba(126,184,201,0.6);
+  background: #3d7f8b;
+  border-left-color: #2f6272;
 }
-.planner-cal-event.shared:hover { background: rgba(126,184,201,0.24); }
+.planner-cal-event.shared:hover { background: #4a90a4; }
 
 .planner-event-time {
   font-size: 9px;
