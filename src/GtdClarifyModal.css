@@ -412,6 +412,44 @@ input[type="date"].gtd-select::-webkit-calendar-picker-indicator {
   cursor: pointer;
 }
 
+/* ── Selettore quadrante Eisenhower nel popup di creazione task ── */
+.gtd-quadrant-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+.gtd-quadrant-btn {
+  background: rgba(255,255,255,0.02);
+  border: 1px solid var(--q-color, var(--border2));
+  color: var(--text);
+  border-radius: 7px;
+  padding: 7px 6px;
+  cursor: pointer;
+  font-family: 'Outfit', sans-serif;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  transition: background 0.15s, border-width 0.1s;
+}
+.gtd-quadrant-btn:hover { background: rgba(255,255,255,0.06); }
+.gtd-quadrant-btn.active {
+  background: color-mix(in srgb, var(--q-color) 18%, transparent);
+  border-width: 2px;
+}
+.gtd-quadrant-key {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--q-color);
+  letter-spacing: 0.05em;
+}
+.gtd-quadrant-short {
+  font-size: 10px;
+  color: var(--muted);
+  font-style: italic;
+  text-align: center;
+}
+
 .gtd-primary-btn {
   background: none;
   border: 1px solid var(--accent);
