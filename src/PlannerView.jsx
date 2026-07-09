@@ -36,6 +36,23 @@ function slots(start, end) {
   while (cur < t2m(end)) { out.push(m2t(cur)); cur += 30; }
   return out;
 }
+// La griglia della timeline copre sempre l'intera giornata (scorrimento libero
+// con la rotella): il workday configurato serve solo a posizionare lo scroll
+// iniziale su Giorno e Settimana, non più a limitare cosa viene disegnato.
+const DAY_START_MIN  = 0;
+const DAY_END_MIN    = 24 * 60;
+const FULL_DAY_SLOTS = slots('00:00', '24:00');
+
+// Posizione di scroll con cui la timeline (Giorno o Settimana) si apre di
+// default: l'inizio dell'orario di lavoro configurato, spinta ulteriormente
+// verso il basso se "adesso" è già più avanti nella giornata.
+function defaultScrollOffset(workStartMin) {
+  const workStartPx  = workStartMin / 30 * SLOT_HEIGHT;
+  const now = new Date();
+  const cur = now.getHours() * 60 + now.getMinutes();
+  const extra = Math.max(0, (cur - workStartMin) / 30 * SLOT_HEIGHT - 80);
+  return workStartPx + extra;
+}
 // Data in formato YYYY-MM-DD nel fuso orario locale (toISOString darebbe UTC)
 function localDateStr(d) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -140,6 +157,7 @@ export default function PlannerView({
   const [resizingId, setResizingId]         = useState(null);
   const [selectedTask, setSelectedTask]     = useState(null);
   const [poolWidth, setPoolWidth]           = useState(560);
+  const [weekPoolWidth, setWeekPoolWidth]   = useState(280); // metà della larghezza di default del pool in vista Giorno
   const [aiWidth, setAiWidth]               = useState(560);
   const [calOutOfRange, setCalOutOfRange]   = useState(false);
   const [mobileTab, setMobileTab]           = useState('timeline'); // colonna visibile su schermi stretti
@@ -156,6 +174,19 @@ export default function PlannerView({
   const resizingRef      = useRef(null);
   const subResizingRef   = useRef(null);
   const focusDragRef     = useRef(null);
+  // Un vero trascinamento (resize blocco/fascia, ridimensiona pannello…) può
+  // terminare con un mouseup sopra lo sfondo vuoto della Timeline, generando
+  // un click nativo lì: questo flag lo fa ignorare invece di aprire "Nuovo
+  // evento" per sbaglio. Si autoresetta dopo un istante nel caso quel click
+  // fantasma non arrivi mai a consumarlo (es. finisce fuori dalla Timeline),
+  // per non silenziare a tempo indeterminato un clic genuino successivo.
+  const suppressClickRef = useRef(false);
+  const suppressClickTimerRef = useRef(null);
+  function markDragSuppressClick() {
+    suppressClickRef.current = true;
+    clearTimeout(suppressClickTimerRef.current);
+    suppressClickTimerRef.current = setTimeout(() => { suppressClickRef.current = false; }, 300);
+  }
   const allCalEventsRef  = useRef([]);
   const currentDateRef   = useRef(currentDate);
   currentDateRef.current = currentDate;
@@ -166,11 +197,7 @@ export default function PlannerView({
     Promise.all([initConfig(), initPlans(), initPomodoroStats(), initCalendarsList()]);
     requestAnimationFrame(() => {
       if (!timelineBodyRef.current) return;
-      const now = new Date();
-      const workStart = t2m(configRef.current.workdayStart);
-      const cur = now.getHours() * 60 + now.getMinutes();
-      const offset = Math.max(0, (cur - workStart) / 30 * SLOT_HEIGHT - 80);
-      timelineBodyRef.current.scrollTop = offset;
+      timelineBodyRef.current.scrollTop = defaultScrollOffset(t2m(configRef.current.workdayStart));
     });
   }, [open]); // eslint-disable-line
 
@@ -311,8 +338,13 @@ export default function PlannerView({
     await fetchCalEventsAll();
   }
 
-  function openCreateEventModal(dateStr) {
-    setCalModal({ mode: 'create', defaultDate: dateStr || currentDate });
+  function openCreateEventModal(dateStr, startTime) {
+    setCalModal({
+      mode: 'create',
+      defaultDate: dateStr || currentDate,
+      defaultStartTime: startTime || null,
+      defaultEndTime: startTime ? m2t(Math.min(t2m(startTime) + DEFAULT_DURATION, DAY_END_MIN)) : null,
+    });
   }
 
   function openEditEventModal(ev) {
@@ -404,10 +436,8 @@ export default function PlannerView({
       const block = fromPlan?.blocks.find(b => b.id === blockId);
       if (!block) return all;
       const dur       = t2m(block.endTime) - t2m(block.startTime);
-      const workStart = t2m(configRef.current.workdayStart);
-      const workEnd   = t2m(configRef.current.workdayEnd);
-      const startMin  = Math.max(workStart, Math.min(t2m(newStartTime), workEnd - 30));
-      const moved     = { ...block, startTime: m2t(startMin), endTime: m2t(Math.min(startMin + dur, workEnd)) };
+      const startMin  = Math.max(DAY_START_MIN, Math.min(t2m(newStartTime), DAY_END_MIN - 30));
+      const moved     = { ...block, startTime: m2t(startMin), endTime: m2t(Math.min(startMin + dur, DAY_END_MIN)) };
       const next = { ...all };
       if (fromDay === toDay) {
         next[fromDay] = { ...fromPlan, blocks: fromPlan.blocks.map(b => b.id === blockId ? moved : b) };
@@ -428,10 +458,8 @@ export default function PlannerView({
     if (!timelineBodyRef.current) return;
     const rect = timelineBodyRef.current.getBoundingClientRect();
     const relY  = e.clientY - rect.top + timelineBodyRef.current.scrollTop;
-    const workStart  = t2m(configRef.current.workdayStart);
-    const workEnd    = t2m(configRef.current.workdayEnd);
     const slotIndex  = Math.floor(relY / SLOT_HEIGHT);
-    const clamped    = Math.max(workStart, Math.min(workEnd - 30, workStart + slotIndex * 30));
+    const clamped    = Math.max(DAY_START_MIN, Math.min(DAY_END_MIN - 30, slotIndex * 30));
     setDragOverTime(m2t(clamped));
   }
 
@@ -446,11 +474,25 @@ export default function PlannerView({
     setDragOverTime(null);
   }
 
-  function addBlock(task, startTime) {
+  // Clic su uno spazio vuoto della Timeline: apre "Nuovo evento" precompilato
+  // con la data corrente e l'ora del punto cliccato (arrotondata al mezz'ora).
+  function handleTimelineClick(e) {
+    if (locked) return;
+    if (suppressClickRef.current) { suppressClickRef.current = false; return; }
+    if (e.target.closest('.planner-block, .planner-cal-event, .planner-focus-bar, .planner-focus-column, .planner-focus-daytotal')) return;
+    if (!timelineBodyRef.current) return;
+    const rect = timelineBodyRef.current.getBoundingClientRect();
+    const relY = e.clientY - rect.top + timelineBodyRef.current.scrollTop;
+    const slotIndex = Math.floor(relY / SLOT_HEIGHT);
+    const startMin = Math.max(DAY_START_MIN, Math.min(DAY_END_MIN - 30, slotIndex * 30));
+    openCreateEventModal(currentDate, m2t(startMin));
+  }
+
+  function makeBlock(task, startTime) {
     const proj    = findProject(task, configRef.current);
     const color   = proj?.color ?? listColorMapRef.current[(task._listName ?? '').toLowerCase()] ?? '#888';
-    const endMin  = Math.min(t2m(startTime) + DEFAULT_DURATION, t2m(configRef.current.workdayEnd));
-    const newBlock = {
+    const endMin  = Math.min(t2m(startTime) + DEFAULT_DURATION, DAY_END_MIN);
+    return {
       id: genId(), taskId: task.id, taskTitle: task.title,
       listId: task._listId, listName: task._listName,
       projectKey: proj?.key || null, projectColor: color,
@@ -458,7 +500,20 @@ export default function PlannerView({
       completed: false, completedAt: null,
       isAISuggested: false, subSteps: [],
     };
+  }
+
+  function addBlock(task, startTime) {
+    const newBlock = makeBlock(task, startTime);
     mutatePlan(prev => ({ ...prev, blocks: [...prev.blocks, newBlock] }));
+  }
+
+  // Drop di un task dal pool su un giorno qualunque della vista Settimana.
+  function addBlockToDay(task, day, startTime) {
+    const newBlock = makeBlock(task, startTime);
+    mutatePlansMulti(all => {
+      const dayPlan = all[day] || { date: day, blocks: [], emailExtractedActions: [] };
+      return { ...all, [day]: { ...dayPlan, blocks: [...dayPlan.blocks, newBlock] } };
+    });
   }
 
   function moveBlock(blockId, newStartTime) {
@@ -467,7 +522,7 @@ export default function PlannerView({
       blocks: prev.blocks.map(b => {
         if (b.id !== blockId) return b;
         const dur    = t2m(b.endTime) - t2m(b.startTime);
-        const endMin = Math.min(t2m(newStartTime) + dur, t2m(configRef.current.workdayEnd));
+        const endMin = Math.min(t2m(newStartTime) + dur, DAY_END_MIN);
         return { ...b, startTime: newStartTime, endTime: m2t(endMin) };
       }),
     }));
@@ -606,7 +661,7 @@ export default function PlannerView({
     function onMove(ev) {
       const d = focusDragRef.current;
       if (!d) return;
-      if (Math.abs(ev.clientY - d.startY) > 3) d.moved = true;
+      if (Math.abs(ev.clientY - d.startY) > 3) { d.moved = true; markDragSuppressClick(); }
       const deltaMin = Math.round(((ev.clientY - d.startY) / SLOT_HEIGHT * 30) / 5) * 5;
       let newStart = d.origStart, newEnd = d.origEnd;
       if (d.mode === 'move') {
@@ -642,8 +697,9 @@ export default function PlannerView({
   // Clic su uno spazio vuoto della colonna Pomodoro: apre il menu per
   // scegliere il tipo della nuova fascia, ancorata all'orario cliccato.
   function handleFocusColumnClick(e) {
+    e.stopPropagation();
     const rect = e.currentTarget.getBoundingClientRect();
-    const rawMin = workStart + ((e.clientY - rect.top) / SLOT_HEIGHT) * 30;
+    const rawMin = ((e.clientY - rect.top) / SLOT_HEIGHT) * 30;
     const startMin = Math.max(0, Math.min(24 * 60 - 5, Math.round(rawMin / 5) * 5));
     setFocusPopup({ mode: 'add', startMin, x: e.clientX, y: e.clientY });
   }
@@ -655,10 +711,11 @@ export default function PlannerView({
     setResizingId(block.id);
 
     function onMove(ev) {
+      markDragSuppressClick();
       const { blockId, startY, startEndMin, blockStartMin } = resizingRef.current;
       const deltaMin = Math.round((ev.clientY - startY) / SLOT_HEIGHT * 30 / 30) * 30;
       const newEndMin = Math.max(blockStartMin + 30,
-        Math.min(t2m(configRef.current.workdayEnd), startEndMin + deltaMin));
+        Math.min(DAY_END_MIN, startEndMin + deltaMin));
       setTodayPlan(prev => ({
         ...prev,
         blocks: prev.blocks.map(b =>
@@ -724,6 +781,7 @@ export default function PlannerView({
     subResizingRef.current = { blockId: block.id, splitIdx, startY: e.clientY, startFrac: splits[splitIdx], blockHeight, splits };
 
     function onMove(ev) {
+      markDragSuppressClick();
       const { blockId, splitIdx, startY, startFrac, blockHeight, splits: orig } = subResizingRef.current;
       const deltaFrac = (ev.clientY - startY) / blockHeight;
       const minGap = Math.max(0.05, 20 / blockHeight);
@@ -756,7 +814,16 @@ export default function PlannerView({
   function handlePoolResizeStart(e) {
     e.preventDefault();
     const startX = e.clientX, startW = poolWidth;
-    const onMove = ev => setPoolWidth(Math.max(180, Math.min(800, startW + ev.clientX - startX)));
+    const onMove = ev => { markDragSuppressClick(); setPoolWidth(Math.max(180, Math.min(800, startW + ev.clientX - startX))); };
+    const onUp   = () => { document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp); };
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  }
+
+  function handleWeekPoolResizeStart(e) {
+    e.preventDefault();
+    const startX = e.clientX, startW = weekPoolWidth;
+    const onMove = ev => { markDragSuppressClick(); setWeekPoolWidth(Math.max(140, Math.min(500, startW + ev.clientX - startX))); };
     const onUp   = () => { document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp); };
     document.addEventListener('mousemove', onMove);
     document.addEventListener('mouseup', onUp);
@@ -765,15 +832,18 @@ export default function PlannerView({
   function handleAiResizeStart(e) {
     e.preventDefault();
     const startX = e.clientX, startW = aiWidth;
-    const onMove = ev => setAiWidth(Math.max(180, Math.min(800, startW - (ev.clientX - startX))));
+    const onMove = ev => { markDragSuppressClick(); setAiWidth(Math.max(180, Math.min(800, startW - (ev.clientX - startX)))); };
     const onUp   = () => { document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp); };
     document.addEventListener('mousemove', onMove);
     document.addEventListener('mouseup', onUp);
   }
 
   // ── Derived ──────────────────────────────────────────────────────────────────
-  const timeSlots   = slots(config.workdayStart, config.workdayEnd);
+  const timeSlots   = FULL_DAY_SLOTS;
   const scheduledIds = new Set(todayPlan.blocks.map(b => b.taskId));
+  const weekDays = getWeekDays(currentDate);
+  const weekScheduledIds = new Set();
+  for (const day of weekDays) (plans[day]?.blocks || []).forEach(b => weekScheduledIds.add(b.taskId));
 
   // Map each section/list name → a shade of its notebook color
   const listColorMap = useMemo(() => {
@@ -875,18 +945,38 @@ export default function PlannerView({
           onDayClick={day => { setCurrentDate(day); setViewMode('day'); }}
           onEventClick={openEditEventModal}
         />
-      ) : viewMode === 'week' ? (
+      ) : viewMode === 'week' ? (<>
+
+        {/* ── Task Pool a sx, ridotto — stesso pool della vista Giorno,
+            ridimensionabile e trascinabile sui giorni della settimana. */}
+        <div className={`planner-pool planner-week-pool${locked ? ' locked' : ''}`} style={{ width: weekPoolWidth }}>
+          <TaskPool
+            title="Task"
+            tasks={preloadedTasks}
+            config={config}
+            notebooks={notebooks}
+            sectionsMap={sectionsMap}
+            scheduledIds={weekScheduledIds}
+            draggable={!locked}
+          />
+        </div>
+        <div className="planner-col-resize" onMouseDown={handleWeekPoolResizeStart} title="Ridimensiona" />
+
         <WeeklyTimeline
-          weekDays={getWeekDays(currentDate)}
+          weekDays={weekDays}
           plans={plans}
           calEvents={calEvents}
-          workStart={workStart}
+          workdayStartMin={workStart}
           timeSlots={timeSlots}
+          locked={locked}
+          suppressClickRef={suppressClickRef}
           onDayClick={day => { setCurrentDate(day); setViewMode('day'); }}
           onMoveBlock={moveBlockBetweenDays}
           onEventClick={openEditEventModal}
+          onAddTask={addBlockToDay}
+          onCreateEvent={(day, time) => openCreateEventModal(day, time)}
         />
-      ) : (<>
+      </>) : (<>
 
         {/* ── Column 1: Task Pool ──
             Durante il blocco Pomodoro resta visibile ma del tutto non
@@ -936,7 +1026,8 @@ export default function PlannerView({
             onDrop={handleTimelineDrop}
             onDragLeave={e => {
               if (!timelineBodyRef.current?.contains(e.relatedTarget)) setDragOverTime(null);
-            }}>
+            }}
+            onClick={handleTimelineClick}>
 
             {/* Colonna Pomodoro: totale giornaliero in alto + fasce orarie reali,
                 modificabili — clic su uno spazio vuoto ne aggiunge una nuova. */}
@@ -954,10 +1045,8 @@ export default function PlannerView({
               const sEnd   = new Date(s.end);
               const startMin = sStart.getHours() * 60 + sStart.getMinutes();
               const endMin   = sEnd.getHours() * 60 + sEnd.getMinutes();
-              const workEnd  = t2m(config.workdayEnd);
-              if (endMin <= workStart || startMin >= workEnd) return null;
-              const top    = Math.max(0, (Math.max(startMin, workStart) - workStart) / 30 * SLOT_HEIGHT);
-              const height = Math.max(3, (Math.min(endMin, workEnd) - Math.max(startMin, workStart)) / 30 * SLOT_HEIGHT);
+              const top    = Math.max(0, (Math.max(startMin, DAY_START_MIN) - DAY_START_MIN) / 30 * SLOT_HEIGHT);
+              const height = Math.max(3, (Math.min(endMin, DAY_END_MIN) - Math.max(startMin, DAY_START_MIN)) / 30 * SLOT_HEIGHT);
               const type = s.type || 'focus';
               return (
                 <div
@@ -981,10 +1070,8 @@ export default function PlannerView({
               const startMin = sStart.getHours() * 60 + sStart.getMinutes();
               const nowD = new Date(nowTick);
               const endMin = nowD.getHours() * 60 + nowD.getMinutes();
-              const workEnd = t2m(config.workdayEnd);
-              if (endMin <= workStart || startMin >= workEnd) return null;
-              const top    = Math.max(0, (Math.max(startMin, workStart) - workStart) / 30 * SLOT_HEIGHT);
-              const height = Math.max(3, (Math.min(endMin, workEnd) - Math.max(startMin, workStart)) / 30 * SLOT_HEIGHT);
+              const top    = Math.max(0, (Math.max(startMin, DAY_START_MIN) - DAY_START_MIN) / 30 * SLOT_HEIGHT);
+              const height = Math.max(3, (Math.min(endMin, DAY_END_MIN) - Math.max(startMin, DAY_START_MIN)) / 30 * SLOT_HEIGHT);
               const type = activeInterval.type || 'focus';
               const startHHMM = `${String(sStart.getHours()).padStart(2, '0')}:${String(sStart.getMinutes()).padStart(2, '0')}`;
               return (
@@ -999,9 +1086,7 @@ export default function PlannerView({
             {currentDate === todayStr() && (() => {
               const nowD = new Date(nowTick);
               const nowMin = nowD.getHours() * 60 + nowD.getMinutes();
-              const workEnd = t2m(config.workdayEnd);
-              if (nowMin < workStart || nowMin > workEnd) return null;
-              const top = (nowMin - workStart) / 30 * SLOT_HEIGHT;
+              const top = (nowMin - DAY_START_MIN) / 30 * SLOT_HEIGHT;
               return <div className="planner-now-line" style={{ top }} />;
             })()}
 
@@ -1023,10 +1108,8 @@ export default function PlannerView({
               if (!evStart || !evEnd) return null;
               const evStartMin = t2m(evStart);
               const evEndMin   = t2m(evEnd);
-              const workEnd    = t2m(config.workdayEnd);
-              if (evEndMin <= workStart || evStartMin >= workEnd) return null;
-              const top    = Math.max(0, (evStartMin - workStart) / 30 * SLOT_HEIGHT);
-              const height = Math.max(SLOT_HEIGHT / 2, (Math.min(evEndMin, workEnd) - Math.max(evStartMin, workStart)) / 30 * SLOT_HEIGHT);
+              const top    = Math.max(0, (evStartMin - DAY_START_MIN) / 30 * SLOT_HEIGHT);
+              const height = Math.max(SLOT_HEIGHT / 2, (Math.min(evEndMin, DAY_END_MIN) - Math.max(evStartMin, DAY_START_MIN)) / 30 * SLOT_HEIGHT);
               return (
                 <div
                   key={`cal-${i}`}
@@ -1044,7 +1127,7 @@ export default function PlannerView({
             {todayPlan.blocks.map(block => {
               const startMin = t2m(block.startTime);
               const endMin   = t2m(block.endTime);
-              const top      = Math.max(0, (startMin - workStart) / 30 * SLOT_HEIGHT);
+              const top      = Math.max(0, (startMin - DAY_START_MIN) / 30 * SLOT_HEIGHT);
               const height   = Math.max(SLOT_HEIGHT - 4, (endMin - startMin) / 30 * SLOT_HEIGHT - 4);
               return (
                 <Fragment key={block.id}>
@@ -1052,7 +1135,8 @@ export default function PlannerView({
                   className={`planner-block${block.completed ? ' completed' : ''}${block.isAISuggested ? ' ai-suggested' : ''}`}
                   style={{ top: top + 2, height, borderLeftColor: block.projectColor, background: block.projectColor }}
                   draggable={!locked && !block.completed && resizingId !== block.id}
-                  onClick={() => {
+                  onClick={e => {
+                    e.stopPropagation();
                     if (block.taskId && block.listId) {
                       setSelectedTask({ id: block.taskId, title: block.taskTitle, _listId: block.listId, _listName: block.listName });
                       setMobileTab('panel');
@@ -1125,7 +1209,7 @@ export default function PlannerView({
               <div
                 className="planner-drop-indicator"
                 style={{
-                  top:    (t2m(dragOverTime) - workStart) / 30 * SLOT_HEIGHT,
+                  top:    (t2m(dragOverTime) - DAY_START_MIN) / 30 * SLOT_HEIGHT,
                   height: SLOT_HEIGHT * 2,
                 }} />
             )}
@@ -1222,6 +1306,8 @@ export default function PlannerView({
           mode={calModal.mode}
           event={calModal.event}
           defaultDate={calModal.defaultDate}
+          defaultStartTime={calModal.defaultStartTime}
+          defaultEndTime={calModal.defaultEndTime}
           calendars={calendarsList}
           onClose={() => setCalModal(null)}
           onSave={handleSaveCalEvent}
@@ -1310,7 +1396,7 @@ function FocusSessionPopup({ popup, onPickType, onDelete, onClose }) {
 // Crea o modifica un evento su uno qualsiasi dei calendari collegati (non solo
 // quello di default) — usato dal pulsante "+ Evento" e dal click su un evento
 // nella Timeline, in Settimana o in Mese.
-function CalendarEventModal({ mode, event, defaultDate, calendars, onClose, onSave, onDelete }) {
+function CalendarEventModal({ mode, event, defaultDate, defaultStartTime, defaultEndTime, calendars, onClose, onSave, onDelete }) {
   const defaultCalId = calendars.find(c => c.isDefaultCalendar)?.id || calendars[0]?.id || '';
   const eventIsAllDay = event ? isAllDay(event) : false;
 
@@ -1320,8 +1406,8 @@ function CalendarEventModal({ mode, event, defaultDate, calendars, onClose, onSa
   const [date, setDate]             = useState(
     event ? (event.start?.dateTime || event.start?.date || '').slice(0, 10) : (defaultDate || todayStr())
   );
-  const [startTime, setStartTime]   = useState(event && !eventIsAllDay ? isoToHHMM(event.start?.dateTime) : '09:00');
-  const [endTime, setEndTime]       = useState(event && !eventIsAllDay ? isoToHHMM(event.end?.dateTime) : '10:00');
+  const [startTime, setStartTime]   = useState(event && !eventIsAllDay ? isoToHHMM(event.start?.dateTime) : (defaultStartTime || '09:00'));
+  const [endTime, setEndTime]       = useState(event && !eventIsAllDay ? isoToHHMM(event.end?.dateTime) : (defaultEndTime || '10:00'));
   const [busy, setBusy]             = useState(false);
   const [error, setError]           = useState('');
 
@@ -1813,19 +1899,27 @@ function MonthlyCalendar({ currentDate, plans, calEvents, calOutOfRange, onDayCl
 }
 
 // ── WeeklyTimeline ────────────────────────────────────────────────────────────
-function WeeklyTimeline({ weekDays, plans, calEvents, workStart, timeSlots, onDayClick, onMoveBlock, onEventClick }) {
+function WeeklyTimeline({ weekDays, plans, calEvents, workdayStartMin, timeSlots, locked, suppressClickRef, onDayClick, onMoveBlock, onEventClick, onAddTask, onCreateEvent }) {
   const today = todayStr();
   const [dragOver, setDragOver] = useState(null); // { day, min }
-  const workEnd = workStart + timeSlots.length * 30;
+  const weekBodyRef = useRef(null);
+
+  // Apre di default sull'orario di lavoro configurato, come la vista Giorno —
+  // ma essendo la griglia sempre 00:00–24:00 resta scorrevole con la rotella.
+  useEffect(() => {
+    if (!weekBodyRef.current) return;
+    weekBodyRef.current.scrollTop = defaultScrollOffset(workdayStartMin);
+  }, []); // eslint-disable-line
 
   function slotFromEvent(e) {
     const rect = e.currentTarget.getBoundingClientRect();
     const relY = e.clientY - rect.top;
     const idx  = Math.floor(relY / SLOT_HEIGHT);
-    return Math.max(workStart, Math.min(workEnd - 30, workStart + idx * 30));
+    return Math.max(DAY_START_MIN, Math.min(DAY_END_MIN - 30, idx * 30));
   }
 
   function handleColDragOver(e, day) {
+    if (locked) return;
     e.preventDefault();
     e.dataTransfer.dropEffect = 'move';
     setDragOver({ day, min: slotFromEvent(e) });
@@ -1833,12 +1927,23 @@ function WeeklyTimeline({ weekDays, plans, calEvents, workStart, timeSlots, onDa
 
   function handleColDrop(e, day) {
     e.preventDefault();
+    if (locked) { setDragOver(null); return; }
     const min = slotFromEvent(e);
     try {
       const data = JSON.parse(e.dataTransfer.getData('text/plain'));
       if (data.type === 'weekblock') onMoveBlock(data.fromDay, data.blockId, day, m2t(min));
+      else if (data.type === 'task') onAddTask(data.task, day, m2t(min));
     } catch { /* payload drag non valido — ignora */ }
     setDragOver(null);
+  }
+
+  // Clic su uno spazio vuoto della colonna: apre "Nuovo evento" precompilato
+  // con quel giorno e l'ora del punto cliccato.
+  function handleColClick(e, day) {
+    if (locked) return;
+    if (suppressClickRef?.current) { suppressClickRef.current = false; return; }
+    if (e.target.closest('.planner-week-cal-event, .planner-week-task-block')) return;
+    onCreateEvent(day, m2t(slotFromEvent(e)));
   }
 
   return (
@@ -1870,7 +1975,7 @@ function WeeklyTimeline({ weekDays, plans, calEvents, workStart, timeSlots, onDa
           );
         })}
       </div>
-      <div className="planner-week-body">
+      <div className="planner-week-body" ref={weekBodyRef}>
         <div className="planner-week-gutter-col">
           {timeSlots.map(slot => (
             <div key={slot} className="planner-week-slot-label" style={{ height: SLOT_HEIGHT }}>{slot}</div>
@@ -1889,14 +1994,15 @@ function WeeklyTimeline({ weekDays, plans, calEvents, workStart, timeSlots, onDa
               onDragLeave={e => {
                 if (!e.currentTarget.contains(e.relatedTarget)) setDragOver(null);
               }}
-              onDrop={e => handleColDrop(e, day)}>
+              onDrop={e => handleColDrop(e, day)}
+              onClick={e => handleColClick(e, day)}>
               {timeSlots.map(slot => (
                 <div key={slot} className="planner-week-slot-row" style={{ height: SLOT_HEIGHT }} />
               ))}
               {dragOver?.day === day && (
                 <div
                   className="planner-week-drop-indicator"
-                  style={{ top: (dragOver.min - workStart) / 30 * SLOT_HEIGHT, height: SLOT_HEIGHT }}>
+                  style={{ top: (dragOver.min - DAY_START_MIN) / 30 * SLOT_HEIGHT, height: SLOT_HEIGHT }}>
                   {m2t(dragOver.min)}
                 </div>
               )}
@@ -1904,7 +2010,7 @@ function WeeklyTimeline({ weekDays, plans, calEvents, workStart, timeSlots, onDa
                 const evStart = isoToHHMM(ev.start?.dateTime || ev.start?.date);
                 const evEnd   = isoToHHMM(ev.end?.dateTime   || ev.end?.date);
                 if (!evStart || !evEnd) return null;
-                const top    = Math.max(0, (t2m(evStart) - workStart) / 30 * SLOT_HEIGHT);
+                const top    = Math.max(0, (t2m(evStart) - DAY_START_MIN) / 30 * SLOT_HEIGHT);
                 const height = Math.max(SLOT_HEIGHT / 2, (t2m(evEnd) - t2m(evStart)) / 30 * SLOT_HEIGHT);
                 return (
                   <div key={i} className="planner-week-cal-event"
@@ -1917,14 +2023,15 @@ function WeeklyTimeline({ weekDays, plans, calEvents, workStart, timeSlots, onDa
                 );
               })}
               {dayPlan.blocks.map(block => {
-                const top    = Math.max(0, (t2m(block.startTime) - workStart) / 30 * SLOT_HEIGHT);
+                const top    = Math.max(0, (t2m(block.startTime) - DAY_START_MIN) / 30 * SLOT_HEIGHT);
                 const height = Math.max(SLOT_HEIGHT - 4, (t2m(block.endTime) - t2m(block.startTime)) / 30 * SLOT_HEIGHT - 4);
                 return (
                   <div key={block.id}
                     className={`planner-week-task-block${block.completed ? ' completed' : ''}`}
-                    style={{ top: top + 2, height, borderLeftColor: block.projectColor, background: `${block.projectColor}4d` }}
+                    style={{ top: top + 2, height, borderLeftColor: block.projectColor, background: block.projectColor }}
                     title={`${block.startTime}–${block.endTime} · ${block.taskTitle} (trascina per spostare)`}
                     draggable={!block.completed}
+                    onClick={e => e.stopPropagation()}
                     onDragStart={e => {
                       e.stopPropagation();
                       e.dataTransfer.setData('text/plain', JSON.stringify({ type: 'weekblock', blockId: block.id, fromDay: day }));
