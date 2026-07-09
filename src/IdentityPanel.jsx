@@ -101,6 +101,7 @@ function IconPencil() {
 export default function IdentityPanel({ open, onClose }) {
   const [doc, setDoc] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [loadFailed, setLoadFailed] = useState(false);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(null);
   const [saving, setSaving] = useState(false);
@@ -112,16 +113,19 @@ export default function IdentityPanel({ open, onClose }) {
       setEditing(false);
       setDraft(null);
       setSaveError(null);
+      setLoadFailed(false);
       return;
     }
     setLoading(true);
+    setLoadFailed(false);
     loadIdentityDoc(open)
       .then(data => {
+        // null = file non ancora creato (404): i default sono un punto di
+        // partenza legittimo. Un errore transitorio invece NON deve mostrare
+        // i default: un "Salva" successivo sovrascriverebbe il documento vero.
         setDoc(data || (open === 'bussola' ? DEFAULT_BUSSOLA : DEFAULT_VISIONE));
       })
-      .catch(() => {
-        setDoc(open === 'bussola' ? DEFAULT_BUSSOLA : DEFAULT_VISIONE);
-      })
+      .catch(() => setLoadFailed(true))
       .finally(() => setLoading(false));
   }, [open]);
 
@@ -201,7 +205,7 @@ export default function IdentityPanel({ open, onClose }) {
           </span>
           <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
             {!editing ? (
-              <button
+              !loadFailed && doc && <button
                 onClick={startEdit}
                 title="Modifica"
                 style={{ background: 'none', border: 'none', cursor: 'pointer', color: OCRA, opacity: 0.65, padding: '4px 6px', borderRadius: 6, transition: 'opacity .15s' }}
@@ -244,6 +248,10 @@ export default function IdentityPanel({ open, onClose }) {
         <div style={{ overflowY: 'auto', padding: '22px 26px', flex: 1 }}>
           {loading ? (
             <div style={{ color: '#555', textAlign: 'center', padding: 48, fontSize: 13 }}>Caricamento…</div>
+          ) : loadFailed ? (
+            <div style={{ color: '#e07070', textAlign: 'center', padding: 48, fontSize: 13 }}>
+              Errore nel caricamento del documento. Chiudi e riprova.
+            </div>
           ) : editing ? (
             <>
               {(draft?.sections || []).map((section, i) => (

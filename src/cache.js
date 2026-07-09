@@ -2,14 +2,13 @@
 const PREFIX = 'md_cache_v4_'; // v4: pagine con pagelevel=true // v3: pagine con level per tree view // v2: invalida cache vecchia con sottopagine
 
 export function cacheSet(key, data, ttlMs) {
+  const raw = JSON.stringify({ data, expires: Date.now() + ttlMs });
   try {
-    localStorage.setItem(PREFIX + key, JSON.stringify({
-      data,
-      expires: Date.now() + ttlMs
-    }));
+    localStorage.setItem(PREFIX + key, raw);
   } catch {
-    // localStorage pieno — pulisci vecchie chiavi
+    // localStorage pieno — pulisci le chiavi scadute e riprova una volta
     clearExpired();
+    try { localStorage.setItem(PREFIX + key, raw); } catch { /* ancora pieno — rinuncia */ }
   }
 }
 

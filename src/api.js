@@ -16,12 +16,15 @@ async function getTokenCached() {
 export function invalidateTokenCache() { _cachedToken = null; _cachedTokenExp = 0; }
 
 async function call(path, options = {}, retries = 3) {
+  // Accetta anche URL assoluti: i link di paginazione @odata.nextLink di Graph
+  // arrivano già completi di host.
+  const url = path.startsWith('https://') ? path : GRAPH + path;
   let retried401 = false;
   for (let attempt = 0; attempt < retries; attempt++) {
     let r;
     try {
       const token = await getTokenCached();
-      r = await fetch(GRAPH + path, {
+      r = await fetch(url, {
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
         ...options
       });
@@ -33,10 +36,13 @@ async function call(path, options = {}, retries = 3) {
     if (r.status === 204) return null;
     // Il token cachato può risultare scaduto (es. dopo una pausa lunga):
     // invalida la cache e riprova una volta sola con un token fresco prima
-    // di arrendersi con un errore secco.
+    // di arrendersi con un errore secco. Il giro extra non consuma uno dei
+    // tentativi normali (altrimenti un 401 all'ultimo giro usciva con
+    // "tentativi esauriti" senza aver mai provato il token fresco).
     if (r.status === 401 && !retried401) {
       retried401 = true;
       invalidateTokenCache();
+      attempt--;
       continue;
     }
     if (r.status === 429 || r.status === 503 || r.status === 504) {
@@ -55,11 +61,27 @@ async function call(path, options = {}, retries = 3) {
           detail = ` — ${errBody.error.code ? errBody.error.code + ': ' : ''}${errBody.error.message}`;
         }
       } catch { /* corpo non-JSON o vuoto */ }
-      throw new Error(`Graph error ${r.status}${detail}`);
+      const err = new Error(`Graph error ${r.status}${detail}`);
+      err.status = r.status; // permette ai chiamanti di distinguere 404 da errori transitori
+      throw err;
     }
     return r.json();
   }
   throw new Error(`Graph error: tentativi esauriti per ${path}`);
+}
+
+// Segue @odata.nextLink e concatena i .value di tutte le pagine: senza,
+// le liste più lunghe di $top venivano troncate in silenzio (task mancanti,
+// controllo anti-duplicati delle scadenze incompleto).
+async function callPagedValues(path, maxPages = 10) {
+  const out = [];
+  let next = path;
+  for (let i = 0; i < maxPages && next; i++) {
+    const d = await call(next);
+    out.push(...(d?.value || []));
+    next = d?.['@odata.nextLink'] || null;
+  }
+  return out;
 }
 
 // PUT di un file JSON nella root di OneDrive
@@ -86,8 +108,7 @@ export async function getSections(notebookId) {
 
 // Restituisce tutte le pagine top-level (level=0) della sezione
 export async function getPages(sectionId) {
-  const d = await call(`/me/onenote/sections/${sectionId}/pages?pagelevel=true&$top=100`);
-  return d.value || [];
+  return callPagedValues(`/me/onenote/sections/${sectionId}/pages?pagelevel=true&$top=100`);
 }
 
 // Contenuto HTML grezzo di una pagina OneNote (l'endpoint restituisce HTML, non
@@ -104,13 +125,11 @@ export async function getPageContentHtml(pageId) {
 }
 
 export async function getTodoLists() {
-  const d = await call('/me/todo/lists');
-  return d.value;
+  return callPagedValues('/me/todo/lists');
 }
 
 export async function getTodoTasks(listId) {
-  const d = await call(`/me/todo/lists/${listId}/tasks?$filter=status ne 'completed'&$orderby=importance desc,createdDateTime desc&$top=50`);
-  return d.value;
+  return callPagedValues(`/me/todo/lists/${listId}/tasks?$filter=status ne 'completed'&$orderby=importance desc,createdDateTime desc&$top=50`);
 }
 
 // Task di una lista indipendentemente dallo stato (anche completati), solo
@@ -118,8 +137,7 @@ export async function getTodoTasks(listId) {
 // (refreshDeadlineReminders in App.jsx) — getTodoTasks esclude i completati,
 // e uno spuntato non deve poter essere ricreato al giro successivo.
 export async function getTasksForDeadlineDedup(listId) {
-  const d = await call(`/me/todo/lists/${listId}/tasks?$select=id,body&$top=200`);
-  return d.value || [];
+  return callPagedValues(`/me/todo/lists/${listId}/tasks?$select=id,body&$top=200`);
 }
 
 export async function completeTask(listId, taskId) {
@@ -202,9 +220,19 @@ export async function markOneNoteTagDone(pageId, elementId, originalTagHtml) {
   await patchPageContent(pageId, [{ target: `#${elementId}`, action: 'replace', content }]);
 }
 
+// Memo in memoria della lista calendari: viene richiesta da più punti
+// (ogni getCalendarEvents, il filtro calendari del Piano) ma cambia di rado.
+let _calsCache = null;
+let _calsCacheExp = 0;
+
+export function invalidateCalendarsCache() { _calsCache = null; _calsCacheExp = 0; }
+
 export async function getCalendars() {
+  if (_calsCache && Date.now() < _calsCacheExp) return _calsCache;
   const d = await call('/me/calendars?$select=id,name,color,isDefaultCalendar,owner&$top=50');
-  return d.value || [];
+  _calsCache = d.value || [];
+  _calsCacheExp = Date.now() + 10 * 60 * 1000;
+  return _calsCache;
 }
 
 export async function getCalendarEvents(startDate, endDate, top = 50) {
@@ -339,17 +367,27 @@ export async function moveCalendarEvent(calendarId, eventId, destinationCalendar
   });
 }
 
+// GET di un file JSON dalla root di OneDrive. Distingue "file non ancora
+// creato" (404 → notFoundValue) dagli errori transitori (rete, 401…), che
+// vengono propagati: senza questa distinzione un errore momentaneo faceva
+// ripartire i chiamanti da un contenuto vuoto che, al salvataggio successivo,
+// sovrascriveva il file remoto cancellando tutto lo storico.
+async function getDriveJson(filename, notFoundValue) {
+  try {
+    return await call(`/me/drive/root:/${filename}:/content`);
+  } catch (e) {
+    if (e?.status === 404) return notFoundValue;
+    throw e;
+  }
+}
+
 // ── OneDrive Identity Docs ────────────────────────────────────────────────────
 const OD_BUSSOLA_FILE = 'mente-digitale-bussola.json';
 const OD_VISIONE_FILE  = 'mente-digitale-visione.json';
 
 export async function loadIdentityDoc(type) {
   const filename = type === 'bussola' ? OD_BUSSOLA_FILE : OD_VISIONE_FILE;
-  try {
-    return await call(`/me/drive/root:/${filename}:/content`);
-  } catch {
-    return null;
-  }
+  return getDriveJson(filename, null);
 }
 
 export async function saveIdentityDoc(type, data) {
@@ -361,13 +399,7 @@ export async function saveIdentityDoc(type, data) {
 const OD_LINKS_FILE = 'mente-digitale-links.json';
 
 export async function loadODLinksFromCloud() {
-  try {
-    // Graph restituisce il contenuto raw del file
-    return await call(`/me/drive/root:/${OD_LINKS_FILE}:/content`);
-  } catch {
-    // File non esiste ancora
-    return null;
-  }
+  return getDriveJson(OD_LINKS_FILE, null);
 }
 
 export async function saveODLinksToCloud(links) {
@@ -379,11 +411,7 @@ const OD_DAILY_PLANS_FILE  = 'mente-digitale-daily-plans.json';
 const OD_PLANNER_CFG_FILE  = 'mente-digitale-planner-config.json';
 
 export async function loadDailyPlans() {
-  try {
-    return await call(`/me/drive/root:/${OD_DAILY_PLANS_FILE}:/content`);
-  } catch {
-    return {};
-  }
+  return getDriveJson(OD_DAILY_PLANS_FILE, {});
 }
 
 export async function saveDailyPlans(plans) {
@@ -398,11 +426,7 @@ export async function saveDailyPlans(plans) {
 }
 
 export async function loadPlannerConfig() {
-  try {
-    return await call(`/me/drive/root:/${OD_PLANNER_CFG_FILE}:/content`);
-  } catch {
-    return null;
-  }
+  return getDriveJson(OD_PLANNER_CFG_FILE, null);
 }
 
 export async function savePlannerConfig(config) {
@@ -413,11 +437,7 @@ export async function savePlannerConfig(config) {
 const OD_POMODORO_STATS_FILE = 'mente-digitale-pomodoro-stats.json';
 
 export async function loadPomodoroStats() {
-  try {
-    return await call(`/me/drive/root:/${OD_POMODORO_STATS_FILE}:/content`);
-  } catch {
-    return {};
-  }
+  return getDriveJson(OD_POMODORO_STATS_FILE, {});
 }
 
 export async function savePomodoroStats(stats) {

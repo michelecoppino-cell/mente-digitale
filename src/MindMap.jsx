@@ -1,5 +1,13 @@
 import { useEffect, useRef } from 'react';
-import * as d3 from 'd3';
+// Import mirati dei soli moduli D3 usati (invece dell'intero pacchetto):
+// bundle più piccolo. 'd3-transition' è un side-effect import che aggiunge
+// .transition() alle selezioni.
+import { select } from 'd3-selection';
+import { zoom as d3zoom, zoomIdentity } from 'd3-zoom';
+import { forceSimulation, forceLink, forceManyBody, forceCollide } from 'd3-force';
+import { drag as d3drag } from 'd3-drag';
+import { polygonHull } from 'd3-polygon';
+import 'd3-transition';
 import { sectionRole, paraSectionLabel } from './paraConfig';
 
 const FONT = 'Outfit, sans-serif';
@@ -79,7 +87,7 @@ export default function MindMap({
   useEffect(() => {
     if (!zoomRef.current || !svgRef.current) return;
     if (internalZoomRef.current) { internalZoomRef.current = false; return; }
-    d3.select(svgRef.current).transition().duration(220)
+    select(svgRef.current).transition().duration(220)
       .call(zoomRef.current.scaleTo, externalZoom);
   }, [externalZoom]);
 
@@ -89,13 +97,19 @@ export default function MindMap({
     if (gRef.current) drawBadgesStatic();
   }, [todoCountMap]);
 
+  // Debounce: ricostruire il grafo D3 è costoso, non va rifatto ad ogni
+  // singolo evento resize durante il trascinamento della finestra.
   useEffect(() => {
+    let timer;
     const onResize = () => {
-      const allLoaded = notebooks.length && notebooks.every(nb => sectionsMap[nb.id]);
-      if (allLoaded) buildGraph();
+      clearTimeout(timer);
+      timer = setTimeout(() => {
+        const allLoaded = notebooks.length && notebooks.every(nb => sectionsMap[nb.id]);
+        if (allLoaded) buildGraph();
+      }, 200);
     };
     window.addEventListener('resize', onResize);
-    return () => window.removeEventListener('resize', onResize);
+    return () => { clearTimeout(timer); window.removeEventListener('resize', onResize); };
   }, [notebooks, sectionsMap, viewMode]);
 
   function buildGraph() {
@@ -107,14 +121,14 @@ export default function MindMap({
 
     if (simRef.current) simRef.current.stop();
 
-    const svg = d3.select(svgRef.current).attr('width', W).attr('height', H);
+    const svg = select(svgRef.current).attr('width', W).attr('height', H);
     svg.selectAll('*').remove();
 
     const g = svg.append('g');
     gRef.current = g;
 
     // Zoom & Pan
-    const zoom = d3.zoom()
+    const zoom = d3zoom()
       .scaleExtent([0.1, 5])
       .wheelDelta(e => -e.deltaY * (e.deltaMode === 1 ? 0.05 : e.deltaMode ? 1 : 0.005))
       .on('zoom', e => {
@@ -195,10 +209,10 @@ export default function MindMap({
     stateRef.current = { nodes, links, activeSection: null };
 
     // Simulazione
-    const sim = d3.forceSimulation(nodes)
-      .force('link', d3.forceLink(links).id(d => d.id).distance(100).strength(0.6))
-      .force('charge', d3.forceManyBody().strength(d => d.type === 'notebook' ? -900 : -220))
-      .force('collision', d3.forceCollide(d => d.type === 'notebook' ? d.r + 30 : d.type === 'app' ? d.r + 1 : (d.shape === 'rect' ? Math.max(d.rw / 2, d.rh / 2) + 10 : d.r + 10)))
+    const sim = forceSimulation(nodes)
+      .force('link', forceLink(links).id(d => d.id).distance(100).strength(0.6))
+      .force('charge', forceManyBody().strength(d => d.type === 'notebook' ? -900 : -220))
+      .force('collision', forceCollide(d => d.type === 'notebook' ? d.r + 30 : d.type === 'app' ? d.r + 1 : (d.shape === 'rect' ? Math.max(d.rw / 2, d.rh / 2) + 10 : d.r + 10)))
       .alphaDecay(0.022);
     simRef.current = sim;
 
@@ -209,8 +223,8 @@ export default function MindMap({
     const initScale = 1.4;
     const initTx = (W - W * initScale) / 2;
     const initTy = (H - H * initScale) / 2;
-    d3.select(svgRef.current)
-      .call(zoomRef.current.transform, d3.zoomIdentity.translate(initTx, initTy).scale(initScale));
+    select(svgRef.current)
+      .call(zoomRef.current.transform, zoomIdentity.translate(initTx, initTy).scale(initScale));
     onZoomChange(initScale);
 
     // Ridisegna badge con i conteggi già presenti (es. dopo resize)
@@ -294,9 +308,9 @@ export default function MindMap({
     const tx = W / 2 - scale * (minX + bw / 2);
     const ty = H / 2 - scale * (minY + bh / 2);
 
-    d3.select(svgRef.current)
+    select(svgRef.current)
       .transition().duration(420)
-      .call(zoomRef.current.transform, d3.zoomIdentity.translate(tx, ty).scale(scale));
+      .call(zoomRef.current.transform, zoomIdentity.translate(tx, ty).scale(scale));
     onZoomChange(Math.round(scale * 100) / 100);
   }
 
@@ -378,7 +392,7 @@ export default function MindMap({
 
     // Forma principale (cerchio o rettangolo)
     nodeEnter.each(function(d) {
-      const el = d3.select(this);
+      const el = select(this);
       if (d.shape === 'rect') {
         el.append('rect').attr('class', 'main-shape')
           .attr('rx', 8).attr('ry', 8)
@@ -397,7 +411,7 @@ export default function MindMap({
 
     // Testo
     nodeEnter.each(function(d) {
-      const el = d3.select(this);
+      const el = select(this);
       const opacity = (d.type === 'app' && !d.enabled) ? 0.4 : 1;
       const words = d.label.split(' ');
 
@@ -480,14 +494,14 @@ export default function MindMap({
     // Glow al passaggio del mouse
     nodeEnter
       .on('mouseenter', function(e, d) {
-        const el = d3.select(this);
+        const el = select(this);
         el.select('.halo').transition().duration(160).attr('fill', d.color + '1e');
         el.select('.main-shape').transition().duration(160)
           .attr('stroke-width', d.type === 'notebook' ? 3 : d.active ? 2.5 : 2)
           .attr('stroke', d.color);
       })
       .on('mouseleave', function(e, d) {
-        const el = d3.select(this);
+        const el = select(this);
         el.select('.halo').transition().duration(300).attr('fill', d.color + '07');
         el.select('.main-shape').transition().duration(300)
           .attr('stroke-width', d.type === 'notebook' ? 2 : (d.shape === 'rect' && d.active) ? 2.5 : d.shape === 'rect' ? 1 : 1.2)
@@ -496,7 +510,7 @@ export default function MindMap({
 
     // Drag (solo non-notebook)
     nodeEnter.filter(d => d.type !== 'notebook')
-      .call(d3.drag()
+      .call(d3drag()
         .on('start', (e, d) => { if (!e.active) simRef.current.alphaTarget(0.15).restart(); d.fx = d.x; d.fy = d.y; })
         .on('drag', (e, d) => { d.fx = e.x; d.fy = e.y; })
         .on('end', (e, d) => { if (!e.active) simRef.current.alphaTarget(0); d.fx = null; d.fy = null; })
@@ -535,7 +549,7 @@ export default function MindMap({
 
   function updateShapes(sel) {
     sel.each(function(d) {
-      const el = d3.select(this);
+      const el = select(this);
 
       // Halo
       const haloR = d.shape === 'rect'
@@ -661,7 +675,7 @@ export default function MindMap({
       st.nodes.filter(n => n.type === 'app' && n.groupId === grpNode.groupId)
         .forEach(n => addPts(n, 10));
       try {
-        const hull = d3.polygonHull(pts);
+        const hull = polygonHull(pts);
         return hull ? [{ groupId: grpNode.groupId, color: grpNode.color, hull }] : [];
       } catch { return []; }
     });

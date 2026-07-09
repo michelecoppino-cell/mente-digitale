@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { initAuth, getAccount, login } from './auth';
-import { getNotebooks, getSections, getTodoLists, getTodoTasks, getPages, getRecentEmails, getPageContentHtml, markOneNoteTagDone, getReminders, createTask, getCalendarEvents, getTasksForDeadlineDedup } from './api';
+import { getNotebooks, getSections, getTodoLists, getTodoTasks, getPages, getRecentEmails, getPageContentHtml, markOneNoteTagDone, getReminders, createTask, getCalendarEvents, getTasksForDeadlineDedup, invalidateCalendarsCache } from './api';
 import { cacheGet, cacheSet, cacheClear, TTL } from './cache';
 import { extractEmailCandidates, extractOneNoteCandidates } from './dailyReview';
 import { parseReminderSubject, reminderMarker, hasReminderMarker } from './deadlineReminders';
@@ -52,18 +52,39 @@ function filterRecentPages(pages, cutoffMs) {
 // personali (MSA), a prescindere dai parametri della query. Si aggregano invece
 // le pagine passando per taccuini → sezioni → pagine, gli stessi endpoint già
 // usati con successo altrove nell'app (MindMap, Panel).
-async function collectAllOneNotePages() {
-  const notebooks = await getNotebooks();
+//
+// Riusa le cache già popolate (localStorage + pagesCache in memoria) invece di
+// riscaricare da Graph l'elenco pagine di ogni sezione a ogni avvio: era il
+// costo di rete più grosso dell'app, duplicava il lavoro della preload queue.
+// Le pagine modificate di recente si individuano comunque via
+// lastModifiedDateTime, presente anche nelle copie in cache.
+async function collectAllOneNotePages(pagesCacheRef) {
+  let notebooks = cacheGet('notebooks');
+  if (!notebooks) {
+    notebooks = await getNotebooks();
+    cacheSet('notebooks', notebooks, TTL.NOTEBOOKS);
+  }
   const allPages = [];
   for (const nb of notebooks) {
-    let sections = [];
-    try { sections = await getSections(nb.id); } catch (e) { console.error('sections', nb.displayName, e); continue; }
-    for (const sec of sections) {
+    let sections = cacheGet(`sections_${nb.id}`);
+    if (!sections) {
       try {
-        const pages = await getPages(sec.id);
-        allPages.push(...pages);
-      } catch (e) { console.error('pages', sec.displayName, e); }
-      await new Promise(r => setTimeout(r, 100));
+        sections = await getSections(nb.id);
+        cacheSet(`sections_${nb.id}`, sections, TTL.SECTIONS);
+      } catch (e) { console.error('sections', nb.displayName, e); continue; }
+    }
+    for (const sec of sections) {
+      let pages = pagesCacheRef?.current?.[sec.id] || cacheGet(`pages_${sec.id}`);
+      if (!pages) {
+        try {
+          pages = await getPages(sec.id);
+          cacheSet(`pages_${sec.id}`, pages, TTL.PAGES);
+          if (pagesCacheRef?.current) pagesCacheRef.current[sec.id] = pages;
+        } catch (e) { console.error('pages', sec.displayName, e); continue; }
+        // Throttle solo quando si è davvero interrogato Graph
+        await new Promise(r => setTimeout(r, 100));
+      }
+      allPages.push(...pages);
     }
   }
   return allPages;
@@ -132,6 +153,7 @@ export default function App() {
     // Svuota cache in memoria se forceRefresh
     if (forceRefresh) {
       cacheClear();
+      invalidateCalendarsCache();
       pagesCache.current = {};
       tasksCache.current = {};
     }
@@ -203,7 +225,7 @@ export default function App() {
     try {
       const [emails, pages] = await Promise.all([
         getRecentEmails().catch(e => { console.error('recent emails', e); return []; }),
-        collectAllOneNotePages().catch(e => { console.error('recent pages', e); return []; }),
+        collectAllOneNotePages(pagesCache).catch(e => { console.error('recent pages', e); return []; }),
       ]);
 
       // Scansiona solo le pagine modificate dall'ultimo controllo riuscito in
@@ -420,32 +442,21 @@ export default function App() {
   // un completamento/eliminazione/rinomina fatti dal pannello Piano, così
   // Task Pool, Panel e Smistamento Eisenhower restano coerenti senza dover
   // ricaricare tutto da Graph.
-  function handleTaskCompleted(listId, taskId) {
-    setScheduledTasks(prev => (prev || []).filter(t => t.id !== taskId));
+  function updateTasksEverywhere(listId, updater) {
+    setScheduledTasks(prev => updater(prev || []));
     if (tasksCache.current[listId]) {
-      tasksCache.current[listId] = tasksCache.current[listId].filter(t => t.id !== taskId);
+      tasksCache.current[listId] = updater(tasksCache.current[listId]);
     }
   }
 
-  function handleTaskDeleted(listId, taskId) {
-    setScheduledTasks(prev => (prev || []).filter(t => t.id !== taskId));
-    if (tasksCache.current[listId]) {
-      tasksCache.current[listId] = tasksCache.current[listId].filter(t => t.id !== taskId);
-    }
+  // Completamento ed eliminazione hanno lo stesso effetto locale: il task
+  // sparisce da pool e cache di sezione.
+  function handleTaskRemoved(listId, taskId) {
+    updateTasksEverywhere(listId, tasks => tasks.filter(t => t.id !== taskId));
   }
 
-  function handleTaskRenamed(listId, taskId, newTitle) {
-    setScheduledTasks(prev => (prev || []).map(t => t.id === taskId ? { ...t, title: newTitle } : t));
-    if (tasksCache.current[listId]) {
-      tasksCache.current[listId] = tasksCache.current[listId].map(t => t.id === taskId ? { ...t, title: newTitle } : t);
-    }
-  }
-
-  function handleTaskDueDateChanged(listId, taskId, dueDateTime) {
-    setScheduledTasks(prev => (prev || []).map(t => t.id === taskId ? { ...t, dueDateTime } : t));
-    if (tasksCache.current[listId]) {
-      tasksCache.current[listId] = tasksCache.current[listId].map(t => t.id === taskId ? { ...t, dueDateTime } : t);
-    }
+  function handleTaskPatched(listId, taskId, patch) {
+    updateTasksEverywhere(listId, tasks => tasks.map(t => t.id === taskId ? { ...t, ...patch } : t));
   }
 
   // Solo per nascondere il FAB GTD durante il focus Pomodoro (stesso angolo
@@ -644,10 +655,10 @@ export default function App() {
           pagesCache={pagesCache}
           autoAddTask={pendingPlannerTask}
           onAutoAdded={() => setPendingPlannerTask(null)}
-          onTaskCompleted={handleTaskCompleted}
-          onTaskDeleted={handleTaskDeleted}
-          onTaskRenamed={handleTaskRenamed}
-          onTaskDueChanged={handleTaskDueDateChanged}
+          onTaskCompleted={handleTaskRemoved}
+          onTaskDeleted={handleTaskRemoved}
+          onTaskRenamed={(listId, taskId, title) => handleTaskPatched(listId, taskId, { title })}
+          onTaskDueChanged={(listId, taskId, dueDateTime) => handleTaskPatched(listId, taskId, { dueDateTime })}
           onStartFocus={handleStartPomodoroFocus}
           onEndFocus={handleEndPomodoroFocus}
         />

@@ -71,6 +71,12 @@ export default function PomodoroTimer({ onClose, onCycleComplete, onRunningChang
   const [todayStats, setTodayStats] = useState(null);
   const intervalRef = useRef(null);
   const endAtRef = useRef(null); // timestamp assoluto di fine fase, per non derivare dal conteggio dei tick
+  // Copia sempre aggiornata di secondsLeft: handlePhaseEnd può essere invocato
+  // dal callback del setInterval, la cui closure cattura lo stato del render in
+  // cui l'effect è partito — leggendo lo stato direttamente, un pomodoro
+  // completato per intero calcolava (WORK_MIN*60 − 1500)/60 = 0 minuti
+  // concentrati. Il ref è la fonte di verità per il calcolo del tempo lavorato.
+  const secondsLeftRef = useRef(WORK_MIN * 60);
   const titleFlashRef = useRef(null);
   const originalTitleRef = useRef(document.title);
   const hiddenAtRef = useRef(null);
@@ -83,8 +89,17 @@ export default function PomodoroTimer({ onClose, onCycleComplete, onRunningChang
   const activeStartRef = useRef(null);
   const activeTypeRef  = useRef('focus');
 
+  function updateSeconds(v) {
+    secondsLeftRef.current = v;
+    setSeconds(v);
+  }
+
   useEffect(() => {
-    if (Notification?.permission === 'default') Notification.requestPermission();
+    // typeof, non optional chaining: dove l'API non esiste (es. Safari iOS
+    // fuori dalla PWA installata) il riferimento nudo lancia ReferenceError.
+    if (typeof Notification !== 'undefined' && Notification.permission === 'default') {
+      Notification.requestPermission();
+    }
   }, []);
 
   // Il timer parte già running=true in fase 'working': apre il primo
@@ -135,9 +150,9 @@ export default function PomodoroTimer({ onClose, onCycleComplete, onRunningChang
     intervalRef.current = setInterval(() => {
       const remaining = Math.round((endAtRef.current - Date.now()) / 1000);
       if (remaining > 0) {
-        setSeconds(remaining);
+        updateSeconds(remaining);
       } else {
-        setSeconds(0);
+        updateSeconds(0);
         handlePhaseEnd();
       }
     }, 1000);
@@ -223,6 +238,10 @@ export default function PomodoroTimer({ onClose, onCycleComplete, onRunningChang
   }
 
   async function handlePhaseEnd() {
+    // Ferma subito il tick: qui sotto ci sono await di rete e, se durassero
+    // più di un secondo, l'interval richiamerebbe questa funzione una seconda
+    // volta (pomodoro contato doppio, doppia notifica).
+    clearInterval(intervalRef.current);
     beepBurst();
     if (phase === 'working') {
       await closeInterval();
@@ -230,8 +249,9 @@ export default function PomodoroTimer({ onClose, onCycleComplete, onRunningChang
       const interruptions = interruptionsRef.current;
       // Usa il tempo di lavoro effettivamente trascorso (non sempre WORK_MIN
       // intero: la fase può finire anche prima, se l'utente salta alla
-      // pausa manualmente col bottone "Inizia pausa ora").
-      const elapsedMinutes = (WORK_MIN * 60 - secondsLeft) / 60;
+      // pausa manualmente col bottone "Inizia pausa ora"). Letto dal ref, non
+      // dallo stato: chiamata dal setInterval questa closure è stantia.
+      const elapsedMinutes = (WORK_MIN * 60 - secondsLeftRef.current) / 60;
       const focusedMinutes = Math.max(0, elapsedMinutes - distractedSeconds / 60);
       distractedSecondsRef.current = 0;
       interruptionsRef.current = 0;
@@ -240,13 +260,13 @@ export default function PomodoroTimer({ onClose, onCycleComplete, onRunningChang
       notify('Pomodoro completato 🍅', 'Pausa di 5 minuti — stacca un attimo.');
       setPhaseEndInfo({ phase: 'working', focusedMinutes, interruptions });
       setPhase('break');
-      setSeconds(BREAK_MIN * 60);
+      updateSeconds(BREAK_MIN * 60);
       setRunning(false);
     } else {
       notify('Pausa finita', 'Pronto per un altro pomodoro?');
       setPhaseEndInfo({ phase: 'break' });
       setPhase('working');
-      setSeconds(WORK_MIN * 60);
+      updateSeconds(WORK_MIN * 60);
       setRunning(false);
     }
   }

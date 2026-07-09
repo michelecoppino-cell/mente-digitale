@@ -753,10 +753,6 @@
   opacity: 0.45;
   cursor: pointer;
 }
-.planner-block.ai-suggested {
-  border-style: dashed;
-}
-
 .planner-block-header {
   display: flex;
   align-items: center;
@@ -825,15 +821,6 @@
   z-index: 1;
   text-transform: uppercase;
   letter-spacing: 0.05em;
-}
-
-.planner-ai-badge {
-  font-size: 8px;
-  background: rgba(200,169,110,0.2);
-  color: var(--accent);
-  border-radius: 3px;
-  padding: 0 4px;
-  font-weight: 600;
 }
 
 .planner-block-steps {

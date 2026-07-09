@@ -28,11 +28,23 @@ export default function OneDriveBox({ sectionId, color = 'var(--accent)' }) {
       .catch(e => console.error('OD links sync', e));
   }, []);
 
-  async function persist(next) {
-    setOdLinks(next);
-    saveLocal(next);
+  // Riceve solo i link della sezione corrente e li innesta nel file appena
+  // riletto dal cloud: ogni istanza (Panel, Dettagli task, altre schede o
+  // dispositivi) riscrive l'intero file, e partire dalla propria copia in
+  // stato avrebbe sovrascritto le modifiche fatte altrove nel frattempo.
+  async function persist(sectionLinks) {
+    const localNext = { ...odLinks, [sectionId]: sectionLinks };
+    setOdLinks(localNext);
+    saveLocal(localNext);
     setOdSyncing(true);
-    try { await saveODLinksToCloud(next); } catch (e) { console.error('OD sync error', e); }
+    try {
+      const cloud = await loadODLinksFromCloud();
+      const base = (cloud && typeof cloud === 'object') ? cloud : localNext;
+      const merged = { ...base, [sectionId]: sectionLinks };
+      await saveODLinksToCloud(merged);
+      setOdLinks(merged);
+      saveLocal(merged);
+    } catch (e) { console.error('OD sync error', e); }
     setOdSyncing(false);
   }
 
@@ -51,7 +63,7 @@ export default function OneDriveBox({ sectionId, color = 'var(--accent)' }) {
       urlPc: newODUrlPc.trim() || null,
     }];
     resetForm();
-    await persist({ ...odLinks, [sectionId]: updated });
+    await persist(updated);
   }
 
   function handleStartEdit(idx) {
@@ -72,12 +84,12 @@ export default function OneDriveBox({ sectionId, color = 'var(--accent)' }) {
       urlPc: newODUrlPc.trim() || null,
     } : l);
     resetForm();
-    await persist({ ...odLinks, [sectionId]: updated });
+    await persist(updated);
   }
 
   async function handleRemove(idx) {
     const existing = odLinks[sectionId] || [];
-    await persist({ ...odLinks, [sectionId]: existing.filter((_, i) => i !== idx) });
+    await persist(existing.filter((_, i) => i !== idx));
   }
 
   const sectionODLinks = odLinks[sectionId] || [];

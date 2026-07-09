@@ -183,6 +183,13 @@ export default function PlannerView({
   const saveTimerRef     = useRef(null);
   const plansRef         = useRef({});
   const configRef        = useRef(DEFAULT_CONFIG);
+  // Diventano true solo quando il rispettivo load da OneDrive è riuscito
+  // (anche con file inesistente: il 404 è uno stato valido, vedi api.js).
+  // Finché sono false qualunque salvataggio remoto viene saltato: scrivere
+  // partendo da uno stato vuoto per colpa di un errore transitorio avrebbe
+  // sovrascritto il file remoto cancellando lo storico.
+  const plansLoadedRef   = useRef(false);
+  const configLoadedRef  = useRef(false);
   const resizingRef      = useRef(null);
   const subResizingRef   = useRef(null);
   const focusDragRef     = useRef(null);
@@ -202,6 +209,13 @@ export default function PlannerView({
   const allCalEventsRef  = useRef([]);
   const currentDateRef   = useRef(currentDate);
   currentDateRef.current = currentDate;
+  // Specchi sempre aggiornati dello stato, per leggerne il valore corrente da
+  // callback di mouseup/drag senza infilare side-effect negli updater di
+  // setState (che in StrictMode girano due volte).
+  const todayPlanRef     = useRef(todayPlan);
+  todayPlanRef.current   = todayPlan;
+  const pomodoroStatsRef = useRef(pomodoroStatsMap);
+  pomodoroStatsRef.current = pomodoroStatsMap;
 
   // ── Load config + plans once on open; scroll to now ─────────────────────────
   useEffect(() => {
@@ -245,6 +259,7 @@ export default function PlannerView({
       const cfg = cached || await loadPlannerConfig();
       if (cfg) { setConfig(cfg); configRef.current = cfg; }
       if (!cached && cfg) cacheSet('planner_config', cfg, 30 * 60 * 1000);
+      configLoadedRef.current = true;
     } catch (e) { console.error('planner config load', e); }
   }
 
@@ -254,12 +269,16 @@ export default function PlannerView({
       const allPlans = cached || await loadDailyPlans() || {};
       setPlans(allPlans);
       plansRef.current = allPlans;
+      plansLoadedRef.current = true;
       if (!cached) cacheSet('daily_plans', allPlans, PLANS_CACHE_TTL);
 
       const dayPlan = allPlans[currentDate] || { date: currentDate, blocks: [], emailExtractedActions: [] };
       setTodayPlan(dayPlan);
 
-    } catch (e) { console.error('planner plans load', e); }
+    } catch (e) {
+      console.error('planner plans load', e);
+      setSaveStatus('error');
+    }
   }
 
   // Statistiche giornaliere Pomodoro (minuti concentrati) — mostrate come
@@ -289,7 +308,11 @@ export default function PlannerView({
     configRef.current = nextConfig;
     setConfig(nextConfig);
     cacheSet('planner_config', nextConfig, 30 * 60 * 1000);
-    savePlannerConfig(nextConfig).catch(e => console.error('save planner config', e));
+    // Se il load della config è fallito, non riscrivere il file remoto
+    // partendo dai default: si perderebbe la configurazione salvata.
+    if (configLoadedRef.current) {
+      savePlannerConfig(nextConfig).catch(e => console.error('save planner config', e));
+    }
   }
 
   // Riapplica il filtro (senza rifetchare) quando cambiano le preferenze di
@@ -426,6 +449,7 @@ export default function PlannerView({
     setSaveStatus('saving');
     clearTimeout(saveTimerRef.current);
     saveTimerRef.current = setTimeout(async () => {
+      if (!plansLoadedRef.current) { setSaveStatus('error'); return; }
       try {
         const updated = { ...plansRef.current, [currentDate]: updatedPlan };
         plansRef.current = updated;
@@ -461,6 +485,7 @@ export default function PlannerView({
     setSaveStatus('saving');
     clearTimeout(saveTimerRef.current);
     saveTimerRef.current = setTimeout(async () => {
+      if (!plansLoadedRef.current) { setSaveStatus('error'); return; }
       try {
         cacheSet('daily_plans', plansRef.current, PLANS_CACHE_TTL);
         await saveDailyPlans(plansRef.current);
@@ -540,7 +565,7 @@ export default function PlannerView({
       projectKey: proj?.key || null, projectColor: color,
       startTime, endTime: m2t(endMin),
       completed: false, completedAt: null,
-      isAISuggested: false, subSteps: [],
+      subSteps: [],
     };
   }
 
@@ -629,10 +654,7 @@ export default function PlannerView({
   // clic apre il menu per cambiarne il tipo o cancellarla, un clic su uno
   // spazio vuoto della colonna ne aggiunge una nuova.
   function persistCurrentFocusSessions() {
-    setPomodoroStatsMap(prev => {
-      persistPomodoroSessions(currentDate, prev[currentDate]?.sessions || []);
-      return prev;
-    });
+    persistPomodoroSessions(currentDate, pomodoroStatsRef.current[currentDate]?.sessions || []);
   }
 
   function updateFocusSessionTimes(idx, newStartMin, newEndMin) {
@@ -770,7 +792,7 @@ export default function PlannerView({
       setResizingId(null);
       document.removeEventListener('mousemove', onMove);
       document.removeEventListener('mouseup', onUp);
-      setTodayPlan(prev => { scheduleSave(prev); return prev; });
+      scheduleSave(todayPlanRef.current);
     }
 
     document.addEventListener('mousemove', onMove);
@@ -845,7 +867,7 @@ export default function PlannerView({
       subResizingRef.current = null;
       document.removeEventListener('mousemove', onMove);
       document.removeEventListener('mouseup', onUp);
-      setTodayPlan(prev => { scheduleSave(prev); return prev; });
+      scheduleSave(todayPlanRef.current);
     }
 
     document.addEventListener('mousemove', onMove);
@@ -1202,7 +1224,7 @@ export default function PlannerView({
               return (
                 <Fragment key={block.id}>
                 <div
-                  className={`planner-block${block.completed ? ' completed' : ''}${block.isAISuggested ? ' ai-suggested' : ''}`}
+                  className={`planner-block${block.completed ? ' completed' : ''}`}
                   style={{ top: top + 2, height, borderLeftColor: block.projectColor, background: block.projectColor }}
                   draggable={!locked && !block.completed && resizingId !== block.id}
                   onClick={e => {
@@ -1234,7 +1256,6 @@ export default function PlannerView({
                   <div className="planner-block-meta">
                     <span>{block.startTime}–{block.endTime}</span>
                     {block.listName && <span>{block.listName}</span>}
-                    {block.isAISuggested && <span className="planner-ai-badge">AI</span>}
                   </div>
                   {block.subSteps?.length > 0 && (() => {
                     const n = block.subSteps.length;
