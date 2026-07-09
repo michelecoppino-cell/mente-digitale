@@ -9,6 +9,10 @@ export const DEFAULT_CONFIG = {
   ],
   workdayStart: '07:30',
   workdayEnd: '19:30',
+  // null = nessuna preferenza ancora salvata: si applica il default (tutti i
+  // calendari attivi tranne "compleanni"). Una volta che l'utente tocca il
+  // filtro, diventa un array esplicito di calendar id nascosti.
+  hiddenCalendarIds: null,
 };
 
 export function findProject(task, cfg) {

@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useMemo, Fragment } from 'react';
 import {
   loadDailyPlans, saveDailyPlans,
-  loadPlannerConfig,
+  loadPlannerConfig, savePlannerConfig,
   completeTask, getCalendarEvents, getCalendars,
   createCalendarEvent, updateCalendarEvent, deleteCalendarEvent, moveCalendarEvent,
   getTask, updateTaskBody, updateTaskTitle, updateTaskDueDate, deleteTask,
@@ -35,6 +35,17 @@ function slots(start, end) {
   let cur = t2m(start);
   while (cur < t2m(end)) { out.push(m2t(cur)); cur += 30; }
   return out;
+}
+// Graph restituisce il colore del calendario come enum (es. "lightBlue",
+// "auto"), non un hex CSS: mappiamo i preset noti per il pallino colorato.
+const GRAPH_CAL_COLORS = {
+  lightBlue: '#7eb8c9', lightGreen: '#8fbf7f', lightOrange: '#e0a05e',
+  lightGray: '#a0a0a0', lightYellow: '#e6c94d', lightTeal: '#6fbfae',
+  lightPink: '#d98fb3', lightBrown: '#a9825a', lightRed: '#d97a7a',
+  maxColor: '#c084a0',
+};
+function calendarSwatch(colorEnum) {
+  return GRAPH_CAL_COLORS[colorEnum] || '#888888';
 }
 // La griglia della timeline copre sempre l'intera giornata (scorrimento libero
 // con la rotella): il workday configurato serve solo a posizionare lo scroll
@@ -162,6 +173,7 @@ export default function PlannerView({
   const [calOutOfRange, setCalOutOfRange]   = useState(false);
   const [mobileTab, setMobileTab]           = useState('timeline'); // colonna visibile su schermi stretti
   const [calendarsList, setCalendarsList]   = useState([]);
+  const [calFilterOpen, setCalFilterOpen]   = useState(false);
   const [calModal, setCalModal]             = useState(null); // { mode: 'create'|'edit', event }
   // Popup di modifica/aggiunta di una fascia della colonna Pomodoro —
   // { mode: 'edit', idx, x, y } oppure { mode: 'add', startMin, x, y }.
@@ -259,6 +271,34 @@ export default function PlannerView({
     } catch (e) { console.error('pomodoro stats load', e); }
   }
 
+  // Calendari esclusi dalla visualizzazione. finché l'utente non tocca il
+  // filtro (hiddenCalendarIds === null) si nasconde di default il calendario
+  // "compleanni", riconosciuto per nome tra quelli restituiti da Graph.
+  function getHiddenCalendarIds() {
+    const hidden = configRef.current.hiddenCalendarIds;
+    if (hidden === null || hidden === undefined) {
+      return calendarsList.filter(c => /compleann/i.test(c.name || '')).map(c => c.id);
+    }
+    return hidden;
+  }
+
+  function toggleCalendarVisibility(calId) {
+    const hidden = getHiddenCalendarIds();
+    const nextHidden = hidden.includes(calId) ? hidden.filter(id => id !== calId) : [...hidden, calId];
+    const nextConfig = { ...configRef.current, hiddenCalendarIds: nextHidden };
+    configRef.current = nextConfig;
+    setConfig(nextConfig);
+    cacheSet('planner_config', nextConfig, 30 * 60 * 1000);
+    savePlannerConfig(nextConfig).catch(e => console.error('save planner config', e));
+  }
+
+  // Riapplica il filtro (senza rifetchare) quando cambiano le preferenze di
+  // visibilità o arriva/aggiorna la lista calendari.
+  useEffect(() => {
+    if (!open) return;
+    filterCalEvents(allCalEventsRef.current);
+  }, [open, config.hiddenCalendarIds, calendarsList]); // eslint-disable-line
+
   // Fetch a 6-month window once; subsequent calls filter from the in-memory/cache ref.
   async function fetchCalEventsAll() {
     const CAL_BULK_KEY = 'cal_events_bulk';
@@ -317,7 +357,9 @@ export default function PlannerView({
       viewStart = currentDate; viewEnd = currentDate;
     }
 
+    const hiddenIds = getHiddenCalendarIds();
     const filtered = allEvs.filter(ev => {
+      if (hiddenIds.includes(ev._calId)) return false;
       const d = (ev.start?.dateTime || ev.start?.date || '').slice(0, 10);
       return d >= viewStart && d <= viewEnd;
     });
@@ -919,6 +961,34 @@ export default function PlannerView({
           </div>
         </div>
         <div className="planner-header-actions">
+          <div className="planner-cal-filter-wrap">
+            <button className="planner-action-btn" disabled={locked} onClick={() => setCalFilterOpen(v => !v)} title="Filtra calendari">
+              Calendari ▾
+            </button>
+            {calFilterOpen && (
+              <>
+                <div className="planner-cal-filter-backdrop" onClick={() => setCalFilterOpen(false)} />
+                <div className="planner-cal-filter-popup">
+                  {calendarsList.length === 0 ? (
+                    <div className="planner-cal-filter-empty">Nessun calendario</div>
+                  ) : calendarsList.map(cal => {
+                    const hidden  = getHiddenCalendarIds().includes(cal.id);
+                    return (
+                      <label key={cal.id} className="planner-cal-filter-item">
+                        <input
+                          type="checkbox"
+                          checked={!hidden}
+                          onChange={() => toggleCalendarVisibility(cal.id)}
+                        />
+                        <span className="planner-cal-filter-dot" style={{ background: calendarSwatch(cal.color) }} />
+                        <span className="planner-cal-filter-name">{cal.name}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </>
+            )}
+          </div>
           <button className="planner-action-btn accent" disabled={locked} onClick={() => openCreateEventModal(currentDate)} title="Nuovo evento calendario">+ Evento</button>
           <button className="planner-close-btn" disabled={locked} onClick={onClose} title={locked ? 'Metti in pausa il Pomodoro per chiudere' : 'Chiudi pianificatore'}>✕</button>
         </div>
