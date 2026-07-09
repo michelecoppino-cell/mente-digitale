@@ -16,6 +16,7 @@ async function getTokenCached() {
 export function invalidateTokenCache() { _cachedToken = null; _cachedTokenExp = 0; }
 
 async function call(path, options = {}, retries = 3) {
+  let retried401 = false;
   for (let attempt = 0; attempt < retries; attempt++) {
     let r;
     try {
@@ -30,6 +31,14 @@ async function call(path, options = {}, retries = 3) {
       continue;
     }
     if (r.status === 204) return null;
+    // Il token cachato può risultare scaduto (es. dopo una pausa lunga):
+    // invalida la cache e riprova una volta sola con un token fresco prima
+    // di arrendersi con un errore secco.
+    if (r.status === 401 && !retried401) {
+      retried401 = true;
+      invalidateTokenCache();
+      continue;
+    }
     if (r.status === 429 || r.status === 503 || r.status === 504) {
       const retry = r.headers.get('Retry-After');
       const wait = retry ? parseInt(retry) * 1000 : (attempt + 1) * 1000;

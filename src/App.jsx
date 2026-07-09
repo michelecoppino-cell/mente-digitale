@@ -332,6 +332,7 @@ export default function App() {
   async function preloadAllTasks(lists, forceRefresh = false) {
     const allTasks = [];
     const counts = {};
+    let anyError = false;
     for (const l of lists) {
       try {
         let tasks = forceRefresh ? null : cacheGet(`tasks_${l.id}`);
@@ -343,10 +344,25 @@ export default function App() {
         tasks.forEach(t => allTasks.push({ ...t, _listName: l.displayName, _listId: l.id }));
         if (tasks.length > 0) counts[l.displayName.toLowerCase()] = tasks.length;
         await new Promise(r => setTimeout(r, 200));
-      } catch (e) { console.error('preload tasks', l.displayName, e); }
+      } catch (e) {
+        console.error('preload tasks', l.displayName, e);
+        anyError = true;
+        // Non lasciare la lista vuota per un errore transitorio (es. 401 dopo
+        // una pausa lunga): ripiega sull'ultima copia in cache così l'utente
+        // non vede la pianificazione sparire del tutto.
+        const stale = cacheGet(`tasks_${l.id}`);
+        if (stale) {
+          tasksCache.current[l.id] = stale;
+          stale.forEach(t => allTasks.push({ ...t, _listName: l.displayName, _listId: l.id }));
+          if (stale.length > 0) counts[l.displayName.toLowerCase()] = stale.length;
+        }
+      }
     }
     setScheduledTasks(allTasks);
     setTodoCountMap(counts);
+    if (anyError) {
+      setSync({ state: 'error', label: 'Errore aggiornamento task — dati non aggiornati' });
+    }
   }
 
   function enqueuePagePreload(sectionId, forceRefresh = false) {

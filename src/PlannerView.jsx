@@ -1604,6 +1604,7 @@ function TaskDetailPanel({ task, notebooks = [], sectionsMap = {}, pagesCache = 
   const notesTimerRef                 = useRef(null);
   const [dueDraft, setDueDraft]       = useState('');
   const [savingDue, setSavingDue]     = useState(false);
+  const [itemError, setItemError]     = useState('');
 
   // Sezione OneNote collegata alla lista ToDo del task (per nome, come nel
   // resto dell'app) — usata per mostrare qui sotto i riquadri OneNote/OneDrive.
@@ -1656,19 +1657,39 @@ function TaskDetailPanel({ task, notebooks = [], sectionsMap = {}, pagesCache = 
     }, 1200);
   }
 
+  function flashItemError(action, e) {
+    console.error(action, e);
+    setItemError(`Errore: ${action} non riuscito${e?.message ? ` (${e.message})` : ''}. Riprova.`);
+  }
+
+  useEffect(() => {
+    if (!itemError) return;
+    const t = setTimeout(() => setItemError(''), 5000);
+    return () => clearTimeout(t);
+  }, [itemError]);
+
   async function handleToggle(item) {
     const checked = !item.isChecked;
     setItems(prev => prev.map(i => i.id === item.id ? { ...i, isChecked: checked } : i));
-    try { await updateChecklistItem(task._listId, task.id, item.id, checked); } catch (e) { console.error('toggle checklist', e); }
+    try { await updateChecklistItem(task._listId, task.id, item.id, checked); }
+    catch (e) {
+      setItems(prev => prev.map(i => i.id === item.id ? { ...i, isChecked: !checked } : i));
+      flashItemError('spunta checklist', e);
+    }
   }
 
   async function handleDelete(itemId) {
+    const removed = items.find(i => i.id === itemId);
     setItems(prev => prev.filter(i => i.id !== itemId));
-    try { await deleteChecklistItem(task._listId, task.id, itemId); } catch (e) { console.error('delete checklist', e); }
+    try { await deleteChecklistItem(task._listId, task.id, itemId); }
+    catch (e) {
+      if (removed) setItems(prev => [...prev, removed]);
+      flashItemError('eliminazione voce', e);
+    }
   }
 
-  async function handleAdd(e) {
-    e.preventDefault();
+  async function handleAdd(formEvent) {
+    formEvent.preventDefault();
     const text = newItemText.trim();
     if (!text) return;
     setNewItemText('');
@@ -1677,8 +1698,10 @@ function TaskDetailPanel({ task, notebooks = [], sectionsMap = {}, pagesCache = 
     try {
       const created = await createChecklistItem(task._listId, task.id, text);
       setItems(prev => prev.map(i => i.id === tmp.id ? created : i));
-    } catch {
+    } catch (err) {
       setItems(prev => prev.filter(i => i.id !== tmp.id));
+      setNewItemText(text);
+      flashItemError('aggiunta voce', err);
     }
   }
 
@@ -1870,6 +1893,7 @@ function TaskDetailPanel({ task, notebooks = [], sectionsMap = {}, pagesCache = 
                 +
               </button>
             </form>
+            {itemError && <div className="planner-checklist-error">{itemError}</div>}
           </div>
 
           <SectionResources section={section} notebook={notebook} pagesCache={pagesCache} />
