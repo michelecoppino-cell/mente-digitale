@@ -6,7 +6,7 @@ import {
   createCalendarEvent, updateCalendarEvent, deleteCalendarEvent, moveCalendarEvent,
   getTask, updateTaskBody, updateTaskTitle, updateTaskDueDate, deleteTask,
   createChecklistItem, updateChecklistItem, renameChecklistItem, deleteChecklistItem,
-  reorderChecklistItems, loadPomodoroStats,
+  reorderChecklistItems, loadPomodoroStats, savePomodoroStats,
 } from './api';
 import { cacheGet, cacheSet, cacheDel } from './cache';
 import Skeleton from './Skeleton';
@@ -69,6 +69,31 @@ const SESSION_TYPE_LABELS = {
   office: 'interruzione ufficio',
   client: 'interruzione cliente',
 };
+const FOCUS_SESSION_TYPES = ['focus', 'personal', 'office', 'client'];
+// Durata di default di una fascia aggiunta a mano, per tipo — un pomodoro
+// intero per il lavoro, una pausa breve per le interruzioni.
+const FOCUS_ADD_DURATION = { focus: 25, personal: 5, office: 5, client: 5 };
+
+// Converte "minuti dalla mezzanotte" (fuso locale) di un giorno in un
+// dateTime ISO in UTC — coerente col formato già salvato da
+// PomodoroTimer.jsx (new Date(...).toISOString()).
+function dateTimeFromMinutes(dayStr, min) {
+  const d = new Date(dayStr + 'T00:00:00');
+  d.setMinutes(min);
+  return d.toISOString();
+}
+
+// Riscrive la lista di sessioni pomodoro di un giorno sul file OneDrive,
+// ricaricando prima lo stato più recente per non perdere modifiche
+// concorrenti fatte da altre schede/dispositivi.
+async function persistPomodoroSessions(day, sessions) {
+  try {
+    const stats = await loadPomodoroStats();
+    const prevDay = stats[day] || { pomodori: 0, focusedMinutes: 0, interruptions: 0, sessions: [] };
+    stats[day] = { ...prevDay, sessions };
+    await savePomodoroStats(stats);
+  } catch (e) { console.error('persist pomodoro sessions', e); }
+}
 function getWeekDays(dateStr) {
   const d = new Date(dateStr + 'T12:00:00');
   const dow = d.getDay();
@@ -120,6 +145,9 @@ export default function PlannerView({
   const [mobileTab, setMobileTab]           = useState('timeline'); // colonna visibile su schermi stretti
   const [calendarsList, setCalendarsList]   = useState([]);
   const [calModal, setCalModal]             = useState(null); // { mode: 'create'|'edit', event }
+  // Popup di modifica/aggiunta di una fascia della colonna Pomodoro —
+  // { mode: 'edit', idx, x, y } oppure { mode: 'add', startMin, x, y }.
+  const [focusPopup, setFocusPopup]         = useState(null);
 
   const timelineBodyRef  = useRef(null);
   const saveTimerRef     = useRef(null);
@@ -127,6 +155,7 @@ export default function PlannerView({
   const configRef        = useRef(DEFAULT_CONFIG);
   const resizingRef      = useRef(null);
   const subResizingRef   = useRef(null);
+  const focusDragRef     = useRef(null);
   const allCalEventsRef  = useRef([]);
   const currentDateRef   = useRef(currentDate);
   currentDateRef.current = currentDate;
@@ -496,6 +525,129 @@ export default function PlannerView({
     });
   }
 
+  // ── Colonna Pomodoro: correzione a posteriori delle fasce orarie ───────────
+  // Le fasce sono registrate automaticamente dal timer, ma un tipo scelto per
+  // errore o un orario impreciso vanno corretti a mano: trascinare sposta la
+  // fascia, le due manigliette agli estremi ne ridimensionano inizio/fine, un
+  // clic apre il menu per cambiarne il tipo o cancellarla, un clic su uno
+  // spazio vuoto della colonna ne aggiunge una nuova.
+  function persistCurrentFocusSessions() {
+    setPomodoroStatsMap(prev => {
+      persistPomodoroSessions(currentDate, prev[currentDate]?.sessions || []);
+      return prev;
+    });
+  }
+
+  function updateFocusSessionTimes(idx, newStartMin, newEndMin) {
+    setPomodoroStatsMap(prev => {
+      const prevDay = prev[currentDate] || { pomodori: 0, focusedMinutes: 0, interruptions: 0, sessions: [] };
+      const sessions = (prevDay.sessions || []).map((s, i) => i === idx
+        ? { ...s, start: dateTimeFromMinutes(currentDate, newStartMin), end: dateTimeFromMinutes(currentDate, newEndMin) }
+        : s);
+      return { ...prev, [currentDate]: { ...prevDay, sessions } };
+    });
+  }
+
+  function changeFocusSessionType(idx, type) {
+    setPomodoroStatsMap(prev => {
+      const prevDay = prev[currentDate] || { pomodori: 0, focusedMinutes: 0, interruptions: 0, sessions: [] };
+      const sessions = (prevDay.sessions || []).map((s, i) => i === idx ? { ...s, type } : s);
+      persistPomodoroSessions(currentDate, sessions);
+      return { ...prev, [currentDate]: { ...prevDay, sessions } };
+    });
+    setFocusPopup(null);
+  }
+
+  function deleteFocusSession(idx) {
+    setPomodoroStatsMap(prev => {
+      const prevDay = prev[currentDate] || { pomodori: 0, focusedMinutes: 0, interruptions: 0, sessions: [] };
+      const sessions = (prevDay.sessions || []).filter((_, i) => i !== idx);
+      persistPomodoroSessions(currentDate, sessions);
+      return { ...prev, [currentDate]: { ...prevDay, sessions } };
+    });
+    setFocusPopup(null);
+  }
+
+  function addFocusSession(startMin, type) {
+    const duration = FOCUS_ADD_DURATION[type] || 15;
+    const start = Math.max(0, Math.min(24 * 60 - duration, startMin));
+    const session = {
+      start: dateTimeFromMinutes(currentDate, start),
+      end: dateTimeFromMinutes(currentDate, start + duration),
+      type,
+    };
+    setPomodoroStatsMap(prev => {
+      const prevDay = prev[currentDate] || { pomodori: 0, focusedMinutes: 0, interruptions: 0, sessions: [] };
+      const sessions = [...(prevDay.sessions || []), session];
+      persistPomodoroSessions(currentDate, sessions);
+      return { ...prev, [currentDate]: { ...prevDay, sessions } };
+    });
+    setFocusPopup(null);
+  }
+
+  // mode: 'move' trascina l'intera fascia, 'resize-start'/'resize-end' ne
+  // spostano solo un estremo. Un mousedown senza trascinamento (spostamento
+  // sotto soglia) viene trattato come un clic e apre il menu di modifica.
+  function handleFocusSessionMouseDown(e, idx, mode) {
+    e.preventDefault();
+    e.stopPropagation();
+    const sessions = pomodoroStatsMap[currentDate]?.sessions || [];
+    const session = sessions[idx];
+    if (!session) return;
+    const sStart = new Date(session.start);
+    const sEnd   = new Date(session.end);
+    const drag = {
+      idx, mode, moved: false, startY: e.clientY,
+      origStart: sStart.getHours() * 60 + sStart.getMinutes(),
+      origEnd:   sEnd.getHours() * 60 + sEnd.getMinutes(),
+    };
+    focusDragRef.current = drag;
+
+    function onMove(ev) {
+      const d = focusDragRef.current;
+      if (!d) return;
+      if (Math.abs(ev.clientY - d.startY) > 3) d.moved = true;
+      const deltaMin = Math.round(((ev.clientY - d.startY) / SLOT_HEIGHT * 30) / 5) * 5;
+      let newStart = d.origStart, newEnd = d.origEnd;
+      if (d.mode === 'move') {
+        newStart = d.origStart + deltaMin;
+        newEnd   = d.origEnd + deltaMin;
+        if (newStart < 0) { newEnd -= newStart; newStart = 0; }
+        if (newEnd > 24 * 60) { newStart -= (newEnd - 24 * 60); newEnd = 24 * 60; }
+      } else if (d.mode === 'resize-start') {
+        newStart = Math.max(0, Math.min(d.origEnd - 5, d.origStart + deltaMin));
+      } else {
+        newEnd = Math.min(24 * 60, Math.max(d.origStart + 5, d.origEnd + deltaMin));
+      }
+      updateFocusSessionTimes(idx, newStart, newEnd);
+    }
+
+    function onUp(ev) {
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+      const d = focusDragRef.current;
+      focusDragRef.current = null;
+      if (!d) return;
+      if (!d.moved && d.mode === 'move') {
+        setFocusPopup({ mode: 'edit', idx, x: ev.clientX, y: ev.clientY });
+        return;
+      }
+      if (d.moved) persistCurrentFocusSessions();
+    }
+
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  }
+
+  // Clic su uno spazio vuoto della colonna Pomodoro: apre il menu per
+  // scegliere il tipo della nuova fascia, ancorata all'orario cliccato.
+  function handleFocusColumnClick(e) {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const rawMin = workStart + ((e.clientY - rect.top) / SLOT_HEIGHT) * 30;
+    const startMin = Math.max(0, Math.min(24 * 60 - 5, Math.round(rawMin / 5) * 5));
+    setFocusPopup({ mode: 'add', startMin, x: e.clientX, y: e.clientY });
+  }
+
   function handleResizeStart(e, block) {
     e.preventDefault();
     e.stopPropagation();
@@ -786,7 +938,13 @@ export default function PlannerView({
               if (!timelineBodyRef.current?.contains(e.relatedTarget)) setDragOverTime(null);
             }}>
 
-            {/* Colonna Pomodoro: totale giornaliero in alto + fasce orarie reali */}
+            {/* Colonna Pomodoro: totale giornaliero in alto + fasce orarie reali,
+                modificabili — clic su uno spazio vuoto ne aggiunge una nuova. */}
+            <div
+              className="planner-focus-column"
+              style={{ height: timeSlots.length * SLOT_HEIGHT }}
+              onClick={handleFocusColumnClick}
+              title="Clic per aggiungere una fascia Pomodoro" />
             <div className="planner-focus-daytotal" title="Totale concentrazione Pomodoro">
               <span>🍅</span>
               <span>{fmtFocusTotal(dayFocusMinutes)}</span>
@@ -804,9 +962,17 @@ export default function PlannerView({
               return (
                 <div
                   key={`focus-${i}`}
-                  className={`planner-focus-bar ${type}`}
+                  className={`planner-focus-bar editable ${type}`}
                   style={{ top, height }}
-                  title={`${isoToHHMM(s.start)}–${isoToHHMM(s.end)} · ${SESSION_TYPE_LABELS[type] || SESSION_TYPE_LABELS.focus}`} />
+                  title={`${isoToHHMM(s.start)}–${isoToHHMM(s.end)} · ${SESSION_TYPE_LABELS[type] || SESSION_TYPE_LABELS.focus} · trascina per spostare, clic per modificare`}
+                  onMouseDown={e => handleFocusSessionMouseDown(e, i, 'move')}>
+                  <div
+                    className="planner-focus-bar-handle top"
+                    onMouseDown={e => handleFocusSessionMouseDown(e, i, 'resize-start')} />
+                  <div
+                    className="planner-focus-bar-handle bottom"
+                    onMouseDown={e => handleFocusSessionMouseDown(e, i, 'resize-end')} />
+                </div>
               );
             })}
             {/* Fascia ancora aperta: cresce live verso "adesso" invece di comparire solo a fascia chiusa */}
@@ -1062,6 +1228,18 @@ export default function PlannerView({
           onDelete={handleDeleteCalEvent}
         />
       )}
+
+      {/* Menu di modifica/aggiunta di una fascia della colonna Pomodoro */}
+      {focusPopup && (
+        <FocusSessionPopup
+          popup={focusPopup}
+          onPickType={type => focusPopup.mode === 'edit'
+            ? changeFocusSessionType(focusPopup.idx, type)
+            : addFocusSession(focusPopup.startMin, type)}
+          onDelete={focusPopup.mode === 'edit' ? () => deleteFocusSession(focusPopup.idx) : null}
+          onClose={() => setFocusPopup(null)}
+        />
+      )}
     </div>
 
     {/* Pulsante volante per avviare il Pomodoro, a fianco del "+" dorato GTD:
@@ -1089,6 +1267,41 @@ export default function PlannerView({
         }}
       />
     )}
+    </>
+  );
+}
+
+// ── FocusSessionPopup ─────────────────────────────────────────────────────────
+// Piccolo menu ancorato al punto cliccato: sceglie/cambia il tipo di una
+// fascia Pomodoro (lavoro o uno dei tre tipi di pausa) e, per una fascia
+// esistente, permette di cancellarla. Un backdrop trasparente a tutto
+// schermo chiude il menu al clic fuori, come i pop-up del diagramma GTD.
+function FocusSessionPopup({ popup, onPickType, onDelete, onClose }) {
+  const width = 180, height = onDelete ? 190 : 150;
+  const left = Math.min(Math.max(8, popup.x + 10), window.innerWidth - width - 8);
+  const top  = Math.min(Math.max(8, popup.y - height / 2), window.innerHeight - height - 8);
+
+  return (
+    <>
+      <div className="planner-focus-popup-backdrop" onClick={onClose} />
+      <div className="planner-focus-popup" style={{ left, top }} onClick={e => e.stopPropagation()}>
+        <div className="planner-focus-popup-title">
+          {popup.mode === 'edit' ? 'Cambia tipo fascia' : 'Aggiungi fascia'}
+        </div>
+        <div className="planner-focus-popup-types">
+          {FOCUS_SESSION_TYPES.map(type => (
+            <button
+              key={type}
+              className={`planner-focus-popup-type ${type}`}
+              onClick={() => onPickType(type)}>
+              {SESSION_TYPE_LABELS[type]}
+            </button>
+          ))}
+        </div>
+        {onDelete && (
+          <button className="planner-focus-popup-delete" onClick={onDelete}>🗑 Elimina fascia</button>
+        )}
+      </div>
     </>
   );
 }

@@ -45,9 +45,9 @@ export default function TaskPool({
   showViewToggle = true,
   title = null,
 }) {
-  // PARA: quali ruoli di sezione mostrare — di default solo i "progetti"
-  // (le sezioni senza prefisso PARA).
-  const [paraFilter, setParaFilter]       = useState(() => new Set(['project']));
+  // PARA: quali ruoli di sezione mostrare — di default "progetti" e "aree"
+  // (le sezioni senza prefisso PARA + quelle con prefisso "area").
+  const [paraFilter, setParaFilter]       = useState(() => new Set(['project', 'area']));
   // Taccuino/sezione: null = "tutti" (nessun filtro attivo)
   const [workbookFilter, setWorkbookFilter] = useState(null);
   const [sectionFilter, setSectionFilter]   = useState(null);
@@ -58,7 +58,7 @@ export default function TaskPool({
   const [prevTasks, setPrevTasks] = useState(tasks);
   if (tasks !== prevTasks) {
     setPrevTasks(tasks);
-    setParaFilter(new Set(['project']));
+    setParaFilter(new Set(['project', 'area']));
     setWorkbookFilter(null);
     setSectionFilter(null);
   }

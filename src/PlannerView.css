@@ -496,6 +496,39 @@
   transition: height 0.6s linear;
 }
 
+/* Fasce già chiuse: modificabili a posteriori — trascina per spostare, clic
+   per cambiare tipo/cancellare, maniglie agli estremi per ridimensionare. */
+.planner-focus-bar.editable {
+  pointer-events: auto;
+  cursor: grab;
+}
+.planner-focus-bar.editable:hover {
+  filter: brightness(1.25);
+}
+.planner-focus-bar.editable:active {
+  cursor: grabbing;
+}
+.planner-focus-bar-handle {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 6px;
+  cursor: ns-resize;
+}
+.planner-focus-bar-handle.top { top: -2px; }
+.planner-focus-bar-handle.bottom { bottom: -2px; }
+
+/* Colonna cliccabile dietro le fasce: un clic su uno spazio vuoto apre il
+   menu per aggiungerne una nuova all'orario cliccato. */
+.planner-focus-column {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 46px;
+  z-index: 0;
+  cursor: copy;
+}
+
 /* Linea dell'ora corrente — attraversa tutta la larghezza della timeline,
    allineata alla stessa scala minuti→px delle barre/blocchi sopra. */
 .planner-now-line {
@@ -541,6 +574,84 @@
   z-index: 2;
   box-sizing: border-box;
 }
+
+/* Menu di modifica/aggiunta di una fascia Pomodoro — ancorato al punto
+   cliccato, con backdrop trasparente a tutto schermo per chiuderlo al clic
+   fuori (stesso pattern dei pop-up del diagramma GTD). */
+.planner-focus-popup-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 500;
+}
+.planner-focus-popup {
+  position: fixed;
+  z-index: 501;
+  width: 180px;
+  background: var(--surface2);
+  border: 1px solid var(--border2);
+  border-radius: 10px;
+  padding: 10px;
+  box-shadow: 0 12px 34px rgba(0,0,0,0.5);
+  font-family: 'Outfit', sans-serif;
+  box-sizing: border-box;
+}
+.planner-focus-popup-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 8px;
+}
+.planner-focus-popup-types {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.planner-focus-popup-type {
+  background: rgba(217,83,79,0.12);
+  border: 1px solid rgba(217,83,79,0.6);
+  color: var(--text);
+  border-radius: 6px;
+  padding: 6px 8px;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+  font-family: 'Outfit', sans-serif;
+  transition: background 0.15s;
+}
+.planner-focus-popup-type:hover { background: rgba(217,83,79,0.22); }
+.planner-focus-popup-type.personal {
+  background: rgba(230,201,77,0.12);
+  border-color: rgba(230,201,77,0.6);
+}
+.planner-focus-popup-type.personal:hover { background: rgba(230,201,77,0.22); }
+.planner-focus-popup-type.office {
+  background: rgba(157,127,214,0.12);
+  border-color: rgba(157,127,214,0.6);
+}
+.planner-focus-popup-type.office:hover { background: rgba(157,127,214,0.22); }
+.planner-focus-popup-type.client {
+  background: rgba(91,143,217,0.12);
+  border-color: rgba(91,143,217,0.6);
+}
+.planner-focus-popup-type.client:hover { background: rgba(91,143,217,0.22); }
+
+.planner-focus-popup-delete {
+  display: block;
+  width: 100%;
+  margin-top: 8px;
+  background: none;
+  border: 1px solid rgba(217,83,79,0.5);
+  color: #d97a7a;
+  padding: 6px 0;
+  border-radius: 6px;
+  font-size: 11px;
+  cursor: pointer;
+  font-family: 'Outfit', sans-serif;
+  transition: background 0.15s;
+}
+.planner-focus-popup-delete:hover { background: rgba(217,83,79,0.12); }
 
 /* Calendar events — absolute within timeline-body; sopra i task blocks
    (z-index maggiore) e cliccabili per aprire il modale di modifica. */
