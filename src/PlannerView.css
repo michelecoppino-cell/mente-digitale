@@ -89,6 +89,40 @@
 .planner-action-btn.accent:hover:not(:disabled) { background: rgba(200,169,110,0.1); }
 .planner-action-btn.loading { opacity: 0.7; }
 
+.planner-cal-filter-wrap { position: relative; }
+.planner-cal-filter-backdrop { position: fixed; inset: 0; z-index: 500; }
+.planner-cal-filter-popup {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 501;
+  min-width: 200px;
+  max-height: 280px;
+  overflow-y: auto;
+  background: var(--surface2);
+  border: 1px solid var(--border2);
+  border-radius: 10px;
+  padding: 8px;
+  box-shadow: 0 12px 34px rgba(0,0,0,0.5);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.planner-cal-filter-empty { padding: 6px 8px; font-size: 12px; color: var(--muted); }
+.planner-cal-filter-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  font-size: 12px;
+  color: var(--text);
+  cursor: pointer;
+}
+.planner-cal-filter-item:hover { background: rgba(255,255,255,0.06); }
+.planner-cal-filter-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+.planner-cal-filter-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
 .planner-close-btn {
   background: none;
   border: 1px solid var(--border2);
