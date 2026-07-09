@@ -1498,6 +1498,10 @@ input[type="time"].planner-modal-select::-webkit-calendar-picker-indicator {
   padding: 0 8px;
 }
 .planner-checklist-add-btn:disabled { opacity: 0.35; cursor: default; }
+.planner-checklist-error {
+  margin-top: 6px; font-size: 10.5px; color: #e08a8a;
+  font-family: 'Outfit', sans-serif;
+}
 
 .planner-detail-empty {
   padding: 20px 12px; text-align: center;

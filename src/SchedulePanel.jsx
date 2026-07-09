@@ -12,6 +12,7 @@ export default function SchedulePanel({ open, onClose, onExpand, preloadedTasks,
   const [tasks, setTasks] = useState([]);
   const [config, setConfig] = useState(DEFAULT_CONFIG);
   const [selectedTaskId, setSelectedTaskId] = useState(null);
+  const [loadError, setLoadError] = useState(false);
 
   useEffect(() => {
     if (preloadedTasks) { setTasks(preloadedTasks); return; }
@@ -30,18 +31,24 @@ export default function SchedulePanel({ open, onClose, onExpand, preloadedTasks,
   }, [open]);
 
   async function load() {
+    setLoadError(false);
     try {
       const lists = await getTodoLists();
       const allTasks = [];
+      let anyError = false;
       for (const l of lists) {
         try {
           const t = await getTodoTasks(l.id);
           allTasks.push(...t.map(x => ({ ...x, _listName: l.displayName, _listId: l.id })));
-        } catch (e) { console.error('load tasks', l.displayName, e); }
+        } catch (e) { console.error('load tasks', l.displayName, e); anyError = true; }
         await new Promise(r => setTimeout(r, 150));
       }
       setTasks(allTasks);
-    } catch (e) { console.error(e); }
+      if (anyError) setLoadError(true);
+    } catch (e) {
+      console.error(e);
+      setLoadError(true);
+    }
   }
 
   function handleTaskClick(task) {
@@ -73,6 +80,11 @@ export default function SchedulePanel({ open, onClose, onExpand, preloadedTasks,
       <div className="schedule-panel-inner">
         {/* Vista Task — identica alla colonna sinistra della modalità piano */}
         <div className="schedule-tasks-section">
+          {loadError && (
+            <div className="schedule-load-error">
+              Errore di caricamento — dati non aggiornati. <button onClick={load}>Riprova</button>
+            </div>
+          )}
           <TaskPool
             title="Task"
             tasks={tasks}

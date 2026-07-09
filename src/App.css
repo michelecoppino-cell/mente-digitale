@@ -1643,6 +1643,14 @@ body, .app {
   flex-direction: column;
   overflow: hidden;
 }
+.schedule-load-error {
+  font-size: 11px; color: #e08a8a; padding: 6px 10px;
+  display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+}
+.schedule-load-error button {
+  background: none; border: 1px solid rgba(224,138,138,0.4); color: #e08a8a;
+  border-radius: 4px; font-size: 10.5px; padding: 1px 6px; cursor: pointer;
+}
 .task-pool {
   display: flex;
   flex-direction: column;
