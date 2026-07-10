@@ -235,6 +235,20 @@ export async function getCalendars() {
   return _calsCache;
 }
 
+// Cambia il colore di visualizzazione di un calendario (proprio o
+// condiviso): Graph accetta solo l'enum predefinito (lightBlue, maxColor…),
+// non un hex libero come per i workbook — è una preferenza personale
+// dell'utente sulla propria voce di calendario, quindi funziona anche sui
+// calendari condivisi da altri.
+export async function updateCalendarColor(calendarId, color) {
+  const res = await call(`/me/calendars/${calendarId}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ color }),
+  });
+  invalidateCalendarsCache();
+  return res;
+}
+
 export async function getCalendarEvents(startDate, endDate, top = 50) {
   const start = startDate.toISOString();
   const end = endDate.toISOString();

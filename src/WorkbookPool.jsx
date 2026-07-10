@@ -22,6 +22,22 @@ export default function WorkbookPool({ workbooks = [], onChange, draggable = tru
   const [addingSubFor, setAddingSubFor] = useState(null); // workbookId
   const [draftName, setDraftName]       = useState('');
 
+  // Le sottocategorie partono sempre estese e leggibili: ogni workbook viene
+  // aggiunto a `expanded` la prima volta che lo si vede (caricamento iniziale
+  // o creazione di uno nuovo), lasciando comunque l'utente libero di
+  // richiuderlo in seguito senza che si riapra da solo al giro dopo.
+  const seenWorkbookIdsRef = useRef(new Set());
+  useEffect(() => {
+    const unseen = workbooks.filter(wb => !seenWorkbookIdsRef.current.has(wb.id));
+    if (unseen.length === 0) return;
+    unseen.forEach(wb => seenWorkbookIdsRef.current.add(wb.id));
+    setExpanded(prev => {
+      const next = new Set(prev);
+      unseen.forEach(wb => next.add(wb.id));
+      return next;
+    });
+  }, [workbooks]);
+
   const suggestedNotebooks = useMemo(() => {
     const existing = new Set(workbooks.map(wb => wb.name.trim().toLowerCase()));
     return notebooks.filter(nb => !existing.has((nb.displayName || '').trim().toLowerCase()));
