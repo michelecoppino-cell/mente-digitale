@@ -374,6 +374,28 @@
 }
 .workbook-pool-add-sub { margin-left: 20px; width: calc(100% - 20px); }
 
+.workbook-pool-suggestions {
+  margin-bottom: 6px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border);
+}
+.workbook-pool-suggestions-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  padding: 4px 8px 2px;
+}
+.workbook-pool-suggestion-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 8px;
+  border-radius: 6px;
+}
+.workbook-pool-suggestion-row:hover { background: rgba(255,255,255,0.04); }
+.workbook-pool-suggestion-add { display: flex; }
+
 .workbook-color-picker-wrap { position: relative; }
 .workbook-color-picker-popup {
   position: absolute;

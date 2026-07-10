@@ -1272,7 +1272,7 @@ export default function PlannerView({
               draggable={!locked}
             />
           ) : (
-            <WorkbookPool workbooks={workbooks} onChange={persistWorkbooks} draggable={!locked} />
+            <WorkbookPool workbooks={workbooks} onChange={persistWorkbooks} draggable={!locked} notebooks={notebooks} />
           )}
         </div>
         <div className="planner-col-resize" onMouseDown={handleWeekPoolResizeStart} title="Ridimensiona" />
@@ -1323,7 +1323,7 @@ export default function PlannerView({
               onTaskClick={locked ? undefined : task => { setSelectedTask(task); setMobileTab('panel'); }}
             />
           ) : (
-            <WorkbookPool workbooks={workbooks} onChange={persistWorkbooks} draggable={!locked} />
+            <WorkbookPool workbooks={workbooks} onChange={persistWorkbooks} draggable={!locked} notebooks={notebooks} />
           )}
         </div>
 
