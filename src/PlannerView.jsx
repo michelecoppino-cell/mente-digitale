@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useMemo, Fragment } from 'react';
 import {
   loadDailyPlans, saveDailyPlans,
   loadPlannerConfig, savePlannerConfig,
-  completeTask, getCalendarEvents, getCalendars,
+  completeTask, getCalendarEvents, getCalendars, updateCalendarColor,
   createCalendarEvent, updateCalendarEvent, deleteCalendarEvent, moveCalendarEvent,
   getTask, updateTaskBody, updateTaskTitle, updateTaskDueDate, deleteTask,
   createChecklistItem, updateChecklistItem, renameChecklistItem, deleteChecklistItem,
@@ -49,6 +49,29 @@ const GRAPH_CAL_COLORS = {
 };
 function calendarSwatch(colorEnum) {
   return GRAPH_CAL_COLORS[colorEnum] || '#888888';
+}
+// Ordine di presentazione degli enum colore Graph nei color-picker dei
+// calendari — 'auto' per primo per rappresentare "nessun colore personalizzato".
+const GRAPH_CAL_COLOR_OPTIONS = ['auto', ...Object.keys(GRAPH_CAL_COLORS)];
+
+// Voce sintetica aggiunta alla lista "Calendari ▾" per poter spegnere/accendere
+// tutti i blocchi Workbook come se fossero un calendario in più — non
+// corrisponde a nessun calendario Graph, quindi non tocca mai filterCalEvents.
+const WORKBOOK_CAL_ID = '__workbook__';
+
+// Colore "vivo" di un blocco Workbook piazzato in griglia: il blocco nasce con
+// colore/etichetta denormalizzati al momento del drop (vedi makeWorkbookBlock),
+// ma il colore deve continuare a seguire il nodo Workbook/Sub-workbook se
+// l'utente lo ricolora in seguito — si ricade sul valore denormalizzato solo
+// se il nodo è stato nel frattempo eliminato.
+function liveWorkbookColor(block, workbooksList) {
+  const wb = workbooksList.find(w => w.id === block.workbookId);
+  if (!wb) return block.color;
+  if (block.subWorkbookId) {
+    const sub = wb.subWorkbooks.find(s => s.id === block.subWorkbookId);
+    return sub?.color ?? block.color;
+  }
+  return wb.color ?? block.color;
 }
 // La griglia della timeline copre sempre l'intera giornata (scorrimento libero
 // con la rotella): il workday configurato serve solo a posizionare lo scroll
@@ -169,6 +192,9 @@ export default function PlannerView({
   const [dragOverTime, setDragOverTime]     = useState(null);
   const [viewMode, setViewMode]             = useState('day');
   const [resizingId, setResizingId]         = useState(null);
+  // Analogo al resizingWbId locale di WeeklyTimeline: disattiva il draggable
+  // del blocco Workbook mentre se ne trascina il bordo inferiore in vista Giorno.
+  const [dayResizingWbId, setDayResizingWbId] = useState(null);
   const [selectedTask, setSelectedTask]     = useState(null);
   const [poolWidth, setPoolWidth]           = useState(560);
   const [weekPoolWidth, setWeekPoolWidth]   = useState(280); // metà della larghezza di default del pool in vista Giorno
@@ -177,6 +203,7 @@ export default function PlannerView({
   const [mobileTab, setMobileTab]           = useState('timeline'); // colonna visibile su schermi stretti
   const [calendarsList, setCalendarsList]   = useState([]);
   const [calFilterOpen, setCalFilterOpen]   = useState(false);
+  const [calColorPickerFor, setCalColorPickerFor] = useState(null); // id del calendario con lo swatch colori aperto
   const [calModal, setCalModal]             = useState(null); // { mode: 'create'|'edit', event }
   // Popup di modifica/aggiunta di una fascia della colonna Pomodoro —
   // { mode: 'edit', idx, x, y } oppure { mode: 'add', startMin, x, y }.
@@ -398,6 +425,20 @@ export default function PlannerView({
     // partendo dai default: si perderebbe la configurazione salvata.
     if (configLoadedRef.current) {
       savePlannerConfig(nextConfig).catch(e => console.error('save planner config', e));
+    }
+  }
+
+  // Cambia il colore di un calendario (proprio o condiviso) — aggiornamento
+  // ottimistico della lista locale, con rollback se la PATCH su Graph fallisce.
+  async function changeCalendarColor(calId, color) {
+    const prevList = calendarsList;
+    setCalendarsList(list => list.map(c => c.id === calId ? { ...c, color } : c));
+    setCalColorPickerFor(null);
+    try {
+      await updateCalendarColor(calId, color);
+    } catch (e) {
+      console.error('update calendar color', e);
+      setCalendarsList(prevList);
     }
   }
 
@@ -623,6 +664,8 @@ export default function PlannerView({
       const data = JSON.parse(e.dataTransfer.getData('text/plain'));
       if (data.type === 'task')   addBlock(data.task, dragOverTime);
       else if (data.type === 'block') moveBlock(data.blockId, dragOverTime);
+      else if (data.type === 'workbookblock') addWorkbookBlockToDay(data.workbookId, data.subWorkbookId, currentDate, dragOverTime);
+      else if (data.type === 'weekworkbookblock') moveWorkbookBlockBetweenDays(data.fromDay, data.blockId, currentDate, dragOverTime);
     } catch { /* payload drag non valido — ignora */ }
     setDragOverTime(null);
   }
@@ -632,7 +675,7 @@ export default function PlannerView({
   function handleTimelineClick(e) {
     if (locked) return;
     if (suppressClickRef.current) { suppressClickRef.current = false; return; }
-    if (e.target.closest('.planner-block, .planner-cal-event, .planner-focus-bar, .planner-focus-column, .planner-focus-daytotal')) return;
+    if (e.target.closest('.planner-block, .planner-cal-event, .planner-day-workbook-block, .planner-focus-bar, .planner-focus-column, .planner-focus-daytotal')) return;
     if (!timelineBodyRef.current) return;
     const rect = timelineBodyRef.current.getBoundingClientRect();
     const relY = e.clientY - rect.top + timelineBodyRef.current.scrollTop;
@@ -779,6 +822,20 @@ export default function PlannerView({
     }
     document.addEventListener('mousemove', onMove);
     document.addEventListener('mouseup', onUp);
+  }
+
+  // Wrapper di handleWorkbookResizeStart per la vista Giorno: gestisce in più
+  // il flag dayResizingWbId (stesso ruolo del resizingWbId locale di
+  // WeeklyTimeline), assente lì perché la vista Settimana tiene il proprio
+  // stato di resize dentro il componente.
+  function handleDayWorkbookResizeStart(e, block) {
+    setDayResizingWbId(block.id);
+    handleWorkbookResizeStart(e, block, currentDate);
+    function clearResizing() {
+      setDayResizingWbId(null);
+      document.removeEventListener('mouseup', clearResizing);
+    }
+    document.addEventListener('mouseup', clearResizing);
   }
 
   // Salva i workbook block della settimana visualizzata come template
@@ -1165,6 +1222,8 @@ export default function PlannerView({
 
   const allDayEvents = calEvents.filter(isAllDay);
   const timedEvents  = calEvents.filter(ev => !isAllDay(ev));
+  const dayWorkbookPlan  = workbookPlans[currentDate] || { blocks: [] };
+  const workbookCalHidden = getHiddenCalendarIds().includes(WORKBOOK_CAL_ID);
 
   const workStart = t2m(config.workdayStart);
   const dayFocusMinutes = pomodoroStatsMap[currentDate]?.focusedMinutes || 0;
@@ -1230,22 +1289,54 @@ export default function PlannerView({
             </button>
             {calFilterOpen && (
               <>
-                <div className="planner-cal-filter-backdrop" onClick={() => setCalFilterOpen(false)} />
+                <div className="planner-cal-filter-backdrop" onClick={() => { setCalFilterOpen(false); setCalColorPickerFor(null); }} />
                 <div className="planner-cal-filter-popup">
+                  {/* Calendario sintetico: spegne/accende tutti i blocchi Workbook
+                      (Settimana + Giorno) insieme, come un calendario in più. */}
+                  <label className="planner-cal-filter-item">
+                    <input
+                      type="checkbox"
+                      checked={!workbookCalHidden}
+                      onChange={() => toggleCalendarVisibility(WORKBOOK_CAL_ID)}
+                    />
+                    <span className="planner-cal-filter-dot" style={{ background: '#c8a96e' }} />
+                    <span className="planner-cal-filter-name">Workbook</span>
+                  </label>
+                  <div className="planner-cal-filter-divider" />
                   {calendarsList.length === 0 ? (
                     <div className="planner-cal-filter-empty">Nessun calendario</div>
                   ) : calendarsList.map(cal => {
                     const hidden  = getHiddenCalendarIds().includes(cal.id);
                     return (
-                      <label key={cal.id} className="planner-cal-filter-item">
-                        <input
-                          type="checkbox"
-                          checked={!hidden}
-                          onChange={() => toggleCalendarVisibility(cal.id)}
-                        />
-                        <span className="planner-cal-filter-dot" style={{ background: calendarSwatch(cal.color) }} />
-                        <span className="planner-cal-filter-name">{cal.name}</span>
-                      </label>
+                      <Fragment key={cal.id}>
+                        <label className="planner-cal-filter-item">
+                          <input
+                            type="checkbox"
+                            checked={!hidden}
+                            onChange={() => toggleCalendarVisibility(cal.id)}
+                          />
+                          <button
+                            type="button"
+                            className="planner-cal-filter-dot planner-cal-filter-dot-btn"
+                            style={{ background: calendarSwatch(cal.color) }}
+                            onClick={e => { e.preventDefault(); e.stopPropagation(); setCalColorPickerFor(v => v === cal.id ? null : cal.id); }}
+                            title="Cambia colore calendario" />
+                          <span className="planner-cal-filter-name">{cal.name}</span>
+                        </label>
+                        {calColorPickerFor === cal.id && (
+                          <div className="planner-cal-color-swatches">
+                            {GRAPH_CAL_COLOR_OPTIONS.map(opt => (
+                              <button
+                                key={opt}
+                                type="button"
+                                className={`planner-cal-color-swatch${cal.color === opt ? ' active' : ''}${opt === 'auto' ? ' auto' : ''}`}
+                                style={opt === 'auto' ? undefined : { background: GRAPH_CAL_COLORS[opt] }}
+                                title={opt === 'auto' ? 'Colore predefinito' : opt}
+                                onClick={() => changeCalendarColor(cal.id, opt)} />
+                            ))}
+                          </div>
+                        )}
+                      </Fragment>
                     );
                   })}
                 </div>
@@ -1321,6 +1412,8 @@ export default function PlannerView({
           plans={plans}
           calEvents={calEvents}
           workbookPlans={workbookPlans}
+          workbooks={workbooks}
+          workbookCalHidden={workbookCalHidden}
           workdayStartMin={workStart}
           timeSlots={timeSlots}
           locked={locked}
@@ -1474,6 +1567,60 @@ export default function PlannerView({
                 <div className="planner-slot-line" />
               </div>
             ))}
+
+            {/* Workbook blocks — stessa bozza "a spettro ampio" trascinata in vista
+                Settimana, visibile anche qui così non serve passare a Settimana per
+                vederla. Sotto (z-index 0) a task/eventi come nella griglia settimanale;
+                spenta insieme quando il calendario sintetico "Workbook" è disattivato. */}
+            {!workbookCalHidden && dayWorkbookPlan.blocks.map(wb => {
+              const top    = Math.max(0, (t2m(wb.startTime) - DAY_START_MIN) / 30 * SLOT_HEIGHT);
+              const height = Math.max(SLOT_HEIGHT - 4, (t2m(wb.endTime) - t2m(wb.startTime)) / 30 * SLOT_HEIGHT - 4);
+              const wbColor = liveWorkbookColor(wb, workbooks);
+              return (
+                <div key={wb.id}
+                  className="planner-day-workbook-block"
+                  style={{ top: top + 2, height, background: hexToRgba(wbColor, 0.28), borderLeftColor: wbColor }}
+                  title={`${wb.startTime}–${wb.endTime} · ${wb.label} (trascina per spostare, doppio clic per una nota)`}
+                  draggable={!locked && dayResizingWbId !== wb.id}
+                  onClick={e => e.stopPropagation()}
+                  onDragStart={e => {
+                    if (e.target.closest('.planner-block-note')) { e.preventDefault(); return; }
+                    e.stopPropagation();
+                    e.dataTransfer.setData('text/plain', JSON.stringify({ type: 'weekworkbookblock', blockId: wb.id, fromDay: currentDate }));
+                  }}
+                  onDoubleClick={e => {
+                    if (locked || e.target.closest('.planner-block-note')) return;
+                    e.stopPropagation();
+                    const rect = e.currentTarget.getBoundingClientRect();
+                    const noteTop = Math.max(0, Math.min(height - 22, e.clientY - rect.top));
+                    addWorkbookNote(currentDate, wb.id, noteTop);
+                  }}>
+                  <span className="planner-block-title">{wb.label}</span>
+                  {!locked && (
+                    <button
+                      className="planner-week-workbook-block-remove"
+                      onClick={e => { e.stopPropagation(); handleRemoveWorkbookBlock(currentDate, wb.id); }}
+                      title="Elimina">×</button>
+                  )}
+                  {!locked && (
+                    <div
+                      className="planner-block-resize"
+                      onMouseDown={e => handleDayWorkbookResizeStart(e, wb)} />
+                  )}
+                  {(wb.notes || []).map(note => (
+                    <WorkbookBlockNote
+                      key={note.id}
+                      note={note}
+                      blockHeight={height}
+                      locked={locked}
+                      onChange={text => editWorkbookNoteText(currentDate, wb.id, note.id, text)}
+                      onMove={noteTop => moveWorkbookNote(currentDate, wb.id, note.id, noteTop)}
+                      onRemove={() => removeWorkbookNote(currentDate, wb.id, note.id)}
+                    />
+                  ))}
+                </div>
+              );
+            })}
 
             {/* Calendar events — absolute, editabili al click */}
             {timedEvents.map((ev, i) => {
@@ -2297,7 +2444,7 @@ function MonthlyCalendar({ currentDate, plans, calEvents, calOutOfRange, onDayCl
 
 // ── WeeklyTimeline ────────────────────────────────────────────────────────────
 function WeeklyTimeline({
-  weekDays, plans, calEvents, workbookPlans, workdayStartMin, timeSlots, locked, suppressClickRef,
+  weekDays, plans, calEvents, workbookPlans, workbooks, workbookCalHidden, workdayStartMin, timeSlots, locked, suppressClickRef,
   onDayClick, onMoveBlock, onEventClick, onAddTask, onCreateEvent,
   onAddWorkbookBlock, onMoveWorkbookBlock, onRemoveWorkbookBlock, onResizeWorkbookBlockStart,
   onAddWorkbookNote, onEditWorkbookNote, onMoveWorkbookNote, onRemoveWorkbookNote,
@@ -2426,13 +2573,14 @@ function WeeklyTimeline({
                   {m2t(dragOver.min)}
                 </div>
               )}
-              {dayWorkbookPlan.blocks.map(wb => {
+              {!workbookCalHidden && dayWorkbookPlan.blocks.map(wb => {
                 const top    = Math.max(0, (t2m(wb.startTime) - DAY_START_MIN) / 30 * SLOT_HEIGHT);
                 const height = Math.max(SLOT_HEIGHT - 4, (t2m(wb.endTime) - t2m(wb.startTime)) / 30 * SLOT_HEIGHT - 4);
+                const wbColor = liveWorkbookColor(wb, workbooks);
                 return (
                   <div key={wb.id}
                     className="planner-week-workbook-block"
-                    style={{ top: top + 2, height, background: hexToRgba(wb.color, 0.28), borderLeftColor: wb.color }}
+                    style={{ top: top + 2, height, background: hexToRgba(wbColor, 0.28), borderLeftColor: wbColor }}
                     title={`${wb.startTime}–${wb.endTime} · ${wb.label} (trascina per spostare, doppio clic per una nota)`}
                     draggable={!locked && resizingWbId !== wb.id}
                     onClick={e => e.stopPropagation()}
