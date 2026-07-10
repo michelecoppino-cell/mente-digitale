@@ -1,6 +1,7 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { COLORS } from './config';
-import { shadeColor } from './plannerShared';
+import { shadeColor, hexToRgb, rgbToHex } from './plannerShared';
 
 function genId() {
   return Math.random().toString(36).slice(2) + Date.now().toString(36);
@@ -153,7 +154,7 @@ export default function WorkbookPool({ workbooks = [], onChange, draggable = tru
               <span
                 className="planner-group-dot workbook-color-dot"
                 style={{ background: wb.color }}
-                onClick={e => { e.stopPropagation(); setColorPickerFor({ workbookId: wb.id, subId: null }); }}
+                onClick={e => { e.stopPropagation(); setColorPickerFor({ workbookId: wb.id, subId: null, anchor: e.currentTarget }); }}
                 title="Cambia colore" />
               <span
                 className="workbook-pool-name"
@@ -168,6 +169,7 @@ export default function WorkbookPool({ workbooks = [], onChange, draggable = tru
               {colorPickerFor?.workbookId === wb.id && colorPickerFor?.subId === null && (
                 <ColorPickerPopup
                   color={wb.color}
+                  anchor={colorPickerFor.anchor}
                   onPick={c => setColor(wb.id, null, c)}
                   onClose={() => setColorPickerFor(null)}
                 />
@@ -192,7 +194,7 @@ export default function WorkbookPool({ workbooks = [], onChange, draggable = tru
                 <span
                   className="planner-task-dot workbook-color-dot"
                   style={{ background: sub.color }}
-                  onClick={e => { e.stopPropagation(); setColorPickerFor({ workbookId: wb.id, subId: sub.id }); }}
+                  onClick={e => { e.stopPropagation(); setColorPickerFor({ workbookId: wb.id, subId: sub.id, anchor: e.currentTarget }); }}
                   title="Cambia colore" />
                 <span
                   className="workbook-pool-name"
@@ -205,6 +207,7 @@ export default function WorkbookPool({ workbooks = [], onChange, draggable = tru
                 {colorPickerFor?.workbookId === wb.id && colorPickerFor?.subId === sub.id && (
                   <ColorPickerPopup
                     color={sub.color}
+                    anchor={colorPickerFor.anchor}
                     onPick={c => setColor(wb.id, sub.id, c)}
                     onClose={() => setColorPickerFor(null)}
                   />
@@ -218,21 +221,114 @@ export default function WorkbookPool({ workbooks = [], onChange, draggable = tru
   );
 }
 
-function ColorPickerPopup({ color, onPick, onClose }) {
-  return (
-    <div className="workbook-color-picker-wrap">
-      <div className="planner-cal-filter-backdrop" onClick={onClose} />
-      <div className="workbook-color-picker-popup">
-        {COLORS.map(c => (
-          <button key={c} className="workbook-color-swatch" style={{ background: c }} onClick={() => { onPick(c); onClose(); }} title={c} />
-        ))}
-        <input
-          type="color"
-          value={color}
-          onChange={e => onPick(e.target.value)}
-          className="workbook-color-native"
-          title="Colore personalizzato" />
+// Popup colore in un portale su document.body: ancorato in position:fixed
+// alla posizione del pallino cliccato invece che con position:absolute dentro
+// la riga del workbook, così non viene più tagliato dall'overflow del
+// pannello (workbook-pool-body scrolla in verticale) né intrappolato in uno
+// stacking context locale. Oltre alle swatch predefinite offre tre slider
+// R/G/B 0-255 (+ input numerico e campo hex) per scegliere qualsiasi colore.
+function ColorPickerPopup({ color, anchor, onPick, onClose }) {
+  const [rgb, setRgb]         = useState(() => hexToRgb(color));
+  const [hexDraft, setHexDraft] = useState(color);
+  const [pos, setPos]         = useState(null);
+  const popupRef = useRef(null);
+
+  // Misura la posizione dell'ancora (il pallino cliccato) e, in un secondo
+  // passaggio, le dimensioni reali del popup una volta montato per tenerlo
+  // dentro al viewport: sincronizzazione con il DOM, non stato derivabile
+  // dal render, quindi legittimo farlo in un effetto nonostante il lint.
+  useLayoutEffect(() => {
+    if (!anchor) return;
+    const rect = anchor.getBoundingClientRect();
+    setPos({ top: rect.bottom + 6, left: rect.left }); // eslint-disable-line react-hooks/set-state-in-effect
+  }, [anchor]);
+
+  useLayoutEffect(() => {
+    if (!pos || !popupRef.current) return;
+    const rect = popupRef.current.getBoundingClientRect();
+    const margin = 8;
+    let { top, left } = pos;
+    if (rect.right > window.innerWidth - margin) left -= rect.right - (window.innerWidth - margin);
+    if (left < margin) left = margin;
+    if (rect.bottom > window.innerHeight - margin) top -= rect.bottom - (window.innerHeight - margin);
+    if (top < margin) top = margin;
+    if (top !== pos.top || left !== pos.left) setPos({ top, left }); // eslint-disable-line react-hooks/set-state-in-effect
+  }, [pos]);
+
+  useEffect(() => {
+    function onKey(e) { if (e.key === 'Escape') onClose(); }
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  function applyRgb(next) {
+    const clamped = {
+      r: Math.max(0, Math.min(255, next.r)),
+      g: Math.max(0, Math.min(255, next.g)),
+      b: Math.max(0, Math.min(255, next.b)),
+    };
+    setRgb(clamped);
+    const hex = rgbToHex(clamped.r, clamped.g, clamped.b);
+    setHexDraft(hex);
+    onPick(hex);
+  }
+
+  function applyHex(raw) {
+    const cleaned = raw.replace(/[^0-9a-fA-F]/g, '').slice(0, 6);
+    setHexDraft('#' + cleaned);
+    if (cleaned.length === 6) {
+      const hex = '#' + cleaned;
+      setRgb(hexToRgb(hex));
+      onPick(hex);
+    }
+  }
+
+  return createPortal(
+    <>
+      <div className="workbook-color-picker-backdrop" onClick={onClose} />
+      <div
+        ref={popupRef}
+        className="workbook-color-picker-popup"
+        style={pos ? { top: pos.top, left: pos.left } : { top: -9999, left: -9999 }}
+        onClick={e => e.stopPropagation()}>
+        <div className="workbook-color-picker-preview" style={{ background: hexDraft }} />
+        <div className="workbook-color-picker-swatches">
+          {COLORS.map(c => (
+            <button key={c} className="workbook-color-swatch" style={{ background: c }}
+              onClick={() => { setRgb(hexToRgb(c)); setHexDraft(c); onPick(c); }} title={c} />
+          ))}
+          <input
+            type="color"
+            value={/^#[0-9a-fA-F]{6}$/.test(hexDraft) ? hexDraft : color}
+            onChange={e => { setRgb(hexToRgb(e.target.value)); setHexDraft(e.target.value); onPick(e.target.value); }}
+            className="workbook-color-native"
+            title="Selettore colore di sistema" />
+        </div>
+        <div className="workbook-color-picker-sliders">
+          {['r', 'g', 'b'].map(ch => (
+            <label key={ch} className={`workbook-color-slider-row workbook-color-slider-${ch}`}>
+              <span className="workbook-color-slider-label">{ch.toUpperCase()}</span>
+              <input
+                type="range" min="0" max="255" value={rgb[ch]}
+                onChange={e => applyRgb({ ...rgb, [ch]: Number(e.target.value) })} />
+              <input
+                type="number" min="0" max="255" value={rgb[ch]}
+                className="workbook-color-slider-num"
+                onChange={e => applyRgb({ ...rgb, [ch]: Number(e.target.value) })} />
+            </label>
+          ))}
+        </div>
+        <div className="workbook-color-picker-hex-row">
+          <span>#</span>
+          <input
+            type="text" className="workbook-color-hex-input"
+            value={hexDraft.replace('#', '')}
+            maxLength={6}
+            onChange={e => applyHex(e.target.value)}
+            placeholder="rrggbb" />
+        </div>
       </div>
-    </div>
+    </>,
+    document.body
   );
 }

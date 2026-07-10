@@ -716,6 +716,45 @@ export default function PlannerView({
     });
   }
 
+  // Helper condiviso dalle 4 mutazioni sulle note di un workbook block: le
+  // note sono sganciate dal testo del blocco (label) — servono per annotare
+  // un dettaglio ("caffè", "pranzo"…) in un punto preciso della fascia, con
+  // andate a capo libere, senza doverne creare uno spezzettando l'orario.
+  function patchWorkbookNotes(day, blockId, updater) {
+    mutateWorkbookPlansMulti(all => {
+      const dayPlan = all[day];
+      if (!dayPlan) return all;
+      return {
+        ...all,
+        [day]: {
+          ...dayPlan,
+          blocks: dayPlan.blocks.map(b => b.id === blockId ? { ...b, notes: updater(b.notes || []) } : b),
+        },
+      };
+    });
+  }
+
+  function addWorkbookNote(day, blockId, top) {
+    patchWorkbookNotes(day, blockId, notes => [...notes, { id: genId(), text: '', top }]);
+  }
+
+  // Nota lasciata vuota alla chiusura dell'editor → scartata invece di
+  // restare come etichetta fantasma cliccabile ma senza contenuto.
+  function editWorkbookNoteText(day, blockId, noteId, text) {
+    patchWorkbookNotes(day, blockId, notes => {
+      if (!text.trim()) return notes.filter(n => n.id !== noteId);
+      return notes.map(n => n.id === noteId ? { ...n, text } : n);
+    });
+  }
+
+  function moveWorkbookNote(day, blockId, noteId, top) {
+    patchWorkbookNotes(day, blockId, notes => notes.map(n => n.id === noteId ? { ...n, top } : n));
+  }
+
+  function removeWorkbookNote(day, blockId, noteId) {
+    patchWorkbookNotes(day, blockId, notes => notes.filter(n => n.id !== noteId));
+  }
+
   // Resize (drag verticale sul bordo inferiore) di un workbook block nella
   // vista Settimana — non esiste un equivalente per i blocchi task lì (solo
   // spostamento), quindi è una funzione nuova, non un riuso di handleResizeStart.
@@ -1295,6 +1334,10 @@ export default function PlannerView({
           onMoveWorkbookBlock={moveWorkbookBlockBetweenDays}
           onRemoveWorkbookBlock={handleRemoveWorkbookBlock}
           onResizeWorkbookBlockStart={handleWorkbookResizeStart}
+          onAddWorkbookNote={addWorkbookNote}
+          onEditWorkbookNote={editWorkbookNoteText}
+          onMoveWorkbookNote={moveWorkbookNote}
+          onRemoveWorkbookNote={removeWorkbookNote}
         />
       </>) : (<>
 
@@ -2257,6 +2300,7 @@ function WeeklyTimeline({
   weekDays, plans, calEvents, workbookPlans, workdayStartMin, timeSlots, locked, suppressClickRef,
   onDayClick, onMoveBlock, onEventClick, onAddTask, onCreateEvent,
   onAddWorkbookBlock, onMoveWorkbookBlock, onRemoveWorkbookBlock, onResizeWorkbookBlockStart,
+  onAddWorkbookNote, onEditWorkbookNote, onMoveWorkbookNote, onRemoveWorkbookNote,
 }) {
   const today = todayStr();
   const [dragOver, setDragOver] = useState(null); // { day, min }
@@ -2389,12 +2433,22 @@ function WeeklyTimeline({
                   <div key={wb.id}
                     className="planner-week-workbook-block"
                     style={{ top: top + 2, height, background: hexToRgba(wb.color, 0.28), borderLeftColor: wb.color }}
-                    title={`${wb.startTime}–${wb.endTime} · ${wb.label} (trascina per spostare)`}
+                    title={`${wb.startTime}–${wb.endTime} · ${wb.label} (trascina per spostare, doppio clic per una nota)`}
                     draggable={!locked && resizingWbId !== wb.id}
                     onClick={e => e.stopPropagation()}
                     onDragStart={e => {
+                      // Una nota in editing/drag (vedi WorkbookBlockNote) non deve
+                      // avviare il drag nativo dell'intero blocco.
+                      if (e.target.closest('.planner-block-note')) { e.preventDefault(); return; }
                       e.stopPropagation();
                       e.dataTransfer.setData('text/plain', JSON.stringify({ type: 'weekworkbookblock', blockId: wb.id, fromDay: day }));
+                    }}
+                    onDoubleClick={e => {
+                      if (locked || e.target.closest('.planner-block-note')) return;
+                      e.stopPropagation();
+                      const rect = e.currentTarget.getBoundingClientRect();
+                      const noteTop = Math.max(0, Math.min(height - 22, e.clientY - rect.top));
+                      onAddWorkbookNote(day, wb.id, noteTop);
                     }}>
                     <span className="planner-block-title">{wb.label}</span>
                     {!locked && (
@@ -2408,6 +2462,17 @@ function WeeklyTimeline({
                         className="planner-block-resize"
                         onMouseDown={e => handleWbResizeMouseDown(e, wb, day)} />
                     )}
+                    {(wb.notes || []).map(note => (
+                      <WorkbookBlockNote
+                        key={note.id}
+                        note={note}
+                        blockHeight={height}
+                        locked={locked}
+                        onChange={text => onEditWorkbookNote(day, wb.id, note.id, text)}
+                        onMove={noteTop => onMoveWorkbookNote(day, wb.id, note.id, noteTop)}
+                        onRemove={() => onRemoveWorkbookNote(day, wb.id, note.id)}
+                      />
+                    ))}
                   </div>
                 );
               })}
@@ -2449,6 +2514,74 @@ function WeeklyTimeline({
           );
         })}
       </div>
+    </div>
+  );
+}
+
+// Nota libera dentro un workbook block: ancorata a un offset verticale
+// (note.top, px dal bordo superiore del blocco) invece che a un orario, così
+// si può segnare "caffè" o "pranzo" in un punto preciso di una fascia larga
+// (es. "Ufficio" 8–17:30) senza spezzarla in blocchi separati. Testo libero
+// con a-capo (textarea), riposizionabile trascinando la maniglia ⠿.
+function WorkbookBlockNote({ note, blockHeight, locked, onChange, onMove, onRemove }) {
+  const [editing, setEditing] = useState(!note.text);
+  const [draft, setDraft]     = useState(note.text);
+  const textareaRef = useRef(null);
+
+  useEffect(() => {
+    if (editing) textareaRef.current?.focus();
+  }, [editing]);
+
+  function commit() {
+    setEditing(false);
+    if (draft.trim() === note.text.trim() && note.text) return;
+    onChange(draft);
+  }
+
+  function handleDragHandleMouseDown(e) {
+    if (locked) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const startY   = e.clientY;
+    const startTop = note.top;
+    function onMove_(ev) {
+      const nextTop = Math.max(0, Math.min(Math.max(0, blockHeight - 22), startTop + (ev.clientY - startY)));
+      onMove(nextTop);
+    }
+    function onUp() {
+      document.removeEventListener('mousemove', onMove_);
+      document.removeEventListener('mouseup', onUp);
+    }
+    document.addEventListener('mousemove', onMove_);
+    document.addEventListener('mouseup', onUp);
+  }
+
+  return (
+    <div className="planner-block-note" style={{ top: note.top }} onMouseDown={e => e.stopPropagation()} onClick={e => e.stopPropagation()}>
+      {editing ? (
+        <textarea
+          ref={textareaRef}
+          className="planner-block-note-input"
+          value={draft}
+          onChange={e => setDraft(e.target.value)}
+          onBlur={commit}
+          onKeyDown={e => {
+            e.stopPropagation();
+            if (e.key === 'Escape') { setDraft(note.text); setEditing(false); }
+            if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.currentTarget.blur(); }
+          }}
+        />
+      ) : (
+        <>
+          {!locked && (
+            <span className="planner-block-note-drag" onMouseDown={handleDragHandleMouseDown} title="Trascina per riposizionare">⠿</span>
+          )}
+          <pre className="planner-block-note-text" onClick={() => !locked && setEditing(true)}>{note.text}</pre>
+          {!locked && (
+            <button className="planner-block-note-remove" onClick={onRemove} title="Elimina nota">×</button>
+          )}
+        </>
+      )}
     </div>
   );
 }
