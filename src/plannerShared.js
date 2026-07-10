@@ -23,6 +23,12 @@ export function findProject(task, cfg) {
   return null;
 }
 
+export function hexToRgba(hex, alpha) {
+  const num = parseInt((hex || '#888888').replace('#', ''), 16);
+  const r = (num >> 16) & 0xFF, g = (num >> 8) & 0xFF, b = num & 0xFF;
+  return `rgba(${r},${g},${b},${alpha})`;
+}
+
 export function shadeColor(hex, step) {
   const num = parseInt((hex || '#888888').replace('#', ''), 16);
   const f = 1 - step * 0.1;

@@ -7,13 +7,16 @@ import {
   getTask, updateTaskBody, updateTaskTitle, updateTaskDueDate, deleteTask,
   createChecklistItem, updateChecklistItem, renameChecklistItem, deleteChecklistItem,
   reorderChecklistItems, loadPomodoroStats, savePomodoroStats,
+  loadWorkbooks, saveWorkbooks, loadWorkbookPlans, saveWorkbookPlans,
+  loadIdealWeek, saveIdealWeek,
 } from './api';
 import { cacheGet, cacheSet, cacheDel } from './cache';
 import Skeleton from './Skeleton';
 import PomodoroTimer from './PomodoroTimer';
 import TaskPool from './TaskPool';
+import WorkbookPool from './WorkbookPool';
 import SectionResources from './SectionResources';
-import { DEFAULT_CONFIG, findProject, shadeColor } from './plannerShared';
+import { DEFAULT_CONFIG, findProject, shadeColor, hexToRgba } from './plannerShared';
 import './PlannerView.css';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -179,6 +182,16 @@ export default function PlannerView({
   // { mode: 'edit', idx, x, y } oppure { mode: 'add', startMin, x, y }.
   const [focusPopup, setFocusPopup]         = useState(null);
 
+  // ── Workbook (pianificazione settimanale "a spettro ampio") ──
+  // Stato del tutto parallelo/indipendente da quello dei task/blocchi sopra:
+  // file OneDrive dedicati, proprio debounce di salvataggio — non condivide
+  // nulla con plansRef/saveTimerRef per non rischiare regressioni sul flusso
+  // task già in produzione.
+  const [poolMode, setPoolMode]             = useState('task'); // 'task' | 'workbook'
+  const [workbooks, setWorkbooks]           = useState([]);
+  const [workbookPlans, setWorkbookPlans]   = useState({});
+  const [idealWeek, setIdealWeek]           = useState(null); // { blocks: [] } | null
+
   const timelineBodyRef  = useRef(null);
   const saveTimerRef     = useRef(null);
   const plansRef         = useRef({});
@@ -217,10 +230,20 @@ export default function PlannerView({
   const pomodoroStatsRef = useRef(pomodoroStatsMap);
   pomodoroStatsRef.current = pomodoroStatsMap;
 
+  const workbooksRef           = useRef([]);
+  const workbooksLoadedRef     = useRef(false);
+  const workbookPlansRef       = useRef({});
+  const workbookPlansLoadedRef = useRef(false);
+  const workbookSaveTimerRef   = useRef(null);
+  const idealWeekRef           = useRef(null);
+
   // ── Load config + plans once on open; scroll to now ─────────────────────────
   useEffect(() => {
     if (!open) return;
-    Promise.all([initConfig(), initPlans(), initPomodoroStats(), initCalendarsList()]);
+    Promise.all([
+      initConfig(), initPlans(), initPomodoroStats(), initCalendarsList(),
+      initWorkbooks(), initWorkbookPlans(), initIdealWeek(),
+    ]);
     requestAnimationFrame(() => {
       if (!timelineBodyRef.current) return;
       timelineBodyRef.current.scrollTop = defaultScrollOffset(t2m(configRef.current.workdayStart));
@@ -288,6 +311,69 @@ export default function PlannerView({
       const stats = await loadPomodoroStats();
       setPomodoroStatsMap(stats || {});
     } catch (e) { console.error('pomodoro stats load', e); }
+  }
+
+  async function initWorkbooks() {
+    try {
+      const cached = cacheGet('workbooks');
+      const data = cached || await loadWorkbooks();
+      const list = data?.workbooks || [];
+      setWorkbooks(list);
+      workbooksRef.current = list;
+      workbooksLoadedRef.current = true;
+      if (!cached && data) cacheSet('workbooks', data, 30 * 60 * 1000);
+    } catch (e) { console.error('workbooks load', e); }
+  }
+
+  async function initWorkbookPlans() {
+    try {
+      const cached = cacheGet('workbook_plans');
+      const allPlans = cached || await loadWorkbookPlans() || {};
+      setWorkbookPlans(allPlans);
+      workbookPlansRef.current = allPlans;
+      workbookPlansLoadedRef.current = true;
+      if (!cached) cacheSet('workbook_plans', allPlans, PLANS_CACHE_TTL);
+    } catch (e) { console.error('workbook plans load', e); }
+  }
+
+  async function initIdealWeek() {
+    try {
+      const cached = cacheGet('ideal_week');
+      const template = cached || await loadIdealWeek();
+      setIdealWeek(template);
+      idealWeekRef.current = template;
+      if (!cached && template) cacheSet('ideal_week', template, 30 * 60 * 1000);
+    } catch (e) { console.error('ideal week load', e); }
+  }
+
+  // Albero Workbook/Sub-workbook: azione rara (creazione nodo, cambio
+  // colore) — salvataggio diretto, nessun debounce necessario.
+  function persistWorkbooks(nextList) {
+    setWorkbooks(nextList);
+    workbooksRef.current = nextList;
+    const payload = { workbooks: nextList };
+    cacheSet('workbooks', payload, 30 * 60 * 1000);
+    if (workbooksLoadedRef.current) {
+      saveWorkbooks(payload).catch(e => console.error('save workbooks', e));
+    }
+  }
+
+  // Mutazione dei workbook block su uno o più giorni (drop/resize/move nella
+  // vista Settimana) — mirror di mutatePlansMulti ma su workbookPlansRef,
+  // debounce e file OneDrive del tutto separati da quelli dei task.
+  function mutateWorkbookPlansMulti(updater) {
+    const next = updater(workbookPlansRef.current);
+    if (next === workbookPlansRef.current) return;
+    workbookPlansRef.current = next;
+    setWorkbookPlans(next);
+    clearTimeout(workbookSaveTimerRef.current);
+    workbookSaveTimerRef.current = setTimeout(async () => {
+      if (!workbookPlansLoadedRef.current) return;
+      try {
+        cacheSet('workbook_plans', workbookPlansRef.current, PLANS_CACHE_TTL);
+        await saveWorkbookPlans(workbookPlansRef.current);
+      } catch (e) { console.error('save workbook plans', e); }
+    }, SAVE_DEBOUNCE);
   }
 
   // Calendari esclusi dalla visualizzazione. finché l'utente non tocca il
@@ -580,6 +666,122 @@ export default function PlannerView({
     mutatePlansMulti(all => {
       const dayPlan = all[day] || { date: day, blocks: [], emailExtractedActions: [] };
       return { ...all, [day]: { ...dayPlan, blocks: [...dayPlan.blocks, newBlock] } };
+    });
+  }
+
+  // Blocco workbook — colore/etichetta denormalizzati al momento del drop,
+  // come makeBlock() sopra: non insegue modifiche successive al nodo.
+  function makeWorkbookBlock(workbookId, subWorkbookId, startTime) {
+    const wb    = workbooksRef.current.find(w => w.id === workbookId);
+    const sub   = subWorkbookId ? wb?.subWorkbooks.find(s => s.id === subWorkbookId) : null;
+    const color = sub?.color ?? wb?.color ?? '#888';
+    const label = sub ? `${wb.name} · ${sub.name}` : (wb?.name ?? '?');
+    const endMin = Math.min(t2m(startTime) + DEFAULT_DURATION, DAY_END_MIN);
+    return { id: genId(), workbookId, subWorkbookId, label, color, startTime, endTime: m2t(endMin) };
+  }
+
+  function addWorkbookBlockToDay(workbookId, subWorkbookId, day, startTime) {
+    const newBlock = makeWorkbookBlock(workbookId, subWorkbookId, startTime);
+    mutateWorkbookPlansMulti(all => {
+      const dayPlan = all[day] || { date: day, blocks: [] };
+      return { ...all, [day]: { ...dayPlan, blocks: [...dayPlan.blocks, newBlock] } };
+    });
+  }
+
+  function moveWorkbookBlockBetweenDays(fromDay, blockId, toDay, newStartTime) {
+    mutateWorkbookPlansMulti(all => {
+      const fromPlan = all[fromDay];
+      const block = fromPlan?.blocks.find(b => b.id === blockId);
+      if (!block) return all;
+      const dur      = t2m(block.endTime) - t2m(block.startTime);
+      const startMin = Math.max(DAY_START_MIN, Math.min(t2m(newStartTime), DAY_END_MIN - 30));
+      const moved    = { ...block, startTime: m2t(startMin), endTime: m2t(Math.min(startMin + dur, DAY_END_MIN)) };
+      const next = { ...all };
+      if (fromDay === toDay) {
+        next[fromDay] = { ...fromPlan, blocks: fromPlan.blocks.map(b => b.id === blockId ? moved : b) };
+      } else {
+        next[fromDay] = { ...fromPlan, blocks: fromPlan.blocks.filter(b => b.id !== blockId) };
+        const toPlan  = next[toDay] || { date: toDay, blocks: [] };
+        next[toDay]   = { ...toPlan, blocks: [...toPlan.blocks, moved] };
+      }
+      return next;
+    });
+  }
+
+  function handleRemoveWorkbookBlock(day, blockId) {
+    mutateWorkbookPlansMulti(all => {
+      const dayPlan = all[day];
+      if (!dayPlan) return all;
+      return { ...all, [day]: { ...dayPlan, blocks: dayPlan.blocks.filter(b => b.id !== blockId) } };
+    });
+  }
+
+  // Resize (drag verticale sul bordo inferiore) di un workbook block nella
+  // vista Settimana — non esiste un equivalente per i blocchi task lì (solo
+  // spostamento), quindi è una funzione nuova, non un riuso di handleResizeStart.
+  function handleWorkbookResizeStart(e, block, day) {
+    e.preventDefault();
+    e.stopPropagation();
+    const startY        = e.clientY;
+    const startEndMin   = t2m(block.endTime);
+    const blockStartMin = t2m(block.startTime);
+    function onMove(ev) {
+      const deltaMin  = Math.round((ev.clientY - startY) / SLOT_HEIGHT * 30 / 30) * 30;
+      const newEndMin = Math.max(blockStartMin + 30, Math.min(DAY_END_MIN, startEndMin + deltaMin));
+      mutateWorkbookPlansMulti(all => {
+        const dayPlan = all[day];
+        if (!dayPlan) return all;
+        return { ...all, [day]: { ...dayPlan, blocks: dayPlan.blocks.map(b => b.id === block.id ? { ...b, endTime: m2t(newEndMin) } : b) } };
+      });
+    }
+    function onUp() {
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+    }
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  }
+
+  // Salva i workbook block della settimana visualizzata come template
+  // ricorrente (giorno della settimana 0-6 invece di data assoluta).
+  function saveAsIdealWeek() {
+    const wd = getWeekDays(currentDateRef.current);
+    const blocks = [];
+    wd.forEach((day, dayOfWeek) => {
+      (workbookPlansRef.current[day]?.blocks || []).forEach(b => {
+        blocks.push({
+          id: genId(), workbookId: b.workbookId, subWorkbookId: b.subWorkbookId,
+          label: b.label, color: b.color, startTime: b.startTime, endTime: b.endTime,
+          dayOfWeek,
+        });
+      });
+    });
+    const template = { blocks, updatedAt: new Date().toISOString() };
+    setIdealWeek(template);
+    idealWeekRef.current = template;
+    cacheSet('ideal_week', template, 30 * 60 * 1000);
+    saveIdealWeek(template).catch(e => console.error('save ideal week', e));
+  }
+
+  // Importa il template nella settimana visualizzata per COPIA: nuovi id,
+  // nessun riferimento al template — modificarli qui non lo altera.
+  function importIdealWeek() {
+    const template = idealWeekRef.current;
+    if (!template?.blocks?.length) return;
+    const wd = getWeekDays(currentDateRef.current);
+    mutateWorkbookPlansMulti(all => {
+      const next = { ...all };
+      template.blocks.forEach(tb => {
+        const day = wd[tb.dayOfWeek];
+        if (!day) return; // dayOfWeek fuori range 0-6 (template corrotto) — scarta senza crashare
+        const dayPlan = next[day] || { date: day, blocks: [] };
+        const copy = {
+          id: genId(), workbookId: tb.workbookId, subWorkbookId: tb.subWorkbookId,
+          label: tb.label, color: tb.color, startTime: tb.startTime, endTime: tb.endTime,
+        };
+        next[day] = { ...dayPlan, blocks: [...dayPlan.blocks, copy] };
+      });
+      return next;
     });
   }
 
@@ -1011,6 +1213,16 @@ export default function PlannerView({
               </>
             )}
           </div>
+          {viewMode === 'week' && (
+            <>
+              <button className="planner-action-btn" disabled={locked} onClick={saveAsIdealWeek} title="Salva i workbook di questa settimana come template ricorrente">
+                💾 Settimana ideale
+              </button>
+              <button className="planner-action-btn" disabled={locked || !idealWeek?.blocks?.length} onClick={importIdealWeek} title="Copia i workbook della settimana ideale in questa settimana">
+                📥 Importa ideale
+              </button>
+            </>
+          )}
           <button className="planner-action-btn accent" disabled={locked} onClick={() => openCreateEventModal(currentDate)} title="Nuovo evento calendario">+ Evento</button>
           <button className="planner-close-btn" disabled={locked} onClick={onClose} title={locked ? 'Metti in pausa il Pomodoro per chiudere' : 'Chiudi pianificatore'}>✕</button>
         </div>
@@ -1039,18 +1251,29 @@ export default function PlannerView({
         />
       ) : viewMode === 'week' ? (<>
 
-        {/* ── Task Pool a sx, ridotto — stesso pool della vista Giorno,
-            ridimensionabile e trascinabile sui giorni della settimana. */}
+        {/* ── Task/Workbook Pool a sx, ridotto — stesso pool della vista
+            Giorno, ridimensionabile e trascinabile sui giorni della settimana. */}
         <div className={`planner-pool planner-week-pool${locked ? ' locked' : ''}`} style={{ width: weekPoolWidth }}>
-          <TaskPool
-            title="Task"
-            tasks={preloadedTasks}
-            config={config}
-            notebooks={notebooks}
-            sectionsMap={sectionsMap}
-            scheduledIds={weekScheduledIds}
-            draggable={!locked}
-          />
+          <div className="planner-col-header">
+            <span>Pannello</span>
+            <div className="planner-view-toggle">
+              <button className={poolMode === 'task' ? 'active' : ''} onClick={() => setPoolMode('task')}>Task</button>
+              <button className={poolMode === 'workbook' ? 'active' : ''} onClick={() => setPoolMode('workbook')}>Workbook</button>
+            </div>
+          </div>
+          {poolMode === 'task' ? (
+            <TaskPool
+              title="Task"
+              tasks={preloadedTasks}
+              config={config}
+              notebooks={notebooks}
+              sectionsMap={sectionsMap}
+              scheduledIds={weekScheduledIds}
+              draggable={!locked}
+            />
+          ) : (
+            <WorkbookPool workbooks={workbooks} onChange={persistWorkbooks} draggable={!locked} />
+          )}
         </div>
         <div className="planner-col-resize" onMouseDown={handleWeekPoolResizeStart} title="Ridimensiona" />
 
@@ -1058,6 +1281,7 @@ export default function PlannerView({
           weekDays={weekDays}
           plans={plans}
           calEvents={calEvents}
+          workbookPlans={workbookPlans}
           workdayStartMin={workStart}
           timeSlots={timeSlots}
           locked={locked}
@@ -1067,25 +1291,40 @@ export default function PlannerView({
           onEventClick={openEditEventModal}
           onAddTask={addBlockToDay}
           onCreateEvent={(day, time) => openCreateEventModal(day, time)}
+          onAddWorkbookBlock={addWorkbookBlockToDay}
+          onMoveWorkbookBlock={moveWorkbookBlockBetweenDays}
+          onRemoveWorkbookBlock={handleRemoveWorkbookBlock}
+          onResizeWorkbookBlockStart={handleWorkbookResizeStart}
         />
       </>) : (<>
 
-        {/* ── Column 1: Task Pool ──
+        {/* ── Column 1: Task/Workbook Pool ──
             Durante il blocco Pomodoro resta visibile ma del tutto non
             interagibile: solo il task già aperto nel pannello Dettagli
             si può modificare. */}
         <div className={`planner-pool${mobileTab === 'pool' ? ' mobile-active' : ''}${locked ? ' locked' : ''}`} style={{ width: poolWidth }}>
-          <TaskPool
-            title="Task"
-            tasks={preloadedTasks}
-            config={config}
-            notebooks={notebooks}
-            sectionsMap={sectionsMap}
-            scheduledIds={scheduledIds}
-            selectedTaskId={selectedTask?.id ?? null}
-            draggable={!locked}
-            onTaskClick={locked ? undefined : task => { setSelectedTask(task); setMobileTab('panel'); }}
-          />
+          <div className="planner-col-header">
+            <span>Pannello</span>
+            <div className="planner-view-toggle">
+              <button className={poolMode === 'task' ? 'active' : ''} onClick={() => setPoolMode('task')}>Task</button>
+              <button className={poolMode === 'workbook' ? 'active' : ''} onClick={() => setPoolMode('workbook')}>Workbook</button>
+            </div>
+          </div>
+          {poolMode === 'task' ? (
+            <TaskPool
+              title="Task"
+              tasks={preloadedTasks}
+              config={config}
+              notebooks={notebooks}
+              sectionsMap={sectionsMap}
+              scheduledIds={scheduledIds}
+              selectedTaskId={selectedTask?.id ?? null}
+              draggable={!locked}
+              onTaskClick={locked ? undefined : task => { setSelectedTask(task); setMobileTab('panel'); }}
+            />
+          ) : (
+            <WorkbookPool workbooks={workbooks} onChange={persistWorkbooks} draggable={!locked} />
+          )}
         </div>
 
         <div className="planner-col-resize" onMouseDown={handlePoolResizeStart} title="Ridimensiona" />
@@ -2014,10 +2253,29 @@ function MonthlyCalendar({ currentDate, plans, calEvents, calOutOfRange, onDayCl
 }
 
 // ── WeeklyTimeline ────────────────────────────────────────────────────────────
-function WeeklyTimeline({ weekDays, plans, calEvents, workdayStartMin, timeSlots, locked, suppressClickRef, onDayClick, onMoveBlock, onEventClick, onAddTask, onCreateEvent }) {
+function WeeklyTimeline({
+  weekDays, plans, calEvents, workbookPlans, workdayStartMin, timeSlots, locked, suppressClickRef,
+  onDayClick, onMoveBlock, onEventClick, onAddTask, onCreateEvent,
+  onAddWorkbookBlock, onMoveWorkbookBlock, onRemoveWorkbookBlock, onResizeWorkbookBlockStart,
+}) {
   const today = todayStr();
   const [dragOver, setDragOver] = useState(null); // { day, min }
+  // Mentre un workbook block è in resize disattiva il suo draggable (stesso
+  // accorgimento di resizingId nella vista Giorno, handleResizeStart): senza
+  // di questo il mousedown sulla maniglia di resize può essere interpretato
+  // dal browser come inizio di un drag nativo invece che come resize.
+  const [resizingWbId, setResizingWbId] = useState(null);
   const weekBodyRef = useRef(null);
+
+  function handleWbResizeMouseDown(e, block, day) {
+    setResizingWbId(block.id);
+    onResizeWorkbookBlockStart(e, block, day);
+    function clearResizing() {
+      setResizingWbId(null);
+      document.removeEventListener('mouseup', clearResizing);
+    }
+    document.addEventListener('mouseup', clearResizing);
+  }
 
   // Apre di default sull'orario di lavoro configurato, come la vista Giorno —
   // ma essendo la griglia sempre 00:00–24:00 resta scorrevole con la rotella.
@@ -2048,6 +2306,8 @@ function WeeklyTimeline({ weekDays, plans, calEvents, workdayStartMin, timeSlots
       const data = JSON.parse(e.dataTransfer.getData('text/plain'));
       if (data.type === 'weekblock') onMoveBlock(data.fromDay, data.blockId, day, m2t(min));
       else if (data.type === 'task') onAddTask(data.task, day, m2t(min));
+      else if (data.type === 'workbookblock') onAddWorkbookBlock(data.workbookId, data.subWorkbookId, day, m2t(min));
+      else if (data.type === 'weekworkbookblock') onMoveWorkbookBlock(data.fromDay, data.blockId, day, m2t(min));
     } catch { /* payload drag non valido — ignora */ }
     setDragOver(null);
   }
@@ -2057,7 +2317,7 @@ function WeeklyTimeline({ weekDays, plans, calEvents, workdayStartMin, timeSlots
   function handleColClick(e, day) {
     if (locked) return;
     if (suppressClickRef?.current) { suppressClickRef.current = false; return; }
-    if (e.target.closest('.planner-week-cal-event, .planner-week-task-block')) return;
+    if (e.target.closest('.planner-week-cal-event, .planner-week-task-block, .planner-week-workbook-block')) return;
     onCreateEvent(day, m2t(slotFromEvent(e)));
   }
 
@@ -2097,7 +2357,8 @@ function WeeklyTimeline({ weekDays, plans, calEvents, workdayStartMin, timeSlots
           ))}
         </div>
         {weekDays.map(day => {
-          const dayPlan   = plans[day] || { blocks: [] };
+          const dayPlan         = plans[day] || { blocks: [] };
+          const dayWorkbookPlan = workbookPlans[day] || { blocks: [] };
           const dayEvents = calEvents.filter(ev =>
             !isAllDay(ev) && (ev.start?.dateTime || ev.start?.date || '').slice(0, 10) === day
           );
@@ -2121,6 +2382,35 @@ function WeeklyTimeline({ weekDays, plans, calEvents, workdayStartMin, timeSlots
                   {m2t(dragOver.min)}
                 </div>
               )}
+              {dayWorkbookPlan.blocks.map(wb => {
+                const top    = Math.max(0, (t2m(wb.startTime) - DAY_START_MIN) / 30 * SLOT_HEIGHT);
+                const height = Math.max(SLOT_HEIGHT - 4, (t2m(wb.endTime) - t2m(wb.startTime)) / 30 * SLOT_HEIGHT - 4);
+                return (
+                  <div key={wb.id}
+                    className="planner-week-workbook-block"
+                    style={{ top: top + 2, height, background: hexToRgba(wb.color, 0.28), borderLeftColor: wb.color }}
+                    title={`${wb.startTime}–${wb.endTime} · ${wb.label} (trascina per spostare)`}
+                    draggable={!locked && resizingWbId !== wb.id}
+                    onClick={e => e.stopPropagation()}
+                    onDragStart={e => {
+                      e.stopPropagation();
+                      e.dataTransfer.setData('text/plain', JSON.stringify({ type: 'weekworkbookblock', blockId: wb.id, fromDay: day }));
+                    }}>
+                    <span className="planner-block-title">{wb.label}</span>
+                    {!locked && (
+                      <button
+                        className="planner-week-workbook-block-remove"
+                        onClick={e => { e.stopPropagation(); onRemoveWorkbookBlock(day, wb.id); }}
+                        title="Elimina">×</button>
+                    )}
+                    {!locked && (
+                      <div
+                        className="planner-block-resize"
+                        onMouseDown={e => handleWbResizeMouseDown(e, wb, day)} />
+                    )}
+                  </div>
+                );
+              })}
               {dayEvents.map((ev, i) => {
                 const evStart = isoToHHMM(ev.start?.dateTime || ev.start?.date);
                 const evEnd   = isoToHHMM(ev.end?.dateTime   || ev.end?.date);
