@@ -433,6 +433,42 @@ export async function savePlannerConfig(config) {
   return putDriveJson(OD_PLANNER_CFG_FILE, config);
 }
 
+// ── OneDrive Workbook Files (pianificazione settimanale a spettro ampio) ────
+const OD_WORKBOOKS_FILE      = 'mente-digitale-workbooks.json';
+const OD_WORKBOOK_PLANS_FILE = 'mente-digitale-workbook-plans.json';
+const OD_IDEAL_WEEK_FILE     = 'mente-digitale-ideal-week.json';
+
+export async function loadWorkbooks() {
+  return getDriveJson(OD_WORKBOOKS_FILE, null);
+}
+
+export async function saveWorkbooks(data) {
+  return putDriveJson(OD_WORKBOOKS_FILE, data);
+}
+
+export async function loadWorkbookPlans() {
+  return getDriveJson(OD_WORKBOOK_PLANS_FILE, {});
+}
+
+export async function saveWorkbookPlans(plans) {
+  // Stesso pruning a 90 giorni di saveDailyPlans, per non far crescere il file all'infinito.
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - 90);
+  const pruned = {};
+  for (const [date, plan] of Object.entries(plans)) {
+    if (new Date(date) >= cutoff) pruned[date] = plan;
+  }
+  return putDriveJson(OD_WORKBOOK_PLANS_FILE, pruned);
+}
+
+export async function loadIdealWeek() {
+  return getDriveJson(OD_IDEAL_WEEK_FILE, null);
+}
+
+export async function saveIdealWeek(template) {
+  return putDriveJson(OD_IDEAL_WEEK_FILE, template);
+}
+
 // ── OneDrive Pomodoro Stats ────────────────────────────────────────────────
 const OD_POMODORO_STATS_FILE = 'mente-digitale-pomodoro-stats.json';
 
