@@ -17,9 +17,19 @@
   padding: 10px 20px;
   border-bottom: 1px solid var(--border);
   background: rgba(8,10,14,0.95);
-  backdrop-filter: blur(16px);
   flex-shrink: 0;
   gap: 16px;
+  /* Serve position+z-index espliciti: senza, i blocchi/eventi della griglia
+     sottostante (z-index fino a 11) finiscono comunque "sopra" l'header a
+     parità di stacking level (vince l'ordine nel DOM) e intercettano i click
+     destinati al dropdown "Calendari" — spuntava un checkbox invisibile
+     sopra al popup che apriva "Nuovo evento" invece di spegnere il calendario.
+     (era backdrop-filter: blur(16px) — oltre a impostare uno stacking
+     context "muto" a livello 0, rende l'header containing block per i figli
+     position:fixed, incastrando .planner-cal-filter-backdrop dentro al suo
+     rettangolo invece di coprire tutta la pagina come un vero click-away.) */
+  position: relative;
+  z-index: 20;
 }
 
 .planner-header-left {
@@ -396,22 +406,35 @@
 .workbook-pool-suggestion-row:hover { background: rgba(255,255,255,0.04); }
 .workbook-pool-suggestion-add { display: flex; }
 
-.workbook-color-picker-wrap { position: relative; }
+/* Popup colore — renderizzato in un portale su document.body e posizionato
+   in position:fixed (vedi WorkbookPool.jsx) così non viene mai tagliato
+   dall'overflow-y del pannello Workbook né intrappolato in uno stacking
+   context locale come succedeva con l'assoluto dentro alla riga. */
+.workbook-color-picker-backdrop { position: fixed; inset: 0; z-index: 1499; }
 .workbook-color-picker-popup {
-  position: absolute;
-  top: calc(100% + 4px);
-  left: 0;
-  z-index: 501;
+  position: fixed;
+  z-index: 1500;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  background: var(--surface2);
+  border: 1px solid var(--border2);
+  border-radius: 10px;
+  padding: 12px;
+  box-shadow: 0 12px 34px rgba(0,0,0,0.5);
+  width: 224px;
+  font-family: 'Outfit', sans-serif;
+}
+.workbook-color-picker-preview {
+  height: 34px;
+  border-radius: 7px;
+  border: 1px solid rgba(255,255,255,0.18);
+}
+.workbook-color-picker-swatches {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 6px;
-  background: var(--surface2);
-  border: 1px solid var(--border2);
-  border-radius: 10px;
-  padding: 8px;
-  box-shadow: 0 12px 34px rgba(0,0,0,0.5);
-  width: 148px;
 }
 .workbook-color-swatch {
   width: 18px; height: 18px;
@@ -419,14 +442,70 @@
   border: 1px solid rgba(255,255,255,0.25);
   cursor: pointer;
   padding: 0;
+  flex-shrink: 0;
 }
 .workbook-color-swatch:hover { transform: scale(1.15); }
 .workbook-color-native {
-  width: 24px; height: 24px;
+  width: 22px; height: 22px;
   border: none;
   background: none;
   cursor: pointer;
   padding: 0;
+  flex-shrink: 0;
+}
+.workbook-color-picker-sliders {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.workbook-color-slider-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.workbook-color-slider-label {
+  width: 12px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+}
+.workbook-color-slider-r input[type="range"] { accent-color: #e0685f; }
+.workbook-color-slider-g input[type="range"] { accent-color: #6cbf6c; }
+.workbook-color-slider-b input[type="range"] { accent-color: #5f9fe0; }
+.workbook-color-slider-row input[type="range"] {
+  flex: 1;
+  min-width: 0;
+}
+.workbook-color-slider-num {
+  width: 42px;
+  background: var(--surface);
+  border: 1px solid var(--border2);
+  border-radius: 5px;
+  color: var(--text);
+  font-size: 11px;
+  padding: 2px 4px;
+  text-align: right;
+}
+.workbook-color-picker-hex-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--muted);
+  border-top: 1px solid var(--border);
+  padding-top: 8px;
+}
+.workbook-color-hex-input {
+  flex: 1;
+  background: var(--surface);
+  border: 1px solid var(--border2);
+  border-radius: 5px;
+  color: var(--text);
+  font-size: 12px;
+  font-family: 'Menlo', 'Consolas', monospace;
+  padding: 4px 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
 }
 
 .planner-eis-filter-row,
@@ -1495,6 +1574,78 @@ input[type="time"].planner-modal-select::-webkit-calendar-picker-indicator {
 }
 .planner-week-workbook-block:hover .planner-week-workbook-block-remove { display: flex; }
 .planner-week-workbook-block-remove:hover { background: rgba(0,0,0,0.55); }
+
+/* Nota libera dentro un workbook block — doppio clic sul blocco per
+   crearne una nel punto cliccato, testo multi-riga con a-capo liberi,
+   riposizionabile in verticale trascinando la maniglia ⠿. */
+.planner-block-note {
+  position: absolute;
+  left: 4px;
+  right: 4px;
+  z-index: 12;
+  display: flex;
+  align-items: flex-start;
+  gap: 3px;
+  cursor: default;
+}
+.planner-block-note-drag {
+  flex-shrink: 0;
+  font-size: 10px;
+  line-height: 16px;
+  color: rgba(255,255,255,0.55);
+  cursor: grab;
+  user-select: none;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.planner-block-note:hover .planner-block-note-drag { opacity: 1; }
+.planner-block-note-drag:active { cursor: grabbing; }
+.planner-block-note-text {
+  flex: 1;
+  margin: 0;
+  font-family: 'Outfit', sans-serif;
+  font-size: 10px;
+  line-height: 1.35;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--text);
+  background: rgba(0,0,0,0.28);
+  border-radius: 4px;
+  padding: 2px 5px;
+  cursor: text;
+  min-height: 16px;
+}
+.planner-block-note-remove {
+  flex-shrink: 0;
+  background: rgba(0,0,0,0.35);
+  border: none;
+  color: #fff;
+  width: 14px; height: 14px;
+  border-radius: 50%;
+  font-size: 10px;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.planner-block-note:hover .planner-block-note-remove { opacity: 1; }
+.planner-block-note-remove:hover { background: rgba(0,0,0,0.55); }
+.planner-block-note-input {
+  flex: 1;
+  font-family: 'Outfit', sans-serif;
+  font-size: 10px;
+  line-height: 1.35;
+  color: var(--text);
+  background: rgba(0,0,0,0.42);
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  padding: 2px 5px;
+  resize: vertical;
+  min-height: 32px;
+}
 
 /* Indicatore di drop in vista settimana */
 .planner-week-drop-indicator {

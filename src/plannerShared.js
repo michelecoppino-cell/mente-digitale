@@ -29,6 +29,16 @@ export function hexToRgba(hex, alpha) {
   return `rgba(${r},${g},${b},${alpha})`;
 }
 
+export function hexToRgb(hex) {
+  const num = parseInt((hex || '#888888').replace('#', ''), 16);
+  return { r: (num >> 16) & 0xFF, g: (num >> 8) & 0xFF, b: num & 0xFF };
+}
+
+export function rgbToHex(r, g, b) {
+  const clamp = v => Math.max(0, Math.min(255, Math.round(v) || 0));
+  return `#${[clamp(r), clamp(g), clamp(b)].map(v => v.toString(16).padStart(2, '0')).join('')}`;
+}
+
 export function shadeColor(hex, step) {
   const num = parseInt((hex || '#888888').replace('#', ''), 16);
   const f = 1 - step * 0.1;
