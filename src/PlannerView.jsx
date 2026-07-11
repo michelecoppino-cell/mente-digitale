@@ -39,6 +39,21 @@ function slots(start, end) {
   while (cur < t2m(end)) { out.push(m2t(cur)); cur += 30; }
   return out;
 }
+// Sotto questa durata un blocco resta nel layout orizzontale classico (non
+// c'è spazio per ruotare titolo/orario); oltre, passa al layout verticale
+// (vedi .vertical-layout in PlannerView.css).
+const VERTICAL_LAYOUT_MIN_DURATION = 60; // minuti
+const VERTICAL_TITLE_MIN_FONT      = 7;  // px, limite inferiore di leggibilità
+// Dimensione del font del titolo ruotato: parte dalla dimensione base e la
+// riduce (fino al minimo) quando il titolo è troppo lungo per l'altezza
+// disponibile del blocco. 0.66 è una stima empirica dell'ingombro medio per
+// carattere (maiuscolo, semi-bold, letter-spacing incluso) del font Outfit.
+function verticalTitleFontSize(title, availableHeight, baseFontSize) {
+  const len = (title || '').length || 1;
+  const needed = len * 0.66 * baseFontSize;
+  if (needed <= availableHeight) return baseFontSize;
+  return Math.max(VERTICAL_TITLE_MIN_FONT, availableHeight / (len * 0.66));
+}
 // Graph restituisce il colore del calendario come enum (es. "lightBlue",
 // "auto"), non un hex CSS: mappiamo i preset noti per il pallino colorato.
 const GRAPH_CAL_COLORS = {
@@ -1607,9 +1622,22 @@ export default function PlannerView({
               const top    = Math.max(0, (t2m(wb.startTime) - DAY_START_MIN) / 30 * SLOT_HEIGHT);
               const height = Math.max(SLOT_HEIGHT - 4, (t2m(wb.endTime) - t2m(wb.startTime)) / 30 * SLOT_HEIGHT - 4);
               const wbColor = liveWorkbookColor(wb, workbooks);
+              const isVertical    = (t2m(wb.endTime) - t2m(wb.startTime)) > VERTICAL_LAYOUT_MIN_DURATION;
+              const titleFontSize = isVertical ? verticalTitleFontSize(wb.label, height - 12, 11) : undefined;
+              const notesEls = (wb.notes || []).map(note => (
+                <WorkbookBlockNote
+                  key={note.id}
+                  note={note}
+                  blockHeight={height}
+                  locked={locked}
+                  onChange={text => editWorkbookNoteText(currentDate, wb.id, note.id, text)}
+                  onMove={noteTop => moveWorkbookNote(currentDate, wb.id, note.id, noteTop)}
+                  onRemove={() => removeWorkbookNote(currentDate, wb.id, note.id)}
+                />
+              ));
               return (
                 <div key={wb.id}
-                  className="planner-day-workbook-block"
+                  className={`planner-day-workbook-block${isVertical ? ' vertical-layout' : ''}`}
                   style={{ top: top + 2, height, background: hexToRgba(wbColor, 0.28), borderLeftColor: wbColor }}
                   title={`${wb.startTime}–${wb.endTime} · ${wb.label} (trascina per spostare, doppio clic per una nota)`}
                   draggable={!locked && dayResizingWbId !== wb.id}
@@ -1626,7 +1654,22 @@ export default function PlannerView({
                     const noteTop = Math.max(0, Math.min(height - 22, e.clientY - rect.top));
                     addWorkbookNote(currentDate, wb.id, noteTop);
                   }}>
-                  <span className="planner-block-title">{wb.label}</span>
+                  {isVertical ? (
+                    <>
+                      <div className="planner-block-time-col">
+                        <span className="planner-block-time-label">{wb.startTime}–{wb.endTime}</span>
+                      </div>
+                      <div className="planner-block-mid-col">{notesEls}</div>
+                      <div className="planner-block-title-col">
+                        <span className="planner-block-title" style={{ fontSize: titleFontSize }}>{wb.label}</span>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <span className="planner-block-title">{wb.label}</span>
+                      {notesEls}
+                    </>
+                  )}
                   {!locked && (
                     <button
                       className="planner-week-workbook-block-remove"
@@ -1638,17 +1681,6 @@ export default function PlannerView({
                       className="planner-block-resize"
                       onMouseDown={e => handleDayWorkbookResizeStart(e, wb)} />
                   )}
-                  {(wb.notes || []).map(note => (
-                    <WorkbookBlockNote
-                      key={note.id}
-                      note={note}
-                      blockHeight={height}
-                      locked={locked}
-                      onChange={text => editWorkbookNoteText(currentDate, wb.id, note.id, text)}
-                      onMove={noteTop => moveWorkbookNote(currentDate, wb.id, note.id, noteTop)}
-                      onRemove={() => removeWorkbookNote(currentDate, wb.id, note.id)}
-                    />
-                  ))}
                 </div>
               );
             })}
@@ -1663,15 +1695,31 @@ export default function PlannerView({
               const top    = Math.max(0, (evStartMin - DAY_START_MIN) / 30 * SLOT_HEIGHT);
               const height = Math.max(SLOT_HEIGHT / 2, (Math.min(evEndMin, DAY_END_MIN) - Math.max(evStartMin, DAY_START_MIN)) / 30 * SLOT_HEIGHT);
               const evColor = calendarSwatch(ev._calColor);
+              const isVertical    = (evEndMin - evStartMin) > VERTICAL_LAYOUT_MIN_DURATION;
+              const titleFontSize = isVertical ? verticalTitleFontSize(ev.subject, height - 12, 10) : undefined;
               return (
                 <div
                   key={`cal-${i}`}
-                  className={`planner-cal-event${ev._isShared ? ' shared' : ''}`}
+                  className={`planner-cal-event${ev._isShared ? ' shared' : ''}${isVertical ? ' vertical-layout' : ''}`}
                   style={{ top, height, background: evColor, borderLeftColor: evColor }}
                   onClick={e => { e.stopPropagation(); openEditEventModal(ev); }}
                   title={`${evStart}–${evEnd} · ${ev.subject}${ev._calName ? ` (${ev._calName})` : ''} — clicca per modificare`}>
-                  <span className="planner-event-time">{evStart}–{evEnd}</span>
-                  <span className="planner-event-title">{ev.subject}</span>
+                  {isVertical ? (
+                    <>
+                      <div className="planner-block-time-col">
+                        <span className="planner-block-time-label">{evStart}–{evEnd}</span>
+                      </div>
+                      <div className="planner-block-mid-col" />
+                      <div className="planner-block-title-col">
+                        <span className="planner-event-title" style={{ fontSize: titleFontSize }}>{ev.subject}</span>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <span className="planner-event-time">{evStart}–{evEnd}</span>
+                      <span className="planner-event-title">{ev.subject}</span>
+                    </>
+                  )}
                 </div>
               );
             })}
@@ -1682,10 +1730,58 @@ export default function PlannerView({
               const endMin   = t2m(block.endTime);
               const top      = Math.max(0, (startMin - DAY_START_MIN) / 30 * SLOT_HEIGHT);
               const height   = Math.max(SLOT_HEIGHT - 4, (endMin - startMin) / 30 * SLOT_HEIGHT - 4);
+              const isVertical    = (endMin - startMin) > VERTICAL_LAYOUT_MIN_DURATION;
+              const titleFontSize = isVertical ? verticalTitleFontSize(block.taskTitle, height - 12, 11) : undefined;
+              const checkBtn = (
+                <button
+                  className="planner-block-check"
+                  style={{ color: block.completed ? '#86c07a' : block.projectColor }}
+                  onClick={() => handleCompleteBlock(block.id)}
+                  disabled={locked}
+                  title="Segna come completato">
+                  {block.completed ? '✓' : '○'}
+                </button>
+              );
+              const actionsBtns = (
+                <div className="planner-block-actions">
+                  <button className="planner-block-btn" onClick={() => handleBreakdownTask(block)} disabled={locked} title="Scomponi in sottostep">🔀</button>
+                  <button className="planner-block-btn" onClick={() => handleRemoveBlock(block.id)} disabled={locked} title="Rimuovi">✕</button>
+                </div>
+              );
+              const subStepsOverlay = block.subSteps?.length > 0 ? (() => {
+                const n = block.subSteps.length;
+                const splits = block.subSplits?.length === n - 1
+                  ? block.subSplits
+                  : Array.from({ length: n - 1 }, (_, k) => (k + 1) / n);
+                return (
+                  <div className="planner-substep-overlay">
+                    {block.subSteps.map((s, i) => {
+                      const topFrac = i === 0 ? 0 : splits[i - 1];
+                      const btmFrac = i === n - 1 ? 1 : splits[i];
+                      const subTop    = topFrac * height;
+                      const subHeight = (btmFrac - topFrac) * height;
+                      return (
+                        <div
+                          key={s.id}
+                          className={`planner-substep-zone${s.completed ? ' done' : ''}`}
+                          style={{ top: subTop, height: subHeight }}>
+                          <span className="planner-substep-label">{s.title}</span>
+                          {i < n - 1 && !locked && (
+                            <div
+                              className="planner-substep-divider"
+                              onMouseDown={ev => handleSubSplitResizeStart(ev, block, i, height)}
+                            />
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })() : null;
               return (
                 <Fragment key={block.id}>
                 <div
-                  className={`planner-block${block.completed ? ' completed' : ''}`}
+                  className={`planner-block${block.completed ? ' completed' : ''}${isVertical ? ' vertical-layout' : ''}`}
                   style={{ top: top + 2, height, borderLeftColor: block.projectColor, background: block.projectColor }}
                   draggable={!locked && !block.completed && resizingId !== block.id}
                   onClick={e => {
@@ -1699,55 +1795,39 @@ export default function PlannerView({
                     e.stopPropagation();
                     e.dataTransfer.setData('text/plain', JSON.stringify({ type: 'block', blockId: block.id }));
                   }}>
-                  <div className="planner-block-header">
-                    <button
-                      className="planner-block-check"
-                      style={{ color: block.completed ? '#86c07a' : block.projectColor }}
-                      onClick={() => handleCompleteBlock(block.id)}
-                      disabled={locked}
-                      title="Segna come completato">
-                      {block.completed ? '✓' : '○'}
-                    </button>
-                    <span className="planner-block-title">{block.taskTitle}</span>
-                    <div className="planner-block-actions">
-                      <button className="planner-block-btn" onClick={() => handleBreakdownTask(block)} disabled={locked} title="Scomponi in sottostep">🔀</button>
-                      <button className="planner-block-btn" onClick={() => handleRemoveBlock(block.id)} disabled={locked} title="Rimuovi">✕</button>
-                    </div>
-                  </div>
-                  <div className="planner-block-meta">
-                    <span>{block.startTime}–{block.endTime}</span>
-                    {block.listName && <span>{block.listName}</span>}
-                  </div>
-                  {block.subSteps?.length > 0 && (() => {
-                    const n = block.subSteps.length;
-                    const splits = block.subSplits?.length === n - 1
-                      ? block.subSplits
-                      : Array.from({ length: n - 1 }, (_, k) => (k + 1) / n);
-                    return (
-                      <div className="planner-substep-overlay">
-                        {block.subSteps.map((s, i) => {
-                          const topFrac = i === 0 ? 0 : splits[i - 1];
-                          const btmFrac = i === n - 1 ? 1 : splits[i];
-                          const subTop    = topFrac * height;
-                          const subHeight = (btmFrac - topFrac) * height;
-                          return (
-                            <div
-                              key={s.id}
-                              className={`planner-substep-zone${s.completed ? ' done' : ''}`}
-                              style={{ top: subTop, height: subHeight }}>
-                              <span className="planner-substep-label">{s.title}</span>
-                              {i < n - 1 && !locked && (
-                                <div
-                                  className="planner-substep-divider"
-                                  onMouseDown={ev => handleSubSplitResizeStart(ev, block, i, height)}
-                                />
-                              )}
-                            </div>
-                          );
-                        })}
+                  {isVertical ? (
+                    <>
+                      <div className="planner-block-time-col">
+                        <span className="planner-block-time-label">{block.startTime}–{block.endTime}</span>
                       </div>
-                    );
-                  })()}
+                      <div className="planner-block-mid-col">
+                        <div className="planner-block-header planner-block-header--compact">
+                          {checkBtn}
+                          {actionsBtns}
+                        </div>
+                        {block.listName && (
+                          <div className="planner-block-meta"><span>{block.listName}</span></div>
+                        )}
+                        {subStepsOverlay}
+                      </div>
+                      <div className="planner-block-title-col">
+                        <span className="planner-block-title" style={{ fontSize: titleFontSize }}>{block.taskTitle}</span>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="planner-block-header">
+                        {checkBtn}
+                        <span className="planner-block-title">{block.taskTitle}</span>
+                        {actionsBtns}
+                      </div>
+                      <div className="planner-block-meta">
+                        <span>{block.startTime}–{block.endTime}</span>
+                        {block.listName && <span>{block.listName}</span>}
+                      </div>
+                      {subStepsOverlay}
+                    </>
+                  )}
                   {!block.completed && !locked && (
                     <div className="planner-block-resize" onMouseDown={e => handleResizeStart(e, block)} />
                   )}
@@ -2610,9 +2690,22 @@ function WeeklyTimeline({
                 const top    = Math.max(0, (t2m(wb.startTime) - DAY_START_MIN) / 30 * SLOT_HEIGHT);
                 const height = Math.max(SLOT_HEIGHT - 4, (t2m(wb.endTime) - t2m(wb.startTime)) / 30 * SLOT_HEIGHT - 4);
                 const wbColor = liveWorkbookColor(wb, workbooks);
+                const isVertical    = (t2m(wb.endTime) - t2m(wb.startTime)) > VERTICAL_LAYOUT_MIN_DURATION;
+                const titleFontSize = isVertical ? verticalTitleFontSize(wb.label, height - 12, 10) : undefined;
+                const notesEls = (wb.notes || []).map(note => (
+                  <WorkbookBlockNote
+                    key={note.id}
+                    note={note}
+                    blockHeight={height}
+                    locked={locked}
+                    onChange={text => onEditWorkbookNote(day, wb.id, note.id, text)}
+                    onMove={noteTop => onMoveWorkbookNote(day, wb.id, note.id, noteTop)}
+                    onRemove={() => onRemoveWorkbookNote(day, wb.id, note.id)}
+                  />
+                ));
                 return (
                   <div key={wb.id}
-                    className="planner-week-workbook-block"
+                    className={`planner-week-workbook-block${isVertical ? ' vertical-layout' : ''}`}
                     style={{ top: top + 2, height, background: hexToRgba(wbColor, 0.28), borderLeftColor: wbColor }}
                     title={`${wb.startTime}–${wb.endTime} · ${wb.label} (trascina per spostare, doppio clic per una nota)`}
                     draggable={!locked && resizingWbId !== wb.id}
@@ -2631,7 +2724,22 @@ function WeeklyTimeline({
                       const noteTop = Math.max(0, Math.min(height - 22, e.clientY - rect.top));
                       onAddWorkbookNote(day, wb.id, noteTop);
                     }}>
-                    <span className="planner-block-title">{wb.label}</span>
+                    {isVertical ? (
+                      <>
+                        <div className="planner-block-time-col">
+                          <span className="planner-block-time-label">{wb.startTime}–{wb.endTime}</span>
+                        </div>
+                        <div className="planner-block-mid-col">{notesEls}</div>
+                        <div className="planner-block-title-col">
+                          <span className="planner-block-title" style={{ fontSize: titleFontSize }}>{wb.label}</span>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <span className="planner-block-title">{wb.label}</span>
+                        {notesEls}
+                      </>
+                    )}
                     {!locked && (
                       <button
                         className="planner-week-workbook-block-remove"
@@ -2643,17 +2751,6 @@ function WeeklyTimeline({
                         className="planner-block-resize"
                         onMouseDown={e => handleWbResizeMouseDown(e, wb, day)} />
                     )}
-                    {(wb.notes || []).map(note => (
-                      <WorkbookBlockNote
-                        key={note.id}
-                        note={note}
-                        blockHeight={height}
-                        locked={locked}
-                        onChange={text => onEditWorkbookNote(day, wb.id, note.id, text)}
-                        onMove={noteTop => onMoveWorkbookNote(day, wb.id, note.id, noteTop)}
-                        onRemove={() => onRemoveWorkbookNote(day, wb.id, note.id)}
-                      />
-                    ))}
                   </div>
                 );
               })}
@@ -2664,22 +2761,40 @@ function WeeklyTimeline({
                 const top    = Math.max(0, (t2m(evStart) - DAY_START_MIN) / 30 * SLOT_HEIGHT);
                 const height = Math.max(SLOT_HEIGHT / 2, (t2m(evEnd) - t2m(evStart)) / 30 * SLOT_HEIGHT);
                 const evColor = calendarSwatch(ev._calColor);
+                const isVertical    = (t2m(evEnd) - t2m(evStart)) > VERTICAL_LAYOUT_MIN_DURATION;
+                const titleFontSize = isVertical ? verticalTitleFontSize(ev.subject, height - 12, 10) : undefined;
                 return (
-                  <div key={i} className="planner-week-cal-event"
+                  <div key={i} className={`planner-week-cal-event${isVertical ? ' vertical-layout' : ''}`}
                     style={{ top, height, background: evColor, borderLeftColor: evColor }}
                     onClick={e => { e.stopPropagation(); onEventClick(ev); }}
                     title={`${evStart}–${evEnd} · ${ev.subject} (clicca per modificare)`}>
-                    <span className="planner-event-time">{evStart}</span>
-                    <span className="planner-event-title">{ev.subject}</span>
+                    {isVertical ? (
+                      <>
+                        <div className="planner-block-time-col">
+                          <span className="planner-block-time-label">{evStart}–{evEnd}</span>
+                        </div>
+                        <div className="planner-block-mid-col" />
+                        <div className="planner-block-title-col">
+                          <span className="planner-event-title" style={{ fontSize: titleFontSize }}>{ev.subject}</span>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <span className="planner-event-time">{evStart}</span>
+                        <span className="planner-event-title">{ev.subject}</span>
+                      </>
+                    )}
                   </div>
                 );
               })}
               {dayPlan.blocks.map(block => {
                 const top    = Math.max(0, (t2m(block.startTime) - DAY_START_MIN) / 30 * SLOT_HEIGHT);
                 const height = Math.max(SLOT_HEIGHT - 4, (t2m(block.endTime) - t2m(block.startTime)) / 30 * SLOT_HEIGHT - 4);
+                const isVertical    = (t2m(block.endTime) - t2m(block.startTime)) > VERTICAL_LAYOUT_MIN_DURATION;
+                const titleFontSize = isVertical ? verticalTitleFontSize(block.taskTitle, height - 12, 9) : undefined;
                 return (
                   <div key={block.id}
-                    className={`planner-week-task-block${block.completed ? ' completed' : ''}`}
+                    className={`planner-week-task-block${block.completed ? ' completed' : ''}${isVertical ? ' vertical-layout' : ''}`}
                     style={{ top: top + 2, height, borderLeftColor: block.projectColor, background: block.projectColor }}
                     title={`${block.startTime}–${block.endTime} · ${block.taskTitle} (trascina per spostare)`}
                     draggable={!block.completed}
@@ -2688,7 +2803,19 @@ function WeeklyTimeline({
                       e.stopPropagation();
                       e.dataTransfer.setData('text/plain', JSON.stringify({ type: 'weekblock', blockId: block.id, fromDay: day }));
                     }}>
-                    <span className="planner-block-title">{block.taskTitle}</span>
+                    {isVertical ? (
+                      <>
+                        <div className="planner-block-time-col">
+                          <span className="planner-block-time-label">{block.startTime}–{block.endTime}</span>
+                        </div>
+                        <div className="planner-block-mid-col" />
+                        <div className="planner-block-title-col">
+                          <span className="planner-block-title" style={{ fontSize: titleFontSize }}>{block.taskTitle}</span>
+                        </div>
+                      </>
+                    ) : (
+                      <span className="planner-block-title">{block.taskTitle}</span>
+                    )}
                   </div>
                 );
               })}
