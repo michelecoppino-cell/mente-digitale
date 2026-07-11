@@ -381,6 +381,32 @@
 
 .workbook-color-dot { cursor: pointer; }
 
+.workbook-pool-stats-header {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 8px 4px;
+}
+.workbook-pool-stats-header .workbook-pool-stat-hours,
+.workbook-pool-stats-header .workbook-pool-stat-pct {
+  color: var(--muted);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+.workbook-pool-stats-header::before { content: ''; flex: 1; }
+
+.workbook-pool-stat-hours,
+.workbook-pool-stat-pct {
+  flex-shrink: 0;
+  text-align: right;
+  font-size: 11px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.workbook-pool-stat-hours { width: 38px; }
+.workbook-pool-stat-pct { width: 32px; }
+
 .workbook-pool-icon-btn {
   background: none;
   border: none;

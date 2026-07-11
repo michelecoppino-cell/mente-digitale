@@ -1217,6 +1217,27 @@ export default function PlannerView({
   const weekScheduledIds = new Set();
   for (const day of weekDays) (plans[day]?.blocks || []).forEach(b => weekScheduledIds.add(b.taskId));
 
+  // Statistiche del pannello Workbook (ore + % per categoria): quante ore
+  // sono già piazzate sulla griglia della settimana visualizzata, per
+  // workbook e sub-workbook — bySub tiene solo i blocchi assegnati a un
+  // sub-workbook, byWorkbookDirect quelli assegnati al workbook padre senza
+  // sub, così WorkbookPool può sommare i due per il totale di categoria.
+  const workbookMinuteStats = (() => {
+    const bySub = {};
+    const byWorkbookDirect = {};
+    let totalMin = 0;
+    weekDays.forEach(day => {
+      (workbookPlans[day]?.blocks || []).forEach(b => {
+        const min = t2m(b.endTime) - t2m(b.startTime);
+        if (min <= 0) return;
+        totalMin += min;
+        if (b.subWorkbookId) bySub[b.subWorkbookId] = (bySub[b.subWorkbookId] || 0) + min;
+        else byWorkbookDirect[b.workbookId] = (byWorkbookDirect[b.workbookId] || 0) + min;
+      });
+    });
+    return { bySub, byWorkbookDirect, totalMin };
+  })();
+
   // Map each section/list name → a shade of its notebook color
   const listColorMap = useMemo(() => {
     const map = {};
@@ -1412,7 +1433,7 @@ export default function PlannerView({
               draggable={!locked}
             />
           ) : (
-            <WorkbookPool workbooks={workbooks} onChange={persistWorkbooks} draggable={!locked} notebooks={notebooks} />
+            <WorkbookPool workbooks={workbooks} onChange={persistWorkbooks} draggable={!locked} notebooks={notebooks} stats={workbookMinuteStats} />
           )}
         </div>
         <div className="planner-col-resize" onMouseDown={handleWeekPoolResizeStart} title="Ridimensiona" />
@@ -1469,7 +1490,7 @@ export default function PlannerView({
               onTaskClick={locked ? undefined : task => { setSelectedTask(task); setMobileTab('panel'); }}
             />
           ) : (
-            <WorkbookPool workbooks={workbooks} onChange={persistWorkbooks} draggable={!locked} notebooks={notebooks} />
+            <WorkbookPool workbooks={workbooks} onChange={persistWorkbooks} draggable={!locked} notebooks={notebooks} stats={workbookMinuteStats} />
           )}
         </div>
 

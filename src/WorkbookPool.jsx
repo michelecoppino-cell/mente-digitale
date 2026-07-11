@@ -7,6 +7,15 @@ function genId() {
   return Math.random().toString(36).slice(2) + Date.now().toString(36);
 }
 
+// Formato compatto "3h30" per la colonna Ore — niente decimali per restare
+// leggibile in uno spazio stretto quanto quello del pannello.
+function fmtHours(min) {
+  const m = Math.max(0, Math.round(min));
+  const h = Math.floor(m / 60);
+  const mm = m % 60;
+  return mm === 0 ? `${h}h` : `${h}h${String(mm).padStart(2, '0')}`;
+}
+
 // Pannello sinistro "Workbook" — alternativa a TaskPool nella colonna sinistra
 // del planner. Mostra l'albero Workbook → Sub-workbook (2 livelli) che
 // l'utente compila liberamente (scollegato dai taccuini/sezioni OneNote), ma
@@ -15,7 +24,8 @@ function genId() {
 // ricolorare da zero. L'albero risultante resta comunque un file a parte,
 // trascinabile sulla griglia settimanale per bozzare la settimana a grandi
 // categorie prima di dettagliarla con i task/eventi reali.
-export default function WorkbookPool({ workbooks = [], onChange, draggable = true, notebooks = [] }) {
+export default function WorkbookPool({ workbooks = [], onChange, draggable = true, notebooks = [], stats = null }) {
+  const { bySub = {}, byWorkbookDirect = {}, totalMin = 0 } = stats || {};
   const [expanded, setExpanded]         = useState(() => new Set());
   const [colorPickerFor, setColorPickerFor] = useState(null); // { workbookId, subId: string|null }
   const [addingTop, setAddingTop]       = useState(false);
@@ -164,7 +174,17 @@ export default function WorkbookPool({ workbooks = [], onChange, draggable = tru
         {workbooks.length === 0 && !addingTop && suggestedNotebooks.length === 0 && (
           <div className="planner-cal-filter-empty">Nessun workbook — crea il primo con "+ Workbook"</div>
         )}
-        {workbooks.map(wb => (
+        {workbooks.length > 0 && (
+          <div className="workbook-pool-stats-header">
+            <span className="workbook-pool-stat-hours">Ore</span>
+            <span className="workbook-pool-stat-pct">%</span>
+          </div>
+        )}
+        {workbooks.map(wb => {
+          const subsMin  = wb.subWorkbooks.reduce((sum, sub) => sum + (bySub[sub.id] || 0), 0);
+          const wbMin    = (byWorkbookDirect[wb.id] || 0) + subsMin;
+          const wbPct    = totalMin > 0 ? Math.round((wbMin / totalMin) * 100) : 0;
+          return (
           <div key={wb.id} className="workbook-pool-group">
             <div className="workbook-pool-row">
               <span
@@ -180,6 +200,8 @@ export default function WorkbookPool({ workbooks = [], onChange, draggable = tru
                 title="Trascina sulla griglia · clic per espandere">
                 {wb.subWorkbooks.length > 0 ? (expanded.has(wb.id) ? '▾ ' : '▸ ') : ''}{wb.name}
               </span>
+              <span className="workbook-pool-stat-hours">{wbMin > 0 ? fmtHours(wbMin) : '–'}</span>
+              <span className="workbook-pool-stat-pct">{wbMin > 0 ? `${wbPct}%` : ''}</span>
               <button className="workbook-pool-icon-btn" onClick={() => { setAddingSubFor(wb.id); setDraftName(''); }} title="Nuovo sub-workbook">+</button>
               <button className="workbook-pool-icon-btn" onClick={() => removeNode(wb.id, null)} title="Elimina workbook">×</button>
               {colorPickerFor?.workbookId === wb.id && colorPickerFor?.subId === null && (
@@ -205,7 +227,10 @@ export default function WorkbookPool({ workbooks = [], onChange, draggable = tru
                 onBlur={() => commitAddSub(wb.id)}
               />
             )}
-            {expanded.has(wb.id) && wb.subWorkbooks.map(sub => (
+            {expanded.has(wb.id) && wb.subWorkbooks.map(sub => {
+              const subMin = bySub[sub.id] || 0;
+              const subPct = totalMin > 0 ? Math.round((subMin / totalMin) * 100) : 0;
+              return (
               <div key={sub.id} className="workbook-pool-subrow">
                 <span
                   className="planner-task-dot workbook-color-dot"
@@ -219,6 +244,8 @@ export default function WorkbookPool({ workbooks = [], onChange, draggable = tru
                   title="Trascina sulla griglia">
                   {sub.name}
                 </span>
+                <span className="workbook-pool-stat-hours">{subMin > 0 ? fmtHours(subMin) : '–'}</span>
+                <span className="workbook-pool-stat-pct">{subMin > 0 ? `${subPct}%` : ''}</span>
                 <button className="workbook-pool-icon-btn" onClick={() => removeNode(wb.id, sub.id)} title="Elimina sub-workbook">×</button>
                 {colorPickerFor?.workbookId === wb.id && colorPickerFor?.subId === sub.id && (
                   <ColorPickerPopup
@@ -229,9 +256,11 @@ export default function WorkbookPool({ workbooks = [], onChange, draggable = tru
                   />
                 )}
               </div>
-            ))}
+              );
+            })}
           </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );
