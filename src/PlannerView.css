@@ -2027,6 +2027,7 @@ input[type="time"].planner-modal-select::-webkit-calendar-picker-indicator {
 .planner-month-chip.event {
   background: rgba(126,184,201,0.26);
   color: #b7e0ec;
+  border-left: 3px solid #888;
   cursor: pointer;
   transition: background 0.15s;
 }
