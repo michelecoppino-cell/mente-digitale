@@ -117,6 +117,10 @@ export default function App() {
   const tasksCache = useRef({});
   const [scheduledTasks, setScheduledTasks] = useState(null);
   const [sectionCalendarEvents, setSectionCalendarEvents] = useState([]);
+  // Incrementato ogni volta che un evento calendario viene creato fuori dal
+  // Piano (es. dal popup GTD), per far invalidare a PlannerView la sua cache
+  // bulk altrimenti stale fino al TTL.
+  const [calendarDirtyToken, setCalendarDirtyToken] = useState(0);
   const preloadQueueRef = useRef([]);
   const preloadRunningRef = useRef(false);
   const todoListsRef = useRef([]);
@@ -661,6 +665,7 @@ export default function App() {
           onTaskDueChanged={(listId, taskId, dueDateTime) => handleTaskPatched(listId, taskId, { dueDateTime })}
           onStartFocus={handleStartPomodoroFocus}
           onEndFocus={handleEndPomodoroFocus}
+          calendarDirtyToken={calendarDirtyToken}
         />
         <EisenhowerTriage
           open={eisenhowerOpen}
@@ -686,7 +691,10 @@ export default function App() {
             setScheduledTasks(prev => [...(prev || []), task]);
             if (addToday) { setPendingPlannerTask(task); setPlannerOpen(true); }
           }}
-          onEventCreated={event => setSectionCalendarEvents(prev => [...(prev || []), event])}
+          onEventCreated={event => {
+            setSectionCalendarEvents(prev => [...(prev || []), event]);
+            setCalendarDirtyToken(t => t + 1);
+          }}
         />
         <SearchOverlay
           open={searchOpen}

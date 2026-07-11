@@ -164,7 +164,7 @@ function getWeekDays(dateStr) {
 export default function PlannerView({
   open, onClose, preloadedTasks = [], notebooks = [], sectionsMap = {}, pagesCache = null, autoAddTask = null, onAutoAdded,
   onTaskCompleted, onTaskDeleted, onTaskRenamed, onTaskDueChanged,
-  onStartFocus, onEndFocus,
+  onStartFocus, onEndFocus, calendarDirtyToken = 0,
 }) {
   const [currentDate, setCurrentDate]       = useState(todayStr);
   const [plans, setPlans]                   = useState({});
@@ -282,6 +282,16 @@ export default function PlannerView({
     if (!open) return;
     fetchCalEventsAll();
   }, [open, currentDate, viewMode]); // eslint-disable-line
+
+  // Un evento calendario creato altrove nell'app (es. dal popup GTD) bypassa
+  // questo componente: quando il token cambia, la cache bulk va invalidata e
+  // rifetchata, altrimenti resterebbe silenziosamente stale fino al TTL.
+  const calendarDirtyTokenRef = useRef(calendarDirtyToken);
+  useEffect(() => {
+    if (calendarDirtyToken === calendarDirtyTokenRef.current) return;
+    calendarDirtyTokenRef.current = calendarDirtyToken;
+    refreshCalEvents();
+  }, [calendarDirtyToken]); // eslint-disable-line
 
   // Sync todayPlan when the user navigates to a different date
   useEffect(() => {
