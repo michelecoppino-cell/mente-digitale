@@ -260,20 +260,23 @@ export async function getCalendarEvents(startDate, endDate, top = 50) {
 
   if (!calendars.length) {
     // Fallback: solo calendario default
-    const d = await call(`/me/calendarView?${params}`);
-    return d.value || [];
+    return callPagedValues(`/me/calendarView?${params}`);
   }
 
   const defaultCal = calendars.find(c => c.isDefaultCalendar) || calendars[0];
   const userEmail  = (defaultCal?.owner?.address || '').toLowerCase();
 
-  // Fetch in parallelo da tutti i calendari (max 8)
+  // Fetch in parallelo da tutti i calendari (max 8). calendarView pagina i
+  // risultati anche quando $top chiede di più: senza seguire @odata.nextLink
+  // gli eventi oltre la prima pagina (tipicamente quelli più lontani nel
+  // tempo, essendo l'ordinamento per start/dateTime crescente) sparivano in
+  // silenzio dalla finestra ±3 mesi.
   const results = await Promise.allSettled(
     calendars.slice(0, 8).map(cal =>
-      call(`/me/calendars/${cal.id}/calendarView?${params}`)
-        .then(d => {
+      callPagedValues(`/me/calendars/${cal.id}/calendarView?${params}`)
+        .then(events => {
           const isOwn = !userEmail || (cal.owner?.address || '').toLowerCase() === userEmail;
-          return (d.value || []).map(e => ({
+          return events.map(e => ({
             ...e,
             _calId:     cal.id,
             _calName:   cal.name,
