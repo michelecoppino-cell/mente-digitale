@@ -1631,11 +1631,12 @@ export default function PlannerView({
               const evEndMin   = t2m(evEnd);
               const top    = Math.max(0, (evStartMin - DAY_START_MIN) / 30 * SLOT_HEIGHT);
               const height = Math.max(SLOT_HEIGHT / 2, (Math.min(evEndMin, DAY_END_MIN) - Math.max(evStartMin, DAY_START_MIN)) / 30 * SLOT_HEIGHT);
+              const evColor = calendarSwatch(ev._calColor);
               return (
                 <div
                   key={`cal-${i}`}
                   className={`planner-cal-event${ev._isShared ? ' shared' : ''}`}
-                  style={{ top, height }}
+                  style={{ top, height, background: evColor, borderLeftColor: evColor }}
                   onClick={e => { e.stopPropagation(); openEditEventModal(ev); }}
                   title={`${evStart}–${evEnd} · ${ev.subject}${ev._calName ? ` (${ev._calName})` : ''} — clicca per modificare`}>
                   <span className="planner-event-time">{evStart}–{evEnd}</span>
@@ -2401,6 +2402,7 @@ function MonthlyCalendar({ currentDate, plans, calEvents, calOutOfRange, onDayCl
               kind: 'event',
               title: ev.subject,
               time: isAllDay(ev) ? null : isoToHHMM(ev.start?.dateTime),
+              color: calendarSwatch(ev._calColor),
               ev,
             })),
             ...dayBlocks.map(b => ({
@@ -2630,9 +2632,10 @@ function WeeklyTimeline({
                 if (!evStart || !evEnd) return null;
                 const top    = Math.max(0, (t2m(evStart) - DAY_START_MIN) / 30 * SLOT_HEIGHT);
                 const height = Math.max(SLOT_HEIGHT / 2, (t2m(evEnd) - t2m(evStart)) / 30 * SLOT_HEIGHT);
+                const evColor = calendarSwatch(ev._calColor);
                 return (
                   <div key={i} className="planner-week-cal-event"
-                    style={{ top, height }}
+                    style={{ top, height, background: evColor, borderLeftColor: evColor }}
                     onClick={e => { e.stopPropagation(); onEventClick(ev); }}
                     title={`${evStart}–${evEnd} · ${ev.subject} (clicca per modificare)`}>
                     <span className="planner-event-time">{evStart}</span>
