@@ -1755,6 +1755,77 @@ input[type="time"].planner-modal-select::-webkit-calendar-picker-indicator {
   -webkit-box-orient: vertical;
 }
 
+/* ── Layout verticale per blocchi "alti" (durata > 1h): titolo ruotato 90°
+   a destra (centrato in verticale), range orario ruotato 90° a sinistra,
+   separati dal contenuto centrale (sottostep/note) da una barra verticale.
+   Sotto 1h il blocco resta nel layout orizzontale classico. ── */
+.planner-block.vertical-layout,
+.planner-week-task-block.vertical-layout,
+.planner-day-workbook-block.vertical-layout,
+.planner-week-workbook-block.vertical-layout,
+.planner-cal-event.vertical-layout,
+.planner-week-cal-event.vertical-layout {
+  flex-direction: row;
+  align-items: stretch;
+  padding: 0;
+  gap: 0;
+}
+
+.planner-block-time-col {
+  flex: 0 0 auto;
+  min-width: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px 2px;
+  box-sizing: border-box;
+}
+.planner-block-time-label {
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+  white-space: nowrap;
+  font-size: 9px;
+  color: rgba(255,255,255,0.75);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.planner-block-mid-col {
+  flex: 1;
+  min-width: 0;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.planner-block-header--compact {
+  padding: 4px 5px 0;
+  gap: 4px;
+}
+.planner-block-mid-col .planner-block-meta {
+  padding: 0 5px;
+}
+
+.planner-block-title-col {
+  flex: 0 0 auto;
+  min-width: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px 3px;
+  box-sizing: border-box;
+  border-left: 1px solid rgba(255,255,255,0.28);
+}
+.planner-block-title-col .planner-block-title,
+.planner-block-title-col .planner-event-title {
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+  white-space: nowrap;
+  display: block;
+  -webkit-line-clamp: unset;
+  flex: none;
+}
+
 /* ── Task Detail Panel ── */
 .planner-task-detail { padding: 12px; display: flex; flex-direction: column; gap: 14px; }
 .planner-task-detail-header { position: relative; padding-right: 24px; }
