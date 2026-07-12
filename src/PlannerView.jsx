@@ -685,6 +685,31 @@ export default function PlannerView({
     await refreshCalEvents();
   }
 
+  // Ctrl/Cmd+trascina un evento sulla Timeline (Giorno o Settimana): crea un
+  // nuovo evento Graph con la stessa durata/calendario nel punto di drop,
+  // senza toccare l'originale — a differenza di move/resize non c'è drag
+  // "semplice" sugli eventi, solo questa variante copia innescata dal
+  // modificatore (vedi onDragStart sui blocchi evento).
+  async function copyCalendarEvent(calId, subject, durationMin, toDay, newStartTime) {
+    const startMin = Math.max(DAY_START_MIN, Math.min(t2m(newStartTime), DAY_END_MIN - 30));
+    const endMin   = Math.min(startMin + durationMin, DAY_END_MIN);
+    try {
+      const created = await createCalendarEvent({
+        calendarId: calId, subject,
+        startDate: toDay, endDate: toDay,
+        startTime: m2t(startMin), endTime: m2t(endMin),
+      });
+      pushUndo({
+        label: `Evento "${subject}" duplicato`,
+        undo: async () => {
+          await deleteCalendarEvent(calId, created.id);
+          await refreshCalEvents();
+        },
+      });
+      await refreshCalEvents();
+    } catch (e) { console.error('copy calendar event', e); }
+  }
+
   // ── Save ────────────────────────────────────────────────────────────────────
   function scheduleSave(updatedPlan) {
     setSaveStatus('saving');
@@ -758,6 +783,27 @@ export default function PlannerView({
     });
   }
 
+  // Ctrl/Cmd+trascina un blocco task: duplica invece di spostare — l'originale
+  // resta al suo posto, il duplicato nasce "da zero" (non completato, sotto-step
+  // reimpostati) nel punto di drop, anche su un altro giorno.
+  function copyBlockBetweenDays(fromDay, blockId, toDay, newStartTime) {
+    mutatePlansMulti(all => {
+      const fromPlan = all[fromDay];
+      const block = fromPlan?.blocks.find(b => b.id === blockId);
+      if (!block) return all;
+      const dur      = t2m(block.endTime) - t2m(block.startTime);
+      const startMin = Math.max(DAY_START_MIN, Math.min(t2m(newStartTime), DAY_END_MIN - 30));
+      const copy = {
+        ...block, id: genId(),
+        startTime: m2t(startMin), endTime: m2t(Math.min(startMin + dur, DAY_END_MIN)),
+        completed: false, completedAt: null,
+        subSteps: (block.subSteps || []).map(s => ({ ...s, completed: false })),
+      };
+      const toPlan = all[toDay] || { date: toDay, blocks: [], emailExtractedActions: [] };
+      return { ...all, [toDay]: { ...toPlan, blocks: [...toPlan.blocks, copy] } };
+    });
+  }
+
   // ── DnD ─────────────────────────────────────────────────────────────────────
   function handleTimelineDragOver(e) {
     if (locked) return;
@@ -777,9 +823,16 @@ export default function PlannerView({
     try {
       const data = JSON.parse(e.dataTransfer.getData('text/plain'));
       if (data.type === 'task')   addBlock(data.task, dragOverTime);
-      else if (data.type === 'block') moveBlock(data.blockId, dragOverTime);
+      else if (data.type === 'block') {
+        if (data.copy) copyBlockBetweenDays(currentDate, data.blockId, currentDate, dragOverTime);
+        else moveBlock(data.blockId, dragOverTime);
+      }
       else if (data.type === 'workbookblock') addWorkbookBlockToDay(data.workbookId, data.subWorkbookId, currentDate, dragOverTime);
-      else if (data.type === 'weekworkbookblock') moveWorkbookBlockBetweenDays(data.fromDay, data.blockId, currentDate, dragOverTime);
+      else if (data.type === 'weekworkbookblock') {
+        if (data.copy) copyWorkbookBlockBetweenDays(data.fromDay, data.blockId, currentDate, dragOverTime);
+        else moveWorkbookBlockBetweenDays(data.fromDay, data.blockId, currentDate, dragOverTime);
+      }
+      else if (data.type === 'calevent-copy') copyCalendarEvent(data.calId, data.subject, data.durationMin, currentDate, dragOverTime);
     } catch { /* payload drag non valido — ignora */ }
     setDragOverTime(null);
   }
@@ -862,6 +915,26 @@ export default function PlannerView({
         next[toDay]   = { ...toPlan, blocks: [...toPlan.blocks, moved] };
       }
       return next;
+    });
+  }
+
+  // Ctrl/Cmd+trascina un blocco workbook: duplica invece di spostare, come
+  // copyBlockBetweenDays sopra ma sui piani workbook — le note vengono
+  // copiate con id nuovi per non condividerle con l'originale.
+  function copyWorkbookBlockBetweenDays(fromDay, blockId, toDay, newStartTime) {
+    mutateWorkbookPlansMulti(all => {
+      const fromPlan = all[fromDay];
+      const block = fromPlan?.blocks.find(b => b.id === blockId);
+      if (!block) return all;
+      const dur      = t2m(block.endTime) - t2m(block.startTime);
+      const startMin = Math.max(DAY_START_MIN, Math.min(t2m(newStartTime), DAY_END_MIN - 30));
+      const copy = {
+        ...block, id: genId(),
+        startTime: m2t(startMin), endTime: m2t(Math.min(startMin + dur, DAY_END_MIN)),
+        notes: (block.notes || []).map(n => ({ ...n, id: genId() })),
+      };
+      const toPlan = all[toDay] || { date: toDay, blocks: [] };
+      return { ...all, [toDay]: { ...toPlan, blocks: [...toPlan.blocks, copy] } };
     });
   }
 
@@ -1582,11 +1655,14 @@ export default function PlannerView({
           suppressClickRef={suppressClickRef}
           onDayClick={day => { setCurrentDate(day); setViewMode('day'); }}
           onMoveBlock={moveBlockBetweenDays}
+          onCopyBlock={copyBlockBetweenDays}
           onEventClick={openEditEventModal}
+          onCopyEvent={copyCalendarEvent}
           onAddTask={addBlockToDay}
           onCreateEvent={(day, time) => openCreateEventModal(day, time)}
           onAddWorkbookBlock={addWorkbookBlockToDay}
           onMoveWorkbookBlock={moveWorkbookBlockBetweenDays}
+          onCopyWorkbookBlock={copyWorkbookBlockBetweenDays}
           onRemoveWorkbookBlock={handleRemoveWorkbookBlock}
           onResizeWorkbookBlockStart={handleWorkbookResizeStart}
           onResizeBlockStart={handleWeekBlockResizeStart}
@@ -1756,13 +1832,13 @@ export default function PlannerView({
                 <div key={wb.id}
                   className={`planner-day-workbook-block${isVertical ? ' vertical-layout' : ''}`}
                   style={{ top: top + 2, height, background: hexToRgba(wbColor, 0.28), borderLeftColor: wbColor }}
-                  title={`${wb.startTime}–${wb.endTime} · ${wb.label} (trascina per spostare, doppio clic per una nota)`}
+                  title={`${wb.startTime}–${wb.endTime} · ${wb.label} (trascina per spostare, Ctrl+trascina per duplicare, doppio clic per una nota)`}
                   draggable={!locked && dayResizingWbId !== wb.id}
                   onClick={e => e.stopPropagation()}
                   onDragStart={e => {
                     if (e.target.closest('.planner-block-note')) { e.preventDefault(); return; }
                     e.stopPropagation();
-                    e.dataTransfer.setData('text/plain', JSON.stringify({ type: 'weekworkbookblock', blockId: wb.id, fromDay: currentDate }));
+                    e.dataTransfer.setData('text/plain', JSON.stringify({ type: 'weekworkbookblock', blockId: wb.id, fromDay: currentDate, copy: e.ctrlKey || e.metaKey }));
                   }}
                   onDoubleClick={e => {
                     if (locked || e.target.closest('.planner-block-note')) return;
@@ -1819,8 +1895,20 @@ export default function PlannerView({
                   key={`cal-${i}`}
                   className={`planner-cal-event${ev._isShared ? ' shared' : ''}${isVertical ? ' vertical-layout' : ''}`}
                   style={{ top, height, background: evColor, borderLeftColor: evColor }}
+                  draggable={!locked}
+                  onDragStart={e => {
+                    // L'evento non si sposta trascinando (solo dal modale di
+                    // modifica): senza Ctrl/Cmd annulla il drag nativo, così un
+                    // trascinamento accidentale non fa nulla — il gesto esiste
+                    // solo per la copia.
+                    if (!(e.ctrlKey || e.metaKey)) { e.preventDefault(); return; }
+                    e.stopPropagation();
+                    e.dataTransfer.setData('text/plain', JSON.stringify({
+                      type: 'calevent-copy', calId: ev._calId || null, subject: ev.subject, durationMin: evEndMin - evStartMin,
+                    }));
+                  }}
                   onClick={e => { e.stopPropagation(); openEditEventModal(ev); }}
-                  title={`${evStart}–${evEnd} · ${ev.subject}${ev._calName ? ` (${ev._calName})` : ''} — clicca per modificare`}>
+                  title={`${evStart}–${evEnd} · ${ev.subject}${ev._calName ? ` (${ev._calName})` : ''} — clicca per modificare, Ctrl+trascina per duplicare`}>
                   {isVertical ? (
                     <>
                       <div className="planner-block-label-col">
@@ -1910,7 +1998,7 @@ export default function PlannerView({
                   }}
                   onDragStart={locked ? undefined : e => {
                     e.stopPropagation();
-                    e.dataTransfer.setData('text/plain', JSON.stringify({ type: 'block', blockId: block.id }));
+                    e.dataTransfer.setData('text/plain', JSON.stringify({ type: 'block', blockId: block.id, copy: e.ctrlKey || e.metaKey }));
                   }}>
                   {isVertical ? (
                     <>
@@ -2762,8 +2850,8 @@ function MonthlyCalendar({ currentDate, plans, calEvents, calOutOfRange, onDayCl
 // ── WeeklyTimeline ────────────────────────────────────────────────────────────
 function WeeklyTimeline({
   weekDays, plans, calEvents, workbookPlans, workbooks, workbookCalHidden, workdayStartMin, timeSlots, locked, suppressClickRef,
-  onDayClick, onMoveBlock, onEventClick, onAddTask, onCreateEvent,
-  onAddWorkbookBlock, onMoveWorkbookBlock, onRemoveWorkbookBlock, onResizeWorkbookBlockStart, onResizeBlockStart,
+  onDayClick, onMoveBlock, onCopyBlock, onEventClick, onCopyEvent, onAddTask, onCreateEvent,
+  onAddWorkbookBlock, onMoveWorkbookBlock, onCopyWorkbookBlock, onRemoveWorkbookBlock, onResizeWorkbookBlockStart, onResizeBlockStart,
   onAddWorkbookNote, onEditWorkbookNote, onMoveWorkbookNote, onRemoveWorkbookNote,
 }) {
   const today = todayStr();
@@ -2838,10 +2926,17 @@ function WeeklyTimeline({
     const min = slotFromEvent(e);
     try {
       const data = JSON.parse(e.dataTransfer.getData('text/plain'));
-      if (data.type === 'weekblock') onMoveBlock(data.fromDay, data.blockId, day, m2t(min));
+      if (data.type === 'weekblock') {
+        if (data.copy) onCopyBlock(data.fromDay, data.blockId, day, m2t(min));
+        else onMoveBlock(data.fromDay, data.blockId, day, m2t(min));
+      }
       else if (data.type === 'task') onAddTask(data.task, day, m2t(min));
       else if (data.type === 'workbookblock') onAddWorkbookBlock(data.workbookId, data.subWorkbookId, day, m2t(min));
-      else if (data.type === 'weekworkbookblock') onMoveWorkbookBlock(data.fromDay, data.blockId, day, m2t(min));
+      else if (data.type === 'weekworkbookblock') {
+        if (data.copy) onCopyWorkbookBlock(data.fromDay, data.blockId, day, m2t(min));
+        else onMoveWorkbookBlock(data.fromDay, data.blockId, day, m2t(min));
+      }
+      else if (data.type === 'calevent-copy') onCopyEvent(data.calId, data.subject, data.durationMin, day, m2t(min));
     } catch { /* payload drag non valido — ignora */ }
     setDragOver(null);
   }
@@ -2940,7 +3035,7 @@ function WeeklyTimeline({
                   <div key={wb.id}
                     className={`planner-week-workbook-block${isVertical ? ' vertical-layout' : ''}`}
                     style={{ top: top + 2, height, background: hexToRgba(wbColor, 0.28), borderLeftColor: wbColor }}
-                    title={`${wb.startTime}–${wb.endTime} · ${wb.label} (trascina per spostare, doppio clic per una nota)`}
+                    title={`${wb.startTime}–${wb.endTime} · ${wb.label} (trascina per spostare, Ctrl+trascina per duplicare, doppio clic per una nota)`}
                     draggable={!locked && resizingWbId !== wb.id}
                     onClick={e => e.stopPropagation()}
                     onDragStart={e => {
@@ -2948,7 +3043,7 @@ function WeeklyTimeline({
                       // avviare il drag nativo dell'intero blocco.
                       if (e.target.closest('.planner-block-note')) { e.preventDefault(); return; }
                       e.stopPropagation();
-                      e.dataTransfer.setData('text/plain', JSON.stringify({ type: 'weekworkbookblock', blockId: wb.id, fromDay: day }));
+                      e.dataTransfer.setData('text/plain', JSON.stringify({ type: 'weekworkbookblock', blockId: wb.id, fromDay: day, copy: e.ctrlKey || e.metaKey }));
                     }}
                     onDoubleClick={e => {
                       if (locked || e.target.closest('.planner-block-note')) return;
@@ -2999,8 +3094,16 @@ function WeeklyTimeline({
                 return (
                   <div key={i} className={`planner-week-cal-event${isVertical ? ' vertical-layout' : ''}`}
                     style={{ top, height, background: evColor, borderLeftColor: evColor }}
+                    draggable={!locked}
+                    onDragStart={e => {
+                      if (!(e.ctrlKey || e.metaKey)) { e.preventDefault(); return; }
+                      e.stopPropagation();
+                      e.dataTransfer.setData('text/plain', JSON.stringify({
+                        type: 'calevent-copy', calId: ev._calId || null, subject: ev.subject, durationMin: t2m(evEnd) - t2m(evStart),
+                      }));
+                    }}
                     onClick={e => { e.stopPropagation(); onEventClick(ev); }}
-                    title={`${evStart}–${evEnd} · ${ev.subject} (clicca per modificare)`}>
+                    title={`${evStart}–${evEnd} · ${ev.subject} (clicca per modificare, Ctrl+trascina per duplicare)`}>
                     {isVertical ? (
                       <>
                         <div className="planner-block-label-col">
@@ -3029,12 +3132,12 @@ function WeeklyTimeline({
                   <div key={block.id}
                     className={`planner-week-task-block${block.completed ? ' completed' : ''}${isVertical ? ' vertical-layout' : ''}`}
                     style={{ top: top + 2, height, borderLeftColor: block.projectColor, background: block.projectColor }}
-                    title={`${block.startTime}–${block.endTime} · ${block.taskTitle} (trascina per spostare)`}
+                    title={`${block.startTime}–${block.endTime} · ${block.taskTitle} (trascina per spostare, Ctrl+trascina per duplicare)`}
                     draggable={!block.completed && !locked && resizingId !== block.id}
                     onClick={e => e.stopPropagation()}
                     onDragStart={e => {
                       e.stopPropagation();
-                      e.dataTransfer.setData('text/plain', JSON.stringify({ type: 'weekblock', blockId: block.id, fromDay: day }));
+                      e.dataTransfer.setData('text/plain', JSON.stringify({ type: 'weekblock', blockId: block.id, fromDay: day, copy: e.ctrlKey || e.metaKey }));
                     }}>
                     {isVertical ? (
                       <div className="planner-block-label-col">
