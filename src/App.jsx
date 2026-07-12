@@ -14,6 +14,7 @@ import GtdClarifyModal from './GtdClarifyModal';
 import EisenhowerTriage from './EisenhowerTriage';
 import { parseEisenhower } from './eisenhower';
 import { COLORS } from './config';
+import UndoToast from './UndoToast';
 import './App.css';
 
 const REVIEW_SEEN_TTL = 7 * 24 * 60 * 60 * 1000;      // 7 giorni
@@ -463,6 +464,12 @@ export default function App() {
     updateTasksEverywhere(listId, tasks => tasks.map(t => t.id === taskId ? { ...t, ...patch } : t));
   }
 
+  // Simmetrico a handleTaskRemoved: rimette un task (ricreato da un undo di
+  // eliminazione/completamento) nel pool globale.
+  function handleTaskRestored(listId, task) {
+    updateTasksEverywhere(listId, tasks => [...tasks, task]);
+  }
+
   // Solo per nascondere il FAB GTD durante il focus Pomodoro (stesso angolo
   // del widget del timer): il Piano resta invariato, nessun pannello si apre.
   function handleStartPomodoroFocus() {
@@ -663,6 +670,7 @@ export default function App() {
           onTaskDeleted={handleTaskRemoved}
           onTaskRenamed={(listId, taskId, title) => handleTaskPatched(listId, taskId, { title })}
           onTaskDueChanged={(listId, taskId, dueDateTime) => handleTaskPatched(listId, taskId, { dueDateTime })}
+          onTaskRestored={handleTaskRestored}
           onStartFocus={handleStartPomodoroFocus}
           onEndFocus={handleEndPomodoroFocus}
           calendarDirtyToken={calendarDirtyToken}
@@ -691,8 +699,13 @@ export default function App() {
             setScheduledTasks(prev => [...(prev || []), task]);
             if (addToday) { setPendingPlannerTask(task); setPlannerOpen(true); }
           }}
+          onTaskRemoved={handleTaskRemoved}
           onEventCreated={event => {
             setSectionCalendarEvents(prev => [...(prev || []), event]);
+            setCalendarDirtyToken(t => t + 1);
+          }}
+          onEventRemoved={eventId => {
+            setSectionCalendarEvents(prev => (prev || []).filter(e => e.id !== eventId));
             setCalendarDirtyToken(t => t + 1);
           }}
         />
@@ -707,6 +720,7 @@ export default function App() {
         />
         </>
       )}
+      <UndoToast />
     </div>
   );
 }

@@ -1,7 +1,8 @@
 import { useState, useMemo } from 'react';
-import { createTask, createNotePage, createCalendarEvent } from './api';
+import { createTask, deleteTask, createNotePage, createCalendarEvent, deleteCalendarEvent } from './api';
 import { sectionRole, paraSectionLabel } from './paraConfig';
 import { EIS_QUADRANTS, withEisenhowerMarker } from './eisenhower';
+import { pushUndo } from './undo';
 import './GtdClarifyModal.css';
 
 // Diagramma di flusso GTD "Chiarire" (David Allen), adattato al metodo PARA
@@ -18,7 +19,7 @@ import './GtdClarifyModal.css';
 // (OneNote); azionabile → task (ToDo/Calendario). Ogni foglia apre una
 // finestra pop-up con la scelta della destinazione e la descrizione
 // completa, invece di un modulo inline.
-export default function GtdClarifyModal({ open, onClose, todoLists = [], notebooks = [], sectionsMap = {}, onTaskCreated, onEventCreated, seedText = '' }) {
+export default function GtdClarifyModal({ open, onClose, todoLists = [], notebooks = [], sectionsMap = {}, onTaskCreated, onTaskRemoved, onEventCreated, onEventRemoved, seedText = '' }) {
   const [activeLeaf, setActiveLeaf] = useState(null);
   const [eventLeaf, setEventLeaf] = useState(null);
 
@@ -41,6 +42,11 @@ export default function GtdClarifyModal({ open, onClose, todoLists = [], noteboo
     // Cestino / Farla: nessun task o nota — si registra solo localmente il testo.
   }
 
+  // Nota: la creazione di una pagina OneNote di riferimento non ha undo qui —
+  // rimuoverla in modo pulito richiederebbe invalidare la cache pagine della
+  // sezione in App.jsx, un incrocio di stato non banale per un'azione a basso
+  // rischio (una pagina di riferimento in più si cancella comunque a mano
+  // dal Panel in un secondo).
   async function submitResource(text, { sectionId }) {
     await createNotePage(sectionId, text.slice(0, 60) || 'Idea', text);
   }
@@ -50,6 +56,13 @@ export default function GtdClarifyModal({ open, onClose, todoLists = [], noteboo
     const task = await createTask(listId, text, opts);
     const list = todoLists.find(l => l.id === listId);
     onTaskCreated?.({ ...task, _listId: listId, _listName: list?.displayName || '' }, { addToday: false });
+    pushUndo({
+      label: `Task "${text}" creato`,
+      undo: async () => {
+        await deleteTask(listId, task.id);
+        onTaskRemoved?.(listId, task.id);
+      },
+    });
   }
 
   // Stessa icona per la stessa destinazione PARA in entrambi i rami (cambia
@@ -142,7 +155,7 @@ export default function GtdClarifyModal({ open, onClose, todoLists = [], noteboo
           <GtdLeafPopup leaf={activeLeaf} seedText={seedText} onClose={() => setActiveLeaf(null)} />
         )}
         {eventLeaf && (
-          <GtdEventPopup leaf={eventLeaf} seedText={seedText} onEventCreated={onEventCreated} onClose={() => setEventLeaf(null)} />
+          <GtdEventPopup leaf={eventLeaf} seedText={seedText} onEventCreated={onEventCreated} onEventRemoved={onEventRemoved} onClose={() => setEventLeaf(null)} />
         )}
       </div>
     </div>
@@ -319,7 +332,7 @@ function GtdLeafPopup({ leaf, seedText, onClose }) {
 // task/nota), la seconda si scrive a mano — stessa convenzione letta da
 // deadlineReminders.js/refreshDeadlineReminders in App.jsx, che trasforma
 // l'evento in un task nella lista dell'Area quando il reminder scatta.
-function GtdEventPopup({ leaf, seedText, onEventCreated, onClose }) {
+function GtdEventPopup({ leaf, seedText, onEventCreated, onEventRemoved, onClose }) {
   const options = leaf.kind === 'list' ? leaf.todoLists : leaf.sections;
   const [targetId, setTargetId] = useState(options?.[0]?.id || '');
   const [title, setTitle] = useState(seedText || '');
@@ -358,6 +371,13 @@ function GtdEventPopup({ leaf, seedText, onEventCreated, onClose }) {
         body: notes.trim() || undefined,
       });
       onEventCreated?.(event);
+      pushUndo({
+        label: `Scadenza "${title.trim()}" creata`,
+        undo: async () => {
+          await deleteCalendarEvent(null, event.id);
+          onEventRemoved?.(event.id);
+        },
+      });
       setBusy(false);
       setDone(true);
       setTimeout(onClose, 900);
