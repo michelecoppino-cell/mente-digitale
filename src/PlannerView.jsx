@@ -40,19 +40,28 @@ function slots(start, end) {
   return out;
 }
 // Sotto questa durata un blocco resta nel layout orizzontale classico (non
-// c'è spazio per ruotare titolo/orario); oltre, passa al layout verticale
-// (vedi .vertical-layout in PlannerView.css).
+// c'è spazio per ruotare il titolo); oltre, passa al layout verticale (vedi
+// .vertical-layout in PlannerView.css): etichetta a sx (sezione + titolo
+// ruotati), resto del blocco libero per sottostep/note.
 const VERTICAL_LAYOUT_MIN_DURATION = 60; // minuti
-const VERTICAL_TITLE_MIN_FONT      = 7;  // px, limite inferiore di leggibilità
-// Dimensione del font del titolo ruotato: parte dalla dimensione base e la
-// riduce (fino al minimo) quando il titolo è troppo lungo per l'altezza
-// disponibile del blocco. 0.66 è una stima empirica dell'ingombro medio per
-// carattere (maiuscolo, semi-bold, letter-spacing incluso) del font Outfit.
-function verticalTitleFontSize(title, availableHeight, baseFontSize) {
+const VERTICAL_TITLE_MIN_FONT      = 10; // px, limite inferiore di leggibilità
+const VERTICAL_TITLE_CHAR_FACTOR   = 0.66; // ingombro medio per carattere (stima empirica, Outfit semi-bold)
+// Calcola dimensione del font e numero di righe (1 o 2) del titolo ruotato in
+// verticale: prova prima una riga alla dimensione base, poi due righe alla
+// dimensione base, e solo se non basta riduce il font (fino al minimo) su
+// due righe — così un titolo lungo può andare a capo invece di rimpicciolirsi
+// oltre il leggibile.
+function verticalTitleLayout(title, availableHeight, baseFontSize) {
   const len = (title || '').length || 1;
-  const needed = len * 0.66 * baseFontSize;
-  if (needed <= availableHeight) return baseFontSize;
-  return Math.max(VERTICAL_TITLE_MIN_FONT, availableHeight / (len * 0.66));
+  if (len * VERTICAL_TITLE_CHAR_FACTOR * baseFontSize <= availableHeight) {
+    return { fontSize: baseFontSize, lines: 1 };
+  }
+  const perLine = Math.ceil(len / 2);
+  if (perLine * VERTICAL_TITLE_CHAR_FACTOR * baseFontSize <= availableHeight) {
+    return { fontSize: baseFontSize, lines: 2 };
+  }
+  const fitFontSize = availableHeight / (perLine * VERTICAL_TITLE_CHAR_FACTOR);
+  return { fontSize: Math.max(VERTICAL_TITLE_MIN_FONT, fitFontSize), lines: 2 };
 }
 // Graph restituisce il colore del calendario come enum (es. "lightBlue",
 // "auto"), non un hex CSS: mappiamo i preset noti per il pallino colorato.
@@ -173,6 +182,25 @@ function getWeekDays(dateStr) {
     day.setDate(monday.getDate() + i);
     return localDateStr(day);
   });
+}
+
+// Titolo ruotato (writing-mode verticale) di un blocco "alto" — usato nella
+// colonna etichetta a sx di task/eventi/workbook. `layout` arriva da
+// verticalTitleLayout: su 2 righe passa da nowrap a wrap naturale, limitando
+// la larghezza a due righe di testo verticale.
+function VerticalTitle({ text, layout, className }) {
+  if (!layout) return <span className={className}>{text}</span>;
+  return (
+    <span
+      className={className}
+      style={{
+        fontSize: layout.fontSize,
+        whiteSpace: layout.lines === 2 ? 'normal' : 'nowrap',
+        width: layout.lines === 2 ? Math.ceil(layout.fontSize * 2.6) : undefined,
+      }}>
+      {text}
+    </span>
+  );
 }
 
 // ── Main PlannerView ──────────────────────────────────────────────────────────
@@ -1622,8 +1650,8 @@ export default function PlannerView({
               const top    = Math.max(0, (t2m(wb.startTime) - DAY_START_MIN) / 30 * SLOT_HEIGHT);
               const height = Math.max(SLOT_HEIGHT - 4, (t2m(wb.endTime) - t2m(wb.startTime)) / 30 * SLOT_HEIGHT - 4);
               const wbColor = liveWorkbookColor(wb, workbooks);
-              const isVertical    = (t2m(wb.endTime) - t2m(wb.startTime)) > VERTICAL_LAYOUT_MIN_DURATION;
-              const titleFontSize = isVertical ? verticalTitleFontSize(wb.label, height - 12, 11) : undefined;
+              const isVertical  = (t2m(wb.endTime) - t2m(wb.startTime)) > VERTICAL_LAYOUT_MIN_DURATION;
+              const titleLayout = isVertical ? verticalTitleLayout(wb.label, height - 12, 11) : null;
               const notesEls = (wb.notes || []).map(note => (
                 <WorkbookBlockNote
                   key={note.id}
@@ -1656,13 +1684,12 @@ export default function PlannerView({
                   }}>
                   {isVertical ? (
                     <>
-                      <div className="planner-block-time-col">
-                        <span className="planner-block-time-label">{wb.startTime}–{wb.endTime}</span>
+                      <div className="planner-block-label-col">
+                        <div className="planner-block-label-title-wrap">
+                          <VerticalTitle text={wb.label} layout={titleLayout} className="planner-block-title" />
+                        </div>
                       </div>
-                      <div className="planner-block-mid-col">{notesEls}</div>
-                      <div className="planner-block-title-col">
-                        <span className="planner-block-title" style={{ fontSize: titleFontSize }}>{wb.label}</span>
-                      </div>
+                      <div className="planner-block-content-col">{notesEls}</div>
                     </>
                   ) : (
                     <>
@@ -1695,8 +1722,8 @@ export default function PlannerView({
               const top    = Math.max(0, (evStartMin - DAY_START_MIN) / 30 * SLOT_HEIGHT);
               const height = Math.max(SLOT_HEIGHT / 2, (Math.min(evEndMin, DAY_END_MIN) - Math.max(evStartMin, DAY_START_MIN)) / 30 * SLOT_HEIGHT);
               const evColor = calendarSwatch(ev._calColor);
-              const isVertical    = (evEndMin - evStartMin) > VERTICAL_LAYOUT_MIN_DURATION;
-              const titleFontSize = isVertical ? verticalTitleFontSize(ev.subject, height - 12, 10) : undefined;
+              const isVertical  = (evEndMin - evStartMin) > VERTICAL_LAYOUT_MIN_DURATION;
+              const titleLayout = isVertical ? verticalTitleLayout(ev.subject, height - 12, 10) : null;
               return (
                 <div
                   key={`cal-${i}`}
@@ -1706,13 +1733,12 @@ export default function PlannerView({
                   title={`${evStart}–${evEnd} · ${ev.subject}${ev._calName ? ` (${ev._calName})` : ''} — clicca per modificare`}>
                   {isVertical ? (
                     <>
-                      <div className="planner-block-time-col">
-                        <span className="planner-block-time-label">{evStart}–{evEnd}</span>
+                      <div className="planner-block-label-col">
+                        <div className="planner-block-label-title-wrap">
+                          <VerticalTitle text={ev.subject} layout={titleLayout} className="planner-event-title" />
+                        </div>
                       </div>
-                      <div className="planner-block-mid-col" />
-                      <div className="planner-block-title-col">
-                        <span className="planner-event-title" style={{ fontSize: titleFontSize }}>{ev.subject}</span>
-                      </div>
+                      <div className="planner-block-content-col" />
                     </>
                   ) : (
                     <>
@@ -1730,8 +1756,8 @@ export default function PlannerView({
               const endMin   = t2m(block.endTime);
               const top      = Math.max(0, (startMin - DAY_START_MIN) / 30 * SLOT_HEIGHT);
               const height   = Math.max(SLOT_HEIGHT - 4, (endMin - startMin) / 30 * SLOT_HEIGHT - 4);
-              const isVertical    = (endMin - startMin) > VERTICAL_LAYOUT_MIN_DURATION;
-              const titleFontSize = isVertical ? verticalTitleFontSize(block.taskTitle, height - 12, 11) : undefined;
+              const isVertical  = (endMin - startMin) > VERTICAL_LAYOUT_MIN_DURATION;
+              const titleLayout = isVertical ? verticalTitleLayout(block.taskTitle, height - (block.listName ? 34 : 12), 11) : null;
               const checkBtn = (
                 <button
                   className="planner-block-check"
@@ -1797,21 +1823,18 @@ export default function PlannerView({
                   }}>
                   {isVertical ? (
                     <>
-                      <div className="planner-block-time-col">
-                        <span className="planner-block-time-label">{block.startTime}–{block.endTime}</span>
+                      <div className="planner-block-label-col">
+                        {block.listName && <span className="planner-block-label-section">{block.listName}</span>}
+                        <div className="planner-block-label-title-wrap">
+                          <VerticalTitle text={block.taskTitle} layout={titleLayout} className="planner-block-title" />
+                        </div>
                       </div>
-                      <div className="planner-block-mid-col">
+                      <div className="planner-block-content-col">
                         <div className="planner-block-header planner-block-header--compact">
                           {checkBtn}
                           {actionsBtns}
                         </div>
-                        {block.listName && (
-                          <div className="planner-block-meta"><span>{block.listName}</span></div>
-                        )}
                         {subStepsOverlay}
-                      </div>
-                      <div className="planner-block-title-col">
-                        <span className="planner-block-title" style={{ fontSize: titleFontSize }}>{block.taskTitle}</span>
                       </div>
                     </>
                   ) : (
@@ -2637,6 +2660,7 @@ function WeeklyTimeline({
             {new Date(day + 'T12:00:00').toLocaleDateString('it-IT', { weekday: 'short', day: 'numeric', month: 'short' })}
           </div>
         ))}
+        <div className="planner-week-gutter right" />
       </div>
       {/* All-day events row */}
       <div className="planner-week-allday-row">
@@ -2653,9 +2677,10 @@ function WeeklyTimeline({
             </div>
           );
         })}
+        <div className="planner-week-gutter right" />
       </div>
       <div className="planner-week-body" ref={weekBodyRef}>
-        <div className="planner-week-gutter-col">
+        <div className="planner-week-gutter-col" style={{ height: timeSlots.length * SLOT_HEIGHT }}>
           {timeSlots.map(slot => (
             <div key={slot} className="planner-week-slot-label" style={{ height: SLOT_HEIGHT }}>{slot}</div>
           ))}
@@ -2670,6 +2695,7 @@ function WeeklyTimeline({
             <div
               key={day}
               className={`planner-week-day-col${day === today ? ' today' : ''}`}
+              style={{ height: timeSlots.length * SLOT_HEIGHT }}
               onDragOver={e => handleColDragOver(e, day)}
               onDragLeave={e => {
                 if (!e.currentTarget.contains(e.relatedTarget)) setDragOver(null);
@@ -2690,8 +2716,8 @@ function WeeklyTimeline({
                 const top    = Math.max(0, (t2m(wb.startTime) - DAY_START_MIN) / 30 * SLOT_HEIGHT);
                 const height = Math.max(SLOT_HEIGHT - 4, (t2m(wb.endTime) - t2m(wb.startTime)) / 30 * SLOT_HEIGHT - 4);
                 const wbColor = liveWorkbookColor(wb, workbooks);
-                const isVertical    = (t2m(wb.endTime) - t2m(wb.startTime)) > VERTICAL_LAYOUT_MIN_DURATION;
-                const titleFontSize = isVertical ? verticalTitleFontSize(wb.label, height - 12, 10) : undefined;
+                const isVertical  = (t2m(wb.endTime) - t2m(wb.startTime)) > VERTICAL_LAYOUT_MIN_DURATION;
+                const titleLayout = isVertical ? verticalTitleLayout(wb.label, height - 12, 10) : null;
                 const notesEls = (wb.notes || []).map(note => (
                   <WorkbookBlockNote
                     key={note.id}
@@ -2726,13 +2752,12 @@ function WeeklyTimeline({
                     }}>
                     {isVertical ? (
                       <>
-                        <div className="planner-block-time-col">
-                          <span className="planner-block-time-label">{wb.startTime}–{wb.endTime}</span>
+                        <div className="planner-block-label-col">
+                          <div className="planner-block-label-title-wrap">
+                            <VerticalTitle text={wb.label} layout={titleLayout} className="planner-block-title" />
+                          </div>
                         </div>
-                        <div className="planner-block-mid-col">{notesEls}</div>
-                        <div className="planner-block-title-col">
-                          <span className="planner-block-title" style={{ fontSize: titleFontSize }}>{wb.label}</span>
-                        </div>
+                        <div className="planner-block-content-col">{notesEls}</div>
                       </>
                     ) : (
                       <>
@@ -2761,8 +2786,8 @@ function WeeklyTimeline({
                 const top    = Math.max(0, (t2m(evStart) - DAY_START_MIN) / 30 * SLOT_HEIGHT);
                 const height = Math.max(SLOT_HEIGHT / 2, (t2m(evEnd) - t2m(evStart)) / 30 * SLOT_HEIGHT);
                 const evColor = calendarSwatch(ev._calColor);
-                const isVertical    = (t2m(evEnd) - t2m(evStart)) > VERTICAL_LAYOUT_MIN_DURATION;
-                const titleFontSize = isVertical ? verticalTitleFontSize(ev.subject, height - 12, 10) : undefined;
+                const isVertical  = (t2m(evEnd) - t2m(evStart)) > VERTICAL_LAYOUT_MIN_DURATION;
+                const titleLayout = isVertical ? verticalTitleLayout(ev.subject, height - 12, 10) : null;
                 return (
                   <div key={i} className={`planner-week-cal-event${isVertical ? ' vertical-layout' : ''}`}
                     style={{ top, height, background: evColor, borderLeftColor: evColor }}
@@ -2770,13 +2795,12 @@ function WeeklyTimeline({
                     title={`${evStart}–${evEnd} · ${ev.subject} (clicca per modificare)`}>
                     {isVertical ? (
                       <>
-                        <div className="planner-block-time-col">
-                          <span className="planner-block-time-label">{evStart}–{evEnd}</span>
+                        <div className="planner-block-label-col">
+                          <div className="planner-block-label-title-wrap">
+                            <VerticalTitle text={ev.subject} layout={titleLayout} className="planner-event-title" />
+                          </div>
                         </div>
-                        <div className="planner-block-mid-col" />
-                        <div className="planner-block-title-col">
-                          <span className="planner-event-title" style={{ fontSize: titleFontSize }}>{ev.subject}</span>
-                        </div>
+                        <div className="planner-block-content-col" />
                       </>
                     ) : (
                       <>
@@ -2790,8 +2814,8 @@ function WeeklyTimeline({
               {dayPlan.blocks.map(block => {
                 const top    = Math.max(0, (t2m(block.startTime) - DAY_START_MIN) / 30 * SLOT_HEIGHT);
                 const height = Math.max(SLOT_HEIGHT - 4, (t2m(block.endTime) - t2m(block.startTime)) / 30 * SLOT_HEIGHT - 4);
-                const isVertical    = (t2m(block.endTime) - t2m(block.startTime)) > VERTICAL_LAYOUT_MIN_DURATION;
-                const titleFontSize = isVertical ? verticalTitleFontSize(block.taskTitle, height - 12, 9) : undefined;
+                const isVertical  = (t2m(block.endTime) - t2m(block.startTime)) > VERTICAL_LAYOUT_MIN_DURATION;
+                const titleLayout = isVertical ? verticalTitleLayout(block.taskTitle, height - (block.listName ? 30 : 12), 9) : null;
                 return (
                   <div key={block.id}
                     className={`planner-week-task-block${block.completed ? ' completed' : ''}${isVertical ? ' vertical-layout' : ''}`}
@@ -2804,15 +2828,12 @@ function WeeklyTimeline({
                       e.dataTransfer.setData('text/plain', JSON.stringify({ type: 'weekblock', blockId: block.id, fromDay: day }));
                     }}>
                     {isVertical ? (
-                      <>
-                        <div className="planner-block-time-col">
-                          <span className="planner-block-time-label">{block.startTime}–{block.endTime}</span>
+                      <div className="planner-block-label-col">
+                        {block.listName && <span className="planner-block-label-section">{block.listName}</span>}
+                        <div className="planner-block-label-title-wrap">
+                          <VerticalTitle text={block.taskTitle} layout={titleLayout} className="planner-block-title" />
                         </div>
-                        <div className="planner-block-mid-col" />
-                        <div className="planner-block-title-col">
-                          <span className="planner-block-title" style={{ fontSize: titleFontSize }}>{block.taskTitle}</span>
-                        </div>
-                      </>
+                      </div>
                     ) : (
                       <span className="planner-block-title">{block.taskTitle}</span>
                     )}
@@ -2822,6 +2843,11 @@ function WeeklyTimeline({
             </div>
           );
         })}
+        <div className="planner-week-gutter-col right" style={{ height: timeSlots.length * SLOT_HEIGHT }}>
+          {timeSlots.map(slot => (
+            <div key={slot} className="planner-week-slot-label" style={{ height: SLOT_HEIGHT }}>{slot}</div>
+          ))}
+        </div>
       </div>
     </div>
   );

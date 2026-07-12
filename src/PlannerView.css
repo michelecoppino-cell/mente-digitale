@@ -727,12 +727,12 @@
 .planner-slot {
   display: flex;
   align-items: flex-start;
-  border-bottom: 1px solid rgba(255,255,255,0.04);
+  border-bottom: 1px solid rgba(255,255,255,0.16);
   position: relative;
 }
 .planner-slot.half-hour {
   border-bottom-style: dashed;
-  border-bottom-color: rgba(255,255,255,0.02);
+  border-bottom-color: rgba(255,255,255,0.09);
 }
 .planner-slot.drag-over {
   background: rgba(200,169,110,0.06);
@@ -1517,6 +1517,10 @@ input[type="time"].planner-modal-select::-webkit-calendar-picker-indicator {
   flex-shrink: 0;
   border-right: 1px solid var(--border2);
 }
+.planner-week-gutter.right {
+  border-right: none;
+  border-left: 1px solid var(--border2);
+}
 
 .planner-week-day-header {
   flex: 1;
@@ -1545,6 +1549,10 @@ input[type="time"].planner-modal-select::-webkit-calendar-picker-indicator {
   width: 44px;
   flex-shrink: 0;
   border-right: 1px solid var(--border2);
+}
+.planner-week-gutter-col.right {
+  border-right: none;
+  border-left: 1px solid var(--border2);
 }
 
 .planner-week-slot-label {
@@ -1755,10 +1763,11 @@ input[type="time"].planner-modal-select::-webkit-calendar-picker-indicator {
   -webkit-box-orient: vertical;
 }
 
-/* ── Layout verticale per blocchi "alti" (durata > 1h): titolo ruotato 90°
-   a destra (centrato in verticale), range orario ruotato 90° a sinistra,
-   separati dal contenuto centrale (sottostep/note) da una barra verticale.
-   Sotto 1h il blocco resta nel layout orizzontale classico. ── */
+/* ── Layout verticale per blocchi "alti" (durata > 1h): etichetta a sx (nome
+   sezione in alto + titolo ruotati di 90°, il titolo centrato nello spazio
+   restante in altezza), separata da una barra verticale dal resto del
+   blocco (sottostep/note), libero su tutta la larghezza rimanente. Sotto 1h
+   il blocco resta nel layout orizzontale classico. ── */
 .planner-block.vertical-layout,
 .planner-week-task-block.vertical-layout,
 .planner-day-workbook-block.vertical-layout,
@@ -1771,26 +1780,48 @@ input[type="time"].planner-modal-select::-webkit-calendar-picker-indicator {
   gap: 0;
 }
 
-.planner-block-time-col {
+.planner-block-label-col {
   flex: 0 0 auto;
   min-width: 14px;
   display: flex;
+  flex-direction: column;
   align-items: center;
-  justify-content: center;
-  padding: 6px 2px;
+  padding: 6px 3px;
   box-sizing: border-box;
+  border-right: 1px solid rgba(255,255,255,0.28);
 }
-.planner-block-time-label {
+.planner-block-label-section {
   writing-mode: vertical-rl;
   text-orientation: mixed;
   white-space: nowrap;
+  flex: 0 0 auto;
   font-size: 9px;
-  color: rgba(255,255,255,0.75);
+  color: rgba(255,255,255,0.7);
   text-transform: uppercase;
   letter-spacing: 0.05em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-height: 100%;
+}
+.planner-block-label-title-wrap {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.planner-block-label-col .planner-block-title,
+.planner-block-label-col .planner-event-title {
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+  white-space: nowrap;
+  display: block;
+  -webkit-line-clamp: unset;
+  flex: none;
+  text-align: center;
 }
 
-.planner-block-mid-col {
+.planner-block-content-col {
   flex: 1;
   min-width: 0;
   position: relative;
@@ -1801,29 +1832,6 @@ input[type="time"].planner-modal-select::-webkit-calendar-picker-indicator {
 .planner-block-header--compact {
   padding: 4px 5px 0;
   gap: 4px;
-}
-.planner-block-mid-col .planner-block-meta {
-  padding: 0 5px;
-}
-
-.planner-block-title-col {
-  flex: 0 0 auto;
-  min-width: 14px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 6px 3px;
-  box-sizing: border-box;
-  border-left: 1px solid rgba(255,255,255,0.28);
-}
-.planner-block-title-col .planner-block-title,
-.planner-block-title-col .planner-event-title {
-  writing-mode: vertical-rl;
-  text-orientation: mixed;
-  white-space: nowrap;
-  display: block;
-  -webkit-line-clamp: unset;
-  flex: none;
 }
 
 /* ── Task Detail Panel ── */
