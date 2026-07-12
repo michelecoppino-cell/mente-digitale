@@ -1802,6 +1802,8 @@ input[type="time"].planner-modal-select::-webkit-calendar-picker-indicator {
   transform: rotate(180deg);
   white-space: nowrap;
   flex: 0 0 auto;
+  align-self: stretch;
+  text-align: center;
   font-size: 6.3px;
   color: rgba(255,255,255,0.7);
   text-transform: uppercase;
@@ -1809,9 +1811,9 @@ input[type="time"].planner-modal-select::-webkit-calendar-picker-indicator {
   overflow: hidden;
   text-overflow: ellipsis;
   max-height: 100%;
-  border-top: 1px solid rgba(255,255,255,0.55);
-  padding-top: 5px;
-  margin-top: 5px;
+  border-top: 2px solid rgba(255,255,255,0.6);
+  padding-top: 6px;
+  margin-top: 4px;
 }
 .planner-block-label-title-wrap {
   flex: 1;
@@ -1819,6 +1821,25 @@ input[type="time"].planner-modal-select::-webkit-calendar-picker-indicator {
   display: flex;
   align-items: center;
   justify-content: center;
+}
+/* Durata del blocco, in basso nella colonna etichetta — stessa rotazione del
+   titolo, separata da una linea piena (larga quanto la colonna, non un
+   trattino) come il separatore sopra il nome sezione. */
+.planner-block-label-duration {
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+  transform: rotate(180deg);
+  white-space: nowrap;
+  flex: 0 0 auto;
+  align-self: stretch;
+  text-align: center;
+  font-size: 10px;
+  font-weight: 700;
+  color: rgba(255,255,255,0.92);
+  letter-spacing: 0.03em;
+  border-top: 2px solid rgba(255,255,255,0.6);
+  padding-top: 6px;
+  margin-top: 4px;
 }
 .planner-block-label-col .planner-block-title,
 .planner-block-label-col .planner-event-title {
