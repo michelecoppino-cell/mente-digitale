@@ -1544,10 +1544,10 @@ input[type="time"].planner-modal-select::-webkit-calendar-picker-indicator {
   scrollbar-width: thin;
   scrollbar-color: var(--border2) transparent;
 }
-/* Scrollbar stretta e di larghezza fissa: senza, su Chrome/Edge la
-   scrollbar di default (~15px) sottrae spazio solo alle colonne giorno
-   qui sotto (flex:1) e non all'header sopra (che non scrolla), sfalsando
-   progressivamente le intestazioni dei giorni rispetto alla griglia. */
+/* Scrollbar stretta: puramente estetica. L'allineamento con l'header (che
+   non scrolla e quindi non perde questa larghezza) è garantito a runtime da
+   WeeklyTimeline via JS (scrollbarW), che misura la larghezza reale e la
+   applica come padding-right all'header e alla riga eventi tutto il giorno. */
 .planner-week-body::-webkit-scrollbar { width: 4px; }
 .planner-week-body::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
 
@@ -1809,9 +1809,9 @@ input[type="time"].planner-modal-select::-webkit-calendar-picker-indicator {
   overflow: hidden;
   text-overflow: ellipsis;
   max-height: 100%;
-  border-bottom: 1px solid rgba(255,255,255,0.55);
-  padding-bottom: 5px;
-  margin-bottom: 5px;
+  border-top: 1px solid rgba(255,255,255,0.55);
+  padding-top: 5px;
+  margin-top: 5px;
 }
 .planner-block-label-title-wrap {
   flex: 1;
