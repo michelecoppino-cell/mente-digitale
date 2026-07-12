@@ -139,6 +139,14 @@ function isoToHHMM(iso) {
   const d = new Date(hasTZ ? iso : iso + 'Z');
   return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
 }
+// Stesso "UTC finto" di isoToHHMM ma per la data: il giorno di calendario di
+// un dateTime Graph va calcolato nel fuso locale, non tagliando il prefisso
+// UTC grezzo (che per orari mattutini può risultare nel giorno prima).
+function isoToLocalDateStr(iso) {
+  if (!iso) return null;
+  const hasTZ = /Z$|[+-]\d{2}:\d{2}$/.test(iso);
+  return localDateStr(new Date(hasTZ ? iso : iso + 'Z'));
+}
 function isAllDay(ev) {
   return ev.isAllDay || (!ev.start?.dateTime && !!ev.start?.date);
 }
@@ -427,6 +435,18 @@ export default function PlannerView({
     } catch (e) { console.error('workbook calendar init', e); }
   }
 
+  // Outlook/Graph normalizza spesso un body creato con contentType 'text' in
+  // HTML alla lettura (tag + entity &quot;/&amp;…): senza ripulirlo prima del
+  // parse, il JSON dei metadati risulterebbe illeggibile e i blocchi
+  // perderebbero colore/collegamento al nodo Workbook.
+  function decodeEventMetaContent(raw) {
+    if (!raw) return '{}';
+    let text = raw;
+    if (/<[a-z][\s\S]*>/i.test(text)) text = text.replace(/<[^>]+>/g, ' ');
+    text = text.replace(/&quot;/g, '"').replace(/&amp;/g, '&').replace(/&#39;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>');
+    return text.trim();
+  }
+
   // Converte un evento Graph del calendario Workbook nel blocco usato dal
   // rendering — stessa forma di prima (id, workbookId, subWorkbookId, label,
   // color, startTime, endTime, notes), solo che ora arriva da Graph invece che
@@ -434,11 +454,26 @@ export default function PlannerView({
   // (vedi workbookEventBody), il subject resta l'etichetta leggibile.
   function parseWorkbookEvent(ev) {
     let meta = {};
-    try { meta = JSON.parse(ev.body?.content || '{}'); } catch { meta = {}; }
+    try { meta = JSON.parse(decodeEventMetaContent(ev.body?.content)); } catch { meta = {}; }
+    let workbookId    = meta.workbookId ?? null;
+    let subWorkbookId = meta.subWorkbookId ?? null;
+    // Se il body non è sopravvissuto integro al giro su Graph (o manca del
+    // tutto nella risposta), recupera i riferimenti al nodo dal subject
+    // "Workbook · Sub-workbook" — l'unico campo che Graph non altera mai —
+    // così il colore torna a seguire il nodo live invece di restare grigio.
+    const knownWb = workbookId && workbooksRef.current.find(w => w.id === workbookId);
+    if (!knownWb) {
+      const [wbName, subName] = (ev.subject || '').split(' · ').map(s => s?.trim());
+      const wb = wbName ? workbooksRef.current.find(w => w.name === wbName) : null;
+      if (wb) {
+        workbookId = wb.id;
+        const sub = subName ? wb.subWorkbooks.find(s => s.name === subName) : null;
+        subWorkbookId = sub ? sub.id : null;
+      }
+    }
     return {
       id: ev.id,
-      workbookId: meta.workbookId ?? null,
-      subWorkbookId: meta.subWorkbookId ?? null,
+      workbookId, subWorkbookId,
       label: ev.subject || '',
       color: meta.color || '#888',
       startTime: isoToHHMM(ev.start?.dateTime),
@@ -515,7 +550,14 @@ export default function PlannerView({
 
     const grouped = {};
     allEvs.forEach(ev => {
-      const day = (ev.start?.dateTime || ev.start?.date || '').slice(0, 10);
+      // Il prefisso data di start.dateTime è in UTC (vedi graphDateTime): per
+      // orari mattutini con fuso avanti su UTC (es. Italia +1/+2) tagliare i
+      // primi 10 caratteri può restituire il giorno PRECEDENTE a quello
+      // locale in cui il blocco è stato effettivamente piazzato — lo stesso
+      // trucco "UTC finto" già usato da isoToHHMM per l'ora va applicato
+      // anche qui per il giorno, o un blocco creato la mattina presto
+      // sembrerebbe "spostarsi" al giorno prima al refetch successivo.
+      const day = ev.start?.dateTime ? isoToLocalDateStr(ev.start.dateTime) : (ev.start?.date || '').slice(0, 10);
       if (day < viewStart || day > viewEnd) return;
       const dayPlan = grouped[day] || { date: day, blocks: [] };
       dayPlan.blocks.push(parseWorkbookEvent(ev));
@@ -623,6 +665,16 @@ export default function PlannerView({
     if (!open) return;
     filterCalEvents(allCalEventsRef.current);
   }, [open, config.hiddenCalendarIds, calendarsList]); // eslint-disable-line
+
+  // Rifà il parsing (senza rifetchare) quando l'albero Workbook arriva/cambia:
+  // parseWorkbookEvent risolve workbookId/subWorkbookId dal subject leggendo
+  // workbooksRef, quindi se gli eventi sono già in cache da prima che i nodi
+  // fossero caricati i blocchi restavano col colore di fallback grigio finché
+  // non scattava un refetch — questo li riallinea subito.
+  useEffect(() => {
+    if (!open) return;
+    filterWorkbookEvents(allWorkbookEventsRef.current);
+  }, [open, workbooks]); // eslint-disable-line
 
   // Fetch a 6-month window once; subsequent calls filter from the in-memory/cache ref.
   async function fetchCalEventsAll() {
@@ -1312,6 +1364,30 @@ export default function PlannerView({
     Promise.allSettled(creations).then(() => refreshWorkbookEvents());
   }
 
+  // Elimina TUTTI i blocchi Workbook (eventi reali) della settimana
+  // visualizzata — solo sul calendario dedicato "Workbook", non tocca alcun
+  // altro calendario/evento. Utile per ripartire da zero dopo un test o
+  // prima di reimportare la settimana ideale.
+  function clearWorkbookWeek() {
+    if (!workbookCalIdRef.current) return;
+    const wd = getWeekDays(currentDateRef.current);
+    const ids = wd.flatMap(day => (workbookPlansRef.current[day]?.blocks || []).map(b => b.id));
+    if (!ids.length) return;
+    if (!window.confirm(`Eliminare tutti i ${ids.length} blocchi Workbook di questa settimana? L'azione non è reversibile.`)) return;
+    ids.forEach(id => {
+      clearTimeout(workbookSyncTimersRef.current[id]);
+      delete workbookSyncTimersRef.current[id];
+    });
+    mutateWorkbookPlansLocal(all => {
+      const next = { ...all };
+      wd.forEach(day => { if (next[day]) next[day] = { ...next[day], blocks: [] }; });
+      return next;
+    });
+    Promise.allSettled(ids.map(id => deleteCalendarEvent(workbookCalIdRef.current, id)))
+      .then(() => refreshWorkbookEvents())
+      .catch(e => console.error('clear workbook week', e));
+  }
+
   function moveBlock(blockId, newStartTime) {
     mutatePlan(prev => ({
       ...prev,
@@ -1802,6 +1878,9 @@ export default function PlannerView({
               </button>
               <button className="planner-action-btn" disabled={locked || !idealWeek?.blocks?.length} onClick={importIdealWeek} title="Copia i workbook della settimana ideale in questa settimana">
                 📥 Importa ideale
+              </button>
+              <button className="planner-action-btn danger" disabled={locked || !weekDays.some(d => workbookPlans[d]?.blocks?.length)} onClick={clearWorkbookWeek} title="Elimina tutti i blocchi Workbook (solo calendario Workbook) di questa settimana">
+                🗑️ Svuota Workbook
               </button>
             </>
           )}
