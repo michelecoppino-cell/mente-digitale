@@ -31,6 +31,7 @@ export default function WorkbookPool({ workbooks = [], onChange, draggable = tru
   const [addingTop, setAddingTop]       = useState(false);
   const [addingSubFor, setAddingSubFor] = useState(null); // workbookId
   const [draftName, setDraftName]       = useState('');
+  const [editingFor, setEditingFor]     = useState(null); // { workbookId, subId: string|null }
 
   // Le sottocategorie partono sempre estese e leggibili: ogni workbook viene
   // aggiunto a `expanded` la prima volta che lo si vede (caricamento iniziale
@@ -90,6 +91,24 @@ export default function WorkbookPool({ workbooks = [], onChange, draggable = tru
       return { ...wb, subWorkbooks: [...wb.subWorkbooks, { id: genId(), name, color }] };
     }));
     setExpanded(prev => new Set(prev).add(workbookId));
+  }
+
+  function startRename(workbookId, subId, currentName) {
+    setEditingFor({ workbookId, subId });
+    setDraftName(currentName);
+  }
+
+  function commitRename() {
+    const target = editingFor;
+    const name = draftName.trim();
+    setEditingFor(null);
+    setDraftName('');
+    if (!target || !name) return;
+    onChange(workbooks.map(wb => {
+      if (wb.id !== target.workbookId) return wb;
+      if (!target.subId) return { ...wb, name };
+      return { ...wb, subWorkbooks: wb.subWorkbooks.map(s => s.id === target.subId ? { ...s, name } : s) };
+    }));
   }
 
   function setColor(workbookId, subId, color) {
@@ -192,14 +211,30 @@ export default function WorkbookPool({ workbooks = [], onChange, draggable = tru
                 style={{ background: wb.color }}
                 onClick={e => { e.stopPropagation(); setColorPickerFor({ workbookId: wb.id, subId: null, anchor: e.currentTarget }); }}
                 title="Cambia colore" />
-              <span
-                className="workbook-pool-name"
-                draggable={draggable}
-                onDragStart={e => handleDragStart(e, wb, null)}
-                onClick={() => toggleExpand(wb.id)}
-                title="Trascina sulla griglia · clic per espandere">
-                {wb.subWorkbooks.length > 0 ? (expanded.has(wb.id) ? '▾ ' : '▸ ') : ''}{wb.name}
-              </span>
+              {editingFor?.workbookId === wb.id && editingFor?.subId == null ? (
+                <input
+                  className="workbook-pool-name-input"
+                  autoFocus
+                  value={draftName}
+                  onChange={e => setDraftName(e.target.value)}
+                  onClick={e => e.stopPropagation()}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter') commitRename();
+                    if (e.key === 'Escape') { setEditingFor(null); setDraftName(''); }
+                  }}
+                  onBlur={commitRename}
+                />
+              ) : (
+                <span
+                  className="workbook-pool-name"
+                  draggable={draggable}
+                  onDragStart={e => handleDragStart(e, wb, null)}
+                  onClick={() => toggleExpand(wb.id)}
+                  onDoubleClick={e => { e.stopPropagation(); startRename(wb.id, null, wb.name); }}
+                  title="Trascina sulla griglia · clic per espandere · doppio clic per rinominare">
+                  {wb.subWorkbooks.length > 0 ? (expanded.has(wb.id) ? '▾ ' : '▸ ') : ''}{wb.name}
+                </span>
+              )}
               <span className="workbook-pool-stat-hours">{wbMin > 0 ? fmtHours(wbMin) : '–'}</span>
               <span className="workbook-pool-stat-pct">{wbMin > 0 ? `${wbPct}%` : ''}</span>
               <button className="workbook-pool-icon-btn" onClick={() => { setAddingSubFor(wb.id); setDraftName(''); }} title="Nuovo sub-workbook">+</button>
@@ -237,13 +272,28 @@ export default function WorkbookPool({ workbooks = [], onChange, draggable = tru
                   style={{ background: sub.color }}
                   onClick={e => { e.stopPropagation(); setColorPickerFor({ workbookId: wb.id, subId: sub.id, anchor: e.currentTarget }); }}
                   title="Cambia colore" />
-                <span
-                  className="workbook-pool-name"
-                  draggable={draggable}
-                  onDragStart={e => handleDragStart(e, wb, sub)}
-                  title="Trascina sulla griglia">
-                  {sub.name}
-                </span>
+                {editingFor?.workbookId === wb.id && editingFor?.subId === sub.id ? (
+                  <input
+                    className="workbook-pool-name-input"
+                    autoFocus
+                    value={draftName}
+                    onChange={e => setDraftName(e.target.value)}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter') commitRename();
+                      if (e.key === 'Escape') { setEditingFor(null); setDraftName(''); }
+                    }}
+                    onBlur={commitRename}
+                  />
+                ) : (
+                  <span
+                    className="workbook-pool-name"
+                    draggable={draggable}
+                    onDragStart={e => handleDragStart(e, wb, sub)}
+                    onDoubleClick={e => { e.stopPropagation(); startRename(wb.id, sub.id, sub.name); }}
+                    title="Trascina sulla griglia · doppio clic per rinominare">
+                    {sub.name}
+                  </span>
+                )}
                 <span className="workbook-pool-stat-hours">{subMin > 0 ? fmtHours(subMin) : '–'}</span>
                 <span className="workbook-pool-stat-pct">{subMin > 0 ? `${subPct}%` : ''}</span>
                 <button className="workbook-pool-icon-btn" onClick={() => removeNode(wb.id, sub.id)} title="Elimina sub-workbook">×</button>

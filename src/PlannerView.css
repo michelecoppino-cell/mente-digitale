@@ -379,6 +379,19 @@
 }
 .workbook-pool-name:active { cursor: grabbing; }
 
+.workbook-pool-name-input {
+  flex: 1;
+  min-width: 0;
+  background: var(--surface2);
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  color: var(--text);
+  font-size: 12px;
+  font-family: 'Outfit', sans-serif;
+  padding: 2px 6px;
+  outline: none;
+}
+
 .workbook-color-dot { cursor: pointer; }
 
 .workbook-pool-stats-header {
