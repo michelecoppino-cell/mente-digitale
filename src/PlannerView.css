@@ -1544,6 +1544,12 @@ input[type="time"].planner-modal-select::-webkit-calendar-picker-indicator {
   scrollbar-width: thin;
   scrollbar-color: var(--border2) transparent;
 }
+/* Scrollbar stretta e di larghezza fissa: senza, su Chrome/Edge la
+   scrollbar di default (~15px) sottrae spazio solo alle colonne giorno
+   qui sotto (flex:1) e non all'header sopra (che non scrolla), sfalsando
+   progressivamente le intestazioni dei giorni rispetto alla griglia. */
+.planner-week-body::-webkit-scrollbar { width: 4px; }
+.planner-week-body::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
 
 .planner-week-gutter-col {
   width: 44px;
@@ -1793,15 +1799,19 @@ input[type="time"].planner-modal-select::-webkit-calendar-picker-indicator {
 .planner-block-label-section {
   writing-mode: vertical-rl;
   text-orientation: mixed;
+  transform: rotate(180deg);
   white-space: nowrap;
   flex: 0 0 auto;
-  font-size: 9px;
+  font-size: 6.3px;
   color: rgba(255,255,255,0.7);
   text-transform: uppercase;
   letter-spacing: 0.05em;
   overflow: hidden;
   text-overflow: ellipsis;
   max-height: 100%;
+  border-bottom: 1px solid rgba(255,255,255,0.55);
+  padding-bottom: 5px;
+  margin-bottom: 5px;
 }
 .planner-block-label-title-wrap {
   flex: 1;
@@ -1814,6 +1824,7 @@ input[type="time"].planner-modal-select::-webkit-calendar-picker-indicator {
 .planner-block-label-col .planner-event-title {
   writing-mode: vertical-rl;
   text-orientation: mixed;
+  transform: rotate(180deg);
   white-space: nowrap;
   display: block;
   -webkit-line-clamp: unset;
