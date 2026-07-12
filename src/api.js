@@ -147,6 +147,14 @@ export async function completeTask(listId, taskId) {
   });
 }
 
+// Usata anche per annullare un completamento (status: 'notStarted').
+export async function updateTaskStatus(listId, taskId, status) {
+  return call(`/me/todo/lists/${listId}/tasks/${taskId}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ status })
+  });
+}
+
 export async function createTask(listId, title, opts = {}) {
   const payload = { title };
   if (opts.body) payload.body = { content: opts.body, contentType: 'text' };

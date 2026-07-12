@@ -2,9 +2,9 @@ import { useState, useEffect, useLayoutEffect, useRef, useMemo, Fragment } from 
 import {
   loadDailyPlans, saveDailyPlans,
   loadPlannerConfig, savePlannerConfig,
-  completeTask, getCalendarEvents, getCalendars, updateCalendarColor,
+  completeTask, updateTaskStatus, getCalendarEvents, getCalendars, updateCalendarColor,
   createCalendarEvent, updateCalendarEvent, deleteCalendarEvent, moveCalendarEvent,
-  getTask, updateTaskBody, updateTaskTitle, updateTaskDueDate, deleteTask,
+  getTask, createTask, updateTaskBody, updateTaskTitle, updateTaskDueDate, deleteTask,
   createChecklistItem, updateChecklistItem, renameChecklistItem, deleteChecklistItem,
   reorderChecklistItems, loadPomodoroStats, savePomodoroStats,
   loadWorkbooks, saveWorkbooks, loadWorkbookPlans, saveWorkbookPlans,
@@ -17,6 +17,7 @@ import TaskPool from './TaskPool';
 import WorkbookPool from './WorkbookPool';
 import SectionResources from './SectionResources';
 import { DEFAULT_CONFIG, findProject, shadeColor, hexToRgba } from './plannerShared';
+import { pushUndo } from './undo';
 import './PlannerView.css';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -206,7 +207,7 @@ function VerticalTitle({ text, layout, className }) {
 // ── Main PlannerView ──────────────────────────────────────────────────────────
 export default function PlannerView({
   open, onClose, preloadedTasks = [], notebooks = [], sectionsMap = {}, pagesCache = null, autoAddTask = null, onAutoAdded,
-  onTaskCompleted, onTaskDeleted, onTaskRenamed, onTaskDueChanged,
+  onTaskCompleted, onTaskDeleted, onTaskRenamed, onTaskDueChanged, onTaskRestored,
   onStartFocus, onEndFocus, calendarDirtyToken = 0,
 }) {
   const [currentDate, setCurrentDate]       = useState(todayStr);
@@ -603,14 +604,44 @@ export default function PlannerView({
       const defaultCalId = calendarsList.find(c => c.isDefaultCalendar)?.id || calendarsList[0]?.id || null;
       const originCalId  = ev._calId || defaultCalId;
       const targetCalId  = calendarId || defaultCalId;
+      // Snapshot dei valori precedenti, per poter tornare indietro con l'undo.
+      const prevAllDay    = ev.isAllDay;
+      const prevStartDate = (ev.start?.dateTime || ev.start?.date || '').slice(0, 10);
+      const prevEndDate   = (ev.end?.dateTime || ev.end?.date || '').slice(0, 10);
+      const prevStartTime = prevAllDay ? null : isoToHHMM(ev.start?.dateTime);
+      const prevEndTime   = prevAllDay ? null : isoToHHMM(ev.end?.dateTime);
+      const prevSubject   = ev.subject;
       let targetEventId  = ev.id;
       if (originCalId !== targetCalId) {
         const moved = await moveCalendarEvent(ev._calId || null, ev.id, targetCalId);
         targetEventId = moved?.id || ev.id;
       }
       await updateCalendarEvent(targetCalId, targetEventId, { subject, startDate, endDate, startTime, endTime });
+      pushUndo({
+        label: `Modifica a "${subject}" annullabile`,
+        undo: async () => {
+          let backEventId = targetEventId;
+          if (originCalId !== targetCalId) {
+            const movedBack = await moveCalendarEvent(targetCalId, targetEventId, originCalId);
+            backEventId = movedBack?.id || targetEventId;
+          }
+          await updateCalendarEvent(originCalId, backEventId, {
+            subject: prevSubject, startDate: prevStartDate, endDate: prevEndDate,
+            startTime: prevStartTime, endTime: prevEndTime,
+          });
+          await refreshCalEvents();
+        },
+      });
     } else {
-      await createCalendarEvent({ calendarId, subject, startDate, endDate, startTime, endTime });
+      const created = await createCalendarEvent({ calendarId, subject, startDate, endDate, startTime, endTime });
+      const createdCalId = calendarId || null;
+      pushUndo({
+        label: `Evento "${subject}" creato`,
+        undo: async () => {
+          await deleteCalendarEvent(createdCalId, created.id);
+          await refreshCalEvents();
+        },
+      });
     }
     setCalModal(null);
     await refreshCalEvents();
@@ -619,7 +650,25 @@ export default function PlannerView({
   async function handleDeleteCalEvent() {
     if (calModal?.mode !== 'edit') return;
     const ev = calModal.event;
-    await deleteCalendarEvent(ev._calId, ev.id);
+    const calId = ev._calId;
+    await deleteCalendarEvent(calId, ev.id);
+    pushUndo({
+      label: `Evento "${ev.subject}" eliminato`,
+      undo: async () => {
+        // Graph non offre un "ripristina": ricreiamo un evento nuovo con gli
+        // stessi dati (nuovo ID). Se l'evento aveva partecipanti, l'eventuale
+        // notifica di cancellazione già inviata non viene richiamata indietro.
+        await createCalendarEvent({
+          calendarId: calId,
+          subject: ev.subject,
+          startDate: (ev.start?.dateTime || ev.start?.date || '').slice(0, 10),
+          endDate: (ev.end?.dateTime || ev.end?.date || '').slice(0, 10),
+          startTime: ev.isAllDay ? null : isoToHHMM(ev.start?.dateTime),
+          endTime: ev.isAllDay ? null : isoToHHMM(ev.end?.dateTime),
+        });
+        await refreshCalEvents();
+      },
+    });
     setCalModal(null);
     await refreshCalEvents();
   }
@@ -1918,6 +1967,7 @@ export default function PlannerView({
                 onDeleted={() => { onTaskDeleted?.(selectedTask._listId, selectedTask.id); setSelectedTask(null); }}
                 onRenamed={title => { onTaskRenamed?.(selectedTask._listId, selectedTask.id, title); setSelectedTask(prev => prev && ({ ...prev, title })); }}
                 onDueChanged={dueDateTime => onTaskDueChanged?.(selectedTask._listId, selectedTask.id, dueDateTime)}
+                onRestored={(listId, restoredTask) => onTaskRestored?.(listId, restoredTask)}
               />
             ) : (
               <div className="planner-detail-empty">
@@ -2200,7 +2250,7 @@ function CalendarEventModal({ mode, event, defaultDate, defaultStartTime, defaul
 }
 
 // ── TaskDetailPanel ───────────────────────────────────────────────────────────
-function TaskDetailPanel({ task, notebooks = [], sectionsMap = {}, pagesCache = null, onClose, onCompleted, onDeleted, onRenamed, onDueChanged }) {
+function TaskDetailPanel({ task, notebooks = [], sectionsMap = {}, pagesCache = null, onClose, onCompleted, onDeleted, onRenamed, onDueChanged, onRestored }) {
   const [loading, setLoading]         = useState(true);
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft]   = useState(task.title);
@@ -2250,11 +2300,22 @@ function TaskDetailPanel({ task, notebooks = [], sectionsMap = {}, pagesCache = 
 
   async function handleDueChange(e) {
     const val = e.target.value;
+    const prevVal = dueDraft;
     setDueDraft(val);
     setSavingDue(true);
     try {
       await updateTaskDueDate(task._listId, task.id, val || null);
       onDueChanged?.(val ? { dateTime: val, timeZone: 'UTC' } : null);
+      if (prevVal !== val) {
+        pushUndo({
+          label: 'Scadenza task modificata',
+          undo: async () => {
+            await updateTaskDueDate(task._listId, task.id, prevVal || null);
+            onDueChanged?.(prevVal ? { dateTime: prevVal, timeZone: 'UTC' } : null);
+            setDueDraft(prevVal);
+          },
+        });
+      }
     } catch (err) { console.error('save due date', err); }
     setSavingDue(false);
   }
@@ -2284,8 +2345,16 @@ function TaskDetailPanel({ task, notebooks = [], sectionsMap = {}, pagesCache = 
   async function handleToggle(item) {
     const checked = !item.isChecked;
     setItems(prev => prev.map(i => i.id === item.id ? { ...i, isChecked: checked } : i));
-    try { await updateChecklistItem(task._listId, task.id, item.id, checked); }
-    catch (e) {
+    try {
+      await updateChecklistItem(task._listId, task.id, item.id, checked);
+      pushUndo({
+        label: `"${item.displayName}" ${checked ? 'spuntata' : 'da fare'}`,
+        undo: async () => {
+          await updateChecklistItem(task._listId, task.id, item.id, !checked);
+          setItems(prev => prev.map(i => i.id === item.id ? { ...i, isChecked: !checked } : i));
+        },
+      });
+    } catch (e) {
       setItems(prev => prev.map(i => i.id === item.id ? { ...i, isChecked: !checked } : i));
       flashItemError('spunta checklist', e);
     }
@@ -2294,8 +2363,19 @@ function TaskDetailPanel({ task, notebooks = [], sectionsMap = {}, pagesCache = 
   async function handleDelete(itemId) {
     const removed = items.find(i => i.id === itemId);
     setItems(prev => prev.filter(i => i.id !== itemId));
-    try { await deleteChecklistItem(task._listId, task.id, itemId); }
-    catch (e) {
+    try {
+      await deleteChecklistItem(task._listId, task.id, itemId);
+      if (removed) {
+        pushUndo({
+          label: `Voce "${removed.displayName}" eliminata`,
+          undo: async () => {
+            const created = await createChecklistItem(task._listId, task.id, removed.displayName);
+            if (removed.isChecked) await updateChecklistItem(task._listId, task.id, created.id, true);
+            setItems(prev => [...prev, { ...created, isChecked: !!removed.isChecked }]);
+          },
+        });
+      }
+    } catch (e) {
       if (removed) setItems(prev => [...prev, removed]);
       flashItemError('eliminazione voce', e);
     }
@@ -2311,6 +2391,13 @@ function TaskDetailPanel({ task, notebooks = [], sectionsMap = {}, pagesCache = 
     try {
       const created = await createChecklistItem(task._listId, task.id, text);
       setItems(prev => prev.map(i => i.id === tmp.id ? created : i));
+      pushUndo({
+        label: `Voce "${text}" aggiunta`,
+        undo: async () => {
+          await deleteChecklistItem(task._listId, task.id, created.id);
+          setItems(prev => prev.filter(i => i.id !== created.id));
+        },
+      });
     } catch (err) {
       setItems(prev => prev.filter(i => i.id !== tmp.id));
       setNewItemText(text);
@@ -2328,9 +2415,17 @@ function TaskDetailPanel({ task, notebooks = [], sectionsMap = {}, pagesCache = 
     setEditingItemId(null);
     const text = itemDraft.trim();
     if (!item || !text || text === item.displayName) return;
+    const prevName = item.displayName;
     setItems(prev => prev.map(i => i.id === item.id ? { ...i, displayName: text } : i));
     try {
       await renameChecklistItem(task._listId, task.id, item.id, text);
+      pushUndo({
+        label: `Voce rinominata in "${text}"`,
+        undo: async () => {
+          await renameChecklistItem(task._listId, task.id, item.id, prevName);
+          setItems(prev => prev.map(i => i.id === item.id ? { ...i, displayName: prevName } : i));
+        },
+      });
     } catch (e) {
       console.error('rename checklist item', e);
       setItems(prev => prev.map(i => i.id === item.id ? { ...i, displayName: item.displayName } : i));
@@ -2371,11 +2466,22 @@ function TaskDetailPanel({ task, notebooks = [], sectionsMap = {}, pagesCache = 
 
   function submitRename() {
     const title = titleDraft.trim();
+    const prevTitle = task.title;
     setEditingTitle(false);
     if (!title || title === task.title) { setTitleDraft(task.title); return; }
     setTitleDraft(title);
     updateTaskTitle(task._listId, task.id, title)
-      .then(() => onRenamed?.(title))
+      .then(() => {
+        onRenamed?.(title);
+        pushUndo({
+          label: `Task rinominato in "${title}"`,
+          undo: async () => {
+            await updateTaskTitle(task._listId, task.id, prevTitle);
+            onRenamed?.(prevTitle);
+            setTitleDraft(prevTitle);
+          },
+        });
+      })
       .catch(e => { console.error('rename task', e); setTitleDraft(task.title); });
   }
 
@@ -2383,17 +2489,49 @@ function TaskDetailPanel({ task, notebooks = [], sectionsMap = {}, pagesCache = 
     setWorking(true);
     try {
       await completeTask(task._listId, task.id);
+      const snapshot = { ...task };
       onCompleted?.();
+      pushUndo({
+        label: `Task "${task.title}" completato`,
+        undo: async () => {
+          await updateTaskStatus(task._listId, task.id, 'notStarted');
+          onRestored?.(task._listId, snapshot);
+        },
+      });
     } catch (e) { console.error('complete task', e); }
     setWorking(false);
   }
 
   async function handleDeleteTask() {
-    if (!window.confirm(`Eliminare definitivamente il task "${task.title}"? L'operazione non è reversibile.`)) return;
+    if (!window.confirm(`Eliminare il task "${task.title}"? Potrai annullare subito dopo con Ctrl+Z.`)) return;
     setWorking(true);
+    // Snapshot completo (titolo, scadenza, note, checklist) per poter
+    // ricreare il task in caso di undo — Graph non offre un "ripristina".
+    const snapshot = {
+      title: task.title,
+      listId: task._listId,
+      listName: task._listName,
+      dueDate: dueDraft || null,
+      body: notes || '',
+      items: items.map(i => ({ displayName: i.displayName, isChecked: !!i.isChecked })),
+    };
     try {
       await deleteTask(task._listId, task.id);
       onDeleted?.();
+      pushUndo({
+        label: `Task "${snapshot.title}" eliminato`,
+        undo: async () => {
+          const created = await createTask(snapshot.listId, snapshot.title, {
+            body: snapshot.body || undefined,
+            dueDate: snapshot.dueDate || undefined,
+          });
+          for (const it of snapshot.items) {
+            const ci = await createChecklistItem(snapshot.listId, created.id, it.displayName);
+            if (it.isChecked) await updateChecklistItem(snapshot.listId, created.id, ci.id, true);
+          }
+          onRestored?.(snapshot.listId, { ...created, _listId: snapshot.listId, _listName: snapshot.listName });
+        },
+      });
     } catch (e) { console.error('delete task', e); }
     setWorking(false);
   }
