@@ -46,6 +46,10 @@ function slots(start, end) {
 // ruotati), resto del blocco libero per sottostep/note.
 const VERTICAL_LAYOUT_MIN_DURATION = 60; // minuti
 const VERTICAL_TITLE_MIN_FONT      = 10; // px, limite inferiore di leggibilità
+// Spazio riservato in basso nella colonna etichetta per l'etichetta di durata
+// (linea di separazione + testo ruotato) — va sottratto all'altezza
+// disponibile per il titolo, come già si fa per il nome sezione in alto.
+const VERTICAL_DURATION_RESERVE_PX = 24;
 const VERTICAL_TITLE_CHAR_FACTOR   = 0.66; // ingombro medio per carattere (stima empirica, Outfit semi-bold)
 // Calcola dimensione del font e numero di righe (1 o 2) del titolo ruotato in
 // verticale: prova prima una riga alla dimensione base, poi due righe alla
@@ -141,6 +145,14 @@ function isAllDay(ev) {
 function fmtFocusTotal(min) {
   const m = Math.max(0, Math.round(min || 0));
   return `${Math.floor(m / 60)}:${String(m % 60).padStart(2, '0')}`;
+}
+// Durata di un blocco/evento in layout verticale, mostrata in basso nella
+// colonna etichetta — formato compatto "2h" oppure "2h30" senza minuti a zero.
+function fmtBlockDuration(min) {
+  const m = Math.max(0, Math.round(min || 0));
+  const h = Math.floor(m / 60);
+  const rest = m % 60;
+  return rest === 0 ? `${h}h` : `${h}h${String(rest).padStart(2, '0')}`;
 }
 const SESSION_TYPE_LABELS = {
   focus: 'concentrato',
@@ -1728,7 +1740,7 @@ export default function PlannerView({
               const height = Math.max(SLOT_HEIGHT - 4, (t2m(wb.endTime) - t2m(wb.startTime)) / 30 * SLOT_HEIGHT - 4);
               const wbColor = liveWorkbookColor(wb, workbooks);
               const isVertical  = (t2m(wb.endTime) - t2m(wb.startTime)) > VERTICAL_LAYOUT_MIN_DURATION;
-              const titleLayout = isVertical ? verticalTitleLayout(wb.label, height - 12, 11) : null;
+              const titleLayout = isVertical ? verticalTitleLayout(wb.label, height - 12 - VERTICAL_DURATION_RESERVE_PX, 11) : null;
               const notesEls = (wb.notes || []).map(note => (
                 <WorkbookBlockNote
                   key={note.id}
@@ -1765,6 +1777,7 @@ export default function PlannerView({
                         <div className="planner-block-label-title-wrap">
                           <VerticalTitle text={wb.label} layout={titleLayout} className="planner-block-title" />
                         </div>
+                        <span className="planner-block-label-duration">{fmtBlockDuration(t2m(wb.endTime) - t2m(wb.startTime))}</span>
                       </div>
                       <div className="planner-block-content-col">{notesEls}</div>
                     </>
@@ -1800,7 +1813,7 @@ export default function PlannerView({
               const height = Math.max(SLOT_HEIGHT / 2, (Math.min(evEndMin, DAY_END_MIN) - Math.max(evStartMin, DAY_START_MIN)) / 30 * SLOT_HEIGHT);
               const evColor = calendarSwatch(ev._calColor);
               const isVertical  = (evEndMin - evStartMin) > VERTICAL_LAYOUT_MIN_DURATION;
-              const titleLayout = isVertical ? verticalTitleLayout(ev.subject, height - 12, 10) : null;
+              const titleLayout = isVertical ? verticalTitleLayout(ev.subject, height - 12 - VERTICAL_DURATION_RESERVE_PX, 10) : null;
               return (
                 <div
                   key={`cal-${i}`}
@@ -1814,6 +1827,7 @@ export default function PlannerView({
                         <div className="planner-block-label-title-wrap">
                           <VerticalTitle text={ev.subject} layout={titleLayout} className="planner-event-title" />
                         </div>
+                        <span className="planner-block-label-duration">{fmtBlockDuration(evEndMin - evStartMin)}</span>
                       </div>
                       <div className="planner-block-content-col" />
                     </>
@@ -1834,7 +1848,7 @@ export default function PlannerView({
               const top      = Math.max(0, (startMin - DAY_START_MIN) / 30 * SLOT_HEIGHT);
               const height   = Math.max(SLOT_HEIGHT - 4, (endMin - startMin) / 30 * SLOT_HEIGHT - 4);
               const isVertical  = (endMin - startMin) > VERTICAL_LAYOUT_MIN_DURATION;
-              const titleLayout = isVertical ? verticalTitleLayout(block.taskTitle, height - (block.listName ? 34 : 12), 11) : null;
+              const titleLayout = isVertical ? verticalTitleLayout(block.taskTitle, height - (block.listName ? 34 : 12) - VERTICAL_DURATION_RESERVE_PX, 11) : null;
               const checkBtn = (
                 <button
                   className="planner-block-check"
@@ -1905,6 +1919,7 @@ export default function PlannerView({
                         <div className="planner-block-label-title-wrap">
                           <VerticalTitle text={block.taskTitle} layout={titleLayout} className="planner-block-title" />
                         </div>
+                        <span className="planner-block-label-duration">{fmtBlockDuration(endMin - startMin)}</span>
                       </div>
                       <div className="planner-block-content-col">
                         <div className="planner-block-header planner-block-header--compact">
@@ -2909,7 +2924,7 @@ function WeeklyTimeline({
                 const height = Math.max(SLOT_HEIGHT - 4, (t2m(wb.endTime) - t2m(wb.startTime)) / 30 * SLOT_HEIGHT - 4);
                 const wbColor = liveWorkbookColor(wb, workbooks);
                 const isVertical  = (t2m(wb.endTime) - t2m(wb.startTime)) > VERTICAL_LAYOUT_MIN_DURATION;
-                const titleLayout = isVertical ? verticalTitleLayout(wb.label, height - 12, 10) : null;
+                const titleLayout = isVertical ? verticalTitleLayout(wb.label, height - 12 - VERTICAL_DURATION_RESERVE_PX, 10) : null;
                 const notesEls = (wb.notes || []).map(note => (
                   <WorkbookBlockNote
                     key={note.id}
@@ -2948,6 +2963,7 @@ function WeeklyTimeline({
                           <div className="planner-block-label-title-wrap">
                             <VerticalTitle text={wb.label} layout={titleLayout} className="planner-block-title" />
                           </div>
+                          <span className="planner-block-label-duration">{fmtBlockDuration(t2m(wb.endTime) - t2m(wb.startTime))}</span>
                         </div>
                         <div className="planner-block-content-col">{notesEls}</div>
                       </>
@@ -2979,7 +2995,7 @@ function WeeklyTimeline({
                 const height = Math.max(SLOT_HEIGHT / 2, (t2m(evEnd) - t2m(evStart)) / 30 * SLOT_HEIGHT);
                 const evColor = calendarSwatch(ev._calColor);
                 const isVertical  = (t2m(evEnd) - t2m(evStart)) > VERTICAL_LAYOUT_MIN_DURATION;
-                const titleLayout = isVertical ? verticalTitleLayout(ev.subject, height - 12, 10) : null;
+                const titleLayout = isVertical ? verticalTitleLayout(ev.subject, height - 12 - VERTICAL_DURATION_RESERVE_PX, 10) : null;
                 return (
                   <div key={i} className={`planner-week-cal-event${isVertical ? ' vertical-layout' : ''}`}
                     style={{ top, height, background: evColor, borderLeftColor: evColor }}
@@ -2991,6 +3007,7 @@ function WeeklyTimeline({
                           <div className="planner-block-label-title-wrap">
                             <VerticalTitle text={ev.subject} layout={titleLayout} className="planner-event-title" />
                           </div>
+                          <span className="planner-block-label-duration">{fmtBlockDuration(t2m(evEnd) - t2m(evStart))}</span>
                         </div>
                         <div className="planner-block-content-col" />
                       </>
@@ -3007,7 +3024,7 @@ function WeeklyTimeline({
                 const top    = Math.max(0, (t2m(block.startTime) - DAY_START_MIN) / 30 * SLOT_HEIGHT);
                 const height = Math.max(SLOT_HEIGHT - 4, (t2m(block.endTime) - t2m(block.startTime)) / 30 * SLOT_HEIGHT - 4);
                 const isVertical  = (t2m(block.endTime) - t2m(block.startTime)) > VERTICAL_LAYOUT_MIN_DURATION;
-                const titleLayout = isVertical ? verticalTitleLayout(block.taskTitle, height - (block.listName ? 30 : 12), 9) : null;
+                const titleLayout = isVertical ? verticalTitleLayout(block.taskTitle, height - (block.listName ? 30 : 12) - VERTICAL_DURATION_RESERVE_PX, 9) : null;
                 return (
                   <div key={block.id}
                     className={`planner-week-task-block${block.completed ? ' completed' : ''}${isVertical ? ' vertical-layout' : ''}`}
@@ -3025,6 +3042,7 @@ function WeeklyTimeline({
                         <div className="planner-block-label-title-wrap">
                           <VerticalTitle text={block.taskTitle} layout={titleLayout} className="planner-block-title" />
                         </div>
+                        <span className="planner-block-label-duration">{fmtBlockDuration(t2m(block.endTime) - t2m(block.startTime))}</span>
                       </div>
                     ) : (
                       <span className="planner-block-title">{block.taskTitle}</span>
