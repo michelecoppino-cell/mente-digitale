@@ -1309,8 +1309,12 @@ export default function PlannerView({
   }
 
   // Salva i workbook block della settimana visualizzata come template
-  // ricorrente (giorno della settimana 0-6 invece di data assoluta).
+  // ricorrente (giorno della settimana 0-6 invece di data assoluta). Sovrascrive
+  // sempre l'intero file su OneDrive: senza conferma, cliccarlo per sbaglio su
+  // una settimana vuota/diversa cancella silenziosamente il template buono.
   function saveAsIdealWeek() {
+    if (idealWeekRef.current?.blocks?.length &&
+        !window.confirm('Questo sovrascrive la settimana ideale già salvata con i blocchi Workbook di questa settimana. Continuare?')) return;
     const wd = getWeekDays(currentDateRef.current);
     const blocks = [];
     wd.forEach((day, dayOfWeek) => {
