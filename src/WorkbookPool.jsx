@@ -322,7 +322,7 @@ export default function WorkbookPool({ workbooks = [], onChange, draggable = tru
 // pannello (workbook-pool-body scrolla in verticale) né intrappolato in uno
 // stacking context locale. Oltre alle swatch predefinite offre tre slider
 // R/G/B 0-255 (+ input numerico e campo hex) per scegliere qualsiasi colore.
-function ColorPickerPopup({ color, anchor, onPick, onClose }) {
+export function ColorPickerPopup({ color, anchor, onPick, onClose }) {
   const [rgb, setRgb]         = useState(() => hexToRgb(color));
   const [hexDraft, setHexDraft] = useState(color);
   const [pos, setPos]         = useState(null);

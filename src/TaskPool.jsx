@@ -86,7 +86,7 @@ export default function TaskPool({
     const map = {};
     for (const nb of notebooks) {
       (sectionsMap[nb.id] || []).forEach((s, i) => {
-        map[s.displayName.toLowerCase()] = shadeColor(nb._color || '#888', i);
+        map[s.displayName.toLowerCase()] = s._color || shadeColor(nb._color || '#888', i);
       });
     }
     return map;
