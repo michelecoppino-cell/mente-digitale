@@ -494,6 +494,17 @@ export async function saveIdealWeek(template) {
   return putDriveJson(OD_IDEAL_WEEK_FILE, template);
 }
 
+// ── OneDrive Color Settings (colori personalizzati taccuini/sezioni) ───────
+const OD_COLOR_SETTINGS_FILE = 'mente-digitale-color-settings.json';
+
+export async function loadColorSettings() {
+  return getDriveJson(OD_COLOR_SETTINGS_FILE, null);
+}
+
+export async function saveColorSettings(settings) {
+  return putDriveJson(OD_COLOR_SETTINGS_FILE, settings);
+}
+
 // ── OneDrive Pomodoro Stats ────────────────────────────────────────────────
 const OD_POMODORO_STATS_FILE = 'mente-digitale-pomodoro-stats.json';
 

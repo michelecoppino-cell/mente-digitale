@@ -1,9 +1,10 @@
 import { useState, useEffect, useRef } from 'react';
 import { initAuth, getAccount, login } from './auth';
-import { getNotebooks, getSections, getTodoLists, getTodoTasks, getPages, getRecentEmails, getPageContentHtml, markOneNoteTagDone, getReminders, createTask, getCalendarEvents, getTasksForDeadlineDedup, invalidateCalendarsCache } from './api';
+import { getNotebooks, getSections, getTodoLists, getTodoTasks, getPages, getRecentEmails, getPageContentHtml, markOneNoteTagDone, getReminders, createTask, getCalendarEvents, getTasksForDeadlineDedup, invalidateCalendarsCache, loadColorSettings, saveColorSettings } from './api';
 import { cacheGet, cacheSet, cacheClear, TTL } from './cache';
 import { extractEmailCandidates, extractOneNoteCandidates } from './dailyReview';
 import { parseReminderSubject, reminderMarker, hasReminderMarker } from './deadlineReminders';
+import { shadeColor } from './plannerShared';
 import MindMap from './MindMap';
 import IdentityPanel from './IdentityPanel';
 import SearchOverlay from './SearchOverlay';
@@ -12,10 +13,28 @@ import SchedulePanel from './SchedulePanel';
 import PlannerView from './PlannerView';
 import GtdClarifyModal from './GtdClarifyModal';
 import EisenhowerTriage from './EisenhowerTriage';
+import ColorSettingsModal from './ColorSettingsModal';
 import { parseEisenhower } from './eisenhower';
 import { COLORS } from './config';
 import UndoToast from './UndoToast';
 import './App.css';
+
+const DEFAULT_COLOR_SETTINGS = { notebooks: {}, sections: {} };
+
+// Applica gli override di colore (persistiti, vedi initColorSettings /
+// applyColorSettings) a un taccuino o alle sue sezioni, mutandoli sul posto —
+// stessa convenzione già in uso per nb._color prima di questa feature, così
+// tutte le viste che leggono nb._color/sec._color vedono da subito il colore
+// scelto dall'utente invece di quello assegnato automaticamente per indice.
+function applyNotebookColor(nb, index, overrides) {
+  nb._color = overrides.notebooks[nb.id] || COLORS[index % COLORS.length];
+}
+
+function applySectionColors(nb, sections, overrides) {
+  (sections || []).forEach((s, i) => {
+    s._color = overrides.sections[s.id] || shadeColor(nb._color || '#888', i);
+  });
+}
 
 const REVIEW_SEEN_TTL = 7 * 24 * 60 * 60 * 1000;      // 7 giorni
 const NOTES_LOOKBACK_MS = 2 * 24 * 60 * 60 * 1000;    // fallback alla prima scansione: ultime 48h
@@ -114,6 +133,11 @@ export default function App() {
   const [reviewLoading, setReviewLoading] = useState(false);
   const [gtdSeedText, setGtdSeedText] = useState('');
   const [pomodoroFocus, setPomodoroFocus] = useState(false);
+  const [colorSettings, setColorSettings] = useState(DEFAULT_COLOR_SETTINGS);
+  const [colorSettingsOpen, setColorSettingsOpen] = useState(false);
+  const colorSettingsRef = useRef(DEFAULT_COLOR_SETTINGS);
+  const colorSettingsLoadedRef = useRef(false);
+  const notebooksRef = useRef([]);
   const pagesCache = useRef({});
   const tasksCache = useRef({});
   const [scheduledTasks, setScheduledTasks] = useState(null);
@@ -164,13 +188,27 @@ export default function App() {
     }
 
     try {
+      // Colori personalizzati (taccuini/sezioni) scelti dall'utente
+      // nell'ingranaggio impostazioni — vanno applicati subito dopo aver
+      // ricevuto taccuini e sezioni, prima di renderli nello stato.
+      let colorCfg = forceRefresh ? null : cacheGet('color_settings');
+      if (!colorCfg) {
+        colorCfg = await loadColorSettings().catch(e => { console.error('color settings load', e); return null; });
+        if (colorCfg) cacheSet('color_settings', colorCfg, 30 * 60 * 1000);
+      }
+      const overrides = colorCfg || DEFAULT_COLOR_SETTINGS;
+      colorSettingsRef.current = overrides;
+      colorSettingsLoadedRef.current = true;
+      setColorSettings(overrides);
+
       // Taccuini
       let nbs = forceRefresh ? null : cacheGet('notebooks');
       if (!nbs) {
         nbs = await getNotebooks();
         cacheSet('notebooks', nbs, TTL.NOTEBOOKS);
       }
-      nbs.forEach((nb, i) => nb._color = COLORS[i % COLORS.length]);
+      nbs.forEach((nb, i) => applyNotebookColor(nb, i, overrides));
+      notebooksRef.current = nbs;
       setNotebooks(nbs);
 
       // Liste ToDo
@@ -188,7 +226,10 @@ export default function App() {
       const sectMap = {};
       for (const nb of nbs) {
         const cached = forceRefresh ? null : cacheGet(`sections_${nb.id}`);
-        if (cached) sectMap[nb.id] = cached;
+        if (cached) {
+          applySectionColors(nb, cached, overrides);
+          sectMap[nb.id] = cached;
+        }
       }
       if (Object.keys(sectMap).length > 0) setSectionsMap(sectMap);
 
@@ -425,12 +466,61 @@ export default function App() {
         sects = await getSections(nb.id);
         cacheSet(`sections_${nb.id}`, sects, TTL.SECTIONS);
       }
+      applySectionColors(nb, sects, colorSettingsRef.current);
       setSectionsMap(prev => ({ ...prev, [nb.id]: sects }));
       setTimeout(() => sects.forEach(s => enqueuePagePreload(s.id)), 1500);
     } catch (e) {
       console.error('Errore sezioni', nb.displayName, e);
       setSectionsMap(prev => ({ ...prev, [nb.id]: [] }));
     }
+  }
+
+  // Salva i nuovi override colore (localStorage + OneDrive, come workbooks/
+  // planner config) e ricolora subito taccuini/sezioni già in memoria, così
+  // il cambiamento è visibile ovunque senza dover ricaricare la pagina.
+  function applyColorSettings(next) {
+    colorSettingsRef.current = next;
+    setColorSettings(next);
+    cacheSet('color_settings', next, 30 * 60 * 1000);
+    if (colorSettingsLoadedRef.current) {
+      saveColorSettings(next).catch(e => console.error('save color settings', e));
+    }
+
+    const nbs = notebooksRef.current;
+    nbs.forEach((nb, i) => applyNotebookColor(nb, i, next));
+    setNotebooks([...nbs]);
+
+    setSectionsMap(prev => {
+      Object.entries(prev).forEach(([nbId, sects]) => {
+        const nb = nbs.find(n => n.id === nbId);
+        if (nb) applySectionColors(nb, sects, next);
+      });
+      return { ...prev };
+    });
+  }
+
+  function setNotebookColor(nbId, color) {
+    const cur = colorSettingsRef.current;
+    applyColorSettings({ notebooks: { ...cur.notebooks, [nbId]: color }, sections: cur.sections });
+  }
+
+  function setSectionColor(sectionId, color) {
+    const cur = colorSettingsRef.current;
+    applyColorSettings({ notebooks: cur.notebooks, sections: { ...cur.sections, [sectionId]: color } });
+  }
+
+  function resetNotebookColor(nbId) {
+    const cur = colorSettingsRef.current;
+    const nextNotebooks = { ...cur.notebooks };
+    delete nextNotebooks[nbId];
+    applyColorSettings({ notebooks: nextNotebooks, sections: cur.sections });
+  }
+
+  function resetSectionColor(sectionId) {
+    const cur = colorSettingsRef.current;
+    const nextSections = { ...cur.sections };
+    delete nextSections[sectionId];
+    applyColorSettings({ notebooks: cur.notebooks, sections: nextSections });
   }
 
   function findTodoList(sectionName) {
@@ -483,6 +573,7 @@ export default function App() {
   async function handleRefresh() {
     setSelected(null);
     setNotebooks([]);
+    notebooksRef.current = [];
     setSectionsMap({});
     setScheduledTasks(null);
     setTodoCountMap({});
@@ -526,6 +617,14 @@ export default function App() {
             <span className="zoom-label">{Math.round(zoom * 100)}%</span>
             <button className="zoom-btn" onClick={() => setZoom(z => Math.min(5, +(z + 0.2).toFixed(2)))}>+</button>
           </div>
+          {account && (
+            <button className="search-btn" onClick={() => setColorSettingsOpen(true)} title="Colori taccuini e sezioni">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="3" />
+                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+              </svg>
+            </button>
+          )}
           <button className="refresh-btn" onClick={handleRefresh} title="Aggiorna tutto">↺</button>
         </div>
       </header>
@@ -717,6 +816,18 @@ export default function App() {
           pagesCache={pagesCache}
           tasks={scheduledTasks || []}
           onSelectSection={(sec, nb, app) => { setPlannerOpen(false); handleSelectSection(sec, nb, app); }}
+        />
+        <ColorSettingsModal
+          open={colorSettingsOpen}
+          onClose={() => setColorSettingsOpen(false)}
+          notebooks={notebooks}
+          sectionsMap={sectionsMap}
+          overrides={colorSettings}
+          onExpandNotebook={handleExpandNotebook}
+          onSetNotebookColor={setNotebookColor}
+          onSetSectionColor={setSectionColor}
+          onResetNotebookColor={resetNotebookColor}
+          onResetSectionColor={resetSectionColor}
         />
         </>
       )}
