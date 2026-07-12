@@ -4,10 +4,11 @@ import {
   loadPlannerConfig, savePlannerConfig,
   completeTask, updateTaskStatus, getCalendarEvents, getCalendars, updateCalendarColor,
   createCalendarEvent, updateCalendarEvent, deleteCalendarEvent, moveCalendarEvent,
+  patchCalendarEvent, graphDateTime,
   getTask, createTask, updateTaskBody, updateTaskTitle, updateTaskDueDate, deleteTask,
   createChecklistItem, updateChecklistItem, renameChecklistItem, deleteChecklistItem,
   reorderChecklistItems, loadPomodoroStats, savePomodoroStats,
-  loadWorkbooks, saveWorkbooks, loadWorkbookPlans, saveWorkbookPlans,
+  loadWorkbooks, saveWorkbooks, getWorkbookCalendarId, getWorkbookEvents, WORKBOOK_CALENDAR_NAME,
   loadIdealWeek, saveIdealWeek,
 } from './api';
 import { cacheGet, cacheSet, cacheDel } from './cache';
@@ -316,8 +317,9 @@ export default function PlannerView({
   const workbooksRef           = useRef([]);
   const workbooksLoadedRef     = useRef(false);
   const workbookPlansRef       = useRef({});
-  const workbookPlansLoadedRef = useRef(false);
-  const workbookSaveTimerRef   = useRef(null);
+  const workbookCalIdRef       = useRef(null);
+  const allWorkbookEventsRef   = useRef([]);
+  const workbookSyncTimersRef  = useRef({}); // blockId -> timeoutId, per resize/nota in drag continuo
   const idealWeekRef           = useRef(null);
 
   // ── Load config + plans once on open; scroll to now ─────────────────────────
@@ -325,7 +327,7 @@ export default function PlannerView({
     if (!open) return;
     Promise.all([
       initConfig(), initPlans(), initPomodoroStats(), initCalendarsList(),
-      initWorkbooks(), initWorkbookPlans(), initIdealWeek(),
+      initWorkbooks(), initWorkbookCalendar(), initIdealWeek(),
     ]);
     requestAnimationFrame(() => {
       if (!timelineBodyRef.current) return;
@@ -337,6 +339,7 @@ export default function PlannerView({
   useEffect(() => {
     if (!open) return;
     fetchCalEventsAll();
+    fetchWorkbookEventsAll();
   }, [open, currentDate, viewMode]); // eslint-disable-line
 
   // Un evento calendario creato altrove nell'app (es. dal popup GTD) bypassa
@@ -418,15 +421,115 @@ export default function PlannerView({
     } catch (e) { console.error('workbooks load', e); }
   }
 
-  async function initWorkbookPlans() {
+  async function initWorkbookCalendar() {
     try {
-      const cached = cacheGet('workbook_plans');
-      const allPlans = cached || await loadWorkbookPlans() || {};
-      setWorkbookPlans(allPlans);
-      workbookPlansRef.current = allPlans;
-      workbookPlansLoadedRef.current = true;
-      if (!cached) cacheSet('workbook_plans', allPlans, PLANS_CACHE_TTL);
-    } catch (e) { console.error('workbook plans load', e); }
+      workbookCalIdRef.current = await getWorkbookCalendarId();
+    } catch (e) { console.error('workbook calendar init', e); }
+  }
+
+  // Converte un evento Graph del calendario Workbook nel blocco usato dal
+  // rendering — stessa forma di prima (id, workbookId, subWorkbookId, label,
+  // color, startTime, endTime, notes), solo che ora arriva da Graph invece che
+  // dal JSON: workbookId/subWorkbookId/colore/note sono serializzati nel body
+  // (vedi workbookEventBody), il subject resta l'etichetta leggibile.
+  function parseWorkbookEvent(ev) {
+    let meta = {};
+    try { meta = JSON.parse(ev.body?.content || '{}'); } catch { meta = {}; }
+    return {
+      id: ev.id,
+      workbookId: meta.workbookId ?? null,
+      subWorkbookId: meta.subWorkbookId ?? null,
+      label: ev.subject || '',
+      color: meta.color || '#888',
+      startTime: isoToHHMM(ev.start?.dateTime),
+      endTime: isoToHHMM(ev.end?.dateTime),
+      notes: Array.isArray(meta.notes) ? meta.notes : [],
+    };
+  }
+
+  function workbookEventBody(block) {
+    return JSON.stringify({
+      workbookId: block.workbookId, subWorkbookId: block.subWorkbookId,
+      color: block.color, notes: block.notes || [],
+    });
+  }
+
+  // Fetch bulk (±3 mesi) degli eventi del calendario Workbook, mirror esatto
+  // di fetchCalEventsAll/filterCalEvents sopra ma su un solo calendario
+  // dedicato — stesso pattern cache in-memory → cache sessione → Graph.
+  async function fetchWorkbookEventsAll() {
+    const WB_BULK_KEY = 'workbook_events_bulk';
+    const WB_MONTHS   = 3;
+
+    if (allWorkbookEventsRef.current.length > 0) {
+      filterWorkbookEvents(allWorkbookEventsRef.current);
+      return;
+    }
+    const cached = cacheGet(WB_BULK_KEY);
+    if (cached) {
+      allWorkbookEventsRef.current = cached;
+      filterWorkbookEvents(cached);
+      return;
+    }
+    try {
+      if (!workbookCalIdRef.current) await initWorkbookCalendar();
+      if (!workbookCalIdRef.current) { filterWorkbookEvents([]); return; }
+      const today = new Date();
+      const start = new Date(today); start.setMonth(today.getMonth() - WB_MONTHS); start.setHours(0,0,0,0);
+      const end   = new Date(today); end.setMonth(today.getMonth() + WB_MONTHS);   end.setHours(23,59,59,999);
+      const evs = await getWorkbookEvents(workbookCalIdRef.current, start, end, 500);
+      allWorkbookEventsRef.current = evs;
+      cacheSet(WB_BULK_KEY, evs, 30 * 60 * 1000);
+      filterWorkbookEvents(evs);
+    } catch (e) {
+      console.error('workbook events bulk load', e);
+      filterWorkbookEvents([]);
+    }
+  }
+
+  // Raggruppa gli eventi Graph per giorno nella finestra attualmente
+  // visualizzata (stessa logica viewStart/viewEnd di filterCalEvents).
+  function filterWorkbookEvents(allEvs) {
+    const WB_MONTHS = 3;
+    const today     = new Date();
+    const minDate   = new Date(today); minDate.setMonth(today.getMonth() - WB_MONTHS);
+    const maxDate   = new Date(today); maxDate.setMonth(today.getMonth() + WB_MONTHS);
+    const viewDate  = new Date(currentDate + 'T12:00:00');
+    if (viewDate < minDate || viewDate > maxDate) {
+      workbookPlansRef.current = {};
+      setWorkbookPlans({});
+      return;
+    }
+
+    let viewStart, viewEnd;
+    if (viewMode === 'week') {
+      const wd = getWeekDays(currentDate);
+      viewStart = wd[0]; viewEnd = wd[6];
+    } else if (viewMode === 'month') {
+      const d = new Date(currentDate + 'T12:00:00');
+      viewStart = localDateStr(new Date(d.getFullYear(), d.getMonth(), 1));
+      viewEnd   = localDateStr(new Date(d.getFullYear(), d.getMonth() + 1, 0));
+    } else {
+      viewStart = currentDate; viewEnd = currentDate;
+    }
+
+    const grouped = {};
+    allEvs.forEach(ev => {
+      const day = (ev.start?.dateTime || ev.start?.date || '').slice(0, 10);
+      if (day < viewStart || day > viewEnd) return;
+      const dayPlan = grouped[day] || { date: day, blocks: [] };
+      dayPlan.blocks.push(parseWorkbookEvent(ev));
+      grouped[day] = dayPlan;
+    });
+    workbookPlansRef.current = grouped;
+    setWorkbookPlans(grouped);
+  }
+
+  // Forza un refetch dal server dopo una modifica ai blocchi Workbook.
+  async function refreshWorkbookEvents() {
+    allWorkbookEventsRef.current = [];
+    cacheDel('workbook_events_bulk');
+    await fetchWorkbookEventsAll();
   }
 
   async function initIdealWeek() {
@@ -451,22 +554,28 @@ export default function PlannerView({
     }
   }
 
-  // Mutazione dei workbook block su uno o più giorni (drop/resize/move nella
-  // vista Settimana) — mirror di mutatePlansMulti ma su workbookPlansRef,
-  // debounce e file OneDrive del tutto separati da quelli dei task.
-  function mutateWorkbookPlansMulti(updater) {
+  // Aggiorna solo lo stato locale (nessuna chiamata Graph) — usato per il
+  // feedback visivo istantaneo di ogni mutazione sui blocchi Workbook; la
+  // sincronizzazione con l'evento reale è sempre esplicita a parte (subito
+  // per le azioni singole, con debounce per i trascinamenti continui, vedi
+  // scheduleWorkbookSync), non più un side-effect automatico come prima.
+  function mutateWorkbookPlansLocal(updater) {
     const next = updater(workbookPlansRef.current);
     if (next === workbookPlansRef.current) return;
     workbookPlansRef.current = next;
     setWorkbookPlans(next);
-    clearTimeout(workbookSaveTimerRef.current);
-    workbookSaveTimerRef.current = setTimeout(async () => {
-      if (!workbookPlansLoadedRef.current) return;
-      try {
-        cacheSet('workbook_plans', workbookPlansRef.current, PLANS_CACHE_TTL);
-        await saveWorkbookPlans(workbookPlansRef.current);
-      } catch (e) { console.error('save workbook plans', e); }
-    }, SAVE_DEBOUNCE);
+  }
+
+  // Debounce per blocco (resize e trascinamento nota, che chiamano l'update
+  // locale a ogni mousemove): coalizza le chiamate rapide in un solo PATCH
+  // Graph, sparato ~600ms dopo l'ultimo movimento invece che a ogni tick.
+  const WB_SYNC_DEBOUNCE = 600;
+  function scheduleWorkbookSync(blockId, fn) {
+    clearTimeout(workbookSyncTimersRef.current[blockId]);
+    workbookSyncTimersRef.current[blockId] = setTimeout(() => {
+      delete workbookSyncTimersRef.current[blockId];
+      fn().catch(e => console.error('sync workbook event', e));
+    }, WB_SYNC_DEBOUNCE);
   }
 
   // Calendari esclusi dalla visualizzazione. finché l'utente non tocca il
@@ -582,10 +691,14 @@ export default function PlannerView({
     setCalEvents(filtered);
   }
 
+  // Il calendario dedicato ai blocchi Workbook non compare nel filtro
+  // "Calendari ▾" né nel picker di "+ Evento": ha già il suo toggle sintetico
+  // (WORKBOOK_CAL_ID) e i suoi eventi non vanno creati/modificati come eventi
+  // generici (perderebbero i metadati workbookId/subWorkbookId nel body).
   async function initCalendarsList() {
     try {
       const cals = await getCalendars();
-      setCalendarsList(cals);
+      setCalendarsList(cals.filter(c => (c.name || '').trim().toLowerCase() !== WORKBOOK_CALENDAR_NAME.toLowerCase()));
     } catch (e) { console.error('calendars load', e); }
   }
 
@@ -890,22 +1003,50 @@ export default function PlannerView({
     return { id: genId(), workbookId, subWorkbookId, label, color, startTime, endTime: m2t(endMin) };
   }
 
+  // Crea subito il blocco in locale (id temporaneo) per il feedback visivo
+  // istantaneo del drop, poi crea l'evento reale su Graph e sostituisce l'id
+  // temporaneo con quello vero restituito da Graph — necessario perché ogni
+  // mutazione successiva (resize, note, spostamento) deve poter indirizzare
+  // l'evento giusto. Se la creazione fallisce il blocco locale viene ritirato.
   function addWorkbookBlockToDay(workbookId, subWorkbookId, day, startTime) {
+    if (!workbookCalIdRef.current) return;
     const newBlock = makeWorkbookBlock(workbookId, subWorkbookId, startTime);
-    mutateWorkbookPlansMulti(all => {
+    mutateWorkbookPlansLocal(all => {
       const dayPlan = all[day] || { date: day, blocks: [] };
       return { ...all, [day]: { ...dayPlan, blocks: [...dayPlan.blocks, newBlock] } };
+    });
+    const tempId = newBlock.id;
+    createCalendarEvent({
+      calendarId: workbookCalIdRef.current,
+      subject: newBlock.label, startDate: day, endDate: day,
+      startTime: newBlock.startTime, endTime: newBlock.endTime,
+      body: workbookEventBody(newBlock),
+    }).then(created => {
+      mutateWorkbookPlansLocal(all => {
+        const dayPlan = all[day];
+        if (!dayPlan) return all;
+        return { ...all, [day]: { ...dayPlan, blocks: dayPlan.blocks.map(b => b.id === tempId ? { ...b, id: created.id } : b) } };
+      });
+      refreshWorkbookEvents();
+    }).catch(e => {
+      console.error('create workbook event', e);
+      mutateWorkbookPlansLocal(all => {
+        const dayPlan = all[day];
+        if (!dayPlan) return all;
+        return { ...all, [day]: { ...dayPlan, blocks: dayPlan.blocks.filter(b => b.id !== tempId) } };
+      });
     });
   }
 
   function moveWorkbookBlockBetweenDays(fromDay, blockId, toDay, newStartTime) {
-    mutateWorkbookPlansMulti(all => {
+    let moved = null;
+    mutateWorkbookPlansLocal(all => {
       const fromPlan = all[fromDay];
       const block = fromPlan?.blocks.find(b => b.id === blockId);
       if (!block) return all;
       const dur      = t2m(block.endTime) - t2m(block.startTime);
       const startMin = Math.max(DAY_START_MIN, Math.min(t2m(newStartTime), DAY_END_MIN - 30));
-      const moved    = { ...block, startTime: m2t(startMin), endTime: m2t(Math.min(startMin + dur, DAY_END_MIN)) };
+      moved = { ...block, startTime: m2t(startMin), endTime: m2t(Math.min(startMin + dur, DAY_END_MIN)) };
       const next = { ...all };
       if (fromDay === toDay) {
         next[fromDay] = { ...fromPlan, blocks: fromPlan.blocks.map(b => b.id === blockId ? moved : b) };
@@ -916,52 +1057,100 @@ export default function PlannerView({
       }
       return next;
     });
+    if (!moved || !workbookCalIdRef.current) return;
+    patchCalendarEvent(workbookCalIdRef.current, blockId, {
+      start: graphDateTime(toDay, moved.startTime),
+      end: graphDateTime(toDay, moved.endTime),
+    }).then(() => refreshWorkbookEvents())
+      .catch(e => console.error('move workbook event', e));
   }
 
   // Ctrl/Cmd+trascina un blocco workbook: duplica invece di spostare, come
-  // copyBlockBetweenDays sopra ma sui piani workbook — le note vengono
+  // copyBlockBetweenDays sopra ma crea un nuovo evento Graph — le note vengono
   // copiate con id nuovi per non condividerle con l'originale.
   function copyWorkbookBlockBetweenDays(fromDay, blockId, toDay, newStartTime) {
-    mutateWorkbookPlansMulti(all => {
-      const fromPlan = all[fromDay];
-      const block = fromPlan?.blocks.find(b => b.id === blockId);
-      if (!block) return all;
-      const dur      = t2m(block.endTime) - t2m(block.startTime);
-      const startMin = Math.max(DAY_START_MIN, Math.min(t2m(newStartTime), DAY_END_MIN - 30));
-      const copy = {
-        ...block, id: genId(),
-        startTime: m2t(startMin), endTime: m2t(Math.min(startMin + dur, DAY_END_MIN)),
-        notes: (block.notes || []).map(n => ({ ...n, id: genId() })),
-      };
+    if (!workbookCalIdRef.current) return;
+    const fromPlan = workbookPlansRef.current[fromDay];
+    const block = fromPlan?.blocks.find(b => b.id === blockId);
+    if (!block) return;
+    const dur      = t2m(block.endTime) - t2m(block.startTime);
+    const startMin = Math.max(DAY_START_MIN, Math.min(t2m(newStartTime), DAY_END_MIN - 30));
+    const copy = {
+      ...block, id: genId(),
+      startTime: m2t(startMin), endTime: m2t(Math.min(startMin + dur, DAY_END_MIN)),
+      notes: (block.notes || []).map(n => ({ ...n, id: genId() })),
+    };
+    mutateWorkbookPlansLocal(all => {
       const toPlan = all[toDay] || { date: toDay, blocks: [] };
       return { ...all, [toDay]: { ...toPlan, blocks: [...toPlan.blocks, copy] } };
+    });
+    const tempId = copy.id;
+    createCalendarEvent({
+      calendarId: workbookCalIdRef.current,
+      subject: copy.label, startDate: toDay, endDate: toDay,
+      startTime: copy.startTime, endTime: copy.endTime,
+      body: workbookEventBody(copy),
+    }).then(created => {
+      mutateWorkbookPlansLocal(all => {
+        const toPlan = all[toDay];
+        if (!toPlan) return all;
+        return { ...all, [toDay]: { ...toPlan, blocks: toPlan.blocks.map(b => b.id === tempId ? { ...b, id: created.id } : b) } };
+      });
+      refreshWorkbookEvents();
+    }).catch(e => {
+      console.error('copy workbook event', e);
+      mutateWorkbookPlansLocal(all => {
+        const toPlan = all[toDay];
+        if (!toPlan) return all;
+        return { ...all, [toDay]: { ...toPlan, blocks: toPlan.blocks.filter(b => b.id !== tempId) } };
+      });
     });
   }
 
   function handleRemoveWorkbookBlock(day, blockId) {
-    mutateWorkbookPlansMulti(all => {
+    clearTimeout(workbookSyncTimersRef.current[blockId]);
+    delete workbookSyncTimersRef.current[blockId];
+    mutateWorkbookPlansLocal(all => {
       const dayPlan = all[day];
       if (!dayPlan) return all;
       return { ...all, [day]: { ...dayPlan, blocks: dayPlan.blocks.filter(b => b.id !== blockId) } };
     });
+    if (!workbookCalIdRef.current) return;
+    deleteCalendarEvent(workbookCalIdRef.current, blockId)
+      .then(() => refreshWorkbookEvents())
+      .catch(e => console.error('delete workbook event', e));
   }
 
   // Helper condiviso dalle 4 mutazioni sulle note di un workbook block: le
   // note sono sganciate dal testo del blocco (label) — servono per annotare
   // un dettaglio ("caffè", "pranzo"…) in un punto preciso della fascia, con
   // andate a capo libere, senza doverne creare uno spezzettando l'orario.
-  function patchWorkbookNotes(day, blockId, updater) {
-    mutateWorkbookPlansMulti(all => {
+  // `immediate` false per il trascinamento continuo della nota (onMove a ogni
+  // mousemove): la sincronizzazione Graph passa dal debounce per blocco
+  // invece di sparare un PATCH a ogni tick.
+  function patchWorkbookNotes(day, blockId, updater, { immediate = true } = {}) {
+    let updatedBlock = null;
+    mutateWorkbookPlansLocal(all => {
       const dayPlan = all[day];
       if (!dayPlan) return all;
       return {
         ...all,
         [day]: {
           ...dayPlan,
-          blocks: dayPlan.blocks.map(b => b.id === blockId ? { ...b, notes: updater(b.notes || []) } : b),
+          blocks: dayPlan.blocks.map(b => {
+            if (b.id !== blockId) return b;
+            updatedBlock = { ...b, notes: updater(b.notes || []) };
+            return updatedBlock;
+          }),
         },
       };
     });
+    if (!updatedBlock || !workbookCalIdRef.current) return;
+    const sync = () => patchCalendarEvent(workbookCalIdRef.current, blockId, {
+      body: { contentType: 'text', content: workbookEventBody(updatedBlock) },
+    });
+    if (immediate) sync().catch(e => console.error('sync workbook notes', e));
+    else scheduleWorkbookSync(blockId, sync);
   }
 
   function addWorkbookNote(day, blockId, top) {
@@ -978,7 +1167,7 @@ export default function PlannerView({
   }
 
   function moveWorkbookNote(day, blockId, noteId, top) {
-    patchWorkbookNotes(day, blockId, notes => notes.map(n => n.id === noteId ? { ...n, top } : n));
+    patchWorkbookNotes(day, blockId, notes => notes.map(n => n.id === noteId ? { ...n, top } : n), { immediate: false });
   }
 
   function removeWorkbookNote(day, blockId, noteId) {
@@ -997,11 +1186,16 @@ export default function PlannerView({
     function onMove(ev) {
       const deltaMin  = Math.round((ev.clientY - startY) / SLOT_HEIGHT * 30 / 30) * 30;
       const newEndMin = Math.max(blockStartMin + 30, Math.min(DAY_END_MIN, startEndMin + deltaMin));
-      mutateWorkbookPlansMulti(all => {
+      mutateWorkbookPlansLocal(all => {
         const dayPlan = all[day];
         if (!dayPlan) return all;
         return { ...all, [day]: { ...dayPlan, blocks: dayPlan.blocks.map(b => b.id === block.id ? { ...b, endTime: m2t(newEndMin) } : b) } };
       });
+      if (workbookCalIdRef.current) {
+        scheduleWorkbookSync(block.id, () => patchCalendarEvent(workbookCalIdRef.current, block.id, {
+          end: graphDateTime(day, m2t(newEndMin)),
+        }));
+      }
     }
     function onUp() {
       document.removeEventListener('mousemove', onMove);
@@ -1074,25 +1268,48 @@ export default function PlannerView({
   }
 
   // Importa il template nella settimana visualizzata per COPIA: nuovi id,
-  // nessun riferimento al template — modificarli qui non lo altera.
+  // nessun riferimento al template — modificarli qui non lo altera. Ogni
+  // blocco del template diventa un evento reale sul calendario Workbook,
+  // stesso schema crea-locale-poi-riconcilia-id di addWorkbookBlockToDay.
   function importIdealWeek() {
     const template = idealWeekRef.current;
-    if (!template?.blocks?.length) return;
+    if (!template?.blocks?.length || !workbookCalIdRef.current) return;
     const wd = getWeekDays(currentDateRef.current);
-    mutateWorkbookPlansMulti(all => {
-      const next = { ...all };
-      template.blocks.forEach(tb => {
-        const day = wd[tb.dayOfWeek];
-        if (!day) return; // dayOfWeek fuori range 0-6 (template corrotto) — scarta senza crashare
-        const dayPlan = next[day] || { date: day, blocks: [] };
-        const copy = {
-          id: genId(), workbookId: tb.workbookId, subWorkbookId: tb.subWorkbookId,
-          label: tb.label, color: tb.color, startTime: tb.startTime, endTime: tb.endTime,
-        };
-        next[day] = { ...dayPlan, blocks: [...dayPlan.blocks, copy] };
+    const creations = template.blocks.map(tb => {
+      const day = wd[tb.dayOfWeek];
+      if (!day) return null; // dayOfWeek fuori range 0-6 (template corrotto) — scarta senza crashare
+      const copy = {
+        id: genId(), workbookId: tb.workbookId, subWorkbookId: tb.subWorkbookId,
+        label: tb.label, color: tb.color, startTime: tb.startTime, endTime: tb.endTime, notes: [],
+      };
+      mutateWorkbookPlansLocal(all => {
+        const dayPlan = all[day] || { date: day, blocks: [] };
+        return { ...all, [day]: { ...dayPlan, blocks: [...dayPlan.blocks, copy] } };
       });
-      return next;
-    });
+      const tempId = copy.id;
+      return createCalendarEvent({
+        calendarId: workbookCalIdRef.current,
+        subject: copy.label, startDate: day, endDate: day,
+        startTime: copy.startTime, endTime: copy.endTime,
+        body: workbookEventBody(copy),
+      }).then(created => {
+        mutateWorkbookPlansLocal(all => {
+          const dayPlan = all[day];
+          if (!dayPlan) return all;
+          return { ...all, [day]: { ...dayPlan, blocks: dayPlan.blocks.map(b => b.id === tempId ? { ...b, id: created.id } : b) } };
+        });
+      }).catch(e => {
+        console.error('import ideal week event', e);
+        mutateWorkbookPlansLocal(all => {
+          const dayPlan = all[day];
+          if (!dayPlan) return all;
+          return { ...all, [day]: { ...dayPlan, blocks: dayPlan.blocks.filter(b => b.id !== tempId) } };
+        });
+      });
+    }).filter(Boolean);
+    // Un solo refetch a fine importazione invece che uno per blocco: la
+    // settimana ideale ne piazza tipicamente una decina in un colpo solo.
+    Promise.allSettled(creations).then(() => refreshWorkbookEvents());
   }
 
   function moveBlock(blockId, newStartTime) {

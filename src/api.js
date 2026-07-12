@@ -265,6 +265,11 @@ export async function getCalendarEvents(startDate, endDate, top = 50) {
   // Recupera tutti i calendari per distinguere condivisi da propri
   let calendars = [];
   try { calendars = await getCalendars(); } catch { /* fallback: solo calendario default */ }
+  // Il calendario dedicato ai blocchi Workbook ha una sua vista/CRUD dedicati
+  // (vedi getWorkbookCalendarId/getWorkbookEvents) e viene già renderizzato
+  // separatamente in PlannerView: includerlo anche qui duplicherebbe ogni
+  // blocco come evento "normale" nella timeline.
+  calendars = calendars.filter(c => (c.name || '').trim().toLowerCase() !== WORKBOOK_CALENDAR_NAME.toLowerCase());
 
   if (!calendars.length) {
     // Fallback: solo calendario default
@@ -313,6 +318,12 @@ function eventsBasePath(calendarId) {
 // PlannerView.jsx, che tratta i dateTime senza 'Z' come UTC).
 function localToUtcDateTime(dateStr, timeStr) {
   return new Date(`${dateStr}T${timeStr}:00`).toISOString().slice(0, 19);
+}
+
+// Oggetto start/end Graph-shaped per un PATCH parziale (vedi patchCalendarEvent)
+// — stesso fuso "UTC finto" di localToUtcDateTime, riusato dai blocchi Workbook.
+export function graphDateTime(dateStr, timeStr) {
+  return { dateTime: localToUtcDateTime(dateStr, timeStr), timeZone: 'UTC' };
 }
 
 // Crea un evento Calendario — tutto il giorno (con reminder nativo, usato
@@ -381,6 +392,18 @@ export async function updateCalendarEvent(calendarId, eventId, {
 
 export async function deleteCalendarEvent(calendarId, eventId) {
   return call(`${eventsBasePath(calendarId)}/${eventId}`, { method: 'DELETE' });
+}
+
+// PATCH parziale — a differenza di updateCalendarEvent (che ricostruisce
+// sempre l'intero start/end/subject) accetta solo i campi Graph da cambiare,
+// usata dai blocchi Workbook per aggiornare un singolo aspetto (solo l'ora di
+// fine in un resize, solo il body in una modifica alle note) senza dover
+// ripassare ogni volta tutti gli altri campi invariati.
+export async function patchCalendarEvent(calendarId, eventId, payload) {
+  return call(`${eventsBasePath(calendarId)}/${eventId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  });
 }
 
 // Sposta un evento su un altro calendario — necessario perché Graph non
@@ -458,10 +481,9 @@ export async function savePlannerConfig(config) {
   return putDriveJson(OD_PLANNER_CFG_FILE, config);
 }
 
-// ── OneDrive Workbook Files (pianificazione settimanale a spettro ampio) ────
-const OD_WORKBOOKS_FILE      = 'mente-digitale-workbooks.json';
-const OD_WORKBOOK_PLANS_FILE = 'mente-digitale-workbook-plans.json';
-const OD_IDEAL_WEEK_FILE     = 'mente-digitale-ideal-week.json';
+// ── OneDrive Workbook Files (albero categorie + template settimana ideale) ──
+const OD_WORKBOOKS_FILE   = 'mente-digitale-workbooks.json';
+const OD_IDEAL_WEEK_FILE  = 'mente-digitale-ideal-week.json';
 
 export async function loadWorkbooks() {
   return getDriveJson(OD_WORKBOOKS_FILE, null);
@@ -471,27 +493,45 @@ export async function saveWorkbooks(data) {
   return putDriveJson(OD_WORKBOOKS_FILE, data);
 }
 
-export async function loadWorkbookPlans() {
-  return getDriveJson(OD_WORKBOOK_PLANS_FILE, {});
-}
-
-export async function saveWorkbookPlans(plans) {
-  // Stesso pruning a 90 giorni di saveDailyPlans, per non far crescere il file all'infinito.
-  const cutoff = new Date();
-  cutoff.setDate(cutoff.getDate() - 90);
-  const pruned = {};
-  for (const [date, plan] of Object.entries(plans)) {
-    if (new Date(date) >= cutoff) pruned[date] = plan;
-  }
-  return putDriveJson(OD_WORKBOOK_PLANS_FILE, pruned);
-}
-
 export async function loadIdealWeek() {
   return getDriveJson(OD_IDEAL_WEEK_FILE, null);
 }
 
 export async function saveIdealWeek(template) {
   return putDriveJson(OD_IDEAL_WEEK_FILE, template);
+}
+
+// ── Calendario Workbook dedicato ─────────────────────────────────────────────
+// I blocchi Workbook piazzati in griglia (drag&drop dall'albero
+// Workbook/Sub-workbook) vivono come eventi reali su un calendario Outlook
+// dedicato, separato dagli eventi "normali": workbookId/subWorkbookId/colore
+// (per seguire il nodo se rinominato) e le note libere sono serializzati come
+// JSON nel body dell'evento; il subject resta l'etichetta leggibile
+// "Workbook · Sub-workbook" per chi guarda direttamente Outlook.
+export const WORKBOOK_CALENDAR_NAME = 'Workbook';
+
+let _workbookCalId = null;
+
+export async function getWorkbookCalendarId() {
+  if (_workbookCalId) return _workbookCalId;
+  const cals = await getCalendars();
+  let cal = cals.find(c => (c.name || '').trim().toLowerCase() === WORKBOOK_CALENDAR_NAME.toLowerCase());
+  if (!cal) {
+    cal = await call('/me/calendars', {
+      method: 'POST',
+      body: JSON.stringify({ name: WORKBOOK_CALENDAR_NAME }),
+    });
+    invalidateCalendarsCache();
+  }
+  _workbookCalId = cal.id;
+  return _workbookCalId;
+}
+
+export async function getWorkbookEvents(calendarId, startDate, endDate, top = 500) {
+  const start = startDate.toISOString();
+  const end = endDate.toISOString();
+  const params = `startDateTime=${start}&endDateTime=${end}&$orderby=start/dateTime&$top=${top}&$select=id,subject,start,end,body`;
+  return callPagedValues(`/me/calendars/${calendarId}/calendarView?${params}`);
 }
 
 // ── OneDrive Color Settings (colori personalizzati taccuini/sezioni) ───────
