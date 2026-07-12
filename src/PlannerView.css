@@ -1837,9 +1837,13 @@ input[type="time"].planner-modal-select::-webkit-calendar-picker-indicator {
   font-weight: 700;
   color: rgba(255,255,255,0.92);
   letter-spacing: 0.03em;
-  border-top: 2px solid rgba(255,255,255,0.6);
-  padding-top: 6px;
-  margin-top: 4px;
+  /* rotate(180deg) capovolge la resa: un bordo messo "in fondo" (pre-rotazione)
+     finisce visivamente in alto, cioè proprio al confine col titolo sopra —
+     è l'opposto di .planner-block-label-section, che sta prima nel flusso e
+     usa border-top per lo stesso motivo speculare. */
+  border-bottom: 2px solid rgba(255,255,255,0.6);
+  padding-bottom: 6px;
+  margin-bottom: 4px;
 }
 .planner-block-label-col .planner-block-title,
 .planner-block-label-col .planner-event-title {
