@@ -471,13 +471,23 @@ export default function PlannerView({
         subWorkbookId = sub ? sub.id : null;
       }
     }
+    // Un blocco che finisce a fine giornata è salvato su Graph come "00:00
+    // del giorno dopo" (vedi graphDateTime/localToUtcDateTime): isoToHHMM
+    // legge solo ore/minuti e perde il cambio di giorno, restituendo "00:00"
+    // — che letto alla lettera precede lo startTime e schiaccia la durata a
+    // zero/negativa. Se il giorno locale dell'evento finale è successivo a
+    // quello iniziale, va reinterpretato come "24:00" (il sentinel di fine
+    // giornata usato internamente, vedi DAY_END_MIN), non come mezzanotte.
+    const startDay = isoToLocalDateStr(ev.start?.dateTime);
+    const endDay   = isoToLocalDateStr(ev.end?.dateTime);
+    const endTime  = (endDay && startDay && endDay !== startDay) ? '24:00' : isoToHHMM(ev.end?.dateTime);
     return {
       id: ev.id,
       workbookId, subWorkbookId,
       label: ev.subject || '',
       color: meta.color || '#888',
       startTime: isoToHHMM(ev.start?.dateTime),
-      endTime: isoToHHMM(ev.end?.dateTime),
+      endTime,
       notes: Array.isArray(meta.notes) ? meta.notes : [],
     };
   }
