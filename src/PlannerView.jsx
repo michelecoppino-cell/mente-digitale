@@ -1322,6 +1322,7 @@ export default function PlannerView({
         blocks.push({
           id: genId(), workbookId: b.workbookId, subWorkbookId: b.subWorkbookId,
           label: b.label, color: b.color, startTime: b.startTime, endTime: b.endTime,
+          notes: b.notes || [],
           dayOfWeek,
         });
       });
@@ -1346,7 +1347,8 @@ export default function PlannerView({
       if (!day) return null; // dayOfWeek fuori range 0-6 (template corrotto) — scarta senza crashare
       const copy = {
         id: genId(), workbookId: tb.workbookId, subWorkbookId: tb.subWorkbookId,
-        label: tb.label, color: tb.color, startTime: tb.startTime, endTime: tb.endTime, notes: [],
+        label: tb.label, color: tb.color, startTime: tb.startTime, endTime: tb.endTime,
+        notes: (tb.notes || []).map(n => ({ ...n, id: genId() })),
       };
       mutateWorkbookPlansLocal(all => {
         const dayPlan = all[day] || { date: day, blocks: [] };
