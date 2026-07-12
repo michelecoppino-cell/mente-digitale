@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo, Fragment } from 'react';
+import { useState, useEffect, useLayoutEffect, useRef, useMemo, Fragment } from 'react';
 import {
   loadDailyPlans, saveDailyPlans,
   loadPlannerConfig, savePlannerConfig,
@@ -877,6 +877,33 @@ export default function PlannerView({
     document.addEventListener('mouseup', onUp);
   }
 
+  // Resize (drag verticale sul bordo inferiore) di un task block nella vista
+  // Settimana — analogo a handleResizeStart della vista Giorno, ma opera su
+  // `plans` multi-giorno invece che sul solo todayPlan.
+  function handleWeekBlockResizeStart(e, block, day) {
+    e.preventDefault();
+    e.stopPropagation();
+    const startY        = e.clientY;
+    const startEndMin   = t2m(block.endTime);
+    const blockStartMin = t2m(block.startTime);
+    function onMove(ev) {
+      markDragSuppressClick();
+      const deltaMin  = Math.round((ev.clientY - startY) / SLOT_HEIGHT * 30 / 30) * 30;
+      const newEndMin = Math.max(blockStartMin + 30, Math.min(DAY_END_MIN, startEndMin + deltaMin));
+      mutatePlansMulti(all => {
+        const dayPlan = all[day];
+        if (!dayPlan) return all;
+        return { ...all, [day]: { ...dayPlan, blocks: dayPlan.blocks.map(b => b.id === block.id ? { ...b, endTime: m2t(newEndMin) } : b) } };
+      });
+    }
+    function onUp() {
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+    }
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  }
+
   // Wrapper di handleWorkbookResizeStart per la vista Giorno: gestisce in più
   // il flag dayResizingWbId (stesso ruolo del resizingWbId locale di
   // WeeklyTimeline), assente lì perché la vista Settimana tiene il proprio
@@ -1501,6 +1528,7 @@ export default function PlannerView({
           onMoveWorkbookBlock={moveWorkbookBlockBetweenDays}
           onRemoveWorkbookBlock={handleRemoveWorkbookBlock}
           onResizeWorkbookBlockStart={handleWorkbookResizeStart}
+          onResizeBlockStart={handleWeekBlockResizeStart}
           onAddWorkbookNote={addWorkbookNote}
           onEditWorkbookNote={editWorkbookNoteText}
           onMoveWorkbookNote={moveWorkbookNote}
@@ -2582,17 +2610,23 @@ function MonthlyCalendar({ currentDate, plans, calEvents, calOutOfRange, onDayCl
 function WeeklyTimeline({
   weekDays, plans, calEvents, workbookPlans, workbooks, workbookCalHidden, workdayStartMin, timeSlots, locked, suppressClickRef,
   onDayClick, onMoveBlock, onEventClick, onAddTask, onCreateEvent,
-  onAddWorkbookBlock, onMoveWorkbookBlock, onRemoveWorkbookBlock, onResizeWorkbookBlockStart,
+  onAddWorkbookBlock, onMoveWorkbookBlock, onRemoveWorkbookBlock, onResizeWorkbookBlockStart, onResizeBlockStart,
   onAddWorkbookNote, onEditWorkbookNote, onMoveWorkbookNote, onRemoveWorkbookNote,
 }) {
   const today = todayStr();
   const [dragOver, setDragOver] = useState(null); // { day, min }
-  // Mentre un workbook block è in resize disattiva il suo draggable (stesso
+  // Mentre un workbook/task block è in resize disattiva il suo draggable (stesso
   // accorgimento di resizingId nella vista Giorno, handleResizeStart): senza
   // di questo il mousedown sulla maniglia di resize può essere interpretato
   // dal browser come inizio di un drag nativo invece che come resize.
   const [resizingWbId, setResizingWbId] = useState(null);
+  const [resizingId, setResizingId] = useState(null);
   const weekBodyRef = useRef(null);
+  // Larghezza reale della scrollbar verticale del corpo scorrevole: l'header e
+  // la riga eventi "tutto il giorno" non scorrono e quindi non perdono questo
+  // spazio, sfalsando le colonne giorno rispetto alla griglia sottostante se
+  // non compensata (vedi useLayoutEffect sotto).
+  const [scrollbarW, setScrollbarW] = useState(0);
 
   function handleWbResizeMouseDown(e, block, day) {
     setResizingWbId(block.id);
@@ -2604,12 +2638,32 @@ function WeeklyTimeline({
     document.addEventListener('mouseup', clearResizing);
   }
 
+  function handleResizeMouseDown(e, block, day) {
+    setResizingId(block.id);
+    onResizeBlockStart(e, block, day);
+    function clearResizing() {
+      setResizingId(null);
+      document.removeEventListener('mouseup', clearResizing);
+    }
+    document.addEventListener('mouseup', clearResizing);
+  }
+
   // Apre di default sull'orario di lavoro configurato, come la vista Giorno —
   // ma essendo la griglia sempre 00:00–24:00 resta scorrevole con la rotella.
   useEffect(() => {
     if (!weekBodyRef.current) return;
     weekBodyRef.current.scrollTop = defaultScrollOffset(workdayStartMin);
   }, []); // eslint-disable-line
+
+  useLayoutEffect(() => {
+    function measure() {
+      const el = weekBodyRef.current;
+      if (el) setScrollbarW(el.offsetWidth - el.clientWidth);
+    }
+    measure();
+    window.addEventListener('resize', measure);
+    return () => window.removeEventListener('resize', measure);
+  }, [weekDays, plans, workbookPlans, calEvents]);
 
   function slotFromEvent(e) {
     const rect = e.currentTarget.getBoundingClientRect();
@@ -2650,7 +2704,7 @@ function WeeklyTimeline({
 
   return (
     <div className="planner-week-wrap">
-      <div className="planner-week-head">
+      <div className="planner-week-head" style={{ paddingRight: scrollbarW }}>
         <div className="planner-week-gutter" />
         {weekDays.map(day => (
           <div
@@ -2663,7 +2717,7 @@ function WeeklyTimeline({
         <div className="planner-week-gutter right" />
       </div>
       {/* All-day events row */}
-      <div className="planner-week-allday-row">
+      <div className="planner-week-allday-row" style={{ paddingRight: scrollbarW }}>
         <div className="planner-week-gutter" />
         {weekDays.map(day => {
           const dayAllDay = calEvents.filter(ev =>
@@ -2821,7 +2875,7 @@ function WeeklyTimeline({
                     className={`planner-week-task-block${block.completed ? ' completed' : ''}${isVertical ? ' vertical-layout' : ''}`}
                     style={{ top: top + 2, height, borderLeftColor: block.projectColor, background: block.projectColor }}
                     title={`${block.startTime}–${block.endTime} · ${block.taskTitle} (trascina per spostare)`}
-                    draggable={!block.completed}
+                    draggable={!block.completed && !locked && resizingId !== block.id}
                     onClick={e => e.stopPropagation()}
                     onDragStart={e => {
                       e.stopPropagation();
@@ -2836,6 +2890,11 @@ function WeeklyTimeline({
                       </div>
                     ) : (
                       <span className="planner-block-title">{block.taskTitle}</span>
+                    )}
+                    {!block.completed && !locked && (
+                      <div
+                        className="planner-block-resize"
+                        onMouseDown={e => handleResizeMouseDown(e, block, day)} />
                     )}
                   </div>
                 );
