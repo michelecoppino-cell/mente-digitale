@@ -599,7 +599,51 @@ export default function App() {
   return (
     <div className="app">
       <header className="header">
-        <div className="header-left" />
+        <div className="header-left">
+          {account && (
+            <button
+              className={`search-btn${unclassifiedCount > 0 ? ' has-badge' : ''}`}
+              onClick={() => setEisenhowerOpen(true)}
+              title="Smistamento Eisenhower dei task non classificati">
+              <span className="header-icon-emoji">🧭</span>
+              {unclassifiedCount > 0 && <span className="header-badge">{unclassifiedCount}</span>}
+            </button>
+          )}
+          {account && (
+            <div className="bell-wrap">
+              <button
+                className={`search-btn${reviewOpen ? ' active' : ''}${reviewSuggestions.length ? ' has-badge' : ''}`}
+                onClick={() => setReviewOpen(o => !o)}
+                title="Proposte Daily Review">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" />
+                  <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+                </svg>
+                {reviewSuggestions.length > 0 && <span className="header-badge">{reviewSuggestions.length}</span>}
+              </button>
+              {reviewOpen && (
+                <div className="bell-dropdown">
+                  <div className="bell-dropdown-header">
+                    <span>Daily Review</span>
+                    <button onClick={() => setReviewOpen(false)}>✕</button>
+                  </div>
+                  {reviewLoading && <div className="bell-empty">Analisi email e OneNote in corso…</div>}
+                  {!reviewLoading && reviewSuggestions.length === 0 && (
+                    <div className="bell-empty">Nessuna proposta al momento.</div>
+                  )}
+                  {!reviewLoading && reviewSuggestions.map(s => (
+                    <BellSuggestionItem
+                      key={s.id}
+                      suggestion={s}
+                      onAccept={handleAcceptSuggestion}
+                      onDismiss={handleDismissSuggestion}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
         <div className="header-center">
           <h1 className="logo">Mente Digitale</h1>
         </div>
@@ -611,6 +655,12 @@ export default function App() {
             </div>
           )}
           {account && (
+            <div className="map-view-toggle">
+              <button className={mapViewMode === 'workbook' ? 'active' : ''} onClick={() => setMapViewMode('workbook')} title="Vista per taccuino">Taccuini</button>
+              <button className={mapViewMode === 'para' ? 'active' : ''} onClick={() => setMapViewMode('para')} title="Vista PARA">PARA</button>
+            </div>
+          )}
+          {account && (
             <button className="search-btn" onClick={() => setSearchOpen(true)} title="Cerca (Ctrl+K)">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
                 <circle cx="11" cy="11" r="7" />
@@ -618,17 +668,6 @@ export default function App() {
               </svg>
             </button>
           )}
-          {account && (
-            <div className="map-view-toggle">
-              <button className={mapViewMode === 'workbook' ? 'active' : ''} onClick={() => setMapViewMode('workbook')} title="Vista per taccuino">Taccuini</button>
-              <button className={mapViewMode === 'para' ? 'active' : ''} onClick={() => setMapViewMode('para')} title="Vista PARA">PARA</button>
-            </div>
-          )}
-          <div className="zoom-controls">
-            <button className="zoom-btn" onClick={() => setZoom(z => Math.max(0.15, +(z - 0.2).toFixed(2)))}>−</button>
-            <span className="zoom-label">{Math.round(zoom * 100)}%</span>
-            <button className="zoom-btn" onClick={() => setZoom(z => Math.min(5, +(z + 0.2).toFixed(2)))}>+</button>
-          </div>
           {account && (
             <button className="search-btn" onClick={() => setColorSettingsOpen(true)} title="Colori taccuini e sezioni">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -683,27 +722,11 @@ export default function App() {
             onZoomChange={setZoom}
             onIdentityOpen={setIdentityOpen}
           />
-          {/* Dock unificato in basso: Eisenhower · GTD · Attività · Review.
-              Un solo contenitore centrato — niente più pile di bottoni
-              flottanti che si sovrappongono ai pannelli. */}
+          {/* Dock unificato in basso: Attività · GTD · Piano.
+              Smista e Review sono passati alla riga sommitale (a sx del
+              titolo). Un solo contenitore centrato — niente più pile di
+              bottoni flottanti che si sovrappongono ai pannelli. */}
           <div className="bottom-dock">
-            <button
-              className={`dock-btn${unclassifiedCount > 0 ? ' has-badge' : ''}`}
-              onClick={() => setEisenhowerOpen(true)}
-              title="Smistamento Eisenhower dei task non classificati">
-              <span className="dock-btn-icon">🧭</span>
-              <span className="dock-btn-label">Smista</span>
-              {unclassifiedCount > 0 && <span className="header-badge">{unclassifiedCount}</span>}
-            </button>
-            <div className="dock-sep" />
-            <button className="dock-gtd-btn" onClick={() => setGtdOpen(true)} title="Cattura pensiero (GTD)">
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
-                <line x1="12" y1="5" x2="12" y2="19" />
-                <line x1="5" y1="12" x2="19" y2="12" />
-              </svg>
-              GTD
-            </button>
-            <div className="dock-sep" />
             <button
               className={`dock-btn${scheduleOpen ? ' active' : ''}`}
               onClick={() => setScheduleOpen(o => !o)}
@@ -720,41 +743,29 @@ export default function App() {
               </span>
               <span className="dock-btn-label">Attività</span>
             </button>
-            <div className="bell-wrap">
-              <button
-                className={`dock-btn${reviewOpen ? ' active' : ''}${reviewSuggestions.length ? ' has-badge' : ''}`}
-                onClick={() => setReviewOpen(o => !o)}
-                title="Proposte Daily Review">
-                <span className="dock-btn-icon">
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" />
-                    <path d="M13.73 21a2 2 0 0 1-3.46 0" />
-                  </svg>
-                </span>
-                <span className="dock-btn-label">Review</span>
-                {reviewSuggestions.length > 0 && <span className="header-badge">{reviewSuggestions.length}</span>}
-              </button>
-              {reviewOpen && (
-                <div className="bell-dropdown">
-                  <div className="bell-dropdown-header">
-                    <span>Daily Review</span>
-                    <button onClick={() => setReviewOpen(false)}>✕</button>
-                  </div>
-                  {reviewLoading && <div className="bell-empty">Analisi email e OneNote in corso…</div>}
-                  {!reviewLoading && reviewSuggestions.length === 0 && (
-                    <div className="bell-empty">Nessuna proposta al momento.</div>
-                  )}
-                  {!reviewLoading && reviewSuggestions.map(s => (
-                    <BellSuggestionItem
-                      key={s.id}
-                      suggestion={s}
-                      onAccept={handleAcceptSuggestion}
-                      onDismiss={handleDismissSuggestion}
-                    />
-                  ))}
-                </div>
-              )}
-            </div>
+            <div className="dock-sep" />
+            <button className="dock-gtd-btn" onClick={() => setGtdOpen(true)} title="Cattura pensiero (GTD)">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
+                <line x1="12" y1="5" x2="12" y2="19" />
+                <line x1="5" y1="12" x2="19" y2="12" />
+              </svg>
+              GTD
+            </button>
+            <div className="dock-sep" />
+            <button
+              className={`dock-btn${plannerOpen ? ' active' : ''}`}
+              onClick={() => setPlannerOpen(true)}
+              title="Apri il Piano">
+              <span className="dock-btn-icon">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="3" y="5" width="18" height="16" rx="2" />
+                  <line x1="3" y1="10" x2="21" y2="10" />
+                  <line x1="8" y1="3" x2="8" y2="7" />
+                  <line x1="16" y1="3" x2="16" y2="7" />
+                </svg>
+              </span>
+              <span className="dock-btn-label">Piano</span>
+            </button>
           </div>
         </div>
         {/* Pannello sezione (ToDo/OneNote/OneDrive) — fisso rispetto al
