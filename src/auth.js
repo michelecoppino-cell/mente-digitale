@@ -30,14 +30,33 @@ export async function initAuth() {
 
   try {
     const result = await msal.handleRedirectPromise();
-    if (result?.account) {
-      localStorage.setItem(PERSONAL_ID_KEY, result.account.homeAccountId);
-      localStorage.setItem(PERSONAL_USERNAME_KEY, result.account.username);
-    }
+    if (result?.account) rememberAccount(result.account);
   } catch (e) {
     console.error('Redirect error:', e);
   }
+
+  // Cache locale vuota (dispositivo nuovo o dati del browser cancellati): se
+  // la sessione Microsoft è ancora attiva, autentica senza mostrare nulla
+  // all'utente, nemmeno lo schermo di login.
+  if (!getAccount()) {
+    try {
+      const result = await msal.ssoSilent({ scopes: SCOPES, loginHint: getLoginHint() });
+      rememberAccount(result.account);
+    } catch {
+      // Nessuna sessione attiva: si passa dallo schermo di login classico
+    }
+  }
+
   return msal;
+}
+
+function rememberAccount(account) {
+  localStorage.setItem(PERSONAL_ID_KEY, account.homeAccountId);
+  localStorage.setItem(PERSONAL_USERNAME_KEY, account.username);
+}
+
+function getLoginHint() {
+  return localStorage.getItem(PERSONAL_USERNAME_KEY) || PREFERRED_LOGIN_HINT;
 }
 
 // Account personale: usa ID salvato; fallback all'account MSA; fallback al primo
@@ -57,10 +76,8 @@ export function getAccount() {
 
 export async function login() {
   // Passa un hint per saltare lo chooser Microsoft (che altrimenti propone
-  // tutti gli account con sessione attiva nel browser): usa lo username
-  // dell'ultimo login su questo dispositivo, o l'account personale di default.
-  const loginHint = localStorage.getItem(PERSONAL_USERNAME_KEY) || PREFERRED_LOGIN_HINT;
-  return msal.loginRedirect({ scopes: SCOPES, loginHint });
+  // tutti gli account con sessione attiva nel browser).
+  return msal.loginRedirect({ scopes: SCOPES, loginHint: getLoginHint() });
 }
 
 export async function getToken() {
