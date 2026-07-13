@@ -5,6 +5,10 @@ on:
     - cron: '0 */3 * * *'   # ogni 3 ore
   workflow_dispatch:          # esecuzione manuale dal sito GitHub
 
+concurrency:
+  group: sync-calendar
+  cancel-in-progress: false
+
 jobs:
   sync:
     runs-on: ubuntu-latest

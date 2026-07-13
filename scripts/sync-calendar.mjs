@@ -67,10 +67,6 @@ function extractAction(line) {
   // "Action: updated" / "Azione: aggiornato" etc.
   const m = lower.match(/(?:action|azione)\s*[:\-]\s*(\w+)/);
   if (m && ACTIONS.has(m[1])) return m[1];
-  // Riga che contiene solo la parola azione preceduta da eventuali label
-  for (const a of ACTIONS) {
-    if (lower.endsWith(a) && lower.length <= a.length + 20) return a;
-  }
   return null;
 }
 
@@ -176,6 +172,34 @@ async function findEventByExtId(h, extId, startHint) {
   }
 
   return null;
+}
+
+// ── Cerca evento esistente per titolo+orario (fallback quando manca extId) ──
+async function findEventByTitleAndStart(h, title, start) {
+  if (!title || !start) return null;
+  const ref = new Date(start);
+  const from = new Date(ref); from.setMinutes(from.getMinutes() - 5);
+  const to   = new Date(ref); to.setMinutes(to.getMinutes() + 5);
+  const params = `startDateTime=${from.toISOString()}&endDateTime=${to.toISOString()}` +
+    `&$top=50&$select=id,subject`;
+
+  try {
+    const r = await fetch(`${GRAPH}/me/calendarView?${params}`, { headers: h });
+    if (!r.ok) return null;
+    const events = (await r.json()).value || [];
+    return events.find(e => e.subject === title) || null;
+  } catch {
+    return null;
+  }
+}
+
+// ── Idempotenza: evita di ricreare un evento già sincronizzato in precedenza ─
+async function findExistingEvent(h, { extId, title, start }) {
+  if (extId) {
+    const byId = await findEventByExtId(h, extId, start);
+    if (byId) return byId;
+  }
+  return findEventByTitleAndStart(h, title, start);
 }
 
 // ── Crea evento (con extId nel body per trovarlo in futuro) ──────────────────
@@ -301,10 +325,17 @@ async function run() {
           skipped++;
 
         } else {
-          // Creazione normale
-          await createEvent(h, { title, start, end, extId });
-          console.log(`  ✓ Creato "${title}"  ${start.substring(0,16)} → ${end.substring(11,16)}`);
-          created++;
+          // Creazione normale — controlla prima che non sia già stato sincronizzato
+          // (protegge da doppioni se la mail viene rielaborata per un errore precedente)
+          const existing = await findExistingEvent(h, { extId, title, start });
+          if (existing) {
+            console.log(`  ⏭ Già presente, salto "${title}"`);
+            skipped++;
+          } else {
+            await createEvent(h, { title, start, end, extId });
+            console.log(`  ✓ Creato "${title}"  ${start.substring(0,16)} → ${end.substring(11,16)}`);
+            created++;
+          }
         }
       } catch(e) {
         console.log(`  ✗ Errore "${title}": ${e.message}`);
@@ -312,17 +343,34 @@ async function run() {
       }
     }
 
-    // Marca come letta (sempre, prima di spostare — evita riprocessamento)
-    await fetch(`${GRAPH}/me/messages/${mail.id}`, {
-      method: 'PATCH', headers: h,
-      body: JSON.stringify({ isRead: true }),
-    });
+    // Marca come letta (sempre, prima di spostare — evita riprocessamento).
+    // Se fallisce, la mail verrà rielaborata al giro successivo: l'idempotenza
+    // sopra evita che questo generi un evento duplicato.
+    try {
+      const markRes = await fetch(`${GRAPH}/me/messages/${mail.id}`, {
+        method: 'PATCH', headers: h,
+        body: JSON.stringify({ isRead: true }),
+      });
+      if (!markRes.ok) {
+        console.log(`  ⚠ Impossibile segnare come letta (HTTP ${markRes.status})`);
+      }
+    } catch (e) {
+      console.log(`  ⚠ Errore di rete nel segnare come letta: ${e.message}`);
+    }
+
     // Sposta in "Calendario" se la cartella esiste
     if (calendarioId) {
-      await fetch(`${GRAPH}/me/messages/${mail.id}/move`, {
-        method: 'POST', headers: h,
-        body: JSON.stringify({ destinationId: calendarioId }),
-      });
+      try {
+        const moveRes = await fetch(`${GRAPH}/me/messages/${mail.id}/move`, {
+          method: 'POST', headers: h,
+          body: JSON.stringify({ destinationId: calendarioId }),
+        });
+        if (!moveRes.ok) {
+          console.log(`  ⚠ Impossibile spostare la mail (HTTP ${moveRes.status})`);
+        }
+      } catch (e) {
+        console.log(`  ⚠ Errore di rete nello spostare la mail: ${e.message}`);
+      }
     }
   }
 
