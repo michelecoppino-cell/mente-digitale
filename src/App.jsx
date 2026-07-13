@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { initAuth, getAccount, login } from './auth';
+import { initAuth, getAccount, login, trySsoSilent } from './auth';
 import { getNotebooks, getSections, getTodoLists, getTodoTasks, getPages, getRecentEmails, getPageContentHtml, markOneNoteTagDone, getReminders, createTask, getCalendarEvents, getTasksForDeadlineDedup, invalidateCalendarsCache, loadColorSettings, saveColorSettings } from './api';
 import { cacheGet, cacheSet, cacheClear, TTL } from './cache';
 import { extractEmailCandidates, extractOneNoteCandidates } from './dailyReview';
@@ -155,7 +155,19 @@ export default function App() {
       const acc = getAccount();
       setAccount(acc);
       setReady(true);
-      if (acc) load(false);
+      if (acc) {
+        load(false);
+      } else {
+        // Tentativo di SSO silenzioso in background, senza bloccare il primo
+        // render: se la sessione Microsoft è ancora attiva si passa dallo
+        // schermo di login senza che l'utente se ne accorga.
+        trySsoSilent().then(ssoAcc => {
+          if (ssoAcc) {
+            setAccount(ssoAcc);
+            load(false);
+          }
+        });
+      }
     });
   }, []);
 
