@@ -35,19 +35,22 @@ export async function initAuth() {
     console.error('Redirect error:', e);
   }
 
-  // Cache locale vuota (dispositivo nuovo o dati del browser cancellati): se
-  // la sessione Microsoft è ancora attiva, autentica senza mostrare nulla
-  // all'utente, nemmeno lo schermo di login.
-  if (!getAccount()) {
-    try {
-      const result = await msal.ssoSilent({ scopes: SCOPES, loginHint: getLoginHint() });
-      rememberAccount(result.account);
-    } catch {
-      // Nessuna sessione attiva: si passa dallo schermo di login classico
-    }
-  }
-
   return msal;
+}
+
+// Da chiamare in background (senza await) quando non c'è un account in
+// cache: se la sessione Microsoft nel browser è ancora attiva, autentica
+// senza mostrare nulla, altrimenti risolve a null e resta lo schermo di
+// login classico. Non va mai atteso prima del primo render: l'iframe
+// nascosto verso Microsoft può metterci diversi secondi.
+export async function trySsoSilent() {
+  try {
+    const result = await msal.ssoSilent({ scopes: SCOPES, loginHint: getLoginHint() });
+    rememberAccount(result.account);
+    return result.account;
+  } catch {
+    return null;
+  }
 }
 
 function rememberAccount(account) {
