@@ -55,24 +55,6 @@
 .map-view-toggle button:hover { background: rgba(255,255,255,0.05); color: var(--text); }
 .map-view-toggle button.active { background: rgba(200,169,110,0.12); border-color: var(--accent); color: var(--accent); }
 
-.zoom-controls { display: flex; align-items: center; gap: 4px; }
-
-.zoom-btn {
-  background: none;
-  border: 1px solid var(--border2);
-  color: var(--muted);
-  width: 26px; height: 26px;
-  border-radius: 6px;
-  cursor: pointer;
-  font-size: 15px;
-  display: flex; align-items: center; justify-content: center;
-  transition: background 0.15s, color 0.15s;
-  font-family: 'Outfit', sans-serif;
-}
-.zoom-btn:hover { background: rgba(255,255,255,0.06); color: var(--text); }
-
-.zoom-label { font-size: 11px; color: var(--muted); min-width: 36px; text-align: center; }
-
 /* Sync status */
 .sync-status { display: flex; align-items: center; gap: 7px; font-size: 11px; color: var(--muted); }
 
@@ -93,10 +75,9 @@
    trabocchi e vada a sovrapporsi al logo centrale. */
 @media (max-width: 860px) {
   .sync-label-text { display: none; }
-  .zoom-controls { display: none; }
 }
 
-/* ── Ricerca globale ── */
+/* ── Ricerca globale / icone header (smista, review, cerca, colori) ── */
 .search-btn {
   position: relative;
   background: none;
@@ -110,6 +91,9 @@
 }
 .search-btn:hover { background: rgba(255,255,255,0.06); color: var(--text); }
 .search-btn.has-badge { border-color: var(--accent); color: var(--accent); }
+.search-btn.active { background: rgba(200,169,110,0.14); border-color: var(--accent); color: var(--accent); }
+
+.header-icon-emoji { font-size: 13px; line-height: 1; }
 
 /* ── Campanella Daily Review ── */
 .bell-wrap { position: relative; }
