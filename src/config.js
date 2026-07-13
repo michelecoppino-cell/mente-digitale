@@ -1,5 +1,8 @@
 export const CLIENT_ID = 'b639e8ea-2c30-4beb-8226-46e342721a50';
 export const REDIRECT_URI = window.location.origin + '/';
+// Account Microsoft personale usato di default: evita lo chooser dei 3 account
+// anche al primo accesso su un dispositivo nuovo (nessuna cache locale ancora).
+export const PREFERRED_LOGIN_HINT = 'michelecoppino@gmail.com';
 export const SCOPES = ['Notes.Read', 'Notes.Read.All', 'Notes.ReadWrite', 'Tasks.Read', 'Tasks.ReadWrite', 'Calendars.ReadWrite', 'Files.ReadWrite', 'Mail.Read'];
 export const COLORS = [
   '#7eb8c9','#c084a0','#86c07a',

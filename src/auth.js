@@ -1,10 +1,13 @@
 import { PublicClientApplication, InteractionRequiredAuthError } from '@azure/msal-browser';
-import { CLIENT_ID, REDIRECT_URI, SCOPES } from './config';
+import { CLIENT_ID, REDIRECT_URI, SCOPES, PREFERRED_LOGIN_HINT } from './config';
 
 let msal = null;
 
 // Chiave localStorage per ricordare l'account personale collegato
 const PERSONAL_ID_KEY = 'md_personal_id';
+// Ricorda anche lo username, per passarlo come loginHint e saltare lo
+// chooser Microsoft anche su un dispositivo/browser senza cache locale
+const PERSONAL_USERNAME_KEY = 'md_personal_username';
 
 // Il tenantId dei Microsoft Account personali (MSA) è sempre questo
 const MSA_TENANT = '9188040d-6c67-4c5b-b112-36a304b66dad';
@@ -29,6 +32,7 @@ export async function initAuth() {
     const result = await msal.handleRedirectPromise();
     if (result?.account) {
       localStorage.setItem(PERSONAL_ID_KEY, result.account.homeAccountId);
+      localStorage.setItem(PERSONAL_USERNAME_KEY, result.account.username);
     }
   } catch (e) {
     console.error('Redirect error:', e);
@@ -52,7 +56,11 @@ export function getAccount() {
 }
 
 export async function login() {
-  return msal.loginRedirect({ scopes: SCOPES });
+  // Passa un hint per saltare lo chooser Microsoft (che altrimenti propone
+  // tutti gli account con sessione attiva nel browser): usa lo username
+  // dell'ultimo login su questo dispositivo, o l'account personale di default.
+  const loginHint = localStorage.getItem(PERSONAL_USERNAME_KEY) || PREFERRED_LOGIN_HINT;
+  return msal.loginRedirect({ scopes: SCOPES, loginHint });
 }
 
 export async function getToken() {
@@ -63,7 +71,7 @@ export async function getToken() {
     return r.accessToken;
   } catch (e) {
     if (e instanceof InteractionRequiredAuthError) {
-      return msal.acquireTokenRedirect({ scopes: SCOPES });
+      return msal.acquireTokenRedirect({ scopes: SCOPES, account });
     }
     throw e;
   }
