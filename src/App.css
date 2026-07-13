@@ -1345,8 +1345,25 @@ body, .app {
 
 @media (max-width: 640px) {
   .bottom-dock { gap: 2px; padding: 5px 6px; width: max-content; max-width: calc(100vw - 16px); }
-  .dock-btn { min-width: 48px; padding: 5px 6px; }
-  .dock-gtd-btn { padding: 10px 16px; font-size: 13px; }
+  .dock-btn { min-width: 48px; padding: 8px 6px; }
+  .dock-gtd-btn { padding: 12px 16px; font-size: 13px; }
+}
+
+/* ── Pannelli laterali a schermo intero su mobile ──
+   Su desktop .panel e .schedule-panel sono strisce laterali a larghezza
+   fissa (385px). Sotto questa soglia diventano fogli a tutta larghezza:
+   restano leggibili invece di essere tagliati dal bordo del viewport, e i
+   controlli di chiusura/interazione hanno un target touch più grande. */
+@media (max-width: 640px) {
+  .panel, .schedule-panel {
+    width: 100vw;
+  }
+  .panel-close, .schedule-expand-btn, .search-btn, .refresh-btn {
+    width: 34px; height: 34px;
+  }
+  .gtd-fab {
+    width: 52px; height: 52px;
+  }
 }
 
 /* ── Vista settimana calendario ── */
