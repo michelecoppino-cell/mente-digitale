@@ -219,8 +219,10 @@ export default function MindMap({
     sim.on('tick', () => tick());
     renderAll();
 
-    // Zoom iniziale 140% — applicato subito
-    const initScale = 1.4;
+    // Zoom iniziale — 140% su desktop, ridotto sotto i 640px così la mappa
+    // (il cui raggio scala comunque su Math.min(W,H)) resta interamente
+    // visibile invece di richiedere subito un pinch-out per orientarsi.
+    const initScale = W < 640 ? 1.0 : 1.4;
     const initTx = (W - W * initScale) / 2;
     const initTy = (H - H * initScale) / 2;
     select(svgRef.current)
