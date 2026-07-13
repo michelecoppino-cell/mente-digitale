@@ -2049,41 +2049,16 @@ input[type="time"].planner-modal-select::-webkit-calendar-picker-indicator {
 /* ── Tab colonne mobile ── */
 .planner-mobile-tabs { display: none; }
 
+/* Da mobile il Piano mostra solo il calendario (Giornata/Settimana): niente
+   pannelli laterali Task/Dettagli, pensati per l'uso desktop (drag & drop,
+   editing) — da mobile l'unico punto di inserimento resta il "+" GTD
+   flottante. .planner-timeline e .planner-week-wrap sono già flex:1 di base,
+   quindi occupano da soli tutta la larghezza una volta tolti pool/dettagli
+   dal flusso. */
 @media (max-width: 768px) {
-  .planner-mobile-tabs {
-    display: flex;
-    gap: 6px;
-    padding: 8px 10px;
-    border-bottom: 1px solid var(--border);
-    flex-shrink: 0;
-  }
-  .planner-mobile-tabs button {
-    flex: 1;
-    background: none;
-    border: 1px solid var(--border2);
-    color: var(--muted);
-    padding: 7px 0;
-    border-radius: 7px;
-    font-size: 12px;
-    font-family: 'Outfit', sans-serif;
-    cursor: pointer;
-    transition: all 0.15s;
-  }
-  .planner-mobile-tabs button.active {
-    border-color: var(--accent);
-    color: var(--accent);
-    background: rgba(200,169,110,0.1);
-  }
-
-  /* Una colonna alla volta, a tutta larghezza */
+  .planner-mobile-tabs { display: none; }
   .planner-col-resize { display: none; }
-  .planner-pool, .planner-timeline, .planner-ai-panel { display: none; }
-  .planner-pool.mobile-active,
-  .planner-timeline.mobile-active,
-  .planner-ai-panel.mobile-active {
-    display: flex;
-    width: 100% !important; /* vince sullo width inline del resize desktop */
-  }
+  .planner-pool, .planner-ai-panel { display: none !important; }
 
   /* Header più compatto */
   .planner-header { flex-wrap: wrap; padding: 8px 10px; gap: 8px; }
