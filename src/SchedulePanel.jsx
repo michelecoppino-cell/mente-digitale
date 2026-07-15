@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { getTodoLists, getTodoTasks, loadPlannerConfig } from './api';
-import { cacheGet } from './cache';
+import { queryClient, qk, STALE } from './queryClient';
 import TaskPool from './TaskPool';
 import { DEFAULT_CONFIG } from './plannerShared';
 
@@ -23,8 +23,7 @@ export default function SchedulePanel({ open, onClose, onExpand, preloadedTasks,
     if (!open) return;
     (async () => {
       try {
-        const cached = cacheGet('planner_config');
-        const cfg = cached || await loadPlannerConfig();
+        const cfg = await queryClient.fetchQuery({ queryKey: qk.plannerConfig(), queryFn: loadPlannerConfig, staleTime: STALE.plannerConfig });
         if (cfg) setConfig(cfg);
       } catch (e) { console.error('planner config load', e); }
     })();

@@ -15,17 +15,26 @@
 
 import { QueryClient, hydrate, dehydrate } from '@tanstack/react-query';
 
-const HOUR = 60 * 60 * 1000;
+const MIN = 60 * 1000;
+const HOUR = 60 * MIN;
 
 // staleTime = per quanto un dato è considerato "fresco" prima di rivalidarlo.
 // Rispecchiano i vecchi TTL di cache.js.
 export const STALE = {
+  // App.jsx
   notebooks:      24 * HOUR,
   sections:       24 * HOUR,
   pages:          24 * HOUR,
   todolists:      24 * HOUR,
   tasks:           2 * HOUR,
-  colorSettings:  30 * 60 * 1000,
+  colorSettings:  30 * MIN,
+  // PlannerView.jsx
+  plannerConfig:      30 * MIN,
+  dailyPlans:          5 * MIN,   // ex PLANS_CACHE_TTL
+  workbooks:          30 * MIN,
+  idealWeek:          30 * MIN,
+  calEventsBulk:      30 * MIN,
+  workbookEventsBulk: 30 * MIN,
 };
 
 // gcTime lungo: un dato diventato "vecchio" resta comunque in cache (e
@@ -56,6 +65,13 @@ export const qk = {
   /** @param {string} listId */
   tasks:         (listId) => /** @type {const} */ (['tasks', listId]),
   colorSettings: () => /** @type {const} */ (['colorSettings']),
+  // PlannerView.jsx — file singoli su OneDrive + bulk eventi ±3 mesi
+  plannerConfig:      () => /** @type {const} */ (['plannerConfig']),
+  dailyPlans:         () => /** @type {const} */ (['dailyPlans']),
+  workbooks:          () => /** @type {const} */ (['workbooks']),
+  idealWeek:          () => /** @type {const} */ (['idealWeek']),
+  calEventsBulk:      () => /** @type {const} */ (['calEventsBulk']),
+  workbookEventsBulk: () => /** @type {const} */ (['workbookEventsBulk']),
 };
 
 // ── Persistenza su localStorage ──────────────────────────────────────────────
