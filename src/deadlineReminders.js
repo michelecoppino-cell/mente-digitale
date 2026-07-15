@@ -1,3 +1,4 @@
+// @ts-check
 // Scadenze ricorrenti (assicurazioni, salute, tasse...) agganciate alle Aree:
 // un evento Calendario ricorrente con reminder nativo, intitolato
 // "[NOME-LISTA] Titolo" (stesso nome della lista To-Do dell'Area), fa
@@ -8,6 +9,10 @@
 const PREFIX_RE = /^\[([^\]]+)\]\s*(.+)$/;
 
 // "[AREA-CASA] Scadenza patente" → { listName: 'AREA-CASA', title: 'Scadenza patente' }
+/**
+ * @param {string|null|undefined} subject
+ * @returns {import('./types').ParsedReminder|null}
+ */
 export function parseReminderSubject(subject) {
   const m = (subject || '').match(PREFIX_RE);
   if (!m) return null;
@@ -21,10 +26,20 @@ export function parseReminderSubject(subject) {
 // ricorrente (stesso eventId ogni anno, ma eventStartTime cambia a ogni
 // occorrenza), quindi la coppia eventId+data identifica l'occorrenza precisa
 // e permette di non ricreare due volte il task per lo stesso avviso.
+/**
+ * @param {string} eventId
+ * @param {string} eventStartIso
+ * @returns {string}
+ */
 export function reminderMarker(eventId, eventStartIso) {
   return `reminder-src:${eventId}:${eventStartIso}`;
 }
 
+/**
+ * @param {import('./types').TodoTask} task
+ * @param {string} marker
+ * @returns {boolean}
+ */
 export function hasReminderMarker(task, marker) {
   return !!task.body?.content?.includes(marker);
 }
@@ -33,6 +48,11 @@ export function hasReminderMarker(task, marker) {
 // con "[NomeSezione]" — usata dal Pannello sezione sull'elenco di eventi già
 // precaricato una volta sola in App.jsx (preloadSectionCalendarEvents),
 // invece di interrogare Calendario a ogni apertura del pannello.
+/**
+ * @param {import('./types').CalendarEvent[]|null|undefined} events
+ * @param {string} sectionName
+ * @returns {import('./types').CalendarEvent[]}
+ */
 export function filterEventsBySectionPrefix(events, sectionName) {
   if (!sectionName) return [];
   const prefix = `[${sectionName.toLowerCase()}]`;

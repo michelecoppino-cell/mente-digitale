@@ -1,7 +1,9 @@
+// @ts-check
 // Helpers condivisi tra PlannerView (modalità piano) e TaskPool, così la
 // vista task usata nel pannello Attività e quella nella modalità piano
 // restano sempre identiche invece di essere duplicate in due file.
 
+/** @type {import('./types').PlannerConfig} */
 export const DEFAULT_CONFIG = {
   projects: [
     { key: 'p1', name: 'Progetto 1', color: '#7eb8c9', todoListNames: [] },
@@ -15,6 +17,11 @@ export const DEFAULT_CONFIG = {
   hiddenCalendarIds: null,
 };
 
+/**
+ * @param {import('./types').TodoTask} task
+ * @param {import('./types').PlannerConfig} cfg
+ * @returns {import('./types').ProjectConfig|null}
+ */
 export function findProject(task, cfg) {
   const name = (task._listName || '').toLowerCase();
   for (const p of cfg.projects) {
@@ -23,22 +30,42 @@ export function findProject(task, cfg) {
   return null;
 }
 
+/**
+ * @param {string|null|undefined} hex
+ * @param {number} alpha
+ * @returns {string}
+ */
 export function hexToRgba(hex, alpha) {
   const num = parseInt((hex || '#888888').replace('#', ''), 16);
   const r = (num >> 16) & 0xFF, g = (num >> 8) & 0xFF, b = num & 0xFF;
   return `rgba(${r},${g},${b},${alpha})`;
 }
 
+/**
+ * @param {string|null|undefined} hex
+ * @returns {{ r: number, g: number, b: number }}
+ */
 export function hexToRgb(hex) {
   const num = parseInt((hex || '#888888').replace('#', ''), 16);
   return { r: (num >> 16) & 0xFF, g: (num >> 8) & 0xFF, b: num & 0xFF };
 }
 
+/**
+ * @param {number} r
+ * @param {number} g
+ * @param {number} b
+ * @returns {string}
+ */
 export function rgbToHex(r, g, b) {
-  const clamp = v => Math.max(0, Math.min(255, Math.round(v) || 0));
+  const clamp = (/** @type {number} */ v) => Math.max(0, Math.min(255, Math.round(v) || 0));
   return `#${[clamp(r), clamp(g), clamp(b)].map(v => v.toString(16).padStart(2, '0')).join('')}`;
 }
 
+/**
+ * @param {string|null|undefined} hex
+ * @param {number} step
+ * @returns {string}
+ */
 export function shadeColor(hex, step) {
   const num = parseInt((hex || '#888888').replace('#', ''), 16);
   const f = 1 - step * 0.1;
@@ -50,6 +77,10 @@ export function shadeColor(hex, step) {
 
 // Scadenza dei task ToDo (dueDateTime) — formattazione e ordinamento condivisi
 // tra TaskPool e Panel, così la data appare identica ovunque venga mostrata.
+/**
+ * @param {import('./types').GraphDateTime|null|undefined} dueDateTime
+ * @returns {string|null}
+ */
 export function formatDueDate(dueDateTime) {
   const iso = dueDateTime?.dateTime;
   if (!iso) return null;
@@ -58,12 +89,20 @@ export function formatDueDate(dueDateTime) {
 }
 
 // Timestamp per ordinare per scadenza — i task senza scadenza vanno in fondo.
+/**
+ * @param {import('./types').GraphDateTime|null|undefined} dueDateTime
+ * @returns {number}
+ */
 export function dueDateSortValue(dueDateTime) {
   const iso = dueDateTime?.dateTime;
   if (!iso) return Infinity;
   return new Date(iso.endsWith('Z') ? iso : iso + 'Z').getTime();
 }
 
+/**
+ * @param {import('./types').GraphDateTime|null|undefined} dueDateTime
+ * @returns {boolean}
+ */
 export function isTaskOverdue(dueDateTime) {
   const iso = dueDateTime?.dateTime;
   if (!iso) return false;

@@ -1,0 +1,33 @@
+name: CI
+
+# Verifica statica ad ogni push/PR: type-check (JSDoc + checkJs), lint e build.
+# Utile soprattutto perché l'app va provata a mano solo su main (le API Graph
+# rispondono solo sull'URL di produzione): almeno tipi rotti, errori di lint o
+# build fallito vengono intercettati sul branch, prima del merge.
+on:
+  push:
+    branches-ignore:
+      - backup**
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Type-check (JSDoc + checkJs)
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Build
+        run: npm run build

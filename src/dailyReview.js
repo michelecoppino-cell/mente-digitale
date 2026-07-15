@@ -1,3 +1,4 @@
+// @ts-check
 // Daily Review senza AI: euristiche locali, gratuite e deterministiche per
 // individuare candidati a diventare task, sia da email Outlook che da pagine
 // OneNote — nessuna chiamata a servizi esterni, nessun costo.
@@ -18,32 +19,38 @@ const ACTION_KEYWORDS = [
   'in attesa di', 'firmare', 'firma',
 ];
 
+/**
+ * @param {import('./types').EmailMessage[]|null|undefined} emails
+ * @param {number} [max]
+ * @returns {import('./types').ReviewCandidate[]}
+ */
 export function extractEmailCandidates(emails, max = 6) {
-  return (emails || [])
-    .map(e => {
-      const from = (e.from?.emailAddress?.address || e.from || '').toLowerCase();
-      const subject = e.subject || '';
-      const preview = e.bodyPreview || '';
-      const haystack = `${subject} ${preview}`.toLowerCase();
+  const scored = (emails || []).map(e => {
+    const from = (e.from?.emailAddress?.address || e.from || '').toLowerCase();
+    const subject = e.subject || '';
+    const preview = e.bodyPreview || '';
+    const haystack = `${subject} ${preview}`.toLowerCase();
 
-      if (!subject.trim()) return null;
-      if (NOISE_SENDER_RE.test(from) || NOISE_SUBJECT_RE.test(haystack)) return null;
+    if (!subject.trim()) return null;
+    if (NOISE_SENDER_RE.test(from) || NOISE_SUBJECT_RE.test(haystack)) return null;
 
-      let score = e.isRead ? 0 : 1;
-      for (const kw of ACTION_KEYWORDS) if (haystack.includes(kw)) score += 1;
-      if (subject.trim().endsWith('?')) score += 1;
-      if (score === 0) return null;
+    let score = e.isRead ? 0 : 1;
+    for (const kw of ACTION_KEYWORDS) if (haystack.includes(kw)) score += 1;
+    if (subject.trim().endsWith('?')) score += 1;
+    if (score === 0) return null;
 
-      return {
-        source: 'email',
-        title: subject,
-        meta: from,
-        extractedAction: subject.trim().slice(0, 120),
-        score,
-      };
-    })
-    .filter(Boolean)
-    .sort((a, b) => b.score - a.score)
+    /** @type {import('./types').ReviewCandidate} */
+    const candidate = {
+      source: 'email',
+      title: subject,
+      meta: from,
+      extractedAction: subject.trim().slice(0, 120),
+      score,
+    };
+    return candidate;
+  });
+  return /** @type {import('./types').ReviewCandidate[]} */ (scored.filter(Boolean))
+    .sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
     .slice(0, max);
 }
 
@@ -57,6 +64,7 @@ export function extractEmailCandidates(emails, max = 6) {
 const TODO_PARAGRAPH_RE = /<p([^>]*)data-tag="([^"]*)"([^>]*)>([\s\S]*?)<\/p>/gi;
 const ID_ATTR_RE = /\bid="([^"]*)"/;
 
+/** @param {string} fragment @returns {string} */
 function stripInlineHtml(fragment) {
   return fragment
     .replace(/<[^>]+>/g, ' ')
@@ -66,7 +74,13 @@ function stripInlineHtml(fragment) {
     .trim();
 }
 
+/**
+ * @param {(import('./types').Page & { html?: string })[]|null|undefined} pagesWithHtml
+ * @param {number} [max]
+ * @returns {import('./types').ReviewCandidate[]}
+ */
 export function extractOneNoteCandidates(pagesWithHtml, max = 8) {
+  /** @type {import('./types').ReviewCandidate[]} */
   const out = [];
   for (const p of (pagesWithHtml || [])) {
     const html = p.html || '';
