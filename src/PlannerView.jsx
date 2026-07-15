@@ -11,7 +11,7 @@ import {
   loadWorkbooks, saveWorkbooks, getWorkbookCalendarId, getWorkbookEvents, WORKBOOK_CALENDAR_NAME,
   loadIdealWeek, saveIdealWeek,
 } from './api';
-import { cacheGet, cacheSet, cacheDel } from './cache';
+import { queryClient, qk, STALE } from './queryClient';
 import Skeleton from './Skeleton';
 import PomodoroTimer from './PomodoroTimer';
 import TaskPool from './TaskPool';
@@ -25,7 +25,6 @@ import './PlannerView.css';
 const SLOT_HEIGHT      = 32;  // px per 30-min slot (32 → ~12h visible at once)
 const DEFAULT_DURATION = 60;  // minutes for newly dropped tasks
 const SAVE_DEBOUNCE    = 2000;
-const PLANS_CACHE_TTL  = 5 * 60 * 1000;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function t2m(t) {
@@ -382,22 +381,18 @@ export default function PlannerView({
 
   async function initConfig() {
     try {
-      const cached = cacheGet('planner_config');
-      const cfg = cached || await loadPlannerConfig();
+      const cfg = await queryClient.fetchQuery({ queryKey: qk.plannerConfig(), queryFn: loadPlannerConfig, staleTime: STALE.plannerConfig });
       if (cfg) { setConfig(cfg); configRef.current = cfg; }
-      if (!cached && cfg) cacheSet('planner_config', cfg, 30 * 60 * 1000);
       configLoadedRef.current = true;
     } catch (e) { console.error('planner config load', e); }
   }
 
   async function initPlans() {
     try {
-      const cached = cacheGet('daily_plans');
-      const allPlans = cached || await loadDailyPlans() || {};
+      const allPlans = await queryClient.fetchQuery({ queryKey: qk.dailyPlans(), queryFn: loadDailyPlans, staleTime: STALE.dailyPlans }) || {};
       setPlans(allPlans);
       plansRef.current = allPlans;
       plansLoadedRef.current = true;
-      if (!cached) cacheSet('daily_plans', allPlans, PLANS_CACHE_TTL);
 
       const dayPlan = allPlans[currentDate] || { date: currentDate, blocks: [], emailExtractedActions: [] };
       setTodayPlan(dayPlan);
@@ -419,13 +414,11 @@ export default function PlannerView({
 
   async function initWorkbooks() {
     try {
-      const cached = cacheGet('workbooks');
-      const data = cached || await loadWorkbooks();
+      const data = await queryClient.fetchQuery({ queryKey: qk.workbooks(), queryFn: loadWorkbooks, staleTime: STALE.workbooks });
       const list = data?.workbooks || [];
       setWorkbooks(list);
       workbooksRef.current = list;
       workbooksLoadedRef.current = true;
-      if (!cached && data) cacheSet('workbooks', data, 30 * 60 * 1000);
     } catch (e) { console.error('workbooks load', e); }
   }
 
@@ -503,17 +496,10 @@ export default function PlannerView({
   // di fetchCalEventsAll/filterCalEvents sopra ma su un solo calendario
   // dedicato — stesso pattern cache in-memory → cache sessione → Graph.
   async function fetchWorkbookEventsAll() {
-    const WB_BULK_KEY = 'workbook_events_bulk';
-    const WB_MONTHS   = 3;
+    const WB_MONTHS = 3;
 
     if (allWorkbookEventsRef.current.length > 0) {
       filterWorkbookEvents(allWorkbookEventsRef.current);
-      return;
-    }
-    const cached = cacheGet(WB_BULK_KEY);
-    if (cached) {
-      allWorkbookEventsRef.current = cached;
-      filterWorkbookEvents(cached);
       return;
     }
     try {
@@ -522,9 +508,15 @@ export default function PlannerView({
       const today = new Date();
       const start = new Date(today); start.setMonth(today.getMonth() - WB_MONTHS); start.setHours(0,0,0,0);
       const end   = new Date(today); end.setMonth(today.getMonth() + WB_MONTHS);   end.setHours(23,59,59,999);
-      const evs = await getWorkbookEvents(workbookCalIdRef.current, start, end, 500);
+      const calId = workbookCalIdRef.current;
+      // fetchQuery: riusa la cache di sessione se ancora fresca, altrimenti
+      // interroga Graph una volta e la persiste (al posto di cacheGet/cacheSet).
+      const evs = await queryClient.fetchQuery({
+        queryKey: qk.workbookEventsBulk(),
+        queryFn: () => getWorkbookEvents(calId, start, end, 500),
+        staleTime: STALE.workbookEventsBulk,
+      });
       allWorkbookEventsRef.current = evs;
-      cacheSet(WB_BULK_KEY, evs, 30 * 60 * 1000);
       filterWorkbookEvents(evs);
     } catch (e) {
       console.error('workbook events bulk load', e);
@@ -580,17 +572,15 @@ export default function PlannerView({
   // Forza un refetch dal server dopo una modifica ai blocchi Workbook.
   async function refreshWorkbookEvents() {
     allWorkbookEventsRef.current = [];
-    cacheDel('workbook_events_bulk');
+    await queryClient.invalidateQueries({ queryKey: qk.workbookEventsBulk() });
     await fetchWorkbookEventsAll();
   }
 
   async function initIdealWeek() {
     try {
-      const cached = cacheGet('ideal_week');
-      const template = cached || await loadIdealWeek();
+      const template = await queryClient.fetchQuery({ queryKey: qk.idealWeek(), queryFn: loadIdealWeek, staleTime: STALE.idealWeek });
       setIdealWeek(template);
       idealWeekRef.current = template;
-      if (!cached && template) cacheSet('ideal_week', template, 30 * 60 * 1000);
     } catch (e) { console.error('ideal week load', e); }
   }
 
@@ -600,7 +590,7 @@ export default function PlannerView({
     setWorkbooks(nextList);
     workbooksRef.current = nextList;
     const payload = { workbooks: nextList };
-    cacheSet('workbooks', payload, 30 * 60 * 1000);
+    queryClient.setQueryData(qk.workbooks(), payload);
     if (workbooksLoadedRef.current) {
       saveWorkbooks(payload).catch(e => console.error('save workbooks', e));
     }
@@ -647,7 +637,7 @@ export default function PlannerView({
     const nextConfig = { ...configRef.current, hiddenCalendarIds: nextHidden };
     configRef.current = nextConfig;
     setConfig(nextConfig);
-    cacheSet('planner_config', nextConfig, 30 * 60 * 1000);
+    queryClient.setQueryData(qk.plannerConfig(), nextConfig);
     // Se il load della config è fallito, non riscrivere il file remoto
     // partendo dai default: si perderebbe la configurazione salvata.
     if (configLoadedRef.current) {
@@ -688,29 +678,25 @@ export default function PlannerView({
 
   // Fetch a 6-month window once; subsequent calls filter from the in-memory/cache ref.
   async function fetchCalEventsAll() {
-    const CAL_BULK_KEY = 'cal_events_bulk';
-    const CAL_MONTHS   = 3;
+    const CAL_MONTHS = 3;
 
-    // 1 — in-memory (same session)
+    // 1 — in-memory (stessa sessione): evita anche il tick async di fetchQuery
     if (allCalEventsRef.current.length > 0) {
       filterCalEvents(allCalEventsRef.current);
       return;
     }
-    // 2 — session cache
-    const cached = cacheGet(CAL_BULK_KEY);
-    if (cached) {
-      allCalEventsRef.current = cached;
-      filterCalEvents(cached);
-      return;
-    }
-    // 3 — API: fetch the full ±3-month window once
+    // 2 — fetchQuery: cache di sessione persistita se fresca, altrimenti Graph
+    // una volta (finestra ±3 mesi), al posto di cacheGet/cacheSet.
     try {
       const today = new Date();
       const start = new Date(today); start.setMonth(today.getMonth() - CAL_MONTHS); start.setHours(0,0,0,0);
       const end   = new Date(today); end.setMonth(today.getMonth() + CAL_MONTHS);   end.setHours(23,59,59,999);
-      const evs = await getCalendarEvents(start, end, 500);
+      const evs = await queryClient.fetchQuery({
+        queryKey: qk.calEventsBulk(),
+        queryFn: () => getCalendarEvents(start, end, 500),
+        staleTime: STALE.calEventsBulk,
+      });
       allCalEventsRef.current = evs;
-      cacheSet(CAL_BULK_KEY, evs, 30 * 60 * 1000);
       filterCalEvents(evs);
     } catch (e) {
       console.error('cal events bulk load', e);
@@ -767,7 +753,7 @@ export default function PlannerView({
   // Forza un refetch dal server dopo una modifica (crea/modifica/elimina evento).
   async function refreshCalEvents() {
     allCalEventsRef.current = [];
-    cacheDel('cal_events_bulk');
+    await queryClient.invalidateQueries({ queryKey: qk.calEventsBulk() });
     await fetchCalEventsAll();
   }
 
@@ -895,7 +881,7 @@ export default function PlannerView({
         const updated = { ...plansRef.current, [currentDate]: updatedPlan };
         plansRef.current = updated;
         setPlans(updated);
-        cacheSet('daily_plans', updated, PLANS_CACHE_TTL);
+        queryClient.setQueryData(qk.dailyPlans(), updated);
         await saveDailyPlans(updated);
         setSaveStatus('saved');
       } catch (e) {
@@ -928,7 +914,7 @@ export default function PlannerView({
     saveTimerRef.current = setTimeout(async () => {
       if (!plansLoadedRef.current) { setSaveStatus('error'); return; }
       try {
-        cacheSet('daily_plans', plansRef.current, PLANS_CACHE_TTL);
+        queryClient.setQueryData(qk.dailyPlans(), plansRef.current);
         await saveDailyPlans(plansRef.current);
         setSaveStatus('saved');
       } catch (e) {
@@ -1330,7 +1316,7 @@ export default function PlannerView({
     const template = { blocks, updatedAt: new Date().toISOString() };
     setIdealWeek(template);
     idealWeekRef.current = template;
-    cacheSet('ideal_week', template, 30 * 60 * 1000);
+    queryClient.setQueryData(qk.idealWeek(), template);
     saveIdealWeek(template).catch(e => console.error('save ideal week', e));
   }
 

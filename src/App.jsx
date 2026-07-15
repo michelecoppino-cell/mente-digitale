@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { initAuth, getAccount, login, trySsoSilent } from './auth';
 import { getNotebooks, getSections, getTodoLists, getTodoTasks, getPages, getRecentEmails, getPageContentHtml, markOneNoteTagDone, getReminders, createTask, getCalendarEvents, getTasksForDeadlineDedup, invalidateCalendarsCache, loadColorSettings, saveColorSettings } from './api';
-import { cacheGet, cacheSet, cacheClear } from './cache';
+import { getMarker, setMarker, clearMarkers } from './markers';
 import { queryClient, qk, STALE } from './queryClient';
 import { extractEmailCandidates, extractOneNoteCandidates } from './dailyReview';
 import { parseReminderSubject, reminderMarker, hasReminderMarker } from './deadlineReminders';
@@ -52,9 +52,9 @@ function suggestionSignature(a) {
 }
 
 function markSuggestionSeen(sig) {
-  const seen = cacheGet('review_seen') || [];
+  const seen = getMarker('review_seen') || [];
   if (!seen.includes(sig)) {
-    cacheSet('review_seen', [...seen, sig].slice(-300), REVIEW_SEEN_TTL);
+    setMarker('review_seen', [...seen, sig].slice(-300), REVIEW_SEEN_TTL);
   }
 }
 
@@ -203,7 +203,11 @@ export default function App() {
 
     // Svuota cache in memoria se forceRefresh
     if (forceRefresh) {
-      cacheClear();
+      clearMarkers();
+      // Marca stale tutte le query (App + PlannerView): App le rifetcha subito
+      // con staleTime 0, PlannerView alla prossima apertura/navigazione — come
+      // prima faceva cacheClear() azzerando le chiavi di cache.js di entrambi.
+      queryClient.invalidateQueries();
       invalidateCalendarsCache();
       pagesCache.current = {};
       tasksCache.current = {};
@@ -292,7 +296,7 @@ export default function App() {
       // pausa lunga) ricade sul lookback di 48h con un tetto di sicurezza sul
       // numero di pagine scaricate per intero; le volte successive, essendo
       // l'intervallo corto, restano leggere.
-      const lastCheck = cacheGet(REVIEW_LAST_CHECK_KEY);
+      const lastCheck = getMarker(REVIEW_LAST_CHECK_KEY);
       const cutoffMs  = lastCheck || (Date.now() - NOTES_LOOKBACK_MS);
       const recentPages = filterRecentPages(pages, cutoffMs).slice(0, REVIEW_PAGES_CAP);
 
@@ -305,7 +309,7 @@ export default function App() {
         } catch (e) { console.error('page content', p.title, e); }
       }
 
-      const seen = cacheGet('review_seen') || [];
+      const seen = getMarker('review_seen') || [];
       const candidates = [
         ...extractEmailCandidates(emails, 6),
         ...extractOneNoteCandidates(pagesWithHtml, 8),
@@ -314,7 +318,7 @@ export default function App() {
         .map(a => ({ ...a, id: Math.random().toString(36).slice(2) + Date.now().toString(36), _sig: suggestionSignature(a) }))
         .filter(a => !seen.includes(a._sig));
       setReviewSuggestions(fresh);
-      cacheSet(REVIEW_LAST_CHECK_KEY, Date.now(), REVIEW_LAST_CHECK_TTL);
+      setMarker(REVIEW_LAST_CHECK_KEY, Date.now(), REVIEW_LAST_CHECK_TTL);
     } catch (e) {
       console.error('daily review', e);
     }
@@ -330,12 +334,12 @@ export default function App() {
   // l'uso quotidiano di To-Do (resta lì finché non lo spunti).
   async function refreshDeadlineReminders(todoLists) {
     try {
-      const lastCheck = cacheGet(DEADLINE_LAST_CHECK_KEY);
+      const lastCheck = getMarker(DEADLINE_LAST_CHECK_KEY);
       const startISO = new Date(lastCheck || (Date.now() - DEADLINE_LOOKBACK_MS)).toISOString();
       const endISO = new Date().toISOString();
 
       const reminders = await getReminders(startISO, endISO);
-      if (!reminders.length) { cacheSet(DEADLINE_LAST_CHECK_KEY, Date.now(), DEADLINE_LAST_CHECK_TTL); return; }
+      if (!reminders.length) { setMarker(DEADLINE_LAST_CHECK_KEY, Date.now(), DEADLINE_LAST_CHECK_TTL); return; }
 
       const listByName = new Map((todoLists || []).map(l => [l.displayName.toLowerCase(), l]));
       const tasksByListId = {};
@@ -362,7 +366,7 @@ export default function App() {
         } catch (e) { console.error('create deadline task', parsed.title, e); }
       }
 
-      cacheSet(DEADLINE_LAST_CHECK_KEY, Date.now(), DEADLINE_LAST_CHECK_TTL);
+      setMarker(DEADLINE_LAST_CHECK_KEY, Date.now(), DEADLINE_LAST_CHECK_TTL);
     } catch (e) {
       console.error('deadline reminders', e);
     }
