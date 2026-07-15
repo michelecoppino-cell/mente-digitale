@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
 import { initAuth, getAccount, login, trySsoSilent } from './auth';
 import { getNotebooks, getSections, getTodoLists, getTodoTasks, getPages, getRecentEmails, getPageContentHtml, markOneNoteTagDone, getReminders, createTask, getCalendarEvents, getTasksForDeadlineDedup, invalidateCalendarsCache, loadColorSettings, saveColorSettings } from './api';
-import { cacheGet, cacheSet, cacheClear, TTL } from './cache';
+import { cacheGet, cacheSet, cacheClear } from './cache';
+import { queryClient, qk, STALE } from './queryClient';
 import { extractEmailCandidates, extractOneNoteCandidates } from './dailyReview';
 import { parseReminderSubject, reminderMarker, hasReminderMarker } from './deadlineReminders';
 import { shadeColor } from './plannerShared';
@@ -78,27 +79,36 @@ function filterRecentPages(pages, cutoffMs) {
 // costo di rete più grosso dell'app, duplicava il lavoro della preload queue.
 // Le pagine modificate di recente si individuano comunque via
 // lastModifiedDateTime, presente anche nelle copie in cache.
+// Lettura via TanStack Query che rispecchia il vecchio `cacheGet(...) || (fetch
+// + cacheSet(...))`: con forceRefresh forza il refetch (staleTime 0), altrimenti
+// riusa il dato in cache se ancora fresco. La persistenza su localStorage e la
+// dedup delle richieste sono gestite dal query client (vedi queryClient.js).
+function fetchCached(queryKey, queryFn, staleTime, forceRefresh = false) {
+  return queryClient.fetchQuery({ queryKey, queryFn, staleTime: forceRefresh ? 0 : staleTime });
+}
+
 async function collectAllOneNotePages(pagesCacheRef) {
-  let notebooks = cacheGet('notebooks');
-  if (!notebooks) {
-    notebooks = await getNotebooks();
-    cacheSet('notebooks', notebooks, TTL.NOTEBOOKS);
-  }
+  // ensureQueryData riusa il dato già in cache (anche "vecchio") senza
+  // rivalidarlo: la Daily Review vuole solo aggregare le pagine già viste, non
+  // riscaricare da Graph l'elenco di ogni sezione a ogni avvio.
+  const notebooks = await queryClient.ensureQueryData({
+    queryKey: qk.notebooks(), queryFn: getNotebooks, staleTime: STALE.notebooks,
+  });
   const allPages = [];
   for (const nb of notebooks) {
-    let sections = cacheGet(`sections_${nb.id}`);
-    if (!sections) {
-      try {
-        sections = await getSections(nb.id);
-        cacheSet(`sections_${nb.id}`, sections, TTL.SECTIONS);
-      } catch (e) { console.error('sections', nb.displayName, e); continue; }
-    }
+    let sections;
+    try {
+      sections = await queryClient.ensureQueryData({
+        queryKey: qk.sections(nb.id), queryFn: () => getSections(nb.id), staleTime: STALE.sections,
+      });
+    } catch (e) { console.error('sections', nb.displayName, e); continue; }
     for (const sec of sections) {
-      let pages = pagesCacheRef?.current?.[sec.id] || cacheGet(`pages_${sec.id}`);
+      let pages = pagesCacheRef?.current?.[sec.id] || queryClient.getQueryData(qk.pages(sec.id));
       if (!pages) {
         try {
-          pages = await getPages(sec.id);
-          cacheSet(`pages_${sec.id}`, pages, TTL.PAGES);
+          pages = await queryClient.ensureQueryData({
+            queryKey: qk.pages(sec.id), queryFn: () => getPages(sec.id), staleTime: STALE.pages,
+          });
           if (pagesCacheRef?.current) pagesCacheRef.current[sec.id] = pages;
         } catch (e) { console.error('pages', sec.displayName, e); continue; }
         // Throttle solo quando si è davvero interrogato Graph
@@ -203,41 +213,32 @@ export default function App() {
       // Colori personalizzati (taccuini/sezioni) scelti dall'utente
       // nell'ingranaggio impostazioni — vanno applicati subito dopo aver
       // ricevuto taccuini e sezioni, prima di renderli nello stato.
-      let colorCfg = forceRefresh ? null : cacheGet('color_settings');
-      if (!colorCfg) {
-        colorCfg = await loadColorSettings().catch(e => { console.error('color settings load', e); return null; });
-        if (colorCfg) cacheSet('color_settings', colorCfg, 30 * 60 * 1000);
-      }
+      const colorCfg = await fetchCached(qk.colorSettings(), loadColorSettings, STALE.colorSettings, forceRefresh)
+        .catch(e => { console.error('color settings load', e); return queryClient.getQueryData(qk.colorSettings()) || null; });
       const overrides = colorCfg || DEFAULT_COLOR_SETTINGS;
       colorSettingsRef.current = overrides;
       colorSettingsLoadedRef.current = true;
       setColorSettings(overrides);
 
       // Taccuini
-      let nbs = forceRefresh ? null : cacheGet('notebooks');
-      if (!nbs) {
-        nbs = await getNotebooks();
-        cacheSet('notebooks', nbs, TTL.NOTEBOOKS);
-      }
+      const nbs = await fetchCached(qk.notebooks(), getNotebooks, STALE.notebooks, forceRefresh);
       nbs.forEach((nb, i) => applyNotebookColor(nb, i, overrides));
       notebooksRef.current = nbs;
       setNotebooks(nbs);
 
       // Liste ToDo
-      let todoLists = forceRefresh ? null : cacheGet('todolists');
-      if (!todoLists) {
-        todoLists = await getTodoLists();
-        cacheSet('todolists', todoLists, TTL.TODOLISTS);
-      }
+      const todoLists = await fetchCached(qk.todolists(), getTodoLists, STALE.todolists, forceRefresh);
       todoListsRef.current = todoLists;
       const map = {};
       todoLists.forEach(l => { map[l.displayName.toLowerCase()] = { id: l.id, displayName: l.displayName }; });
       setTodoListsMap(map);
 
-      // Sezioni — carica da cache subito, poi espandi
+      // Sezioni — mostra subito quelle già in cache (senza rifetch), poi si
+      // espandono lazy al click. Su forceRefresh si parte vuoti e si ricarica
+      // ad ogni espansione.
       const sectMap = {};
       for (const nb of nbs) {
-        const cached = forceRefresh ? null : cacheGet(`sections_${nb.id}`);
+        const cached = forceRefresh ? null : queryClient.getQueryData(qk.sections(nb.id));
         if (cached) {
           applySectionColors(nb, cached, overrides);
           sectMap[nb.id] = cached;
@@ -415,11 +416,7 @@ export default function App() {
     let anyError = false;
     for (const l of lists) {
       try {
-        let tasks = forceRefresh ? null : cacheGet(`tasks_${l.id}`);
-        if (!tasks) {
-          tasks = await getTodoTasks(l.id);
-          cacheSet(`tasks_${l.id}`, tasks, TTL.TASKS);
-        }
+        const tasks = await fetchCached(qk.tasks(l.id), () => getTodoTasks(l.id), STALE.tasks, forceRefresh);
         tasksCache.current[l.id] = tasks;
         tasks.forEach(t => allTasks.push({ ...t, _listName: l.displayName, _listId: l.id }));
         if (tasks.length > 0) counts[l.displayName.toLowerCase()] = tasks.length;
@@ -430,7 +427,7 @@ export default function App() {
         // Non lasciare la lista vuota per un errore transitorio (es. 401 dopo
         // una pausa lunga): ripiega sull'ultima copia in cache così l'utente
         // non vede la pianificazione sparire del tutto.
-        const stale = cacheGet(`tasks_${l.id}`);
+        const stale = queryClient.getQueryData(qk.tasks(l.id));
         if (stale) {
           tasksCache.current[l.id] = stale;
           stale.forEach(t => allTasks.push({ ...t, _listName: l.displayName, _listId: l.id }));
@@ -458,11 +455,7 @@ export default function App() {
       const { sectionId, forceRefresh } = preloadQueueRef.current.shift();
       if (!forceRefresh && pagesCache.current[sectionId]) continue;
       try {
-        let cached = forceRefresh ? null : cacheGet(`pages_${sectionId}`);
-        if (!cached) {
-          cached = await getPages(sectionId);
-          cacheSet(`pages_${sectionId}`, cached, TTL.PAGES);
-        }
+        const cached = await fetchCached(qk.pages(sectionId), () => getPages(sectionId), STALE.pages, forceRefresh);
         pagesCache.current[sectionId] = cached;
         await new Promise(r => setTimeout(r, 400));
       } catch (e) { console.error('preload pages', sectionId, e); }
@@ -473,11 +466,7 @@ export default function App() {
   async function handleExpandNotebook(nb) {
     if (sectionsMap[nb.id]) return;
     try {
-      let sects = cacheGet(`sections_${nb.id}`);
-      if (!sects) {
-        sects = await getSections(nb.id);
-        cacheSet(`sections_${nb.id}`, sects, TTL.SECTIONS);
-      }
+      const sects = await fetchCached(qk.sections(nb.id), () => getSections(nb.id), STALE.sections);
       applySectionColors(nb, sects, colorSettingsRef.current);
       setSectionsMap(prev => ({ ...prev, [nb.id]: sects }));
       setTimeout(() => sects.forEach(s => enqueuePagePreload(s.id)), 1500);
@@ -493,7 +482,7 @@ export default function App() {
   function applyColorSettings(next) {
     colorSettingsRef.current = next;
     setColorSettings(next);
-    cacheSet('color_settings', next, 30 * 60 * 1000);
+    queryClient.setQueryData(qk.colorSettings(), next);
     if (colorSettingsLoadedRef.current) {
       saveColorSettings(next).catch(e => console.error('save color settings', e));
     }
