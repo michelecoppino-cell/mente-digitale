@@ -1,3 +1,4 @@
+// @ts-check
 // Convenzione PARA: in ogni taccuino (workbook) le sezioni il cui nome inizia
 // con uno dei prefissi qui sotto vengono assegnate al ruolo corrispondente
 // (es. "ARC-AUTO" e "ARC-LORENZO" → archive). OneNote non accetta "/" nei nomi
@@ -10,6 +11,10 @@ export const PARA_SECTION_PREFIXES = {
   archive: ['ARC-'],
 };
 
+/**
+ * @param {string|null|undefined} displayName
+ * @returns {{ role: string, prefix: string }|null}
+ */
 function matchPrefix(displayName) {
   const name = (displayName || '').toUpperCase();
   for (const [role, prefixes] of Object.entries(PARA_SECTION_PREFIXES)) {
@@ -20,10 +25,18 @@ function matchPrefix(displayName) {
 }
 
 // 'area' | 'resources' | 'archive' | null (progetto)
+/**
+ * @param {string|null|undefined} displayName
+ * @returns {string|null}
+ */
 export function sectionRole(displayName) {
   return matchPrefix(displayName)?.role || null;
 }
 
+/**
+ * @param {string|null|undefined} displayName
+ * @returns {boolean}
+ */
 export function isParaSection(displayName) {
   return sectionRole(displayName) !== null;
 }
@@ -32,6 +45,10 @@ export function isParaSection(displayName) {
 // come etichetta al posto del nome del taccuino nella vista PARA. Se la
 // sezione non è PARA, o non resta nulla dopo il prefisso, ritorna il nome
 // originale.
+/**
+ * @param {string|null|undefined} displayName
+ * @returns {string}
+ */
 export function paraSectionLabel(displayName) {
   const name = displayName || '';
   const match = matchPrefix(name);
