@@ -97,7 +97,7 @@ export default function Panel({ selected, pagesCache, tasksCache, calendarEvents
   if (!selected) return <div className="panel" />;
 
   const { data, nb, listId } = selected;
-  const color = nb?._color || '#c8a96e';
+  const color = data?._color || nb?._color || '#c8a96e';
   const allTasks = [...tasks, ...noDeadlineTasks];
   const sortedEvents = filterEventsBySectionPrefix(calendarEvents, data.displayName)
     .sort((a, b) => (a.start?.dateTime || a.start?.date || '').localeCompare(b.start?.dateTime || b.start?.date || ''));

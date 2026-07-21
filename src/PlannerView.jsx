@@ -102,6 +102,20 @@ function liveWorkbookColor(block, workbooksList) {
   }
   return wb.color ?? block.color;
 }
+// Stesso principio di liveWorkbookColor ma per i PlanBlock nati da un task
+// To-Do (vedi makeBlock): il colore viene denormalizzato sul blocco al
+// momento del drop, ma deve continuare a seguire il colore live della
+// sezione OneNote (listColorMap) o del progetto custom se l'utente lo
+// ricolora in seguito — si ricade sul valore denormalizzato solo se la
+// sezione/lista non esiste più.
+function liveBlockColor(block, config, listColorMap) {
+  if (block.projectKey) {
+    const proj = (config.projects || []).find(p => p.key === block.projectKey);
+    if (proj) return proj.color;
+  }
+  const live = listColorMap[(block.listName ?? '').toLowerCase()];
+  return live ?? block.projectColor;
+}
 // La griglia della timeline copre sempre l'intera giornata (scorrimento libero
 // con la rotella): il workday configurato serve solo a posizionare lo scroll
 // iniziale su Giorno e Settimana, non più a limitare cosa viene disegnato.
@@ -1909,6 +1923,8 @@ export default function PlannerView({
           plans={plans}
           calEvents={calEvents}
           calOutOfRange={calOutOfRange}
+          config={config}
+          listColorMap={listColorMap}
           onDayClick={day => { setCurrentDate(day); setViewMode('day'); }}
           onEventClick={openEditEventModal}
         />
@@ -1951,6 +1967,8 @@ export default function PlannerView({
           timeSlots={timeSlots}
           locked={locked}
           suppressClickRef={suppressClickRef}
+          config={config}
+          listColorMap={listColorMap}
           onDayClick={day => { setCurrentDate(day); setViewMode('day'); }}
           onMoveBlock={moveBlockBetweenDays}
           onCopyBlock={copyBlockBetweenDays}
@@ -2235,10 +2253,11 @@ export default function PlannerView({
               const height   = Math.max(SLOT_HEIGHT - 4, (endMin - startMin) / 30 * SLOT_HEIGHT - 4);
               const isVertical  = (endMin - startMin) > VERTICAL_LAYOUT_MIN_DURATION;
               const titleLayout = isVertical ? verticalTitleLayout(block.taskTitle, height - (block.listName ? 34 : 12) - VERTICAL_DURATION_RESERVE_PX, 11) : null;
+              const blockColor = liveBlockColor(block, config, listColorMap);
               const checkBtn = (
                 <button
                   className="planner-block-check"
-                  style={{ color: block.completed ? '#86c07a' : block.projectColor }}
+                  style={{ color: block.completed ? '#86c07a' : blockColor }}
                   onClick={() => handleCompleteBlock(block.id)}
                   disabled={locked}
                   title="Segna come completato">
@@ -2285,7 +2304,7 @@ export default function PlannerView({
                 <Fragment key={block.id}>
                 <div
                   className={`planner-block${block.completed ? ' completed' : ''}${isVertical ? ' vertical-layout' : ''}`}
-                  style={{ top: top + 2, height, borderLeftColor: block.projectColor, background: block.projectColor }}
+                  style={{ top: top + 2, height, borderLeftColor: blockColor, background: blockColor }}
                   draggable={!locked && !block.completed && resizingId !== block.id}
                   onClick={e => {
                     e.stopPropagation();
@@ -3058,7 +3077,7 @@ function TaskDetailPanel({ task, notebooks = [], sectionsMap = {}, pagesCache = 
 // ── MonthlyCalendar ───────────────────────────────────────────────────────────
 // Vista "Mese" della modalità piano: calendario mensile con eventi Outlook e
 // blocchi pianificati. Cliccando un giorno si passa alla vista Giorno.
-function MonthlyCalendar({ currentDate, plans, calEvents, calOutOfRange, onDayClick, onEventClick }) {
+function MonthlyCalendar({ currentDate, plans, calEvents, calOutOfRange, config, listColorMap, onDayClick, onEventClick }) {
   const today = todayStr();
   const d = new Date(currentDate + 'T12:00:00');
   const first = new Date(d.getFullYear(), d.getMonth(), 1);
@@ -3110,7 +3129,7 @@ function MonthlyCalendar({ currentDate, plans, calEvents, calOutOfRange, onDayCl
               kind: 'block',
               title: b.taskTitle,
               time: b.startTime,
-              color: b.projectColor,
+              color: liveBlockColor(b, config, listColorMap),
               completed: b.completed,
             })),
           ];
@@ -3148,6 +3167,7 @@ function MonthlyCalendar({ currentDate, plans, calEvents, calOutOfRange, onDayCl
 // ── WeeklyTimeline ────────────────────────────────────────────────────────────
 function WeeklyTimeline({
   weekDays, plans, calEvents, workbookPlans, workbooks, workbookCalHidden, workdayStartMin, timeSlots, locked, suppressClickRef,
+  config, listColorMap,
   onDayClick, onMoveBlock, onCopyBlock, onEventClick, onCopyEvent, onAddTask, onCreateEvent,
   onAddWorkbookBlock, onMoveWorkbookBlock, onCopyWorkbookBlock, onRemoveWorkbookBlock, onResizeWorkbookBlockStart, onResizeBlockStart,
   onAddWorkbookNote, onEditWorkbookNote, onMoveWorkbookNote, onRemoveWorkbookNote,
@@ -3426,10 +3446,11 @@ function WeeklyTimeline({
                 const height = Math.max(SLOT_HEIGHT - 4, (t2m(block.endTime) - t2m(block.startTime)) / 30 * SLOT_HEIGHT - 4);
                 const isVertical  = (t2m(block.endTime) - t2m(block.startTime)) > VERTICAL_LAYOUT_MIN_DURATION;
                 const titleLayout = isVertical ? verticalTitleLayout(block.taskTitle, height - (block.listName ? 30 : 12) - VERTICAL_DURATION_RESERVE_PX, 9) : null;
+                const blockColor = liveBlockColor(block, config, listColorMap);
                 return (
                   <div key={block.id}
                     className={`planner-week-task-block${block.completed ? ' completed' : ''}${isVertical ? ' vertical-layout' : ''}`}
-                    style={{ top: top + 2, height, borderLeftColor: block.projectColor, background: block.projectColor }}
+                    style={{ top: top + 2, height, borderLeftColor: blockColor, background: blockColor }}
                     title={`${block.startTime}–${block.endTime} · ${block.taskTitle} (trascina per spostare, Ctrl+trascina per duplicare)`}
                     draggable={!block.completed && !locked && resizingId !== block.id}
                     onClick={e => e.stopPropagation()}

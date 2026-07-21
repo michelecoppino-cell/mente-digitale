@@ -193,7 +193,7 @@ export default function MindMap({
           id: 'sec_' + s.id,
           type: 'section',
           label,
-          color: grp.color,
+          color: s._color || grp.color,
           section: s,
           nb,
           groupId: grp.id,
