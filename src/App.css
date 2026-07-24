@@ -115,8 +115,9 @@
 .bell-dropdown {
   position: absolute;
   top: 34px;
-  right: 0;
+  left: 0;
   width: 300px;
+  max-width: calc(100vw - 24px);
   max-height: 400px;
   overflow-y: auto;
   background: var(--surface);
