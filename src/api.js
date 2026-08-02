@@ -848,9 +848,11 @@ export async function deleteChecklistItem(listId, taskId, itemId) {
   });
 }
 
-// Graph non espone un campo di ordinamento per i checklistItem: l'unico modo
-// per persistere un nuovo ordine è ricrearli nella sequenza voluta (l'ordine
-// restituito da Graph segue quello di creazione) ed eliminare gli originali.
+// Graph non espone un campo di ordinamento per i checklistItem, ma restituisce
+// sempre la collezione nello stesso ordine. Quindi non ricreiamo le voci
+// (ricrearle+eliminarle lasciava duplicati ogni volta che una DELETE falliva):
+// teniamo fermi gli id — che sono le "caselle" dell'ordine di Graph — e ci
+// spostiamo dentro il contenuto (testo + spunta) nella sequenza voluta.
 /**
  * @param {string} listId
  * @param {string} taskId
@@ -859,21 +861,48 @@ export async function deleteChecklistItem(listId, taskId, itemId) {
  */
 export async function reorderChecklistItems(listId, taskId, orderedItems) {
   const base = `/me/todo/lists/${listId}/tasks/${taskId}/checklistItems`;
+  // Ripartiamo dallo stato reale sul server: è lui a definire le caselle.
+  const full = await getTask(listId, taskId);
+  const serverItems = full.checklistItems || [];
+  if (!serverItems.length) return [];
+
+  const wantedIds = new Set(orderedItems.map(i => i.id));
+  // Voci richieste che esistono davvero + eventuali voci comparse altrove
+  // (o non ancora salvate quando è partito il riordino) accodate in fondo.
+  const target = [
+    ...orderedItems.filter(i => serverItems.some(s => s.id === i.id)),
+    ...serverItems.filter(s => !wantedIds.has(s.id)),
+  ];
+
   /** @type {import('./types').ChecklistItem[]} */
-  const created = [];
+  const result = [];
+  /** @type {import('./types').ChecklistItem[]} */
+  const patched = [];
+  const content = it => ({ displayName: it.displayName, isChecked: !!it.isChecked });
+  const same = (a, b) => a.displayName === b.displayName && a.isChecked === b.isChecked;
+
   try {
-    for (const item of orderedItems) {
-      created.push(await call(base, {
-        method: 'POST',
-        body: JSON.stringify({ displayName: item.displayName, isChecked: item.isChecked }),
-      }));
+    for (let i = 0; i < serverItems.length; i++) {
+      const slot = serverItems[i];
+      const want = content(target[i]);
+      if (!same(content(slot), want)) {
+        // Sequenziale: PATCH paralleli sulla stessa collezione si scavalcano.
+        await call(`${base}/${slot.id}`, { method: 'PATCH', body: JSON.stringify(want) });
+        patched.push(slot);
+      }
+      result.push({ ...slot, ...want });
     }
   } catch (e) {
-    await Promise.all(created.map(c => call(`${base}/${c.id}`, { method: 'DELETE' }).catch(() => {})));
+    // Ripristina il contenuto originale delle caselle già toccate, così un
+    // riordino a metà non lascia voci con il testo sbagliato.
+    for (const slot of patched.reverse()) {
+      await call(`${base}/${slot.id}`, {
+        method: 'PATCH', body: JSON.stringify(content(slot)),
+      }).catch(() => {});
+    }
     throw e;
   }
-  await Promise.all(orderedItems.map(item => call(`${base}/${item.id}`, { method: 'DELETE' }).catch(() => {})));
-  return created;
+  return result;
 }
 
 // Elenco dei reminder (di eventi Calendario) che scattano nella finestra di

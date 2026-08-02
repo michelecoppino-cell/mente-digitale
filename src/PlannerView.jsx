@@ -2712,7 +2712,9 @@ function TaskDetailPanel({ task, notebooks = [], sectionsMap = {}, pagesCache = 
         body = body.replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').trim();
       }
       setNotes(body);
-      setItems((full.checklistItems || []).sort((a, b) => a.isChecked - b.isChecked));
+      // Nessun riordino automatico per spunta: l'ordine di Graph è quello che
+      // l'utente ha impostato a mano con le frecce/drag qui sotto.
+      setItems(full.checklistItems || []);
       setDueDraft(full.dueDateTime?.dateTime ? full.dueDateTime.dateTime.slice(0, 10) : '');
     } catch (e) { console.error('load task detail', e); }
     setLoading(false);
@@ -2853,13 +2855,14 @@ function TaskDetailPanel({ task, notebooks = [], sectionsMap = {}, pagesCache = 
   }
 
   async function persistReorder(reordered) {
+    const prev = items;
     setItems(reordered);
     setReordering(true);
     try {
-      const created = await reorderChecklistItems(task._listId, task.id, reordered);
-      setItems(created.sort((a, b) => a.isChecked - b.isChecked));
+      setItems(await reorderChecklistItems(task._listId, task.id, reordered));
     } catch (e) {
-      console.error('reorder checklist items', e);
+      setItems(prev);
+      flashItemError('riordino voci', e);
       await load();
     }
     setReordering(false);
