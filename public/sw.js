@@ -1,5 +1,7 @@
-const CACHE = 'mente-digitale-v2';
-const PRECACHE = ['/', '/index.html'];
+const CACHE = 'mente-digitale-v3';
+// Le due pagine-scorciatoia della schermata Home vanno in precache come
+// l'app: sono la prima cosa che si apre toccando la loro icona.
+const PRECACHE = ['/', '/index.html', '/gtd.html', '/diario.html'];
 
 self.addEventListener('install', e => {
   e.waitUntil(

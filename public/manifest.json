@@ -20,5 +20,31 @@
       "type": "image/png",
       "purpose": "any maskable"
     }
+  ],
+  "shortcuts": [
+    {
+      "name": "Cattura GTD",
+      "short_name": "GTD",
+      "url": "/?apri=gtd",
+      "icons": [
+        {
+          "src": "/icon-gtd-180.png",
+          "sizes": "180x180",
+          "type": "image/png"
+        }
+      ]
+    },
+    {
+      "name": "Diario",
+      "short_name": "Diario",
+      "url": "/?apri=diario",
+      "icons": [
+        {
+          "src": "/icon-diario-180.png",
+          "sizes": "180x180",
+          "type": "image/png"
+        }
+      ]
+    }
   ]
 }
