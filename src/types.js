@@ -290,7 +290,7 @@ export {};
 
 /**
  * Voce di diario, persistita su OneDrive in file mensili (vedi api.js,
- * `mente-digitale-diario-YYYY-MM.json`). `sealed` = voce "chiusa nel cassetto":
+ * `mente-digitale/mente-digitale-diario-YYYY-MM.json`). `sealed` = voce "chiusa nel cassetto":
  * salvata ma tenuta fuori dalla timeline e dall'export, ritrovabile solo
  * cercandola esplicitamente.
  * @typedef {Object} DiaryEntry

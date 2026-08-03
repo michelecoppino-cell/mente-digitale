@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { initAuth, getAccount, login, trySsoSilent } from './auth';
-import { getNotebooks, getSections, getTodoLists, getTodoTasks, getPages, getRecentEmails, getPageContentHtml, markOneNoteTagDone, getReminders, createTask, getCalendarEvents, getTasksForDeadlineDedup, invalidateCalendarsCache, loadColorSettings, saveColorSettings } from './api';
+import { getNotebooks, getSections, getTodoLists, getTodoTasks, getPages, getRecentEmails, getPageContentHtml, markOneNoteTagDone, getReminders, createTask, getCalendarEvents, getTasksForDeadlineDedup, invalidateCalendarsCache, loadColorSettings, saveColorSettings, migrateLegacyDriveFiles } from './api';
 import { getMarker, setMarker, clearMarkers } from './markers';
 import { queryClient, qk, STALE } from './queryClient';
 import { extractEmailCandidates, extractOneNoteCandidates } from './dailyReview';
@@ -47,6 +47,26 @@ const REVIEW_PAGES_CAP = 40; // tetto di sicurezza sulle pagine il cui contenuto
 const DEADLINE_LAST_CHECK_KEY = 'deadline_reminders_last_check';
 const DEADLINE_LAST_CHECK_TTL = 30 * 24 * 60 * 60 * 1000; // 30 giorni
 const DEADLINE_LOOKBACK_MS = 7 * 24 * 60 * 60 * 1000;     // fallback alla prima scansione: ultimi 7 giorni
+
+// I file dell'app sono passati dalla root di OneDrive alla cartella
+// `mente-digitale/`. Lo spostamento dei file già esistenti gira una volta per
+// browser, in sottofondo: non blocca il caricamento e, se fallisce, il marker
+// non viene scritto e si riprova al prossimo avvio (nel frattempo i singoli
+// file vengono comunque recuperati dalla migrazione pigra in api.js).
+// Il flag sta su localStorage e non tra i marker: quelli vengono azzerati da
+// "Aggiorna tutto" (clearMarkers), e rifare la scansione della root a ogni
+// refresh manuale sarebbe una richiesta sprecata.
+const DRIVE_MIGRATION_KEY = 'md_drive_folder_migrated';
+
+function runDriveMigrationOnce() {
+  try { if (localStorage.getItem(DRIVE_MIGRATION_KEY)) return; } catch { /* storage non disponibile */ }
+  migrateLegacyDriveFiles()
+    .then(moved => {
+      try { localStorage.setItem(DRIVE_MIGRATION_KEY, '1'); } catch { /* no-op */ }
+      if (moved) console.info(`OneDrive: spostati ${moved} file in mente-digitale/`);
+    })
+    .catch(e => console.error('migrazione cartella OneDrive', e));
+}
 
 function suggestionSignature(a) {
   return `${a.source || 'email'}::${a.title || ''}::${a.extractedAction || ''}`;
@@ -206,6 +226,7 @@ export default function App() {
 
   async function load(forceRefresh = false) {
     setSync({ state: 'loading', label: 'Caricamento…' });
+    runDriveMigrationOnce();
 
     // Svuota cache in memoria se forceRefresh
     if (forceRefresh) {
@@ -826,7 +847,12 @@ export default function App() {
             durante il focus Pomodoro: stesso angolo dello schermo del widget
             del timer, e la visualizzazione è comunque bloccata. */}
         {plannerOpen && !pomodoroFocus && (
-          <button className="gtd-fab" onClick={() => setGtdOpen(true)} title="Cattura pensiero (GTD)">+</button>
+          <div className="fab-stack">
+            <button className="fab diary-fab" onClick={() => setDiaryOpen(true)} title="Diario (Ctrl+J)">
+              <span className="fab-emoji">🕯️</span>
+            </button>
+            <button className="fab gtd-fab" onClick={() => setGtdOpen(true)} title="Cattura pensiero (GTD)">+</button>
+          </div>
         )}
         <GtdClarifyModal
           open={gtdOpen}

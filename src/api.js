@@ -104,15 +104,101 @@ async function callPagedValues(path, maxPages = 10) {
   return out;
 }
 
-// PUT di un file JSON nella root di OneDrive
+// ── Cartella dei file dell'app su OneDrive ──────────────────────────────────
+// Tutti i JSON dell'app stanno in una sola cartella invece che sparsi nella
+// root del OneDrive personale: i file sono ormai una decina e crescono con i
+// mesi del diario. I nomi restano quelli di prima (prefisso `mente-digitale-`)
+// per non dover riscrivere niente: cambia solo la cartella che li contiene.
+const OD_FOLDER = 'mente-digitale';
+
+/** @param {string} filename @returns {string} */
+function drivePath(filename) {
+  return `/me/drive/root:/${OD_FOLDER}/${filename}`;
+}
+
+// Creazione della cartella al primo bisogno, una volta per sessione: il 409
+// (esiste già) è l'esito normale dopo la prima volta in assoluto.
+/** @type {Promise<any>|null} */
+let _folderReady = null;
+function ensureAppFolder() {
+  if (!_folderReady) {
+    _folderReady = call('/me/drive/root/children', {
+      method: 'POST',
+      body: JSON.stringify({ name: OD_FOLDER, folder: {}, '@microsoft.graph.conflictBehavior': 'fail' }),
+    }).catch(e => {
+      if (e?.status === 409) return null;
+      _folderReady = null;   // errore vero (rete, permessi): si riproverà
+      throw e;
+    });
+  }
+  return _folderReady;
+}
+
+// Migrazione pigra dei file salvati nella root prima dell'introduzione della
+// cartella: al primo 404 sul percorso nuovo si prova a spostare il vecchio
+// file con un PATCH (spostamento vero lato Graph, niente copia + cancella,
+// quindi nessuna finestra in cui il dato esiste in due posti o in nessuno).
+// Un tentativo solo per nome di file: i file mai esistiti — es. il mese di
+// diario di un mese in cui non si è scritto — non devono costare una richiesta
+// a ogni lettura.
+/** @type {Set<string>} */
+const _migrationTried = new Set();
+
+/** @param {string} filename @returns {Promise<boolean>} true se il file è stato spostato */
+async function migrateLegacyFile(filename) {
+  if (_migrationTried.has(filename)) return false;
+  _migrationTried.add(filename);
+  try {
+    await ensureAppFolder();
+    await call(`/me/drive/root:/${filename}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ parentReference: { path: `/drive/root:/${OD_FOLDER}` } }),
+    });
+    return true;
+  } catch {
+    // Nessun file da migrare (404) o spostamento fallito: si prosegue con il
+    // percorso nuovo, che è comunque la sola fonte di verità da qui in poi.
+    return false;
+  }
+}
+
+// Migrazione in blocco: sposta nella cartella tutti i file `mente-digitale-*.json`
+// rimasti nella root. La migrazione pigra di getDriveJson basterebbe a non
+// perdere nulla, ma sposterebbe ogni file solo quando la funzione che lo usa
+// viene aperta — la root resterebbe sporca per giorni. Questa gira una volta
+// sola (vedi il marker in App.jsx) e ripulisce tutto insieme.
+/** @returns {Promise<number>} quanti file sono stati spostati */
+export async function migrateLegacyDriveFiles() {
+  const items = await callPagedValues('/me/drive/root/children?$select=id,name,file&$top=200');
+  const legacy = items.filter(i => i.file && /^mente-digitale-.*\.json$/.test(i.name || ''));
+  if (!legacy.length) return 0;
+  await ensureAppFolder();
+  let moved = 0;
+  for (const item of legacy) {
+    try {
+      await call(`/me/drive/items/${item.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ parentReference: { path: `/drive/root:/${OD_FOLDER}` } }),
+      });
+      _migrationTried.add(item.name);
+      moved++;
+    } catch (e) {
+      console.error('migrazione file OneDrive', item.name, e);
+    }
+  }
+  return moved;
+}
+
+// PUT di un file JSON nella cartella dell'app su OneDrive
 /**
  * @param {string} filename
  * @param {any} data
  * @returns {Promise<any>}
  */
 async function putDriveJson(filename, data) {
+  await ensureAppFolder();
   const token = await getTokenCached();
-  const r = await fetch(`${GRAPH}/me/drive/root:/${filename}:/content`, {
+  const r = await fetch(`${GRAPH}${drivePath(filename)}:/content`, {
     method: 'PUT',
     headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
     body: JSON.stringify(data, null, 2),
@@ -582,11 +668,15 @@ export async function moveCalendarEvent(calendarId, eventId, destinationCalendar
   });
 }
 
-// GET di un file JSON dalla root di OneDrive. Distingue "file non ancora
-// creato" (404 → notFoundValue) dagli errori transitori (rete, 401…), che
-// vengono propagati: senza questa distinzione un errore momentaneo faceva
+// GET di un file JSON dalla cartella dell'app su OneDrive. Distingue "file non
+// ancora creato" (404 → notFoundValue) dagli errori transitori (rete, 401…),
+// che vengono propagati: senza questa distinzione un errore momentaneo faceva
 // ripartire i chiamanti da un contenuto vuoto che, al salvataggio successivo,
 // sovrascriveva il file remoto cancellando tutto lo storico.
+//
+// Sul 404 si prova prima la migrazione dalla vecchia posizione in root (vedi
+// migrateLegacyFile): un file già esistente non deve mai apparire "non ancora
+// creato" solo perché è stata introdotta la cartella.
 /**
  * @template T
  * @param {string} filename
@@ -595,9 +685,14 @@ export async function moveCalendarEvent(calendarId, eventId, destinationCalendar
  */
 async function getDriveJson(filename, notFoundValue) {
   try {
-    return await call(`/me/drive/root:/${filename}:/content`);
+    return await call(`${drivePath(filename)}:/content`);
   } catch (e) {
-    if (/** @type {any} */ (e)?.status === 404) return notFoundValue;
+    if (/** @type {any} */ (e)?.status === 404) {
+      if (await migrateLegacyFile(filename)) {
+        return call(`${drivePath(filename)}:/content`);
+      }
+      return notFoundValue;
+    }
     throw e;
   }
 }
