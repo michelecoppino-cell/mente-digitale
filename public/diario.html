@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="it">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>Diario — Mente Digitale</title>
+
+    <!-- Pagina-scorciatoia: esiste solo per essere aggiunta alla schermata Home
+         di iPhone come icona a sé. iOS prende icona e nome da questi meta della
+         pagina che si sta aggiungendo, quindi qui NON va incluso il manifest:
+         altrimenti icona e start_url tornerebbero quelli dell'app intera e le
+         due scorciatoie sarebbero indistinguibili. -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Diario" />
+    <link rel="apple-touch-icon" href="/icon-diario-180.png" />
+    <link rel="icon" type="image/png" href="/icon-diario-180.png" />
+    <meta name="theme-color" content="#080a0e" />
+
+    <style>
+      html, body { margin: 0; height: 100%; background: #080a0e; color: #dde3ee;
+        font-family: 'Outfit', system-ui, -apple-system, sans-serif; }
+      .wrap { min-height: 100%; display: flex; flex-direction: column; align-items: center;
+        justify-content: center; text-align: center; padding: 32px 26px; gap: 14px; }
+      img { width: 76px; height: 76px; border-radius: 18px; }
+      h1 { font-size: 19px; font-weight: 500; margin: 4px 0 0; }
+      p { font-size: 13.5px; line-height: 1.65; color: #8891a5; margin: 0; max-width: 340px; }
+      a { color: #c8a96e; font-size: 13.5px; text-decoration: none;
+        border: 1px solid rgba(200,169,110,0.45); border-radius: 8px; padding: 9px 18px; margin-top: 8px; }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <img src="/icon-diario-180.png" alt="" />
+      <h1>Diario</h1>
+      <p>
+        Aggiungi questa pagina alla schermata Home (Condividi → <em>Aggiungi a Home</em>):
+        avrai un'icona che apre Mente Digitale direttamente sul diario.
+      </p>
+      <a href="/?apri=diario">Apri ora</a>
+    </div>
+    <script>
+      // Il salto nell'app avviene solo quando la pagina è già stata lanciata
+      // dall'icona (standalone). In Safari deve restare visibile: se
+      // reindirizzasse subito, l'utente finirebbe per aggiungere alla Home la
+      // pagina dell'app — con l'icona dell'app — invece di questa.
+      var standalone = window.navigator.standalone === true
+        || window.matchMedia('(display-mode: standalone)').matches;
+      if (standalone) location.replace('/?apri=diario');
+    </script>
+  </body>
+</html>

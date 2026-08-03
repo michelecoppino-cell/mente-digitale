@@ -25,6 +25,18 @@ Microsoft To-Do e al calendario Outlook, e un briefing di notizie generato con l
   il diario non passa da alcuna funzione server. Su telefono, con il Piano aperto,
   Diario e GTD restano raggiungibili come due pulsanti tondi in basso a destra.
 
+### Due icone sulla schermata Home di iPhone
+
+iOS ignora gli `shortcuts` del manifest: per avere più icone servono più pagine da
+aggiungere alla Home. `public/gtd.html` e `public/diario.html` esistono per questo — hanno
+icona, nome e status bar propri e, quando vengono lanciate dalla loro icona (`standalone`),
+rimbalzano sull'app con `?apri=gtd` / `?apri=diario`, che `App.jsx` traduce nell'apertura
+del pannello giusto già al primo render. Viste in Safari restano invece ferme, altrimenti
+si finirebbe per aggiungere alla Home l'app invece della scorciatoia.
+
+Per installarle: apri `/gtd.html` (e poi `/diario.html`) in Safari → Condividi →
+*Aggiungi a Home*.
+
 ## Architettura
 
 | Componente | Tecnologia |

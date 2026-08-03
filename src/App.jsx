@@ -68,6 +68,16 @@ function runDriveMigrationOnce() {
     .catch(e => console.error('migrazione cartella OneDrive', e));
 }
 
+// Scorciatoie dalla schermata Home di iPhone: /gtd.html e /diario.html sono
+// due pagine che, lanciate dalla loro icona, rimbalzano qui con `?apri=…`.
+// Servono perché iOS ignora gli `shortcuts` del manifest: l'unico modo di
+// avere due icone distinte è avere due pagine distinte da aggiungere alla Home.
+function launchIntent() {
+  try {
+    return new URLSearchParams(window.location.search).get('apri');
+  } catch { return null; }
+}
+
 function suggestionSignature(a) {
   return `${a.source || 'email'}::${a.title || ''}::${a.extractedAction || ''}`;
 }
@@ -156,8 +166,10 @@ export default function App() {
   const [mapViewMode, setMapViewMode] = useState('workbook');
   const [identityOpen, setIdentityOpen] = useState(null);
   const [searchOpen, setSearchOpen] = useState(false);
-  const [gtdOpen, setGtdOpen] = useState(false);
-  const [diaryOpen, setDiaryOpen] = useState(false);
+  // Il pannello chiesto dalla scorciatoia è aperto già al primo render, non in
+  // un effetto: così non si vede la mappa comparire e poi coprirsi.
+  const [gtdOpen, setGtdOpen] = useState(() => launchIntent() === 'gtd');
+  const [diaryOpen, setDiaryOpen] = useState(() => launchIntent() === 'diario');
   const [eisenhowerOpen, setEisenhowerOpen] = useState(false);
   const [pendingPlannerTask, setPendingPlannerTask] = useState(null);
   const [reviewSuggestions, setReviewSuggestions] = useState([]);
@@ -201,6 +213,13 @@ export default function App() {
         });
       }
     });
+  }, []);
+
+  // Il parametro `apri` ha fatto il suo lavoro al primo render: si toglie
+  // dall'URL, così chiudere il pannello e ricaricare la pagina non lo riapre.
+  useEffect(() => {
+    if (!launchIntent()) return;
+    window.history.replaceState(null, '', window.location.pathname);
   }, []);
 
   // Scorciatoie: Ctrl/Cmd+K ricerca globale, Ctrl/Cmd+J diario
