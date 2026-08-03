@@ -752,6 +752,70 @@ export async function saveColorSettings(settings) {
   return putDriveJson(OD_COLOR_SETTINGS_FILE, settings);
 }
 
+// ── OneDrive Diario ────────────────────────────────────────────────────────
+// Un file per mese invece di un file unico: il diario è l'unico dato che
+// cresce senza limite (e che non si può potare come piani e statistiche, dove
+// si buttano le voci oltre i 90 giorni), quindi si evita di rileggere e
+// riscrivere anni di scritture a ogni salvataggio.
+//
+// Un piccolo indice tiene la lista dei mesi che contengono voci: OneDrive non
+// offre un filtro affidabile per prefisso sul nome dei file, e senza indice
+// l'unico modo di sapere quali mesi esistono sarebbe tentare il GET di ognuno
+// a ritroso.
+const OD_DIARY_INDEX_FILE = 'mente-digitale-diario-index.json';
+
+/** @param {string} ym 'YYYY-MM' @returns {string} */
+function diaryMonthFile(ym) {
+  return `mente-digitale-diario-${ym}.json`;
+}
+
+/** @returns {Promise<{ months: string[] }>} */
+export async function loadDiaryIndex() {
+  const idx = await getDriveJson(OD_DIARY_INDEX_FILE, { months: [] });
+  return { months: Array.isArray(idx?.months) ? idx.months : [] };
+}
+
+/** @param {string} ym @returns {Promise<import('./types').DiaryEntry[]>} */
+export async function loadDiaryMonth(ym) {
+  const data = await getDriveJson(diaryMonthFile(ym), []);
+  return Array.isArray(data) ? data : [];
+}
+
+/**
+ * Salva (o aggiorna, per id) una voce nel file del suo mese e registra il mese
+ * nell'indice. Rilegge il mese prima di scrivere, così una voce creata da un
+ * altro dispositivo nella stessa giornata non viene persa.
+ * @param {import('./types').DiaryEntry} entry
+ * @returns {Promise<import('./types').DiaryEntry[]>} le voci del mese aggiornate
+ */
+export async function saveDiaryEntry(entry) {
+  const ym = entry.date.slice(0, 7);
+  const existing = await loadDiaryMonth(ym);
+  const i = existing.findIndex(e => e.id === entry.id);
+  const updated = i >= 0
+    ? existing.map(e => (e.id === entry.id ? entry : e))
+    : [...existing, entry];
+  await putDriveJson(diaryMonthFile(ym), updated);
+
+  const idx = await loadDiaryIndex();
+  if (!idx.months.includes(ym)) {
+    await putDriveJson(OD_DIARY_INDEX_FILE, { months: [...idx.months, ym].sort() });
+  }
+  return updated;
+}
+
+/**
+ * @param {import('./types').DiaryEntry} entry
+ * @returns {Promise<import('./types').DiaryEntry[]>} le voci del mese aggiornate
+ */
+export async function deleteDiaryEntry(entry) {
+  const ym = entry.date.slice(0, 7);
+  const existing = await loadDiaryMonth(ym);
+  const updated = existing.filter(e => e.id !== entry.id);
+  await putDriveJson(diaryMonthFile(ym), updated);
+  return updated;
+}
+
 // ── OneDrive Pomodoro Stats ────────────────────────────────────────────────
 const OD_POMODORO_STATS_FILE = 'mente-digitale-pomodoro-stats.json';
 

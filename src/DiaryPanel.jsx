@@ -1,0 +1,639 @@
+import { useState, useEffect, useRef, useMemo } from 'react';
+import {
+  loadDiaryIndex, loadDiaryMonth, saveDiaryEntry, deleteDiaryEntry, loadIdentityDoc,
+} from './api';
+import {
+  DIARY_TYPES, MOOD_LABELS, ENERGY_LABELS, EVENING_QUESTIONS, AI_PRESETS,
+  makeEntry, eveningText, filterEntries, allTags, lastDays, seedForDate,
+  monthKey, shiftMonth, humanDate, buildAiExport, dateKey,
+} from './diary';
+import './DiaryPanel.css';
+
+// Bozza in corso: lo svuota testa è la modalità in cui è più facile perdere
+// dieci minuti di scrittura chiudendo per sbaglio la finestra, quindi il testo
+// vive anche su localStorage finché non viene salvato (o lasciato andare).
+const DRAFT_KEY = 'md_diary_draft';
+
+function loadDraft() {
+  try { return JSON.parse(localStorage.getItem(DRAFT_KEY) || 'null'); } catch { return null; }
+}
+function saveDraft(draft) {
+  try { localStorage.setItem(DRAFT_KEY, JSON.stringify(draft)); } catch { /* storage pieno */ }
+}
+function clearDraft() {
+  try { localStorage.removeItem(DRAFT_KEY); } catch { /* no-op */ }
+}
+
+// Il contenuto vive in un componente montato solo quando il diario è aperto:
+// così lo stato iniziale (bozza da riprendere, caricamento in corso) si
+// esprime negli inizializzatori di useState invece che in un effetto, e ogni
+// apertura riparte pulita.
+export default function DiaryPanel({ open, onClose }) {
+  if (!open) return null;
+  return <DiaryPanelInner onClose={onClose} />;
+}
+
+function DiaryPanelInner({ onClose }) {
+  const [view, setView] = useState('home');   // home | write | sera | ai
+  const [writeType, setWriteType] = useState('svuota-testa');
+  const [entries, setEntries] = useState([]);
+  const [months, setMonths] = useState([]);        // mesi noti dall'indice
+  const [loadedMonths, setLoadedMonths] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [loadFailed, setLoadFailed] = useState(false);
+  const [resumeDraft, setResumeDraft] = useState(loadDraft);
+
+  useEffect(() => {
+    const thisMonth = monthKey();
+    const prevMonth = shiftMonth(thisMonth, -1);
+    Promise.all([loadDiaryIndex(), loadDiaryMonth(thisMonth), loadDiaryMonth(prevMonth)])
+      .then(([idx, a, b]) => {
+        setMonths(idx.months);
+        // Dedup per id: a cavallo di mezzanotte del primo del mese, o dopo un
+        // salvataggio andato a buon fine due volte, la stessa voce può trovarsi
+        // in entrambi i file caricati.
+        const byId = new Map([...a, ...b].map(e => [e.id, e]));
+        setEntries([...byId.values()]);
+        setLoadedMonths([thisMonth, prevMonth]);
+      })
+      // Un errore di rete non deve mostrare un diario vuoto: da lì un
+      // salvataggio successivo riscriverebbe il mese azzerandolo.
+      .catch(() => setLoadFailed(true))
+      .finally(() => setLoading(false));
+  }, []);
+
+  // Esc chiude il pannello, ma non mentre si sta scrivendo: lì il tasto è
+  // troppo a portata di dito per rischiare di far sparire una pagina di getto.
+  useEffect(() => {
+    function onKey(e) {
+      if (e.key === 'Escape' && view === 'home') onClose();
+    }
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [view, onClose]);
+
+  async function loadOlderMonth() {
+    const older = months.filter(m => !loadedMonths.includes(m)).sort().reverse()[0];
+    if (!older) return;
+    const more = await loadDiaryMonth(older);
+    setEntries(prev => [...prev, ...more]);
+    setLoadedMonths(prev => [...prev, older]);
+  }
+
+  async function persist(entry) {
+    const updated = await saveDiaryEntry(entry);
+    const ym = entry.date.slice(0, 7);
+    setEntries(prev => [...prev.filter(e => e.date.slice(0, 7) !== ym), ...updated]);
+    setMonths(prev => (prev.includes(ym) ? prev : [...prev, ym].sort()));
+    setLoadedMonths(prev => (prev.includes(ym) ? prev : [...prev, ym]));
+    clearDraft();
+    setResumeDraft(null);
+    setView('home');
+  }
+
+  async function handleDelete(entry) {
+    const updated = await deleteDiaryEntry(entry);
+    const ym = entry.date.slice(0, 7);
+    setEntries(prev => [...prev.filter(e => e.date.slice(0, 7) !== ym), ...updated]);
+  }
+
+  function startWrite(type) {
+    setWriteType(type);
+    setView(type === 'sera' ? 'sera' : 'write');
+  }
+
+  const hasOlder = months.some(m => !loadedMonths.includes(m));
+
+  return (
+    <div className="diary-overlay">
+      {view === 'home' && (
+        <DiaryHome
+          entries={entries}
+          loading={loading}
+          loadFailed={loadFailed}
+          resumeDraft={resumeDraft}
+          hasOlder={hasOlder}
+          onLoadOlder={loadOlderMonth}
+          onStart={startWrite}
+          onResume={() => { setWriteType(resumeDraft?.type || 'svuota-testa'); setView('write'); }}
+          onDiscardDraft={() => { clearDraft(); setResumeDraft(null); }}
+          onOpenAi={() => setView('ai')}
+          onDelete={handleDelete}
+          onClose={onClose}
+        />
+      )}
+      {view === 'write' && (
+        <DiaryWriter
+          type={writeType}
+          initial={resumeDraft?.type === writeType ? resumeDraft : null}
+          onSave={persist}
+          onCancel={() => setView('home')}
+        />
+      )}
+      {view === 'sera' && (
+        <EveningRitual onSave={persist} onCancel={() => setView('home')} />
+      )}
+      {view === 'ai' && (
+        <AiExport entries={entries} onBack={() => setView('home')} />
+      )}
+    </div>
+  );
+}
+
+// ── Home: timeline, ricerca, ingressi alle modalità ─────────────────────────
+
+function DiaryHome({
+  entries, loading, loadFailed, resumeDraft, hasOlder, onLoadOlder,
+  onStart, onResume, onDiscardDraft, onOpenAi, onDelete, onClose,
+}) {
+  const [query, setQuery] = useState('');
+  const [tag, setTag] = useState(null);
+  const [includeSealed, setIncludeSealed] = useState(false);
+
+  const visible = useMemo(
+    () => filterEntries(entries, { query, tag, includeSealed }),
+    [entries, query, tag, includeSealed],
+  );
+  const tags = useMemo(() => allTags(entries).slice(0, 12), [entries]);
+  const wroteToday = entries.some(e => e.date === dateKey());
+
+  return (
+    <div className="diary-panel">
+      <div className="diary-header">
+        <span className="diary-title">Diario</span>
+        <div className="diary-header-actions">
+          <button className="diary-ghost-btn" onClick={onOpenAi} title="Prepara il testo da incollare in una chat AI">
+            Copia per l'AI
+          </button>
+          <button className="diary-close" onClick={onClose}>✕</button>
+        </div>
+      </div>
+
+      <div className="diary-body">
+        {resumeDraft?.text?.trim() && (
+          <div className="diary-draft-banner">
+            <span>Hai una scrittura non salvata di {DIARY_TYPES[resumeDraft.type]?.label?.toLowerCase()}.</span>
+            <div>
+              <button className="diary-ghost-btn" onClick={onResume}>Riprendi</button>
+              <button className="diary-link-btn" onClick={onDiscardDraft}>Scarta</button>
+            </div>
+          </div>
+        )}
+
+        <div className="diary-modes">
+          <button className="diary-mode-card" onClick={() => onStart('svuota-testa')}>
+            <span className="diary-mode-icon">🌬️</span>
+            <span className="diary-mode-label">Svuota testa</span>
+            <span className="diary-mode-desc">Scrivi senza fermarti. Poi decidi se tenerlo.</span>
+          </button>
+          <button className="diary-mode-card" onClick={() => onStart('sera')}>
+            <span className="diary-mode-icon">🕯️</span>
+            <span className="diary-mode-label">Rituale della sera</span>
+            <span className="diary-mode-desc">Tre domande, tre gratitudini, umore ed energia.</span>
+          </button>
+          <button className="diary-mode-card" onClick={() => onStart('libero')}>
+            <span className="diary-mode-icon">✍️</span>
+            <span className="diary-mode-label">Scrittura libera</span>
+            <span className="diary-mode-desc">Una pagina bianca, senza rituale.</span>
+          </button>
+        </div>
+
+        {!wroteToday && !loading && !loadFailed && (
+          <div className="diary-nudge">Oggi non hai ancora scritto niente.</div>
+        )}
+
+        <MoodTrend entries={entries} />
+
+        <div className="diary-filters">
+          <input
+            className="diary-search"
+            placeholder="Cerca nel diario…"
+            value={query}
+            onChange={e => setQuery(e.target.value)}
+          />
+          <label className="diary-checkbox" title="Mostra anche le voci chiuse nel cassetto">
+            <input type="checkbox" checked={includeSealed} onChange={e => setIncludeSealed(e.target.checked)} />
+            cassetto
+          </label>
+        </div>
+        {tags.length > 0 && (
+          <div className="diary-tags">
+            {tags.map(t => (
+              <button
+                key={t}
+                className={`diary-tag${tag === t ? ' active' : ''}`}
+                onClick={() => setTag(tag === t ? null : t)}
+              >#{t}</button>
+            ))}
+          </div>
+        )}
+
+        {loading && <div className="diary-status">Caricamento…</div>}
+        {loadFailed && (
+          <div className="diary-status error">
+            Errore nel caricamento del diario. Chiudi e riprova — non scrivere ora, per non rischiare
+            di sovrascrivere le voci esistenti.
+          </div>
+        )}
+        {!loading && !loadFailed && visible.length === 0 && (
+          <div className="diary-status">Nessuna voce{query || tag ? ' per questo filtro' : ' ancora'}.</div>
+        )}
+
+        {visible.map(e => <DiaryEntryCard key={e.id} entry={e} onDelete={onDelete} />)}
+
+        {!loading && hasOlder && (
+          <button className="diary-ghost-btn diary-more" onClick={onLoadOlder}>Carica mese precedente</button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function DiaryEntryCard({ entry, onDelete }) {
+  const [expanded, setExpanded] = useState(false);
+  const [confirming, setConfirming] = useState(false);
+  const long = entry.text.length > 260;
+
+  return (
+    <div className={`diary-entry${entry.sealed ? ' sealed' : ''}`}>
+      <div className="diary-entry-head">
+        <span className="diary-entry-date">{humanDate(entry.date)}</span>
+        <span className="diary-entry-meta">
+          {DIARY_TYPES[entry.type]?.icon} {DIARY_TYPES[entry.type]?.label}
+          {entry.mood ? ` · umore ${entry.mood}/5` : ''}
+          {entry.energy ? ` · energia ${entry.energy}/5` : ''}
+          {entry.sealed ? ' · 🔒 cassetto' : ''}
+        </span>
+      </div>
+      <div className={`diary-entry-text${long && !expanded ? ' clamped' : ''}`}>{entry.text}</div>
+      {long && (
+        <button className="diary-link-btn" onClick={() => setExpanded(x => !x)}>
+          {expanded ? 'Riduci' : 'Leggi tutto'}
+        </button>
+      )}
+      {entry.gratitude?.length > 0 && (
+        <ul className="diary-gratitude">
+          {entry.gratitude.map((g, i) => <li key={i}>{g}</li>)}
+        </ul>
+      )}
+      <div className="diary-entry-foot">
+        {entry.tags?.map(t => <span key={t} className="diary-tag static">#{t}</span>)}
+        {confirming ? (
+          <span className="diary-confirm">
+            Eliminare per sempre?
+            <button className="diary-link-btn danger" onClick={() => onDelete(entry)}>Sì</button>
+            <button className="diary-link-btn" onClick={() => setConfirming(false)}>No</button>
+          </span>
+        ) : (
+          <button className="diary-link-btn diary-entry-del" onClick={() => setConfirming(true)}>Elimina</button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// Andamento dell'umore degli ultimi 30 giorni: una riga sola, senza assi né
+// numeri — serve a notare una deriva, non a misurarla.
+function MoodTrend({ entries }) {
+  const points = lastDays(entries, 30)
+    .filter(e => e.mood && !e.sealed)
+    .sort((a, b) => (a.ts < b.ts ? -1 : 1));
+  if (points.length < 3) return null;
+
+  const W = 260, H = 34;
+  const step = W / (points.length - 1);
+  const path = points
+    .map((p, i) => `${i === 0 ? 'M' : 'L'}${(i * step).toFixed(1)},${(H - ((p.mood - 1) / 4) * (H - 6) - 3).toFixed(1)}`)
+    .join(' ');
+
+  return (
+    <div className="diary-trend">
+      <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" aria-hidden="true">
+        <path d={path} fill="none" stroke="var(--accent)" strokeWidth="1.4" strokeLinejoin="round" />
+      </svg>
+      <span className="diary-trend-label">umore · ultimi 30 giorni</span>
+    </div>
+  );
+}
+
+// ── Svuota testa / scrittura libera ─────────────────────────────────────────
+
+const TIMER_CHOICES = [0, 5, 10];
+
+function DiaryWriter({ type, initial, onSave, onCancel }) {
+  const [text, setText] = useState(initial?.text || '');
+  const [minutes, setMinutes] = useState(0);
+  const [left, setLeft] = useState(0);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState(null);
+  const [releasing, setReleasing] = useState(false);
+  const [confirmRelease, setConfirmRelease] = useState(false);
+  const areaRef = useRef(null);
+  const seed = useMemo(() => (type === 'svuota-testa' ? seedForDate() : null), [type]);
+
+  useEffect(() => { areaRef.current?.focus(); }, []);
+
+  // Bozza salvata a intervalli, non a ogni tasto: scrivere di getto non deve
+  // trascinarsi dietro una scrittura su localStorage per carattere.
+  useEffect(() => {
+    const id = setInterval(() => { if (text.trim()) saveDraft({ type, text }); }, 3000);
+    return () => clearInterval(id);
+  }, [text, type]);
+
+  useEffect(() => {
+    if (!minutes) return;
+    const id = setInterval(() => setLeft(s => (s > 0 ? s - 1 : 0)), 1000);
+    return () => clearInterval(id);
+  }, [minutes]);
+
+  function chooseTimer(m) {
+    setMinutes(m);
+    setLeft(m * 60);
+  }
+
+  async function finish(sealed) {
+    if (!text.trim()) return;
+    setSaving(true);
+    setError(null);
+    try {
+      await onSave(makeEntry({ type, text, seed, sealed }));
+    } catch {
+      setError('Non sono riuscito a salvare. Il testo è ancora qui: riprova.');
+      setSaving(false);
+    }
+  }
+
+  function release() {
+    // "Lascia andare": la voce non viene mai scritta su OneDrive. La bozza
+    // locale si cancella subito, l'animazione è solo il tempo di respirare.
+    clearDraft();
+    setReleasing(true);
+    setTimeout(onCancel, 1400);
+  }
+
+  const timeUp = minutes > 0 && left === 0;
+
+  return (
+    <div className={`diary-writer${releasing ? ' releasing' : ''}`}>
+      <div className="diary-writer-top">
+        <span className="diary-writer-mode">{DIARY_TYPES[type]?.icon} {DIARY_TYPES[type]?.label}</span>
+        <div className="diary-writer-timer">
+          {minutes > 0 && (
+            <span className={`diary-countdown${timeUp ? ' done' : ''}`}>
+              {String(Math.floor(left / 60)).padStart(2, '0')}:{String(left % 60).padStart(2, '0')}
+            </span>
+          )}
+          {TIMER_CHOICES.map(m => (
+            <button
+              key={m}
+              className={`diary-timer-btn${minutes === m ? ' active' : ''}`}
+              onClick={() => chooseTimer(m)}
+            >{m === 0 ? 'senza timer' : `${m} min`}</button>
+          ))}
+        </div>
+      </div>
+
+      {seed && <div className="diary-seed">{seed}</div>}
+
+      <div className="diary-writer-area">
+        <textarea
+          ref={areaRef}
+          className="diary-textarea"
+          value={text}
+          onChange={e => setText(e.target.value)}
+          placeholder="Scrivi. Non rileggere, non correggere."
+          spellCheck={false}
+        />
+      </div>
+
+      {timeUp && <div className="diary-timeup">Il tempo è finito. Puoi fermarti quando vuoi.</div>}
+      {error && <div className="diary-error">{error}</div>}
+
+      <div className="diary-writer-actions">
+        {confirmRelease ? (
+          <>
+            <span className="diary-release-q">Lasciare andare questo testo senza salvarlo?</span>
+            <button className="diary-ghost-btn danger" onClick={release}>Sì, lascia andare</button>
+            <button className="diary-link-btn" onClick={() => setConfirmRelease(false)}>Annulla</button>
+          </>
+        ) : (
+          <>
+            <button className="diary-link-btn" onClick={onCancel} disabled={saving}>Indietro</button>
+            <button className="diary-link-btn" onClick={() => setConfirmRelease(true)} disabled={saving || !text.trim()}>
+              Lascia andare
+            </button>
+            <button className="diary-ghost-btn" onClick={() => finish(true)} disabled={saving || !text.trim()}
+              title="Salvata ma tenuta fuori dalla timeline e dall'export">
+              Chiudi nel cassetto
+            </button>
+            <button className="diary-primary-btn" onClick={() => finish(false)} disabled={saving || !text.trim()}>
+              {saving ? '…' : 'Conserva'}
+            </button>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── Rituale della sera ──────────────────────────────────────────────────────
+
+function EveningRitual({ onSave, onCancel }) {
+  const [answers, setAnswers] = useState({ nutrito: '', svuotato: '', lascio: '' });
+  const [gratitude, setGratitude] = useState(['', '', '']);
+  const [mood, setMood] = useState(3);
+  const [energy, setEnergy] = useState(3);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState(null);
+
+  const filled = Object.values(answers).some(v => v.trim()) || gratitude.some(g => g.trim());
+
+  async function handleSave() {
+    setSaving(true);
+    setError(null);
+    try {
+      await onSave(makeEntry({
+        type: 'sera',
+        text: eveningText(answers),
+        answers,
+        gratitude,
+        mood,
+        energy,
+      }));
+    } catch {
+      setError('Non sono riuscito a salvare. Riprova.');
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="diary-panel diary-evening">
+      <div className="diary-header">
+        <span className="diary-title">🕯️ Rituale della sera</span>
+        <button className="diary-close" onClick={onCancel}>✕</button>
+      </div>
+      <div className="diary-body">
+        {EVENING_QUESTIONS.map(q => (
+          <div key={q.key} className="diary-field">
+            <label className="diary-label">{q.label}</label>
+            <textarea
+              className="diary-input"
+              rows={3}
+              value={answers[q.key]}
+              onChange={e => setAnswers(a => ({ ...a, [q.key]: e.target.value }))}
+            />
+          </div>
+        ))}
+
+        <div className="diary-field">
+          <label className="diary-label">Tre cose per cui sono grato</label>
+          {gratitude.map((g, i) => (
+            <input
+              key={i}
+              className="diary-input diary-input-line"
+              value={g}
+              onChange={e => setGratitude(prev => prev.map((v, idx) => (idx === i ? e.target.value : v)))}
+            />
+          ))}
+        </div>
+
+        <Slider label="Umore" value={mood} labels={MOOD_LABELS} onChange={setMood} />
+        <Slider label="Energia" value={energy} labels={ENERGY_LABELS} onChange={setEnergy} />
+
+        {error && <div className="diary-error">{error}</div>}
+        <div className="diary-writer-actions">
+          <button className="diary-link-btn" onClick={onCancel} disabled={saving}>Indietro</button>
+          <button className="diary-primary-btn" onClick={handleSave} disabled={saving || !filled}>
+            {saving ? '…' : 'Chiudi la giornata'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Slider({ label, value, labels, onChange }) {
+  return (
+    <div className="diary-field">
+      <label className="diary-label">{label}: <span className="diary-slider-value">{labels[value]}</span></label>
+      <input
+        type="range" min="1" max="5" step="1"
+        value={value}
+        onChange={e => onChange(Number(e.target.value))}
+        className="diary-slider"
+      />
+    </div>
+  );
+}
+
+// ── Export per l'AI ─────────────────────────────────────────────────────────
+
+const PERIODS = [
+  { id: 'today', label: 'Oggi', days: 1 },
+  { id: '7',     label: '7 giorni', days: 7 },
+  { id: '30',    label: '30 giorni', days: 30 },
+  { id: 'all',   label: 'Tutto il caricato', days: null },
+];
+
+function AiExport({ entries, onBack }) {
+  const [periodId, setPeriodId] = useState('7');
+  const [presetId, setPresetId] = useState(AI_PRESETS[0].id);
+  const [withBussola, setWithBussola] = useState(true);
+  const [bussola, setBussola] = useState(null);
+  const [copied, setCopied] = useState(false);
+  const previewRef = useRef(null);
+
+  useEffect(() => {
+    if (!withBussola || bussola) return;
+    loadIdentityDoc('bussola').then(setBussola).catch(() => setBussola(null));
+  }, [withBussola, bussola]);
+
+  const period = PERIODS.find(p => p.id === periodId);
+  const preset = AI_PRESETS.find(p => p.id === presetId);
+  const selected = useMemo(() => {
+    const base = filterEntries(entries, {});   // il cassetto resta fuori dall'export
+    return period.days ? lastDays(base, period.days) : base;
+  }, [entries, period]);
+
+  const markdown = useMemo(() => buildAiExport({
+    entries: selected,
+    preset,
+    bussola: withBussola ? bussola : null,
+    periodLabel: period.label.toLowerCase(),
+  }), [selected, preset, withBussola, bussola, period]);
+
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(markdown);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // Clipboard negata (permessi, contesto non sicuro): si seleziona il
+      // testo così resta comunque un Ctrl+C di distanza.
+      previewRef.current?.select();
+    }
+  }
+
+  function download() {
+    const blob = new Blob([markdown], { type: 'text/markdown' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `diario-${dateKey()}.md`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  return (
+    <div className="diary-panel">
+      <div className="diary-header">
+        <span className="diary-title">Copia per l'AI</span>
+        <button className="diary-close" onClick={onBack}>✕</button>
+      </div>
+      <div className="diary-body">
+        <div className="diary-field">
+          <label className="diary-label">Periodo</label>
+          <div className="diary-chips">
+            {PERIODS.map(p => (
+              <button key={p.id} className={`diary-chip${periodId === p.id ? ' active' : ''}`} onClick={() => setPeriodId(p.id)}>
+                {p.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="diary-field">
+          <label className="diary-label">Che tipo di risposta voglio</label>
+          <div className="diary-chips">
+            {AI_PRESETS.map(p => (
+              <button key={p.id} className={`diary-chip${presetId === p.id ? ' active' : ''}`} onClick={() => setPresetId(p.id)}>
+                {p.label}
+              </button>
+            ))}
+          </div>
+          <div className="diary-preset-ask">{preset.ask}</div>
+        </div>
+
+        <label className="diary-checkbox">
+          <input type="checkbox" checked={withBussola} onChange={e => setWithBussola(e.target.checked)} />
+          includi la Bussola (chi sono, cosa voglio)
+        </label>
+
+        <div className="diary-export-count">
+          {selected.length} {selected.length === 1 ? 'voce' : 'voci'} · {markdown.length.toLocaleString('it-IT')} caratteri
+        </div>
+
+        <textarea ref={previewRef} className="diary-preview" value={markdown} readOnly spellCheck={false} />
+
+        <div className="diary-writer-actions">
+          <button className="diary-link-btn" onClick={onBack}>Indietro</button>
+          <button className="diary-ghost-btn" onClick={download}>Scarica .md</button>
+          <button className="diary-primary-btn" onClick={copy}>{copied ? 'Copiato ✓' : 'Copia negli appunti'}</button>
+        </div>
+        <div className="diary-privacy">
+          Il diario resta sul tuo OneDrive: esce dal dispositivo solo quando sei tu a incollarlo.
+        </div>
+      </div>
+    </div>
+  );
+}

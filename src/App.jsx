@@ -15,6 +15,7 @@ import PlannerView from './PlannerView';
 import GtdClarifyModal from './GtdClarifyModal';
 import EisenhowerTriage from './EisenhowerTriage';
 import ColorSettingsModal from './ColorSettingsModal';
+import DiaryPanel from './DiaryPanel';
 import { parseEisenhower } from './eisenhower';
 import { COLORS } from './config';
 import UndoToast from './UndoToast';
@@ -136,6 +137,7 @@ export default function App() {
   const [identityOpen, setIdentityOpen] = useState(null);
   const [searchOpen, setSearchOpen] = useState(false);
   const [gtdOpen, setGtdOpen] = useState(false);
+  const [diaryOpen, setDiaryOpen] = useState(false);
   const [eisenhowerOpen, setEisenhowerOpen] = useState(false);
   const [pendingPlannerTask, setPendingPlannerTask] = useState(null);
   const [reviewSuggestions, setReviewSuggestions] = useState([]);
@@ -181,12 +183,16 @@ export default function App() {
     });
   }, []);
 
-  // Scorciatoia Ctrl/Cmd+K per la ricerca globale
+  // Scorciatoie: Ctrl/Cmd+K ricerca globale, Ctrl/Cmd+J diario
   useEffect(() => {
     function onKeyDown(e) {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
         e.preventDefault();
         setSearchOpen(o => !o);
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'j') {
+        e.preventDefault();
+        setDiaryOpen(o => !o);
       }
     }
     window.addEventListener('keydown', onKeyDown);
@@ -662,6 +668,11 @@ export default function App() {
             </button>
           )}
           {account && (
+            <button className="search-btn" onClick={() => setDiaryOpen(true)} title="Diario (Ctrl+J)">
+              <span className="header-icon-emoji">🕯️</span>
+            </button>
+          )}
+          {account && (
             <button className="search-btn" onClick={() => setColorSettingsOpen(true)} title="Colori taccuini e sezioni">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <circle cx="12" cy="12" r="3" />
@@ -759,6 +770,20 @@ export default function App() {
               </span>
               <span className="dock-btn-label">Piano</span>
             </button>
+            <div className="dock-sep" />
+            <button
+              className={`dock-btn${diaryOpen ? ' active' : ''}`}
+              onClick={() => setDiaryOpen(true)}
+              title="Diario (Ctrl+J)">
+              <span className="dock-btn-icon">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H19v15H6.5A2.5 2.5 0 0 0 4 20.5z" />
+                  <line x1="8" y1="7.5" x2="15" y2="7.5" />
+                  <line x1="8" y1="11" x2="15" y2="11" />
+                </svg>
+              </span>
+              <span className="dock-btn-label">Diario</span>
+            </button>
           </div>
         </div>
         {/* Pannello sezione (ToDo/OneNote/OneDrive) — fisso rispetto al
@@ -833,6 +858,7 @@ export default function App() {
           tasks={scheduledTasks || []}
           onSelectSection={(sec, nb, app) => { setPlannerOpen(false); handleSelectSection(sec, nb, app); }}
         />
+        <DiaryPanel open={diaryOpen} onClose={() => setDiaryOpen(false)} />
         <ColorSettingsModal
           open={colorSettingsOpen}
           onClose={() => setColorSettingsOpen(false)}
