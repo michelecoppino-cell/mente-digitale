@@ -17,6 +17,13 @@ Microsoft To-Do e al calendario Outlook, e un briefing di notizie generato con l
   di action item dalle email.
 - **Pannello attività** — task raggruppati per scadenza + calendario settimanale/mensile.
 - **Briefing notizie** — riassunti AI dei feed ANSA (mondo, Italia, Friuli) via `/api/briefing`.
+- **Diario** (🕯️ nell'header, `Ctrl/Cmd+J`) — "svuota testa" a schermo intero con timer e domanda
+  del giorno (conserva / chiudi nel cassetto / lascia andare senza salvare), rituale della sera
+  con tre domande, gratitudini e umore/energia, timeline con ricerca e tag. Il bottone
+  **Copia per l'AI** compone il markdown di un periodo (con la Bussola come contesto) da
+  incollare in una chat AI per chiedere supporto. Voci salvate su OneDrive in file mensili;
+  il diario non passa da alcuna funzione server. Su telefono, con il Piano aperto,
+  Diario e GTD restano raggiungibili come due pulsanti tondi in basso a destra.
 
 ## Architettura
 
@@ -24,7 +31,7 @@ Microsoft To-Do e al calendario Outlook, e un briefing di notizie generato con l
 |---|---|
 | Frontend | React 19 + Vite, D3 per la mappa |
 | Autenticazione | MSAL Browser (account Microsoft personale, scope Graph in sola lettura + To-Do/Files in scrittura) |
-| Dati | Microsoft Graph (OneNote, To-Do, Calendar, OneDrive, Mail) con cache localStorage a TTL |
+| Dati | Microsoft Graph (OneNote, To-Do, Calendar, OneDrive, Mail) con cache localStorage a TTL. I file JSON dell'app stanno nella cartella `mente-digitale/` di OneDrive (quelli rimasti in root vengono spostati automaticamente al primo avvio) |
 | Backend | Cloudflare Pages Functions (`functions/api/*`) |
 | AI | Claude Haiku (`daily-plan`), Mistral (`briefing`) |
 | Automazioni | GitHub Actions (`generate-news`, `sync-calendar`) |

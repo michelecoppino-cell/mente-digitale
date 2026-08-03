@@ -287,3 +287,23 @@ export {};
  * @property {string} date
  * @property {WorkbookBlock[]} blocks
  */
+
+/**
+ * Voce di diario, persistita su OneDrive in file mensili (vedi api.js,
+ * `mente-digitale/mente-digitale-diario-YYYY-MM.json`). `sealed` = voce "chiusa nel cassetto":
+ * salvata ma tenuta fuori dalla timeline e dall'export, ritrovabile solo
+ * cercandola esplicitamente.
+ * @typedef {Object} DiaryEntry
+ * @property {string} id
+ * @property {string} ts                       ISO completo del momento di scrittura
+ * @property {string} date                     'YYYY-MM-DD' locale
+ * @property {'svuota-testa'|'sera'|'libero'} type
+ * @property {string} text
+ * @property {number|null} mood                1..5
+ * @property {number|null} energy              1..5
+ * @property {string[]} tags
+ * @property {string[]} gratitude
+ * @property {Record<string, string>|null} answers   risposte del rituale della sera
+ * @property {string|null} seed                domanda-seme mostrata quel giorno
+ * @property {boolean} sealed
+ */

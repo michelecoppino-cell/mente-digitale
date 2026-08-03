@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { initAuth, getAccount, login, trySsoSilent } from './auth';
-import { getNotebooks, getSections, getTodoLists, getTodoTasks, getPages, getRecentEmails, getPageContentHtml, markOneNoteTagDone, getReminders, createTask, getCalendarEvents, getTasksForDeadlineDedup, invalidateCalendarsCache, loadColorSettings, saveColorSettings } from './api';
+import { getNotebooks, getSections, getTodoLists, getTodoTasks, getPages, getRecentEmails, getPageContentHtml, markOneNoteTagDone, getReminders, createTask, getCalendarEvents, getTasksForDeadlineDedup, invalidateCalendarsCache, loadColorSettings, saveColorSettings, migrateLegacyDriveFiles } from './api';
 import { getMarker, setMarker, clearMarkers } from './markers';
 import { queryClient, qk, STALE } from './queryClient';
 import { extractEmailCandidates, extractOneNoteCandidates } from './dailyReview';
@@ -15,6 +15,7 @@ import PlannerView from './PlannerView';
 import GtdClarifyModal from './GtdClarifyModal';
 import EisenhowerTriage from './EisenhowerTriage';
 import ColorSettingsModal from './ColorSettingsModal';
+import DiaryPanel from './DiaryPanel';
 import { parseEisenhower } from './eisenhower';
 import { COLORS } from './config';
 import UndoToast from './UndoToast';
@@ -46,6 +47,26 @@ const REVIEW_PAGES_CAP = 40; // tetto di sicurezza sulle pagine il cui contenuto
 const DEADLINE_LAST_CHECK_KEY = 'deadline_reminders_last_check';
 const DEADLINE_LAST_CHECK_TTL = 30 * 24 * 60 * 60 * 1000; // 30 giorni
 const DEADLINE_LOOKBACK_MS = 7 * 24 * 60 * 60 * 1000;     // fallback alla prima scansione: ultimi 7 giorni
+
+// I file dell'app sono passati dalla root di OneDrive alla cartella
+// `mente-digitale/`. Lo spostamento dei file già esistenti gira una volta per
+// browser, in sottofondo: non blocca il caricamento e, se fallisce, il marker
+// non viene scritto e si riprova al prossimo avvio (nel frattempo i singoli
+// file vengono comunque recuperati dalla migrazione pigra in api.js).
+// Il flag sta su localStorage e non tra i marker: quelli vengono azzerati da
+// "Aggiorna tutto" (clearMarkers), e rifare la scansione della root a ogni
+// refresh manuale sarebbe una richiesta sprecata.
+const DRIVE_MIGRATION_KEY = 'md_drive_folder_migrated';
+
+function runDriveMigrationOnce() {
+  try { if (localStorage.getItem(DRIVE_MIGRATION_KEY)) return; } catch { /* storage non disponibile */ }
+  migrateLegacyDriveFiles()
+    .then(moved => {
+      try { localStorage.setItem(DRIVE_MIGRATION_KEY, '1'); } catch { /* no-op */ }
+      if (moved) console.info(`OneDrive: spostati ${moved} file in mente-digitale/`);
+    })
+    .catch(e => console.error('migrazione cartella OneDrive', e));
+}
 
 function suggestionSignature(a) {
   return `${a.source || 'email'}::${a.title || ''}::${a.extractedAction || ''}`;
@@ -136,6 +157,7 @@ export default function App() {
   const [identityOpen, setIdentityOpen] = useState(null);
   const [searchOpen, setSearchOpen] = useState(false);
   const [gtdOpen, setGtdOpen] = useState(false);
+  const [diaryOpen, setDiaryOpen] = useState(false);
   const [eisenhowerOpen, setEisenhowerOpen] = useState(false);
   const [pendingPlannerTask, setPendingPlannerTask] = useState(null);
   const [reviewSuggestions, setReviewSuggestions] = useState([]);
@@ -181,12 +203,16 @@ export default function App() {
     });
   }, []);
 
-  // Scorciatoia Ctrl/Cmd+K per la ricerca globale
+  // Scorciatoie: Ctrl/Cmd+K ricerca globale, Ctrl/Cmd+J diario
   useEffect(() => {
     function onKeyDown(e) {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
         e.preventDefault();
         setSearchOpen(o => !o);
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'j') {
+        e.preventDefault();
+        setDiaryOpen(o => !o);
       }
     }
     window.addEventListener('keydown', onKeyDown);
@@ -200,6 +226,7 @@ export default function App() {
 
   async function load(forceRefresh = false) {
     setSync({ state: 'loading', label: 'Caricamento…' });
+    runDriveMigrationOnce();
 
     // Svuota cache in memoria se forceRefresh
     if (forceRefresh) {
@@ -662,6 +689,11 @@ export default function App() {
             </button>
           )}
           {account && (
+            <button className="search-btn" onClick={() => setDiaryOpen(true)} title="Diario (Ctrl+J)">
+              <span className="header-icon-emoji">🕯️</span>
+            </button>
+          )}
+          {account && (
             <button className="search-btn" onClick={() => setColorSettingsOpen(true)} title="Colori taccuini e sezioni">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <circle cx="12" cy="12" r="3" />
@@ -759,6 +791,20 @@ export default function App() {
               </span>
               <span className="dock-btn-label">Piano</span>
             </button>
+            <div className="dock-sep" />
+            <button
+              className={`dock-btn${diaryOpen ? ' active' : ''}`}
+              onClick={() => setDiaryOpen(true)}
+              title="Diario (Ctrl+J)">
+              <span className="dock-btn-icon">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H19v15H6.5A2.5 2.5 0 0 0 4 20.5z" />
+                  <line x1="8" y1="7.5" x2="15" y2="7.5" />
+                  <line x1="8" y1="11" x2="15" y2="11" />
+                </svg>
+              </span>
+              <span className="dock-btn-label">Diario</span>
+            </button>
           </div>
         </div>
         {/* Pannello sezione (ToDo/OneNote/OneDrive) — fisso rispetto al
@@ -801,7 +847,12 @@ export default function App() {
             durante il focus Pomodoro: stesso angolo dello schermo del widget
             del timer, e la visualizzazione è comunque bloccata. */}
         {plannerOpen && !pomodoroFocus && (
-          <button className="gtd-fab" onClick={() => setGtdOpen(true)} title="Cattura pensiero (GTD)">+</button>
+          <div className="fab-stack">
+            <button className="fab diary-fab" onClick={() => setDiaryOpen(true)} title="Diario (Ctrl+J)">
+              <span className="fab-emoji">🕯️</span>
+            </button>
+            <button className="fab gtd-fab" onClick={() => setGtdOpen(true)} title="Cattura pensiero (GTD)">+</button>
+          </div>
         )}
         <GtdClarifyModal
           open={gtdOpen}
@@ -833,6 +884,7 @@ export default function App() {
           tasks={scheduledTasks || []}
           onSelectSection={(sec, nb, app) => { setPlannerOpen(false); handleSelectSection(sec, nb, app); }}
         />
+        <DiaryPanel open={diaryOpen} onClose={() => setDiaryOpen(false)} />
         <ColorSettingsModal
           open={colorSettingsOpen}
           onClose={() => setColorSettingsOpen(false)}
