@@ -8,6 +8,7 @@ import {
   monthKey, shiftMonth, humanDate, buildAiExport, dateKey, SEEDS, SVUOTA_TESTA_METHOD,
 } from './diary';
 import { addPhotos, removePhotos, getDiaryPhotoUrl, MAX_PHOTOS_PER_ENTRY } from './diaryPhotos';
+import DiaryImport from './DiaryImport';
 import './DiaryPanel.css';
 
 // Bozza in corso: lo svuota testa è la modalità in cui è più facile perdere
@@ -35,7 +36,7 @@ export default function DiaryPanel({ open, onClose }) {
 }
 
 function DiaryPanelInner({ onClose }) {
-  const [view, setView] = useState('home');   // home | write | sera | ai
+  const [view, setView] = useState('home');   // home | write | sera | ai | importa
   const [writeType, setWriteType] = useState('svuota-testa');
   const [entries, setEntries] = useState([]);
   const [months, setMonths] = useState([]);        // mesi noti dall'indice
@@ -45,10 +46,14 @@ function DiaryPanelInner({ onClose }) {
   const [loadingAll, setLoadingAll] = useState(false);
   const [resumeDraft, setResumeDraft] = useState(loadDraft);
 
-  useEffect(() => {
+  // Caricamento iniziale, riusato dopo un'importazione: l'indice è cambiato e
+  // le voci nuove stanno in mesi che nessuno ha ancora chiesto.
+  function ricarica() {
     const thisMonth = monthKey();
     const prevMonth = shiftMonth(thisMonth, -1);
-    Promise.all([loadDiaryIndex(), loadDiaryMonth(thisMonth), loadDiaryMonth(prevMonth)])
+    setLoading(true);
+    setLoadFailed(false);
+    return Promise.all([loadDiaryIndex(), loadDiaryMonth(thisMonth), loadDiaryMonth(prevMonth)])
       .then(([idx, a, b]) => {
         setMonths(idx.months);
         // Dedup per id: a cavallo di mezzanotte del primo del mese, o dopo un
@@ -62,7 +67,9 @@ function DiaryPanelInner({ onClose }) {
       // salvataggio successivo riscriverebbe il mese azzerandolo.
       .catch(() => setLoadFailed(true))
       .finally(() => setLoading(false));
-  }, []);
+  }
+
+  useEffect(() => { ricarica(); }, []);
 
   // Esc chiude il pannello, ma non mentre si sta scrivendo: lì il tasto è
   // troppo a portata di dito per rischiare di far sparire una pagina di getto.
@@ -148,6 +155,7 @@ function DiaryPanelInner({ onClose }) {
             setResumeDraft(null);
           }}
           onOpenAi={() => setView('ai')}
+          onOpenImport={() => setView('importa')}
           onDelete={handleDelete}
           onClose={onClose}
         />
@@ -166,6 +174,12 @@ function DiaryPanelInner({ onClose }) {
       {view === 'ai' && (
         <AiExport entries={entries} onBack={() => setView('home')} />
       )}
+      {view === 'importa' && (
+        <DiaryImport
+          onBack={() => setView('home')}
+          onImported={ricarica}
+        />
+      )}
     </div>
   );
 }
@@ -174,7 +188,7 @@ function DiaryPanelInner({ onClose }) {
 
 function DiaryHome({
   entries, loading, loadFailed, resumeDraft, hasOlder, monthsLeft, loadingAll,
-  onLoadOlder, onLoadAll, onStart, onResume, onDiscardDraft, onOpenAi, onDelete, onClose,
+  onLoadOlder, onLoadAll, onStart, onResume, onDiscardDraft, onOpenAi, onOpenImport, onDelete, onClose,
 }) {
   const [query, setQuery] = useState('');
   const [tag, setTag] = useState(null);
@@ -225,6 +239,12 @@ function DiaryHome({
             <span className="diary-mode-icon">✍️</span>
             <span className="diary-mode-label">Scrittura libera</span>
             <span className="diary-mode-desc">Solo il foglio, per quando sai già di cosa parlare.</span>
+          </button>
+        </div>
+
+        <div className="diary-import-entry">
+          <button className="diary-link-btn" onClick={onOpenImport}>
+            Importa dal Diario dell'iPhone
           </button>
         </div>
 

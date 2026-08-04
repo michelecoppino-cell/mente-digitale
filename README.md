@@ -33,8 +33,19 @@ Microsoft To-Do e al calendario Outlook, e un briefing di notizie generato con l
 
 ### Importare il Diario dell'iPhone
 
-`scripts/importa-diario-apple.mjs` converte l'esportazione dell'app **Diario di Apple**
-(Impostazioni → Diario → *Esporta*) nel formato del Diario di Mente Digitale.
+Due strade per la stessa cosa, con lo stesso parser (`src/appleDiary.js`) sotto: gli id
+delle voci derivano dall'export, quindi importare due volte — o una volta per strada —
+aggiorna le voci invece di sdoppiarle.
+
+**Dal telefono** (`Diario → Importa dal Diario dell'iPhone`): si sceglie lo zip dall'app
+File e l'app fa tutto, scrivendo direttamente sul OneDrive a cui è già collegata. Nessuna
+estrazione, nessun passaggio da PC. Su iPhone è anche la strada migliore per le foto: Safari
+decodifica gli HEIC di suo, quindi la conversione in JPEG avviene sul telefono. Un browser
+che non li sa leggere le salta e lo dice, invece di caricare immagini che nessuno vedrebbe.
+
+**Da PC**, per archivi molto grandi o per controllare il risultato prima che tocchi il
+diario vero: `scripts/importa-diario-apple.mjs` converte l'esportazione dell'app **Diario di
+Apple** (Impostazioni → Diario → *Esporta*) nel formato del Diario di Mente Digitale.
 
 ```bash
 npm install
