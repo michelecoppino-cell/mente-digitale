@@ -900,6 +900,39 @@ export async function saveDiaryEntry(entry) {
 }
 
 /**
+ * Salva molte voci insieme: un file per mese riscritto una volta sola e
+ * l'indice aggiornato alla fine.
+ *
+ * saveDiaryEntry costa tre o quattro richieste a voce, il che va benissimo per
+ * una scrittura della sera e per niente per un'importazione da centinaia di
+ * voci: da lì arriva questa. La fusione resta per id, quindi reimportare lo
+ * stesso archivio aggiorna le voci invece di sdoppiarle.
+ *
+ * @param {import('./types').DiaryEntry[]} entries
+ * @returns {Promise<string[]>} i mesi toccati
+ */
+export async function saveDiaryEntries(entries) {
+  /** @type {Record<string, import('./types').DiaryEntry[]>} */
+  const perMese = {};
+  for (const e of entries) (perMese[e.date.slice(0, 7)] ||= []).push(e);
+
+  const mesi = Object.keys(perMese).sort();
+  for (const ym of mesi) {
+    const esistenti = await loadDiaryMonth(ym);
+    const mappa = new Map(esistenti.map(e => [e.id, e]));
+    for (const e of perMese[ym]) mappa.set(e.id, e);
+    await putDriveJson(diaryMonthFile(ym), [...mappa.values()].sort((a, b) => (a.ts < b.ts ? -1 : 1)));
+  }
+
+  const idx = await loadDiaryIndex();
+  const tutti = [...new Set([...idx.months, ...mesi])].sort();
+  if (tutti.length !== idx.months.length) {
+    await putDriveJson(OD_DIARY_INDEX_FILE, { months: tutti });
+  }
+  return mesi;
+}
+
+/**
  * @param {import('./types').DiaryEntry} entry
  * @returns {Promise<import('./types').DiaryEntry[]>} le voci del mese aggiornate
  */

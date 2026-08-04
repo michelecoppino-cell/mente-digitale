@@ -21,13 +21,13 @@
 // derivano dal contenuto dell'export, quindi un secondo giro aggiorna le
 // stesse voci invece di duplicarle.
 
-import { createHash } from 'node:crypto';
 import { mkdtempSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync, copyFileSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { inflateRawSync } from 'node:zlib';
 
 import { makeEntry, extractTags } from '../src/diary.js';
+import { unzip, leggiVoce, testoVoce, tsVoce, idVoce, eFoto, eVideo } from '../src/appleDiary.js';
 
 // ── Opzioni ─────────────────────────────────────────────────────────────────
 
@@ -108,57 +108,19 @@ async function caricaConvertitori() {
 // ── Lettura dell'archivio ───────────────────────────────────────────────────
 
 /**
- * Estrae uno .zip in una cartella temporanea.
- *
- * Scritto a mano invece di appoggiarsi a `unzip` o `tar`: il tar di Linux non
- * legge gli zip (quello di macOS e Windows sì) e `unzip` non è installato
- * ovunque, mentre questo funziona su qualsiasi PC con Node e senza librerie.
- * Uno zip è un elenco in fondo al file (la "central directory") che punta ai
- * dati compressi; qui si legge quello e si scompatta voce per voce.
+ * Estrae uno .zip in una cartella temporanea, usando il lettore condiviso con
+ * l'app (src/appleDiary.js) e la decompressione di Node.
  */
-function estraiZip(zipPath) {
-  const buf = readFileSync(zipPath);
+async function estraiZip(zipPath) {
   const dir = mkdtempSync(path.join(tmpdir(), 'diario-apple-'));
-
-  // Fine della central directory: firma 0x06054b50, cercata dal fondo perché
-  // può avere in coda un commento di lunghezza variabile.
-  let eocd = -1;
-  for (let i = buf.length - 22; i >= 0 && i > buf.length - 22 - 65536; i--) {
-    if (buf.readUInt32LE(i) === 0x06054b50) { eocd = i; break; }
-  }
-  if (eocd < 0) throw new Error(`${zipPath} non sembra un file .zip valido.`);
-
-  const nVoci = buf.readUInt16LE(eocd + 10);
-  let p = buf.readUInt32LE(eocd + 16);
-
-  for (let i = 0; i < nVoci; i++) {
-    if (buf.readUInt32LE(p) !== 0x02014b50) break;
-    const metodo = buf.readUInt16LE(p + 10);
-    const dimCompressa = buf.readUInt32LE(p + 20);
-    const lunNome = buf.readUInt16LE(p + 28);
-    const lunExtra = buf.readUInt16LE(p + 30);
-    const lunCommento = buf.readUInt16LE(p + 32);
-    const offsetLocale = buf.readUInt32LE(p + 42);
-    const nome = buf.toString('utf8', p + 46, p + 46 + lunNome);
-    p += 46 + lunNome + lunExtra + lunCommento;
-
-    // I metadati di macOS non servono a niente qui, e i percorsi che escono
-    // dalla cartella di destinazione non si scrivono per principio.
-    if (nome.startsWith('__MACOSX/') || path.basename(nome).startsWith('._')) continue;
+  const contenuto = await unzip(new Uint8Array(readFileSync(zipPath)), inflateRawSync);
+  for (const [nome, dati] of contenuto) {
     const dest = path.join(dir, nome);
+    // I percorsi che escono dalla cartella di destinazione non si scrivono
+    // per principio, per quanto improbabile sia in un export di Apple.
     if (!dest.startsWith(dir + path.sep)) continue;
-
-    if (nome.endsWith('/')) { mkdirSync(dest, { recursive: true }); continue; }
-
-    // L'intestazione locale ripete nome ed extra con lunghezze proprie: i dati
-    // cominciano dopo quelle, non dopo quelle della central directory.
-    const lunNomeL = buf.readUInt16LE(offsetLocale + 26);
-    const lunExtraL = buf.readUInt16LE(offsetLocale + 28);
-    const inizio = offsetLocale + 30 + lunNomeL + lunExtraL;
-    const dati = buf.subarray(inizio, inizio + dimCompressa);
-
     mkdirSync(path.dirname(dest), { recursive: true });
-    writeFileSync(dest, metodo === 0 ? dati : inflateRawSync(dati));
+    writeFileSync(dest, dati);
   }
   return dir;
 }
@@ -174,154 +136,15 @@ function trovaRadice(dir) {
   throw new Error(`Non trovo la cartella Entries/ dentro ${dir}: è davvero un export del Diario?`);
 }
 
-// ── Da HTML a testo ─────────────────────────────────────────────────────────
-
-const ENTITA = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ' };
-
-function decodifica(s) {
-  return s.replace(/&(#x?[0-9a-f]+|[a-z]+);/gi, (intero, corpo) => {
-    if (corpo[0] === '#') {
-      const code = corpo[1] === 'x' || corpo[1] === 'X'
-        ? parseInt(corpo.slice(2), 16)
-        : parseInt(corpo.slice(1), 10);
-      return Number.isFinite(code) ? String.fromCodePoint(code) : intero;
-    }
-    return ENTITA[corpo.toLowerCase()] ?? intero;
-  });
-}
-
-/** Testo leggibile da un frammento HTML, conservando righe ed elenchi. */
-function testo(frammento) {
-  return decodifica(
-    frammento
-      // Gli a capo che Cocoa mette *fra* i tag non sono testo: contarli
-      // aggiunge una riga vuota fra un elemento di elenco e il successivo.
-      .replace(/>\s+</g, '><')
-      .replace(/<br\s*\/?>/gi, '\n')
-      // Elenchi: una riga per voce, senza righe vuote in mezzo. L'a capo lo
-      // mette l'apertura del `<li>`, quindi la chiusura non deve aggiungerne
-      // un altro.
-      .replace(/<li[^>]*>/gi, '\n- ')
-      .replace(/<\/li>/gi, '')
-      .replace(/<blockquote[^>]*>/gi, '\n> ')
-      // I paragrafi invece restano staccati: è così che si leggeva la voce
-      // sull'iPhone, ed è quello che rende rileggibile un testo lungo.
-      .replace(/<\/(p|div|ul|ol|blockquote|h\d)>/gi, '\n\n')
-      .replace(/<[^>]*>/g, '')
-  )
-    .replace(/[ \t ]+/g, ' ')
-    .replace(/ *\n */g, '\n')
-    .replace(/\n{3,}/g, '\n\n')
-    .trim();
-}
-
-/** Testo di un `<div class="...">…</div>` non annidato. */
-function divTesto(html, classe) {
-  const re = new RegExp(`<div[^>]*class=["']${classe}["'][^>]*>([\\s\\S]*?)</div>`, 'i');
-  const m = html.match(re);
-  return m ? testo(m[1]) : '';
-}
-
-// ── Date ────────────────────────────────────────────────────────────────────
-
-const MESI = [
-  'gennaio', 'febbraio', 'marzo', 'aprile', 'maggio', 'giugno',
-  'luglio', 'agosto', 'settembre', 'ottobre', 'novembre', 'dicembre',
-];
-
-/** 'giovedì 11 giugno 2026' → '2026-06-11' */
-function dataDaIntestazione(intestazione) {
-  const m = intestazione.toLowerCase().match(/(\d{1,2})\s+([a-zàéèìòù]+)\s+(\d{4})/);
-  if (!m) return null;
-  const mese = MESI.indexOf(m[2]);
-  if (mese < 0) return null;
-  const p = n => String(n).padStart(2, '0');
-  return `${m[3]}-${p(mese + 1)}-${p(Number(m[1]))}`;
-}
-
-// Apple conta i secondi dal 1° gennaio 2001: è il timestamp che accompagna le
-// foto nei file .json di Resources, e l'unico modo di sapere a che ora della
-// giornata è stata scritta una voce.
-const EPOCA_APPLE = Date.UTC(2001, 0, 1);
-
-function dataDaAppleEpoch(secondi) {
-  return new Date(EPOCA_APPLE + secondi * 1000);
-}
-
-/** 'YYYY-MM-DD' nel fuso di chi esegue lo script, come fa l'app. */
-function giornoLocale(d) {
-  const p = n => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
-}
-
-// ── Lettura di una voce ─────────────────────────────────────────────────────
-
-/**
- * Ritaglia i singoli riquadri della griglia degli allegati. Ogni riquadro
- * comincia con `<div id="UUID" class="gridItem …">`: si spezza lì invece di
- * cercare la chiusura, che è annidata e cambia da tipo a tipo.
- */
-function ritagliaAsset(grigliaHtml) {
-  const inizio = /<div id="([^"]+)" class="gridItem ([^"]*)"/g;
-  const punti = [];
-  let m;
-  while ((m = inizio.exec(grigliaHtml))) punti.push({ id: m[1], classi: m[2], da: m.index });
-  return punti.map((p, i) => ({
-    id: p.id,
-    tipi: p.classi.split(/\s+/).filter(c => c.startsWith('assetType_')),
-    html: grigliaHtml.slice(p.da, i + 1 < punti.length ? punti[i + 1].da : undefined),
-  }));
-}
-
-const TIPI_FOTO = new Set(['assetType_photo', 'assetType_livePhoto']);
-
-/** Didascalia da quello che iOS ha disegnato sopra il riquadro. */
-function didascaliaAsset(asset, risorseDir) {
-  const pezzi = [
-    divTesto(asset.html, 'activityType'),
-    divTesto(asset.html, 'gridItemOverlayHeader'),
-    divTesto(asset.html, 'activityMetrics').replace(/\s*·\s*/g, ' · '),
-    divTesto(asset.html, 'gridItemOverlayFooter'),
-  ].filter(Boolean);
-
-  // Le mappe portano i luoghi in un .json a fianco, non nell'HTML.
-  const meta = leggiSidecar(asset.id, risorseDir);
-  if (meta?.visits?.length) {
-    const luoghi = [...new Set(meta.visits.map(v => v.placeName || v.city).filter(Boolean))];
-    if (luoghi.length) pezzi.push(luoghi.join(', '));
-  }
-  return [...new Set(pezzi)].join(' · ');
-}
+// ── Lettura delle voci ──────────────────────────────────────────────────────
+// Il parser vero sta in src/appleDiary.js, condiviso con l'importazione dentro
+// l'app: qui restano solo il ponte verso il disco e le opzioni da riga di
+// comando.
 
 function leggiSidecar(id, risorseDir) {
   const p = path.join(risorseDir, `${id}.json`);
   if (!existsSync(p)) return null;
   try { return JSON.parse(readFileSync(p, 'utf8')); } catch { return null; }
-}
-
-function leggiVoce(fileHtml, risorseDir) {
-  const html = readFileSync(fileHtml, 'utf8');
-  const corpo = html.split('<body>')[1] || html;
-
-  const intestazione = divTesto(corpo, 'pageHeader');
-  const nome = path.basename(fileHtml, '.html');
-  const data = dataDaIntestazione(intestazione) || (nome.match(/^(\d{4}-\d{2}-\d{2})/)?.[1] ?? null);
-
-  const titolo = divTesto(corpo, 'title');
-  const domanda = divTesto(corpo, 'reflectionPrompt');
-
-  const griglia = corpo.match(/<div class="assetGrid">([\s\S]*?)<div class=['"]title['"]/i);
-  const asset = griglia ? ritagliaAsset(griglia[1]) : [];
-  for (const a of asset) {
-    a.file = a.html.match(/(?:src)="\.\.\/Resources\/([^"]+)"/)?.[1] || null;
-    a.didascalia = didascaliaAsset(a, risorseDir);
-    a.quando = leggiSidecar(a.id, risorseDir)?.date ?? null;
-  }
-
-  const daBody = corpo.split(/<div class=['"]bodyText['"]>/i)[1] || '';
-  const testoVoce = testo(daBody);
-
-  return { file: fileHtml, nome, data, titolo, domanda, asset, testo: testoVoce };
 }
 
 // ── Conversione delle immagini ──────────────────────────────────────────────
@@ -349,10 +172,6 @@ async function convertiImmagine({ sharp, heicConvert }, buffer, opts) {
 
 // ── Scrittura in formato Mente Digitale ─────────────────────────────────────
 
-function idVoce(nomeFile) {
-  return `dap${createHash('sha1').update(nomeFile).digest('hex').slice(0, 12)}`;
-}
-
 function leggiJsonSePresente(file, fallback) {
   if (!existsSync(file)) return fallback;
   try { return JSON.parse(readFileSync(file, 'utf8')); } catch { return fallback; }
@@ -370,7 +189,7 @@ async function main() {
   const inputAssoluto = path.resolve(opts.input);
   if (!existsSync(inputAssoluto)) throw new Error(`Non trovo ${inputAssoluto}`);
 
-  const estratto = statSync(inputAssoluto).isDirectory() ? inputAssoluto : estraiZip(inputAssoluto);
+  const estratto = statSync(inputAssoluto).isDirectory() ? inputAssoluto : await estraiZip(inputAssoluto);
   const radice = trovaRadice(estratto);
   const entriesDir = path.join(radice, 'Entries');
   const risorseDir = path.join(radice, 'Resources');
@@ -383,7 +202,11 @@ async function main() {
   console.log(`Export letto da ${radice}`);
   console.log(`${files.length} voci nell'archivio\n`);
 
-  const voci = files.map(f => leggiVoce(f, risorseDir));
+  const voci = files.map(f => leggiVoce(
+    readFileSync(f, 'utf8'),
+    path.basename(f, '.html'),
+    id => leggiSidecar(id, risorseDir),
+  ));
 
   const convertitori = opts.dryRun || opts.senzaFoto ? null : await caricaConvertitori();
   const outDir = path.resolve(opts.out);
@@ -410,11 +233,9 @@ async function main() {
     for (const a of voce.asset) {
       if (opts.senzaFoto || !a.file) continue;
       const sorgente = path.join(risorseDir, a.file);
-      const eFoto = a.tipi.some(t => TIPI_FOTO.has(t));
-      const eVideo = a.tipi.includes('assetType_video') || /\.(mov|mp4|m4v)$/i.test(a.file);
 
       if (!existsSync(sorgente)) { conto.mancanti++; continue; }
-      if (eVideo) {
+      if (eVideo(a)) {
         // Il Diario non mostra video: si mettono da parte invece di perderli.
         conto.video++;
         if (!opts.dryRun) {
@@ -423,7 +244,7 @@ async function main() {
         }
         continue;
       }
-      if (!eFoto && !opts.tuttiGliAsset) { conto.saltate++; continue; }
+      if (!eFoto(a) && !opts.tuttiGliAsset) { conto.saltate++; continue; }
 
       const nomeFoto = `${a.id}.jpg`;
       if (!opts.dryRun) {
@@ -434,28 +255,13 @@ async function main() {
       conto.foto++;
     }
 
-    // Il Diario non ha un campo titolo: quello di Apple diventa la prima riga,
-    // che è poi come lo si leggeva sull'iPhone.
-    const testoFinale = [voce.titolo, voce.testo].filter(t => t && t.trim()).join('\n\n');
+    const testoFinale = testoVoce(voce);
     if (!testoFinale.trim() && !foto.length) { conto.vuote++; continue; }
-
-    // Ora del giorno: quella della prima foto, ma solo se è dello stesso
-    // giorno della voce. Capita spesso di allegare la foto di ieri a quello
-    // che si scrive oggi, e un orario preso da lì manderebbe la voce in
-    // timeline nel giorno sbagliato. Altrimenti mezzogiorno: un'ora neutra è
-    // più onesta di una precisione che l'export non ha.
-    const scatti = voce.asset
-      .map(a => a.quando)
-      .filter(q => typeof q === 'number')
-      .map(dataDaAppleEpoch)
-      .filter(d => giornoLocale(d) === voce.data)
-      .sort((a, b) => a - b);
-    const ts = (scatti[0] || new Date(`${voce.data}T12:00:00`)).toISOString();
 
     const tagBase = opts.tag && opts.tag !== '-' ? [opts.tag] : [];
     const entry = makeEntry({
-      id: idVoce(voce.nome),
-      ts,
+      id: await idVoce(voce.nome),
+      ts: tsVoce(voce),
       date: voce.data,
       type: 'libero',
       text: testoFinale,

@@ -53,7 +53,7 @@ async function decode(blob) {
  * @returns {Promise<{ blob: Blob, ext: string, w: number, h: number }>}
  */
 export async function shrinkImage(file) {
-  const fallbackExt = (file.name.split('.').pop() || 'jpg').toLowerCase().slice(0, 4);
+  const fallbackExt = ((file.name || '').split('.').pop() || 'jpg').toLowerCase().slice(0, 4);
   try {
     const { bitmap, w, h } = await decode(file);
     const scale = Math.min(1, MAX_DIM / Math.max(w, h));
