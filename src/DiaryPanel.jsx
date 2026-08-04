@@ -5,7 +5,7 @@ import {
 import {
   DIARY_TYPES, MOOD_LABELS, ENERGY_LABELS, EVENING_QUESTIONS, AI_PRESETS,
   makeEntry, eveningText, filterEntries, allTags, lastDays, seedForDate,
-  monthKey, shiftMonth, humanDate, buildAiExport, dateKey,
+  monthKey, shiftMonth, humanDate, buildAiExport, dateKey, SEEDS,
 } from './diary';
 import './DiaryPanel.css';
 
@@ -184,7 +184,7 @@ function DiaryHome({
           <button className="diary-mode-card" onClick={() => onStart('svuota-testa')}>
             <span className="diary-mode-icon">🌬️</span>
             <span className="diary-mode-label">Svuota testa</span>
-            <span className="diary-mode-desc">Scrivi senza fermarti. Poi decidi se tenerlo.</span>
+            <span className="diary-mode-desc">Scrivi di getto. La domanda è solo un invito.</span>
           </button>
           <button className="diary-mode-card" onClick={() => onStart('sera')}>
             <span className="diary-mode-icon">🕯️</span>
@@ -194,7 +194,7 @@ function DiaryHome({
           <button className="diary-mode-card" onClick={() => onStart('libero')}>
             <span className="diary-mode-icon">✍️</span>
             <span className="diary-mode-label">Scrittura libera</span>
-            <span className="diary-mode-desc">Una pagina bianca, senza rituale.</span>
+            <span className="diary-mode-desc">Una pagina bianca, senza domanda né timer.</span>
           </button>
         </div>
 
@@ -329,9 +329,29 @@ function DiaryWriter({ type, initial, onSave, onCancel }) {
   const [releasing, setReleasing] = useState(false);
   const [confirmRelease, setConfirmRelease] = useState(false);
   const areaRef = useRef(null);
-  const seed = useMemo(() => (type === 'svuota-testa' ? seedForDate() : null), [type]);
+  // La domanda è un invito, non un compito: si può cambiare, si può togliere,
+  // e comunque sbiadisce da sola appena si inizia a scrivere.
+  const [seed, setSeed] = useState(() => (type === 'svuota-testa' ? seedForDate() : null));
+  // Su iPhone la tastiera copre il fondo della pagina senza che il layout se ne
+  // accorga: la finestra CSS resta alta come tutto lo schermo e i pulsanti
+  // finiscono sotto i tasti. visualViewport è l'unica misura che tiene conto
+  // della tastiera, quindi l'altezza della schermata di scrittura la segue.
+  const [vvHeight, setVvHeight] = useState(() => window.visualViewport?.height || null);
 
   useEffect(() => { areaRef.current?.focus(); }, []);
+
+  useEffect(() => {
+    const vv = window.visualViewport;
+    if (!vv) return;
+    const onResize = () => setVvHeight(vv.height);
+    vv.addEventListener('resize', onResize);
+    return () => vv.removeEventListener('resize', onResize);
+  }, []);
+
+  function otherSeed() {
+    const pool = SEEDS.filter(s => s !== seed);
+    setSeed(pool[Math.floor(Math.random() * pool.length)]);
+  }
 
   // Bozza salvata a intervalli, non a ogni tasto: scrivere di getto non deve
   // trascinarsi dietro una scrittura su localStorage per carattere.
@@ -374,7 +394,10 @@ function DiaryWriter({ type, initial, onSave, onCancel }) {
   const timeUp = minutes > 0 && left === 0;
 
   return (
-    <div className={`diary-writer${releasing ? ' releasing' : ''}`}>
+    <div
+      className={`diary-writer${releasing ? ' releasing' : ''}`}
+      style={vvHeight ? { height: vvHeight } : undefined}
+    >
       <div className="diary-writer-top">
         <span className="diary-writer-mode">{DIARY_TYPES[type]?.icon} {DIARY_TYPES[type]?.label}</span>
         <div className="diary-writer-timer">
@@ -393,7 +416,15 @@ function DiaryWriter({ type, initial, onSave, onCancel }) {
         </div>
       </div>
 
-      {seed && <div className="diary-seed">{seed}</div>}
+      {seed && (
+        <div className={`diary-seed${text.trim() ? ' faded' : ''}`}>
+          <span className="diary-seed-text">{seed}</span>
+          <span className="diary-seed-actions">
+            <button className="diary-seed-btn" onClick={otherSeed} title="Un'altra domanda">↺</button>
+            <button className="diary-seed-btn" onClick={() => setSeed(null)} title="Scrivi senza domanda">✕</button>
+          </span>
+        </div>
+      )}
 
       <div className="diary-writer-area">
         <textarea
@@ -409,7 +440,7 @@ function DiaryWriter({ type, initial, onSave, onCancel }) {
       {timeUp && <div className="diary-timeup">Il tempo è finito. Puoi fermarti quando vuoi.</div>}
       {error && <div className="diary-error">{error}</div>}
 
-      <div className="diary-writer-actions">
+      <div className={`diary-writer-actions${confirmRelease ? ' confirming' : ''}`}>
         {confirmRelease ? (
           <>
             <span className="diary-release-q">Lasciare andare questo testo senza salvarlo?</span>
@@ -424,7 +455,7 @@ function DiaryWriter({ type, initial, onSave, onCancel }) {
             </button>
             <button className="diary-ghost-btn" onClick={() => finish(true)} disabled={saving || !text.trim()}
               title="Salvata ma tenuta fuori dalla timeline e dall'export">
-              Chiudi nel cassetto
+              Nel cassetto
             </button>
             <button className="diary-primary-btn" onClick={() => finish(false)} disabled={saving || !text.trim()}>
               {saving ? '…' : 'Conserva'}
