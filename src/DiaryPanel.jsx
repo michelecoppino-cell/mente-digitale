@@ -42,6 +42,7 @@ function DiaryPanelInner({ onClose }) {
   const [loadedMonths, setLoadedMonths] = useState([]);
   const [loading, setLoading] = useState(true);
   const [loadFailed, setLoadFailed] = useState(false);
+  const [loadingAll, setLoadingAll] = useState(false);
   const [resumeDraft, setResumeDraft] = useState(loadDraft);
 
   useEffect(() => {
@@ -81,6 +82,24 @@ function DiaryPanelInner({ onClose }) {
     setLoadedMonths(prev => [...prev, older]);
   }
 
+  // Dopo aver importato anni di voci dal diario dell'iPhone, arrivare al 2024
+  // un mese per volta sarebbe una trentina di clic: qui si prende tutto quello
+  // che l'indice conosce in un colpo solo.
+  async function loadAllMonths() {
+    const restanti = months.filter(m => !loadedMonths.includes(m));
+    if (!restanti.length) return;
+    setLoadingAll(true);
+    try {
+      const caricati = await Promise.all(restanti.map(loadDiaryMonth));
+      setEntries(prev => [...prev, ...caricati.flat()]);
+      setLoadedMonths(prev => [...prev, ...restanti]);
+    } catch {
+      setLoadFailed(true);
+    } finally {
+      setLoadingAll(false);
+    }
+  }
+
   async function persist(entry) {
     const updated = await saveDiaryEntry(entry);
     const ym = entry.date.slice(0, 7);
@@ -117,7 +136,10 @@ function DiaryPanelInner({ onClose }) {
           loadFailed={loadFailed}
           resumeDraft={resumeDraft}
           hasOlder={hasOlder}
+          monthsLeft={months.filter(m => !loadedMonths.includes(m)).length}
+          loadingAll={loadingAll}
           onLoadOlder={loadOlderMonth}
+          onLoadAll={loadAllMonths}
           onStart={startWrite}
           onResume={() => { setWriteType(resumeDraft?.type || 'svuota-testa'); setView('write'); }}
           onDiscardDraft={() => {
@@ -151,8 +173,8 @@ function DiaryPanelInner({ onClose }) {
 // ── Home: timeline, ricerca, ingressi alle modalità ─────────────────────────
 
 function DiaryHome({
-  entries, loading, loadFailed, resumeDraft, hasOlder, onLoadOlder,
-  onStart, onResume, onDiscardDraft, onOpenAi, onDelete, onClose,
+  entries, loading, loadFailed, resumeDraft, hasOlder, monthsLeft, loadingAll,
+  onLoadOlder, onLoadAll, onStart, onResume, onDiscardDraft, onOpenAi, onDelete, onClose,
 }) {
   const [query, setQuery] = useState('');
   const [tag, setTag] = useState(null);
@@ -250,7 +272,16 @@ function DiaryHome({
         {visible.map(e => <DiaryEntryCard key={e.id} entry={e} onDelete={onDelete} />)}
 
         {!loading && hasOlder && (
-          <button className="diary-ghost-btn diary-more" onClick={onLoadOlder}>Carica mese precedente</button>
+          <div className="diary-more">
+            <button className="diary-ghost-btn" onClick={onLoadOlder} disabled={loadingAll}>
+              Carica mese precedente
+            </button>
+            {monthsLeft > 1 && (
+              <button className="diary-link-btn" onClick={onLoadAll} disabled={loadingAll}>
+                {loadingAll ? 'Carico…' : `Carica tutto (${monthsLeft} mesi)`}
+              </button>
+            )}
+          </div>
         )}
       </div>
     </div>

@@ -31,6 +31,34 @@ Microsoft To-Do e al calendario Outlook, e un briefing di notizie generato con l
   il diario non passa da alcuna funzione server. Su telefono, con il Piano aperto,
   Diario e GTD restano raggiungibili come due pulsanti tondi in basso a destra.
 
+### Importare il Diario dell'iPhone
+
+`scripts/importa-diario-apple.mjs` converte l'esportazione dell'app **Diario di Apple**
+(Impostazioni → Diario → *Esporta*) nel formato del Diario di Mente Digitale.
+
+```bash
+npm install
+npm run importa-diario -- AnnotazioniDiarioApple.zip
+```
+
+Legge lo zip senza scompattarlo (lettore ZIP incluso: niente `unzip` da installare), ricava
+da ogni pagina HTML data, titolo, testo e domanda di riflessione — che diventa il `seed`
+della voce — e converte le foto **HEIC in JPEG** ridimensionati, il passaggio che rende
+l'archivio leggibile fuori da Safari. Le voci diventano di tipo *scrittura libera*, con il
+tag `iphone` per distinguerle (`--tag`).
+
+Il risultato è una cartella `import-diario/` che riproduce la struttura di OneDrive
+(`mente-digitale-diario-YYYY-MM.json`, l'indice dei mesi, `diario-foto/`): l'ultimo passo è
+copiarla dentro `mente-digitale/` sul OneDrive. Lo script non scrive mai sul tuo OneDrive.
+
+Opzioni utili: `--dry-run` per vedere cosa farebbe, `--tutti-gli-asset` per importare anche
+le schede generate da iOS (mappe dei luoghi, allenamenti con distanza e tempo, stato
+d'animo), `--max-lato` e `--qualita` per il peso delle foto. I video restano fuori — il
+Diario non li mostra — ma vengono copiati in `media-non-importati/` invece di sparire.
+Rieseguirlo è sicuro: id delle voci e nomi delle foto derivano dall'export, quindi un
+secondo giro aggiorna le stesse voci invece di duplicarle, e i file già presenti nella
+cartella di destinazione vengono uniti, non sostituiti.
+
 ### Due icone sulla schermata Home di iPhone
 
 iOS ignora gli `shortcuts` del manifest: per avere più icone servono più pagine da
