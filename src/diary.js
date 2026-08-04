@@ -146,6 +146,7 @@ export function makeEntry(input) {
     answers: input.answers || null,
     seed: input.seed || null,
     sealed: !!input.sealed,
+    photos: input.photos || [],
   };
 }
 
@@ -173,7 +174,12 @@ export function filterEntries(entries, opts = {}) {
   return (entries || [])
     .filter(e => (opts.includeSealed ? true : !e.sealed))
     .filter(e => (opts.tag ? (e.tags || []).includes(opts.tag) : true))
-    .filter(e => !q || `${e.text} ${(e.tags || []).join(' ')} ${(e.gratitude || []).join(' ')}`.toLowerCase().includes(q))
+    .filter(e => !q || [
+      e.text,
+      (e.tags || []).join(' '),
+      (e.gratitude || []).join(' '),
+      (e.photos || []).map(p => p.caption || '').join(' '),
+    ].join(' ').toLowerCase().includes(q))
     .sort((a, b) => (a.ts < b.ts ? 1 : -1));
 }
 
@@ -309,6 +315,14 @@ export function buildAiExport({ entries, preset, bussola, periodLabel }) {
     if (e.gratitude?.length) {
       out.push('\n**Gratitudine**');
       for (const g of e.gratitude) out.push(`- ${g}`);
+    }
+    // Le immagini non si incollano in una chat testuale: passa la loro
+    // esistenza e le didascalie, che spesso sono l'unico testo di una voce
+    // nata da una foto.
+    if (e.photos?.length) {
+      const caps = e.photos.map(p => (p.caption || '').trim()).filter(Boolean);
+      const n = e.photos.length;
+      out.push(`\n_${n} ${n === 1 ? 'foto allegata' : 'foto allegate'}${caps.length ? `: ${caps.join(' · ')}` : ''}_`);
     }
   }
 

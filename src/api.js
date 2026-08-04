@@ -911,6 +911,89 @@ export async function deleteDiaryEntry(entry) {
   return updated;
 }
 
+// ── Foto del diario ────────────────────────────────────────────────────────
+// Le immagini non stanno dentro il JSON del mese (un file di voci non deve
+// diventare da megabyte): vivono come file veri in una sottocartella, e la
+// voce ne conserva solo il nome. Così una foto si può anche aprire da
+// OneDrive, e cancellare una voce non obbliga a riscrivere nulla di binario.
+const OD_DIARY_PHOTO_FOLDER = 'diario-foto';
+
+/** @type {Promise<any>|null} */
+let _photoFolderReady = null;
+function ensurePhotoFolder() {
+  if (!_photoFolderReady) {
+    _photoFolderReady = ensureAppFolder()
+      .then(() => call(`/me/drive/root:/${OD_FOLDER}:/children`, {
+        method: 'POST',
+        body: JSON.stringify({
+          name: OD_DIARY_PHOTO_FOLDER,
+          folder: {},
+          '@microsoft.graph.conflictBehavior': 'fail',
+        }),
+      }))
+      .catch(e => {
+        if (e?.status === 409) return null;
+        _photoFolderReady = null;
+        throw e;
+      });
+  }
+  return _photoFolderReady;
+}
+
+/** @param {string} name @returns {string} */
+function photoPath(name) {
+  return `/me/drive/root:/${OD_FOLDER}/${OD_DIARY_PHOTO_FOLDER}/${encodeURIComponent(name)}`;
+}
+
+/**
+ * Carica un'immagine e restituisce il nome del file su OneDrive.
+ * @param {Blob} blob
+ * @param {string} name  nome già normalizzato dal chiamante (id + estensione)
+ * @returns {Promise<string>}
+ */
+export async function uploadDiaryPhoto(blob, name) {
+  await ensurePhotoFolder();
+  const token = await getTokenCached();
+  const r = await fetch(`${GRAPH}${photoPath(name)}:/content`, {
+    method: 'PUT',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': blob.type || 'application/octet-stream' },
+    body: blob,
+  });
+  if (!r.ok) throw new Error(`Upload foto ${name} error ${r.status}`);
+  return name;
+}
+
+// Graph serve i binari con un 302 verso un URL pre-autenticato, e rifollow con
+// l'header Authorization fa fallire il CORS: si chiede quindi il downloadUrl
+// dai metadati e si scarica quello in chiaro. Vale circa un'ora, quindi si
+// tiene in cache un po' meno per non servire mai un link già scaduto.
+const PHOTO_URL_TTL = 45 * 60 * 1000;
+/** @type {Map<string, { url: string, at: number }>} */
+const _photoUrls = new Map();
+
+/** @param {string} name @returns {Promise<string>} URL scaricabile dell'immagine */
+export async function getDiaryPhotoUrl(name) {
+  const hit = _photoUrls.get(name);
+  if (hit && Date.now() - hit.at < PHOTO_URL_TTL) return hit.url;
+  const item = await call(`${photoPath(name)}?$select=id,name,@microsoft.graph.downloadUrl`);
+  const url = item?.['@microsoft.graph.downloadUrl'];
+  if (!url) throw new Error(`Foto ${name} senza downloadUrl`);
+  _photoUrls.set(name, { url, at: Date.now() });
+  return url;
+}
+
+/** @param {string} name @returns {Promise<void>} */
+export async function deleteDiaryPhoto(name) {
+  _photoUrls.delete(name);
+  try {
+    await call(photoPath(name), { method: 'DELETE' });
+  } catch (e) {
+    // Una foto già assente non è un errore da propagare: la voce che la
+    // citava sta comunque per sparire.
+    if (/** @type {any} */ (e)?.status !== 404) throw e;
+  }
+}
+
 // ── OneDrive Pomodoro Stats ────────────────────────────────────────────────
 const OD_POMODORO_STATS_FILE = 'mente-digitale-pomodoro-stats.json';
 

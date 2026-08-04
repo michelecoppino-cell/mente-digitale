@@ -306,4 +306,15 @@ export {};
  * @property {Record<string, string>|null} answers   risposte del rituale della sera
  * @property {string|null} seed                domanda-seme mostrata quel giorno
  * @property {boolean} sealed
+ * @property {DiaryPhoto[]} photos             foto allegate, salvate a parte su OneDrive
+ */
+
+/**
+ * Riferimento a un'immagine in `mente-digitale/diario-foto/`: nel JSON del mese
+ * viaggia solo il nome del file, mai i byte.
+ * @typedef {Object} DiaryPhoto
+ * @property {string} name                     nome del file su OneDrive
+ * @property {string} [caption]
+ * @property {number} [w]
+ * @property {number} [h]
  */
