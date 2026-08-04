@@ -7,6 +7,7 @@ import {
   makeEntry, eveningText, filterEntries, allTags, lastDays, seedForDate,
   monthKey, shiftMonth, humanDate, buildAiExport, dateKey, SEEDS, SVUOTA_TESTA_METHOD,
 } from './diary';
+import { addPhotos, removePhotos, getDiaryPhotoUrl, MAX_PHOTOS_PER_ENTRY } from './diaryPhotos';
 import './DiaryPanel.css';
 
 // Bozza in corso: lo svuota testa è la modalità in cui è più facile perdere
@@ -41,6 +42,7 @@ function DiaryPanelInner({ onClose }) {
   const [loadedMonths, setLoadedMonths] = useState([]);
   const [loading, setLoading] = useState(true);
   const [loadFailed, setLoadFailed] = useState(false);
+  const [loadingAll, setLoadingAll] = useState(false);
   const [resumeDraft, setResumeDraft] = useState(loadDraft);
 
   useEffect(() => {
@@ -80,6 +82,24 @@ function DiaryPanelInner({ onClose }) {
     setLoadedMonths(prev => [...prev, older]);
   }
 
+  // Dopo aver importato anni di voci dal diario dell'iPhone, arrivare al 2024
+  // un mese per volta sarebbe una trentina di clic: qui si prende tutto quello
+  // che l'indice conosce in un colpo solo.
+  async function loadAllMonths() {
+    const restanti = months.filter(m => !loadedMonths.includes(m));
+    if (!restanti.length) return;
+    setLoadingAll(true);
+    try {
+      const caricati = await Promise.all(restanti.map(loadDiaryMonth));
+      setEntries(prev => [...prev, ...caricati.flat()]);
+      setLoadedMonths(prev => [...prev, ...restanti]);
+    } catch {
+      setLoadFailed(true);
+    } finally {
+      setLoadingAll(false);
+    }
+  }
+
   async function persist(entry) {
     const updated = await saveDiaryEntry(entry);
     const ym = entry.date.slice(0, 7);
@@ -95,6 +115,9 @@ function DiaryPanelInner({ onClose }) {
     const updated = await deleteDiaryEntry(entry);
     const ym = entry.date.slice(0, 7);
     setEntries(prev => [...prev.filter(e => e.date.slice(0, 7) !== ym), ...updated]);
+    // Le immagini vivono fuori dal JSON del mese: senza questo resterebbero
+    // su OneDrive per sempre, senza più niente che le citi.
+    removePhotos(entry.photos || []);
   }
 
   function startWrite(type) {
@@ -113,10 +136,17 @@ function DiaryPanelInner({ onClose }) {
           loadFailed={loadFailed}
           resumeDraft={resumeDraft}
           hasOlder={hasOlder}
+          monthsLeft={months.filter(m => !loadedMonths.includes(m)).length}
+          loadingAll={loadingAll}
           onLoadOlder={loadOlderMonth}
+          onLoadAll={loadAllMonths}
           onStart={startWrite}
           onResume={() => { setWriteType(resumeDraft?.type || 'svuota-testa'); setView('write'); }}
-          onDiscardDraft={() => { clearDraft(); setResumeDraft(null); }}
+          onDiscardDraft={() => {
+            removePhotos(resumeDraft?.photos || []);
+            clearDraft();
+            setResumeDraft(null);
+          }}
           onOpenAi={() => setView('ai')}
           onDelete={handleDelete}
           onClose={onClose}
@@ -143,8 +173,8 @@ function DiaryPanelInner({ onClose }) {
 // ── Home: timeline, ricerca, ingressi alle modalità ─────────────────────────
 
 function DiaryHome({
-  entries, loading, loadFailed, resumeDraft, hasOlder, onLoadOlder,
-  onStart, onResume, onDiscardDraft, onOpenAi, onDelete, onClose,
+  entries, loading, loadFailed, resumeDraft, hasOlder, monthsLeft, loadingAll,
+  onLoadOlder, onLoadAll, onStart, onResume, onDiscardDraft, onOpenAi, onDelete, onClose,
 }) {
   const [query, setQuery] = useState('');
   const [tag, setTag] = useState(null);
@@ -170,7 +200,7 @@ function DiaryHome({
       </div>
 
       <div className="diary-body">
-        {resumeDraft?.text?.trim() && (
+        {(resumeDraft?.text?.trim() || resumeDraft?.photos?.length > 0) && (
           <div className="diary-draft-banner">
             <span>Hai una scrittura non salvata di {DIARY_TYPES[resumeDraft.type]?.label?.toLowerCase()}.</span>
             <div>
@@ -242,7 +272,16 @@ function DiaryHome({
         {visible.map(e => <DiaryEntryCard key={e.id} entry={e} onDelete={onDelete} />)}
 
         {!loading && hasOlder && (
-          <button className="diary-ghost-btn diary-more" onClick={onLoadOlder}>Carica mese precedente</button>
+          <div className="diary-more">
+            <button className="diary-ghost-btn" onClick={onLoadOlder} disabled={loadingAll}>
+              Carica mese precedente
+            </button>
+            {monthsLeft > 1 && (
+              <button className="diary-link-btn" onClick={onLoadAll} disabled={loadingAll}>
+                {loadingAll ? 'Carico…' : `Carica tutto (${monthsLeft} mesi)`}
+              </button>
+            )}
+          </div>
         )}
       </div>
     </div>
@@ -271,6 +310,7 @@ function DiaryEntryCard({ entry, onDelete }) {
           {expanded ? 'Riduci' : 'Leggi tutto'}
         </button>
       )}
+      <PhotoStrip photos={entry.photos} />
       {entry.gratitude?.length > 0 && (
         <ul className="diary-gratitude">
           {entry.gratitude.map((g, i) => <li key={i}>{g}</li>)}
@@ -288,6 +328,174 @@ function DiaryEntryCard({ entry, onDelete }) {
           <button className="diary-link-btn diary-entry-del" onClick={() => setConfirming(true)}>Elimina</button>
         )}
       </div>
+    </div>
+  );
+}
+
+// ── Foto ────────────────────────────────────────────────────────────────────
+// Le voci conservano solo il nome del file; l'URL scaricabile si chiede a
+// OneDrive alla prima visualizzazione e resta in cache per la sessione (vedi
+// api.js). Finché non arriva si mostra un riquadro vuoto, non uno spinner:
+// una griglia che pulsa mentre si rilegge il diario è rumore.
+function DiaryPhotoImg({ photo, className, onClick }) {
+  const [url, setUrl] = useState(null);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    getDiaryPhotoUrl(photo.name)
+      .then(u => { if (alive) setUrl(u); })
+      .catch(() => { if (alive) setFailed(true); });
+    return () => { alive = false; };
+  }, [photo.name]);
+
+  if (failed) return <div className={`${className} diary-photo-missing`} title="Foto non trovata su OneDrive">⃠</div>;
+  if (!url) return <div className={`${className} diary-photo-loading`} />;
+  return (
+    <img
+      className={className}
+      src={url}
+      alt={photo.caption || 'Foto del diario'}
+      loading="lazy"
+      onClick={onClick}
+    />
+  );
+}
+
+// Griglia di sole miniature per la timeline: il tocco apre la foto a schermo
+// intero, dove la didascalia si legge per intero.
+function PhotoStrip({ photos }) {
+  const [openIndex, setOpenIndex] = useState(null);
+  if (!photos?.length) return null;
+  return (
+    <>
+      <div className="diary-photo-strip">
+        {photos.map((p, i) => (
+          <button key={p.name} className="diary-photo-thumb-btn" onClick={() => setOpenIndex(i)}>
+            <DiaryPhotoImg photo={p} className="diary-photo-thumb" />
+          </button>
+        ))}
+      </div>
+      {openIndex !== null && (
+        <PhotoLightbox
+          photos={photos}
+          index={openIndex}
+          onIndex={setOpenIndex}
+          onClose={() => setOpenIndex(null)}
+        />
+      )}
+    </>
+  );
+}
+
+function PhotoLightbox({ photos, index, onIndex, onClose }) {
+  const photo = photos[index];
+
+  useEffect(() => {
+    function onKey(e) {
+      if (e.key === 'Escape') onClose();
+      if (e.key === 'ArrowRight' && index < photos.length - 1) onIndex(index + 1);
+      if (e.key === 'ArrowLeft' && index > 0) onIndex(index - 1);
+    }
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [index, photos.length, onIndex, onClose]);
+
+  return (
+    <div className="diary-lightbox" onClick={onClose}>
+      <button className="diary-lightbox-close" onClick={onClose}>✕</button>
+      {index > 0 && (
+        <button
+          className="diary-lightbox-nav prev"
+          onClick={e => { e.stopPropagation(); onIndex(index - 1); }}
+        >‹</button>
+      )}
+      <figure className="diary-lightbox-figure" onClick={e => e.stopPropagation()}>
+        <DiaryPhotoImg photo={photo} className="diary-lightbox-img" />
+        {photo.caption?.trim() && <figcaption>{photo.caption}</figcaption>}
+      </figure>
+      {index < photos.length - 1 && (
+        <button
+          className="diary-lightbox-nav next"
+          onClick={e => { e.stopPropagation(); onIndex(index + 1); }}
+        >›</button>
+      )}
+    </div>
+  );
+}
+
+// Selettore usato mentre si scrive: le foto partono verso OneDrive subito,
+// non al salvataggio, così una voce lunga non finisce per aspettare l'upload
+// nel momento in cui la si vuole solo chiudere. Il prezzo è che una voce
+// abbandonata può lasciare file caricati: per questo "Lascia andare" e
+// "Indietro" li ripuliscono.
+function PhotoPicker({ photos, onChange, disabled }) {
+  const [busy, setBusy] = useState(null);      // { done, total }
+  const [error, setError] = useState(null);
+  const inputRef = useRef(null);
+
+  async function pick(e) {
+    const files = [...(e.target.files || [])];
+    e.target.value = '';                        // permette di riscegliere lo stesso file
+    if (!files.length) return;
+    const room = MAX_PHOTOS_PER_ENTRY - photos.length;
+    if (room <= 0) {
+      setError(`Massimo ${MAX_PHOTOS_PER_ENTRY} foto per voce.`);
+      return;
+    }
+    const chosen = files.slice(0, room);
+    setError(files.length > room ? `Ne ho prese ${room}: il massimo è ${MAX_PHOTOS_PER_ENTRY} per voce.` : null);
+    setBusy({ done: 0, total: chosen.length });
+    const { photos: added, failed } = await addPhotos(chosen, (done, total) => setBusy({ done, total }));
+    setBusy(null);
+    if (added.length) onChange([...photos, ...added]);
+    if (failed) setError(`${failed} ${failed === 1 ? 'foto non caricata' : 'foto non caricate'}. Riprova.`);
+  }
+
+  function removeAt(i) {
+    const [gone] = photos.slice(i, i + 1);
+    onChange(photos.filter((_, idx) => idx !== i));
+    removePhotos([gone]);
+  }
+
+  function setCaption(i, caption) {
+    onChange(photos.map((p, idx) => (idx === i ? { ...p, caption } : p)));
+  }
+
+  return (
+    <div className="diary-photos">
+      <div className="diary-photo-edit-grid">
+        {photos.map((p, i) => (
+          <div key={p.name} className="diary-photo-edit">
+            <DiaryPhotoImg photo={p} className="diary-photo-thumb" />
+            <button className="diary-photo-remove" onClick={() => removeAt(i)} title="Togli questa foto">✕</button>
+            <input
+              className="diary-photo-caption"
+              placeholder="didascalia"
+              value={p.caption || ''}
+              onChange={e => setCaption(i, e.target.value)}
+            />
+          </div>
+        ))}
+        {photos.length < MAX_PHOTOS_PER_ENTRY && (
+          <button
+            className="diary-photo-add"
+            onClick={() => inputRef.current?.click()}
+            disabled={disabled || !!busy}
+          >
+            {busy ? `${busy.done}/${busy.total}…` : '＋ foto'}
+          </button>
+        )}
+      </div>
+      <input
+        ref={inputRef}
+        type="file"
+        accept="image/*"
+        multiple
+        hidden
+        onChange={pick}
+      />
+      {error && <div className="diary-photo-error">{error}</div>}
     </div>
   );
 }
@@ -327,6 +535,7 @@ function DiaryWriter({ type, initial, onSave, onCancel }) {
   // esattamente ciò che si vuole poter fare, al contrario dello svuota testa.
   const isRitual = type === 'svuota-testa';
   const [text, setText] = useState(initial?.text || '');
+  const [photos, setPhotos] = useState(initial?.photos || []);
   const [minutes, setMinutes] = useState(0);
   const [left, setLeft] = useState(0);
   const [saving, setSaving] = useState(false);
@@ -364,9 +573,11 @@ function DiaryWriter({ type, initial, onSave, onCancel }) {
   // Bozza salvata a intervalli, non a ogni tasto: scrivere di getto non deve
   // trascinarsi dietro una scrittura su localStorage per carattere.
   useEffect(() => {
-    const id = setInterval(() => { if (text.trim()) saveDraft({ type, text }); }, 3000);
+    const id = setInterval(() => {
+      if (text.trim() || photos.length) saveDraft({ type, text, photos });
+    }, 3000);
     return () => clearInterval(id);
-  }, [text, type]);
+  }, [text, photos, type]);
 
   useEffect(() => {
     if (!minutes) return;
@@ -379,12 +590,16 @@ function DiaryWriter({ type, initial, onSave, onCancel }) {
     setLeft(m * 60);
   }
 
+  // Una voce di sole foto è legittima: a volte la giornata è un'immagine e
+  // basta, e la didascalia arriva mesi dopo o mai.
+  const empty = !text.trim() && !photos.length;
+
   async function finish(sealed) {
-    if (!text.trim()) return;
+    if (empty) return;
     setSaving(true);
     setError(null);
     try {
-      await onSave(makeEntry({ type, text, seed, sealed }));
+      await onSave(makeEntry({ type, text, seed, sealed, photos }));
     } catch {
       setError('Non sono riuscito a salvare. Il testo è ancora qui: riprova.');
       setSaving(false);
@@ -394,7 +609,10 @@ function DiaryWriter({ type, initial, onSave, onCancel }) {
   function release() {
     // "Lascia andare": la voce non viene mai scritta su OneDrive. La bozza
     // locale si cancella subito, l'animazione è solo il tempo di respirare.
+    // Le foto invece erano già state caricate mentre si scriveva: lasciar
+    // andare deve portarsi via anche quelle, o il gesto sarebbe una bugia.
     clearDraft();
+    removePhotos(photos);
     setReleasing(true);
     setTimeout(onCancel, 1400);
   }
@@ -481,6 +699,10 @@ function DiaryWriter({ type, initial, onSave, onCancel }) {
         />
       </div>
 
+      {/* Nello svuota testa le foto stanno sotto il foglio e non lo
+          interrompono: lì il vincolo è la mano che non si ferma. */}
+      <PhotoPicker photos={photos} onChange={setPhotos} disabled={saving} />
+
       {timeUp && <div className="diary-timeup">Il tempo è finito. Puoi fermarti quando vuoi.</div>}
       {error && <div className="diary-error">{error}</div>}
 
@@ -494,14 +716,14 @@ function DiaryWriter({ type, initial, onSave, onCancel }) {
         ) : (
           <>
             <button className="diary-link-btn" onClick={onCancel} disabled={saving}>Indietro</button>
-            <button className="diary-link-btn" onClick={() => setConfirmRelease(true)} disabled={saving || !text.trim()}>
+            <button className="diary-link-btn" onClick={() => setConfirmRelease(true)} disabled={saving || empty}>
               Lascia andare
             </button>
-            <button className="diary-ghost-btn" onClick={() => finish(true)} disabled={saving || !text.trim()}
+            <button className="diary-ghost-btn" onClick={() => finish(true)} disabled={saving || empty}
               title="Salvata ma tenuta fuori dalla timeline e dall'export">
               Nel cassetto
             </button>
-            <button className="diary-primary-btn" onClick={() => finish(false)} disabled={saving || !text.trim()}>
+            <button className="diary-primary-btn" onClick={() => finish(false)} disabled={saving || empty}>
               {saving ? '…' : 'Conserva'}
             </button>
           </>
@@ -541,12 +763,20 @@ function MethodHelp({ onClose }) {
 function EveningRitual({ onSave, onCancel }) {
   const [answers, setAnswers] = useState({ nutrito: '', svuotato: '', lascio: '' });
   const [gratitude, setGratitude] = useState(['', '', '']);
+  const [photos, setPhotos] = useState([]);
   const [mood, setMood] = useState(3);
   const [energy, setEnergy] = useState(3);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
 
-  const filled = Object.values(answers).some(v => v.trim()) || gratitude.some(g => g.trim());
+  const filled = Object.values(answers).some(v => v.trim())
+    || gratitude.some(g => g.trim())
+    || photos.length > 0;
+
+  function cancel() {
+    removePhotos(photos);
+    onCancel();
+  }
 
   async function handleSave() {
     setSaving(true);
@@ -557,6 +787,7 @@ function EveningRitual({ onSave, onCancel }) {
         text: eveningText(answers),
         answers,
         gratitude,
+        photos,
         mood,
         energy,
       }));
@@ -570,7 +801,7 @@ function EveningRitual({ onSave, onCancel }) {
     <div className="diary-panel diary-evening">
       <div className="diary-header">
         <span className="diary-title">🕯️ Rituale della sera</span>
-        <button className="diary-close" onClick={onCancel}>✕</button>
+        <button className="diary-close" onClick={cancel}>✕</button>
       </div>
       <div className="diary-body">
         {EVENING_QUESTIONS.map(q => (
@@ -597,12 +828,17 @@ function EveningRitual({ onSave, onCancel }) {
           ))}
         </div>
 
+        <div className="diary-field">
+          <label className="diary-label">Le foto della giornata</label>
+          <PhotoPicker photos={photos} onChange={setPhotos} disabled={saving} />
+        </div>
+
         <Slider label="Umore" value={mood} labels={MOOD_LABELS} onChange={setMood} />
         <Slider label="Energia" value={energy} labels={ENERGY_LABELS} onChange={setEnergy} />
 
         {error && <div className="diary-error">{error}</div>}
         <div className="diary-writer-actions">
-          <button className="diary-link-btn" onClick={onCancel} disabled={saving}>Indietro</button>
+          <button className="diary-link-btn" onClick={cancel} disabled={saving}>Indietro</button>
           <button className="diary-primary-btn" onClick={handleSave} disabled={saving || !filled}>
             {saving ? '…' : 'Chiudi la giornata'}
           </button>
