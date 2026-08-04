@@ -51,7 +51,9 @@ Il risultato è una cartella `import-diario/` che riproduce la struttura di OneD
 (`mente-digitale-diario-YYYY-MM.json`, l'indice dei mesi, `diario-foto/`): l'ultimo passo è
 copiarla dentro `mente-digitale/` sul OneDrive. Lo script non scrive mai sul tuo OneDrive.
 
-Opzioni utili: `--dry-run` per vedere cosa farebbe, `--tutti-gli-asset` per importare anche
+Opzioni utili: `--senza-foto` per portare dentro solo i testi e occuparsi delle immagini
+dopo (rilanciando senza l'opzione le stesse voci si aggiornano, non si sdoppiano),
+`--dry-run` per vedere cosa farebbe, `--tutti-gli-asset` per importare anche
 le schede generate da iOS (mappe dei luoghi, allenamenti con distanza e tempo, stato
 d'animo), `--max-lato` e `--qualita` per il peso delle foto. I video restano fuori — il
 Diario non li mostra — ma vengono copiati in `media-non-importati/` invece di sparire.

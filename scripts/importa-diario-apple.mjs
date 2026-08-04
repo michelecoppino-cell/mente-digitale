@@ -37,6 +37,7 @@ const DEFAULTS = {
   maxLato: 1600,
   qualita: 82,
   tuttiGliAsset: false,
+  senzaFoto: false,
   dryRun: false,
 };
 
@@ -49,6 +50,7 @@ function parseArgs(argv) {
     else if (a === '--max-lato') opts.maxLato = Number(argv[++i]);
     else if (a === '--qualita') opts.qualita = Number(argv[++i]);
     else if (a === '--tutti-gli-asset') opts.tuttiGliAsset = true;
+    else if (a === '--senza-foto') opts.senzaFoto = true;
     else if (a === '--dry-run') opts.dryRun = true;
     else if (a === '--aiuto' || a === '--help' || a === '-h') opts.aiuto = true;
     else if (a.startsWith('--')) throw new Error(`Opzione sconosciuta: ${a}`);
@@ -68,6 +70,9 @@ Opzioni
                        "-" per non metterne nessuno)
   --tutti-gli-asset    importa anche le schede generate da iOS: mappe dei
                        luoghi, allenamenti, stato d'animo, contatti
+  --senza-foto         importa solo i testi, senza convertire né allegare
+                       nessuna immagine (le foto restano nell'archivio e si
+                       possono aggiungere dopo rieseguendo senza l'opzione)
   --max-lato <px>      lato lungo massimo delle foto (default: 1600)
   --qualita <1-100>    qualità JPEG (default: 82)
   --dry-run            analizza e riporta senza scrivere niente
@@ -380,11 +385,15 @@ async function main() {
 
   const voci = files.map(f => leggiVoce(f, risorseDir));
 
-  const convertitori = opts.dryRun ? null : await caricaConvertitori();
+  const convertitori = opts.dryRun || opts.senzaFoto ? null : await caricaConvertitori();
   const outDir = path.resolve(opts.out);
   const fotoDir = path.join(outDir, 'diario-foto');
   const scartiDir = path.join(outDir, 'media-non-importati');
-  if (!opts.dryRun) mkdirSync(fotoDir, { recursive: true });
+  if (!opts.dryRun) {
+    // La cartella delle foto solo se ci finirà qualcosa: un import di soli
+    // testi non deve lasciare una cartella vuota da copiare su OneDrive.
+    mkdirSync(opts.senzaFoto ? outDir : fotoDir, { recursive: true });
+  }
 
   const conto = { voci: 0, senzaData: 0, foto: 0, saltate: 0, mancanti: 0, video: 0, vuote: 0 };
   /** @type {Record<string, any[]>} */
@@ -399,7 +408,7 @@ async function main() {
 
     const foto = [];
     for (const a of voce.asset) {
-      if (!a.file) continue;
+      if (opts.senzaFoto || !a.file) continue;
       const sorgente = path.join(risorseDir, a.file);
       const eFoto = a.tipi.some(t => TIPI_FOTO.has(t));
       const eVideo = a.tipi.includes('assetType_video') || /\.(mov|mp4|m4v)$/i.test(a.file);
@@ -481,7 +490,7 @@ async function main() {
   console.log(`
 Riepilogo
   voci importate ....... ${conto.voci}
-  foto convertite ...... ${conto.foto}
+  foto convertite ...... ${opts.senzaFoto ? 'nessuna (--senza-foto)' : conto.foto}
   allegati generati .... ${conto.saltate} ${opts.tuttiGliAsset ? '' : '(mappe, allenamenti, stato d\'animo: --tutti-gli-asset per prenderli)'}
   video messi da parte . ${conto.video}${conto.video ? ` → ${path.relative(process.cwd(), scartiDir)}` : ''}
   allegati mancanti .... ${conto.mancanti} (file non presenti nell'archivio)
@@ -497,8 +506,10 @@ Riepilogo
   console.log(`Scritto in ${outDir}
 
 Ultimo passo, a mano: copia il contenuto di questa cartella dentro
-"mente-digitale" sul tuo OneDrive, unendo la cartella diario-foto quando il
-sistema lo chiede. Al prossimo avvio le voci sono nel Diario.`);
+"mente-digitale" sul tuo OneDrive${opts.senzaFoto ? '' : ', unendo la cartella diario-foto quando\nil sistema lo chiede'}.
+Al prossimo avvio le voci sono nel Diario.${opts.senzaFoto
+  ? '\n\nLe foto puoi aggiungerle dopo: rilancia senza --senza-foto e ricopia.\nLe voci non si sdoppiano, si aggiornano.'
+  : ''}`);
 }
 
 main().catch(e => {
