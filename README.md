@@ -17,9 +17,12 @@ Microsoft To-Do e al calendario Outlook, e un briefing di notizie generato con l
   di action item dalle email.
 - **Pannello attività** — task raggruppati per scadenza + calendario settimanale/mensile.
 - **Briefing notizie** — riassunti AI dei feed ANSA (mondo, Italia, Friuli) via `/api/briefing`.
-- **Diario** (🕯️ nell'header, `Ctrl/Cmd+J`) — "svuota testa" a schermo intero con timer e domanda
-  del giorno (conserva / chiudi nel cassetto / lascia andare senza salvare), rituale della sera
-  con tre domande, gratitudini e umore/energia, timeline con ricerca e tag. Il bottone
+- **Diario** (🕯️ nell'header, `Ctrl/Cmd+J`) — tre modalità distinte: *svuota testa* a schermo
+  intero (timer 5/10 min, domanda selezionabile dall'elenco o rimovibile, righe che sbiadiscono
+  mentre scrivi, pannello "come funziona" con il metodo e le fonti), *rituale della sera* (tre
+  domande, gratitudini, umore ed energia) e *scrittura libera*, che è solo il foglio — niente
+  timer, niente domanda, niente sfumatura, correttore acceso. Ogni voce esce con conserva /
+  chiudi nel cassetto / lascia andare senza salvare. Timeline con ricerca e tag. Il bottone
   **Copia per l'AI** compone il markdown di un periodo (con la Bussola come contesto) da
   incollare in una chat AI per chiedere supporto. Voci salvate su OneDrive in file mensili;
   il diario non passa da alcuna funzione server. Su telefono, con il Piano aperto,

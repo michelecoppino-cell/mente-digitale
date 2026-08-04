@@ -48,6 +48,40 @@ export const SEEDS = [
   'Cosa mi ha fatto arrabbiare, e cosa proteggevo con quella rabbia?',
 ];
 
+// Spiegazione dello svuota testa, mostrata nel pannello richiudibile della
+// schermata di scrittura. Sta qui e non nel JSX perché è contenuto, non
+// interfaccia: si aggiorna senza rimettere le mani sul componente.
+export const SVUOTA_TESTA_METHOD = {
+  howTo: [
+    'Scegli un tempo (5 o 10 minuti) oppure nessuno, e scrivi senza fermarti fino alla fine.',
+    'Non rileggere e non correggere: le righe scritte sbiadiscono verso l\'alto apposta.',
+    'La domanda è solo un innesco. Puoi sceglierne un\'altra dall\'elenco o toglierla del tutto.',
+    'Alla fine decidi tu: Conserva la mette in timeline, Nel cassetto la salva ma la tiene nascosta, Lascia andare non la salva da nessuna parte.',
+  ],
+  sources: [
+    {
+      title: 'Freewriting e morning pages',
+      who: 'Peter Elbow, Writing Without Teachers (1973) · Julia Cameron, The Artist\'s Way (1992)',
+      what: 'Scrivere di continuo, senza correggere e senza rileggere: è il vincolo che tiene lontano il giudizio mentre scrivi.',
+    },
+    {
+      title: 'Timed writing',
+      who: 'Natalie Goldberg, Writing Down the Bones (1986)',
+      what: 'Metti un timer e tieni la mano in movimento fino allo scadere. Il tempo chiuso è parte dell\'esercizio, non un accessorio.',
+    },
+    {
+      title: 'Scrittura espressiva',
+      who: 'James Pennebaker, dagli anni \'80',
+      what: 'Sessioni brevi e cronometrate sui propri stati emotivi: è il filone da cui viene gran parte delle evidenze sui benefici psicologici dello scrivere.',
+    },
+    {
+      title: 'Lasciar andare',
+      who: 'Tradizione della lettera mai spedita · Briñol e colleghi (2013)',
+      what: 'Scrivere per sé e poi distruggere. Uno studio suggerisce che buttare via il foglio con un pensiero ne riduca l\'effetto — da prendere per quello che è, ma il gesto conta.',
+    },
+  ],
+};
+
 /** @param {Date} [date] @returns {string} 'YYYY-MM-DD' in ora locale */
 export function dateKey(date = new Date()) {
   const d = date;
