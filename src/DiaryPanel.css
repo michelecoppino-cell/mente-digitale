@@ -286,13 +286,18 @@
    una consegna a cui rispondere. */
 .diary-seed.faded { opacity: 0.22; }
 .diary-seed-text {
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
   font-family: 'Playfair Display', serif;
   font-size: 15px;
   line-height: 1.4;
   color: var(--accent);
   text-align: center;
 }
-.diary-seed-actions { display: flex; gap: 2px; flex-shrink: 0; }
+.diary-seed-caret { font-size: 10px; opacity: 0.7; }
+.diary-seed.no-seed { opacity: 0.5; }
 .diary-seed-btn {
   background: none;
   border: none;
@@ -315,6 +320,14 @@
   -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 90px, #000 100%);
   mask-image: linear-gradient(to bottom, transparent 0, #000 90px, #000 100%);
 }
+.diary-writer-area.plain {
+  /* Nella scrittura libera il testo non sbiadisce: si scrive sapendo già cosa
+     dire, e rileggere quello che si è scritto fa parte del gesto. */
+  -webkit-mask-image: none;
+  mask-image: none;
+}
+.diary-writer-area.plain .diary-textarea { padding-top: 22px; }
+
 .diary-textarea {
   flex: 1;
   background: transparent;
@@ -341,6 +354,84 @@
 }
 .diary-release-q { font-size: 12px; color: var(--muted); margin-right: auto; }
 .diary-writer-actions.confirming .diary-release-q { margin-right: 0; }
+
+/* Elenco delle domande: una che funziona si vuole poter ritrovare, quindi si
+   sceglie da qui invece di sperare nel sorteggio. */
+.diary-seed-list {
+  flex-shrink: 0;
+  max-height: 34vh;
+  overflow-y: auto;
+  margin: 8px auto 2px;
+  width: min(560px, 100%);
+  background: rgba(13, 16, 23, 0.96);
+  border: 1px solid var(--border2);
+  border-radius: 10px;
+  padding: 6px;
+}
+.diary-seed-option {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  border-radius: 7px;
+  color: #b8bfd0;
+  font-family: 'Outfit', sans-serif;
+  font-size: 12.5px;
+  line-height: 1.5;
+  padding: 8px 10px;
+  cursor: pointer;
+}
+.diary-seed-option:hover { background: rgba(255,255,255,0.05); color: var(--text); }
+.diary-seed-option.active { color: var(--accent); background: rgba(200,169,110,0.1); }
+
+/* Pannello "come funziona": istruzioni della pagina e pratiche da cui viene */
+.diary-help-btn {
+  background: none;
+  border: none;
+  color: var(--muted);
+  font-family: 'Outfit', sans-serif;
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  text-decoration: underline;
+  cursor: pointer;
+  margin-left: 8px;
+  padding: 2px 4px;
+}
+.diary-help-btn:hover, .diary-help-btn.active { color: var(--accent); }
+
+.diary-help {
+  flex-shrink: 0;
+  max-height: 46vh;
+  overflow-y: auto;
+  margin: 12px auto 0;
+  width: min(560px, 100%);
+  background: rgba(13, 16, 23, 0.96);
+  border: 1px solid var(--border2);
+  border-radius: 10px;
+  padding: 14px 16px 16px;
+}
+.diary-help-head { display: flex; align-items: center; justify-content: space-between; }
+.diary-help-title {
+  color: var(--accent);
+  font-size: 10.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  margin-bottom: 8px;
+}
+.diary-help-list {
+  margin: 0 0 16px 16px;
+  padding: 0;
+  color: #b3bacb;
+  font-size: 12.5px;
+  line-height: 1.7;
+}
+.diary-help-list li { margin-bottom: 5px; }
+.diary-help-source { margin-bottom: 12px; }
+.diary-help-source-title { color: var(--text); font-size: 12.5px; }
+.diary-help-source-who { color: var(--muted); font-size: 11px; font-style: italic; margin: 1px 0 3px; }
+.diary-help-source-what { color: #98a0b3; font-size: 12px; line-height: 1.6; }
 
 /* ── Rituale della sera / export ─────────────────────────────────────────── */
 .diary-field { margin-bottom: 16px; }
@@ -421,7 +512,18 @@
   .diary-timer-btn { padding: 4px 12px; font-size: 11.5px; }
   .diary-seed { margin-top: 12px; }
   .diary-seed-text { font-size: 14px; }
-  .diary-textarea { padding-top: 28px; font-size: 16px; }  /* 16px: sotto, iOS zooma al focus */
+  .diary-seed-list { max-height: 40vh; }
+  .diary-help { max-height: 52vh; padding: 12px 14px 14px; }
+  .diary-writer-mode { display: flex; align-items: center; justify-content: center; gap: 4px; }
+  .diary-writer-area.plain {
+  /* Nella scrittura libera il testo non sbiadisce: si scrive sapendo già cosa
+     dire, e rileggere quello che si è scritto fa parte del gesto. */
+  -webkit-mask-image: none;
+  mask-image: none;
+}
+.diary-writer-area.plain .diary-textarea { padding-top: 22px; }
+
+.diary-textarea { padding-top: 28px; font-size: 16px; }  /* 16px: sotto, iOS zooma al focus */
   /* Una riga sola di azioni, con "Conserva" che prende lo spazio che resta:
      a schermo stretto andavano a capo e il pulsante principale finiva
      spaesato in fondo, staccato dagli altri. */

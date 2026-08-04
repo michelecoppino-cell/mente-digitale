@@ -5,7 +5,7 @@ import {
 import {
   DIARY_TYPES, MOOD_LABELS, ENERGY_LABELS, EVENING_QUESTIONS, AI_PRESETS,
   makeEntry, eveningText, filterEntries, allTags, lastDays, seedForDate,
-  monthKey, shiftMonth, humanDate, buildAiExport, dateKey, SEEDS,
+  monthKey, shiftMonth, humanDate, buildAiExport, dateKey, SEEDS, SVUOTA_TESTA_METHOD,
 } from './diary';
 import './DiaryPanel.css';
 
@@ -194,7 +194,7 @@ function DiaryHome({
           <button className="diary-mode-card" onClick={() => onStart('libero')}>
             <span className="diary-mode-icon">✍️</span>
             <span className="diary-mode-label">Scrittura libera</span>
-            <span className="diary-mode-desc">Una pagina bianca, senza domanda né timer.</span>
+            <span className="diary-mode-desc">Solo il foglio, per quando sai già di cosa parlare.</span>
           </button>
         </div>
 
@@ -321,6 +321,11 @@ function MoodTrend({ entries }) {
 const TIMER_CHOICES = [0, 5, 10];
 
 function DiaryWriter({ type, initial, onSave, onCancel }) {
+  // La scrittura libera è la pagina di chi sa già di cosa vuole parlare: solo
+  // il campo di testo. Niente timer, niente domanda, niente sfumatura sulle
+  // righe precedenti, correttore acceso — qui rileggere e correggere è
+  // esattamente ciò che si vuole poter fare, al contrario dello svuota testa.
+  const isRitual = type === 'svuota-testa';
   const [text, setText] = useState(initial?.text || '');
   const [minutes, setMinutes] = useState(0);
   const [left, setLeft] = useState(0);
@@ -328,10 +333,13 @@ function DiaryWriter({ type, initial, onSave, onCancel }) {
   const [error, setError] = useState(null);
   const [releasing, setReleasing] = useState(false);
   const [confirmRelease, setConfirmRelease] = useState(false);
+  const [seedListOpen, setSeedListOpen] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
   const areaRef = useRef(null);
-  // La domanda è un invito, non un compito: si può cambiare, si può togliere,
-  // e comunque sbiadisce da sola appena si inizia a scrivere.
-  const [seed, setSeed] = useState(() => (type === 'svuota-testa' ? seedForDate() : null));
+  // La domanda è un invito, non un compito: si sceglie dall'elenco (una che
+  // funziona si vuole poter ritrovare), si può togliere, e comunque sbiadisce
+  // da sola appena si inizia a scrivere.
+  const [seed, setSeed] = useState(() => (isRitual ? seedForDate() : null));
   // Su iPhone la tastiera copre il fondo della pagina senza che il layout se ne
   // accorga: la finestra CSS resta alta come tutto lo schermo e i pulsanti
   // finiscono sotto i tasti. visualViewport è l'unica misura che tiene conto
@@ -348,9 +356,9 @@ function DiaryWriter({ type, initial, onSave, onCancel }) {
     return () => vv.removeEventListener('resize', onResize);
   }, []);
 
-  function otherSeed() {
-    const pool = SEEDS.filter(s => s !== seed);
-    setSeed(pool[Math.floor(Math.random() * pool.length)]);
+  function chooseSeed(s) {
+    setSeed(s);
+    setSeedListOpen(false);
   }
 
   // Bozza salvata a intervalli, non a ogni tasto: scrivere di getto non deve
@@ -399,41 +407,77 @@ function DiaryWriter({ type, initial, onSave, onCancel }) {
       style={vvHeight ? { height: vvHeight } : undefined}
     >
       <div className="diary-writer-top">
-        <span className="diary-writer-mode">{DIARY_TYPES[type]?.icon} {DIARY_TYPES[type]?.label}</span>
-        <div className="diary-writer-timer">
-          {minutes > 0 && (
-            <span className={`diary-countdown${timeUp ? ' done' : ''}`}>
-              {String(Math.floor(left / 60)).padStart(2, '0')}:{String(left % 60).padStart(2, '0')}
-            </span>
-          )}
-          {TIMER_CHOICES.map(m => (
+        <span className="diary-writer-mode">
+          {DIARY_TYPES[type]?.icon} {DIARY_TYPES[type]?.label}
+          {isRitual && (
             <button
-              key={m}
-              className={`diary-timer-btn${minutes === m ? ' active' : ''}`}
-              onClick={() => chooseTimer(m)}
-            >{m === 0 ? 'senza timer' : `${m} min`}</button>
-          ))}
-        </div>
+              className={`diary-help-btn${helpOpen ? ' active' : ''}`}
+              onClick={() => setHelpOpen(o => !o)}
+              title="Come funziona e da dove viene"
+            >come funziona</button>
+          )}
+        </span>
+        {isRitual && (
+          <div className="diary-writer-timer">
+            {minutes > 0 && (
+              <span className={`diary-countdown${timeUp ? ' done' : ''}`}>
+                {String(Math.floor(left / 60)).padStart(2, '0')}:{String(left % 60).padStart(2, '0')}
+              </span>
+            )}
+            {TIMER_CHOICES.map(m => (
+              <button
+                key={m}
+                className={`diary-timer-btn${minutes === m ? ' active' : ''}`}
+                onClick={() => chooseTimer(m)}
+              >{m === 0 ? 'senza timer' : `${m} min`}</button>
+            ))}
+          </div>
+        )}
       </div>
 
+      {helpOpen && <MethodHelp onClose={() => setHelpOpen(false)} />}
+
       {seed && (
-        <div className={`diary-seed${text.trim() ? ' faded' : ''}`}>
-          <span className="diary-seed-text">{seed}</span>
-          <span className="diary-seed-actions">
-            <button className="diary-seed-btn" onClick={otherSeed} title="Un'altra domanda">↺</button>
-            <button className="diary-seed-btn" onClick={() => setSeed(null)} title="Scrivi senza domanda">✕</button>
-          </span>
+        <div className={`diary-seed${text.trim() && !seedListOpen ? ' faded' : ''}`}>
+          <button
+            className="diary-seed-text"
+            onClick={() => setSeedListOpen(o => !o)}
+            title="Scegli un'altra domanda"
+          >
+            {seed} <span className="diary-seed-caret">▾</span>
+          </button>
+          <button className="diary-seed-btn" onClick={() => setSeed(null)} title="Scrivi senza domanda">✕</button>
+        </div>
+      )}
+      {isRitual && !seed && !seedListOpen && (
+        <div className="diary-seed no-seed">
+          <button className="diary-seed-btn" onClick={() => setSeedListOpen(true)}>
+            scegli una domanda
+          </button>
+        </div>
+      )}
+      {seedListOpen && (
+        <div className="diary-seed-list">
+          {SEEDS.map(s => (
+            <button
+              key={s}
+              className={`diary-seed-option${s === seed ? ' active' : ''}`}
+              onClick={() => chooseSeed(s)}
+            >{s}</button>
+          ))}
         </div>
       )}
 
-      <div className="diary-writer-area">
+      <div className={`diary-writer-area${isRitual ? '' : ' plain'}`}>
         <textarea
           ref={areaRef}
           className="diary-textarea"
           value={text}
           onChange={e => setText(e.target.value)}
-          placeholder="Scrivi. Non rileggere, non correggere."
-          spellCheck={false}
+          placeholder={isRitual
+            ? 'Scrivi. Non rileggere, non correggere.'
+            : 'Racconta.'}
+          spellCheck={!isRitual}
         />
       </div>
 
@@ -463,6 +507,31 @@ function DiaryWriter({ type, initial, onSave, onCancel }) {
           </>
         )}
       </div>
+    </div>
+  );
+}
+
+// Pannello richiudibile con le istruzioni della pagina e le pratiche da cui
+// arriva: chi scrive di getto per la prima volta merita di sapere perché gli
+// si chiede di non correggere e perché c'è un timer.
+function MethodHelp({ onClose }) {
+  return (
+    <div className="diary-help">
+      <div className="diary-help-head">
+        <span className="diary-help-title">Come funziona questa pagina</span>
+        <button className="diary-seed-btn" onClick={onClose}>✕</button>
+      </div>
+      <ul className="diary-help-list">
+        {SVUOTA_TESTA_METHOD.howTo.map((line, i) => <li key={i}>{line}</li>)}
+      </ul>
+      <div className="diary-help-title">Da dove viene</div>
+      {SVUOTA_TESTA_METHOD.sources.map(s => (
+        <div key={s.title} className="diary-help-source">
+          <div className="diary-help-source-title">{s.title}</div>
+          <div className="diary-help-source-who">{s.who}</div>
+          <div className="diary-help-source-what">{s.what}</div>
+        </div>
+      ))}
     </div>
   );
 }
