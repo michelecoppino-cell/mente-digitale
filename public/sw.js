@@ -1,4 +1,4 @@
-const CACHE = 'mente-digitale-v3';
+const CACHE = 'mente-digitale-v4';
 // Le due pagine-scorciatoia della schermata Home vanno in precache come
 // l'app: sono la prima cosa che si apre toccando la loro icona.
 const PRECACHE = ['/', '/index.html', '/gtd.html', '/diario.html'];

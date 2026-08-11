@@ -4,8 +4,8 @@
   "description": "La tua mente digitale — OneNote, ToDo e oltre",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#080a0e",
-  "theme_color": "#080a0e",
+  "background_color": "#0e1013",
+  "theme_color": "#0e1013",
   "orientation": "any",
   "icons": [
     {

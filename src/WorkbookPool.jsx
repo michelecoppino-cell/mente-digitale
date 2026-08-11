@@ -141,7 +141,7 @@ export default function WorkbookPool({ workbooks = [], onChange, draggable = tru
       position: 'fixed', top: '-9999px', left: '-9999px',
       background: color, border: '1.5px dashed rgba(255,255,255,0.6)',
       borderRadius: '6px', color: '#fff',
-      padding: '5px 10px', fontSize: '11px', fontFamily: "'Outfit',sans-serif",
+      padding: '5px 10px', fontSize: '11px', fontFamily: "var(--font-ui)",
       whiteSpace: 'nowrap', maxWidth: '220px', overflow: 'hidden',
       textOverflow: 'ellipsis', opacity: '0.95',
     });

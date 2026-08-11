@@ -1843,7 +1843,7 @@ export default function PlannerView({
                       checked={!workbookCalHidden}
                       onChange={() => toggleCalendarVisibility(WORKBOOK_CAL_ID)}
                     />
-                    <span className="planner-cal-filter-dot" style={{ background: '#c8a96e' }} />
+                    <span className="planner-cal-filter-dot" style={{ background: '#d4a44a' }} />
                     <span className="planner-cal-filter-name">Workbook</span>
                   </label>
                   <div className="planner-cal-filter-divider" />

@@ -1,0 +1,127 @@
+/* Token di design dell'app — la sola fonte dei colori, delle misure e dei raggi.
+ *
+ * Prima di questo file gli stessi valori erano riscritti a mano in una decina
+ * di CSS per componente: cambiare l'accento voleva dire trovare e sostituire
+ * l'ocra in otto posti, e i tre grigi di sfondo erano scritti ognuno in due
+ * varianti leggermente diverse. Qui stanno una volta sola.
+ *
+ * Regola dell'accento: è una linea, un bordo, una velatura al 10%. Mai una
+ * campitura piena su un'area grande.
+ */
+
+:root {
+  /* ── Superfici ──────────────────────────────────────────────────────── */
+  --bg:            #0e1013;   /* fondo app */
+  --bg-rail:       #0c0e11;   /* rail di navigazione, pannelli laterali */
+  --surface:       #14171c;   /* card, righe, blocchi */
+  --surface-2:     #111318;   /* card spente (Un giorno) */
+  --line:          #23262e;   /* bordi e divisori */
+  --line-soft:     #1a1d23;   /* righe di lista, griglia oraria */
+
+  /* ── Testo ──────────────────────────────────────────────────────────── */
+  --text:          #eceef4;   /* primario */
+  --text-2:        #d5d9e2;   /* testo di riga */
+  --text-3:        #a9aebb;   /* secondario */
+  --muted:         #868b98;   /* meta, etichette */
+  --disabled:      #5f6572;
+
+  /* ── Accento (ocra) ─────────────────────────────────────────────────── */
+  --accent:        #d4a44a;
+  --accent-tint:   rgba(212, 164, 74, .12);
+  --accent-line:   rgba(212, 164, 74, .40);
+
+  /* ── Contesti ───────────────────────────────────────────────────────── */
+  --ctx-lavoro:    #7fb488;
+  --ctx-personale: #d4a44a;
+  --ctx-famiglia:  #7fa6c4;
+
+  /* ── Servizi Microsoft ──────────────────────────────────────────────── */
+  --onenote:       #a07bd0;
+  --onedrive:      #5b9bd5;
+
+  /* ── Semantica di stato ─────────────────────────────────────────────── */
+  --danger:        #c07a7a;
+  --ok:            #86c07a;
+
+  /* ── Tipografia ─────────────────────────────────────────────────────── */
+  --font-title: 'Playfair Display', Georgia, serif;
+  --font-ui: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+
+  /* Scala testo. Il minimo assoluto è 11px: sotto quella soglia il testo
+     dell'interfaccia non è più leggibile su un telefono. */
+  --fs-micro:  11px;   /* micro-meta */
+  --fs-chip:   12px;   /* chip */
+  --fs-meta:   13px;   /* meta */
+  --fs-card:   14px;   /* testo di card */
+  --fs-row:    15px;   /* testo di riga */
+
+  /* ── Spazio ─────────────────────────────────────────────────────────── */
+  --sp-1:  4px;
+  --sp-2:  6px;
+  --sp-3:  8px;
+  --sp-4:  12px;
+  --sp-5:  14px;
+  --sp-6:  18px;
+  --sp-7:  22px;
+  --sp-8:  26px;
+
+  /* ── Raggi ──────────────────────────────────────────────────────────── */
+  --r-sm:  6px;    /* chip e pill piccole */
+  --r:     8px;    /* card, campi, bottoni */
+  --r-lg:  10px;   /* contenitori */
+  --r-xl:  12px;
+
+  /* ── Target ─────────────────────────────────────────────────────────── */
+  --tap: 44px;     /* lato minimo di un elemento cliccabile */
+
+  /* ── Transizioni ────────────────────────────────────────────────────── */
+  --t: 140ms ease-out;
+
+  /* ── Colonna Pomodoro ───────────────────────────────────────────────────
+     Il focus è rosso (inline in PlannerView.css); qui i tipi di pausa. */
+  --break-personal: #e6c94d;
+  --break-office:   #9d7fd6;
+  --break-client:   #5b8fd9;
+
+  /* ── Alias di compatibilità ─────────────────────────────────────────────
+     I CSS per componente scritti prima dei token usano ancora questi nomi.
+     Restano qui come ponte, così la palette è comunque una sola: vanno tolti
+     man mano che ciascun file passa ai nomi nuovi. */
+  --surface2: var(--surface-2);
+  --border:   var(--line-soft);
+  --border2:  var(--line);
+
+  /* App.css li usa in quattro punti ma non erano definiti da nessuna parte:
+     quelle regole `border-radius` finora non facevano nulla. */
+  --border-radius-md: var(--r-sm);
+  --border-radius-lg: var(--r);
+  --border-radius-xl: var(--r-lg);
+}
+
+/* Etichetta di sezione: maiuscoletto spaziato. Tenuta a 11px e non ai 10px
+   del riferimento di design, per non fare eccezioni al minimo assoluto: con
+   la spaziatura di .16em resta comunque leggibile come etichetta. */
+.eyebrow {
+  font-size: 11px;
+  letter-spacing: .16em;
+  text-transform: uppercase;
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.eyebrow-accent { color: var(--accent); }
+
+/* Estende l'area cliccabile di un bottone piccolo al minimo di 44×44 senza
+   ingrassarlo visivamente: l'icona resta della sua misura, il dito ha lo
+   spazio che gli serve. Da applicare solo a bottoni isolati — su una fila di
+   icone appaiate le aree si sovrapporrebbero e il click finirebbe al vicino. */
+.tap-44 { position: relative; }
+.tap-44::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: max(100%, var(--tap));
+  height: max(100%, var(--tap));
+}

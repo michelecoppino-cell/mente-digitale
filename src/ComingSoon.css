@@ -1,0 +1,48 @@
+.coming-soon {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--sp-8);
+}
+
+.coming-soon-card {
+  max-width: 460px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+  padding: var(--sp-8);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+}
+
+.coming-soon-title {
+  font-family: var(--font-title);
+  font-size: 26px;
+  font-weight: 400;
+  color: var(--text);
+}
+
+.coming-soon-desc {
+  font-size: var(--fs-meta);
+  line-height: 1.7;
+  color: var(--text-3);
+}
+
+.coming-soon-action {
+  align-self: flex-start;
+  display: flex;
+  align-items: center;
+  height: var(--tap);
+  padding: 0 var(--sp-5);
+  margin-top: var(--sp-1);
+  border: 1px solid var(--accent-line);
+  border-radius: var(--r);
+  color: var(--accent);
+  font-size: var(--fs-card);
+  text-decoration: none;
+  transition: background var(--t);
+}
+.coming-soon-action:hover { background: var(--accent-tint); }

@@ -1,21 +1,25 @@
 import { useState, useEffect, useRef } from 'react';
+import { Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { initAuth, getAccount, login, trySsoSilent } from './auth';
-import { getNotebooks, getSections, getTodoLists, getTodoTasks, getPages, getRecentEmails, getPageContentHtml, markOneNoteTagDone, getReminders, createTask, getCalendarEvents, getTasksForDeadlineDedup, invalidateCalendarsCache, loadColorSettings, saveColorSettings, migrateLegacyDriveFiles } from './api';
+import { getNotebooks, getSections, getTodoLists, getTodoTasks, getPages, getRecentEmails, getPageContentHtml, markOneNoteTagDone, getReminders, createTask, getCalendarEvents, getTasksForDeadlineDedup, invalidateCalendarsCache, loadColorSettings, saveColorSettings, migrateLegacyDriveFiles, loadPlannerConfig } from './api';
 import { getMarker, setMarker, clearMarkers } from './markers';
 import { queryClient, qk, STALE } from './queryClient';
 import { extractEmailCandidates, extractOneNoteCandidates } from './dailyReview';
 import { parseReminderSubject, reminderMarker, hasReminderMarker } from './deadlineReminders';
-import { shadeColor } from './plannerShared';
+import { shadeColor, DEFAULT_CONFIG } from './plannerShared';
 import MindMap from './MindMap';
 import IdentityPanel from './IdentityPanel';
 import SearchOverlay from './SearchOverlay';
 import Panel from './Panel';
-import SchedulePanel from './SchedulePanel';
 import PlannerView from './PlannerView';
 import GtdClarifyModal from './GtdClarifyModal';
 import EisenhowerTriage from './EisenhowerTriage';
 import ColorSettingsModal from './ColorSettingsModal';
 import DiaryPanel from './DiaryPanel';
+import TaskPool from './TaskPool';
+import AppShell from './AppShell';
+import { usePomodoro } from './pomodoroContext';
+import ComingSoon from './ComingSoon';
 import { parseEisenhower } from './eisenhower';
 import { COLORS } from './config';
 import UndoToast from './UndoToast';
@@ -161,22 +165,18 @@ export default function App() {
   const [selected, setSelected] = useState(null);
   const [sync, setSync] = useState({ state: 'idle', label: 'Non connesso' });
   const [zoom, setZoom] = useState(1);
-  const [scheduleOpen, setScheduleOpen] = useState(false);
-  const [plannerOpen, setPlannerOpen] = useState(false);
   const [mapViewMode, setMapViewMode] = useState('workbook');
   const [identityOpen, setIdentityOpen] = useState(null);
   const [searchOpen, setSearchOpen] = useState(false);
-  // Il pannello chiesto dalla scorciatoia è aperto già al primo render, non in
-  // un effetto: così non si vede la mappa comparire e poi coprirsi.
+  // La cattura chiesta dalla scorciatoia è aperta già al primo render, non in
+  // un effetto: così non si vede prima la vista sotto e poi il modale coprirla.
   const [gtdOpen, setGtdOpen] = useState(() => launchIntent() === 'gtd');
-  const [diaryOpen, setDiaryOpen] = useState(() => launchIntent() === 'diario');
   const [eisenhowerOpen, setEisenhowerOpen] = useState(false);
   const [pendingPlannerTask, setPendingPlannerTask] = useState(null);
   const [reviewSuggestions, setReviewSuggestions] = useState([]);
   const [reviewOpen, setReviewOpen] = useState(false);
   const [reviewLoading, setReviewLoading] = useState(false);
   const [gtdSeedText, setGtdSeedText] = useState('');
-  const [pomodoroFocus, setPomodoroFocus] = useState(false);
   const [colorSettings, setColorSettings] = useState(DEFAULT_COLOR_SETTINGS);
   const [colorSettingsOpen, setColorSettingsOpen] = useState(false);
   const colorSettingsRef = useRef(DEFAULT_COLOR_SETTINGS);
@@ -185,6 +185,9 @@ export default function App() {
   const pagesCache = useRef({});
   const tasksCache = useRef({});
   const [scheduledTasks, setScheduledTasks] = useState(null);
+  // Config del Piano: la vista Attività ne ha bisogno per i colori di
+  // progetto, altrimenti mostrerebbe quelli segnaposto del default.
+  const [plannerConfig, setPlannerConfig] = useState(DEFAULT_CONFIG);
   const [sectionCalendarEvents, setSectionCalendarEvents] = useState([]);
   // Incrementato ogni volta che un evento calendario viene creato fuori dal
   // Piano (es. dal popup GTD), per far invalidare a PlannerView la sua cache
@@ -193,6 +196,10 @@ export default function App() {
   const preloadQueueRef = useRef([]);
   const preloadRunningRef = useRef(false);
   const todoListsRef = useRef([]);
+
+  const navigate = useNavigate();
+  const location = useLocation();
+  const pomodoro = usePomodoro();
 
   useEffect(() => {
     initAuth().then(() => {
@@ -219,24 +226,32 @@ export default function App() {
   // dall'URL, così chiudere il pannello e ricaricare la pagina non lo riapre.
   useEffect(() => {
     if (!launchIntent()) return;
-    window.history.replaceState(null, '', window.location.pathname);
-  }, []);
+    if (launchIntent() === 'diario') navigate('/diario', { replace: true });
+    // Il pathname da solo butterebbe via anche l'hash, cioè la rotta corrente.
+    window.history.replaceState(null, '', window.location.pathname + window.location.hash);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Scorciatoie: Ctrl/Cmd+K ricerca globale, Ctrl/Cmd+J diario
+  // Scorciatoie: ⌘K ricerca globale, ⌘J diario, ⌘N cattura da qualunque vista
   useEffect(() => {
     function onKeyDown(e) {
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+      if (!(e.ctrlKey || e.metaKey)) return;
+      const key = e.key.toLowerCase();
+      if (key === 'k') {
         e.preventDefault();
         setSearchOpen(o => !o);
       }
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'j') {
+      if (key === 'j') {
         e.preventDefault();
-        setDiaryOpen(o => !o);
+        navigate('/diario');
+      }
+      if (key === 'n') {
+        e.preventDefault();
+        setGtdOpen(true);
       }
     }
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, []);
+  }, [navigate]);
 
   async function handleLogin() {
     try { await login(); setAccount(getAccount()); load(false); }
@@ -269,6 +284,13 @@ export default function App() {
       colorSettingsRef.current = overrides;
       colorSettingsLoadedRef.current = true;
       setColorSettings(overrides);
+
+      // Config del Piano: serve alla vista Attività per i colori di progetto.
+      // Non è bloccante — se non arriva si resta sul default e i task si
+      // vedono comunque, solo senza il colore del loro progetto.
+      fetchCached(qk.plannerConfig(), loadPlannerConfig, STALE.plannerConfig, forceRefresh)
+        .then(cfg => { if (cfg) setPlannerConfig(cfg); })
+        .catch(e => console.error('planner config load', e));
 
       // Taccuini
       const nbs = await fetchCached(qk.notebooks(), getNotebooks, STALE.notebooks, forceRefresh);
@@ -611,14 +633,32 @@ export default function App() {
     updateTasksEverywhere(listId, tasks => [...tasks, task]);
   }
 
-  // Solo per nascondere il FAB GTD durante il focus Pomodoro (stesso angolo
-  // del widget del timer): il Piano resta invariato, nessun pannello si apre.
+  // Il Pomodoro avviato dal Piano diventa una sessione a livello di app: la
+  // barra in cima resta visibile anche cambiando vista, che è tutto il punto
+  // di averla tirata fuori da PlannerView. La sessione non è ancora legata a
+  // un task o a una sezione — quel collegamento arriva col Piano e con Sezioni.
   function handleStartPomodoroFocus() {
-    setPomodoroFocus(true);
+    pomodoro.start({ durationMin: 25 });
   }
 
   function handleEndPomodoroFocus() {
-    setPomodoroFocus(false);
+    pomodoro.stop();
+  }
+
+  // Click su un task nella vista Attività: apre il pannello della sezione PARA
+  // corrispondente alla lista To-Do del task, che è come le due cose sono
+  // legate in tutta l'app (una lista = una sezione).
+  function handleTaskPoolClick(task) {
+    if (!task?._listName) return;
+    const lower = task._listName.toLowerCase();
+    for (const [nbId, sects] of Object.entries(sectionsMap || {})) {
+      const sec = sects.find(s => s.displayName.toLowerCase() === lower);
+      if (sec) {
+        const nb = notebooks.find(n => n.id === nbId) || { id: nbId, _color: 'var(--accent)' };
+        handleSelectSection(sec, nb, 'todo');
+        return;
+      }
+    }
   }
 
   async function handleRefresh() {
@@ -635,291 +675,245 @@ export default function App() {
 
   if (!ready) return null;
 
-  return (
-    <div className="app">
-      <header className="header">
-        <div className="header-left">
-          {account && (
-            <button
-              className={`search-btn${unclassifiedCount > 0 ? ' has-badge' : ''}`}
-              onClick={() => setEisenhowerOpen(true)}
-              title="Smistamento Eisenhower dei task non classificati">
-              <span className="header-icon-emoji">🧭</span>
-              {unclassifiedCount > 0 && <span className="header-badge">{unclassifiedCount}</span>}
-            </button>
-          )}
-          {account && (
-            <div className="bell-wrap">
-              <button
-                className={`search-btn${reviewOpen ? ' active' : ''}${reviewSuggestions.length ? ' has-badge' : ''}`}
-                onClick={() => setReviewOpen(o => !o)}
-                title="Proposte Daily Review">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" />
-                  <path d="M13.73 21a2 2 0 0 1-3.46 0" />
-                </svg>
-                {reviewSuggestions.length > 0 && <span className="header-badge">{reviewSuggestions.length}</span>}
-              </button>
-              {reviewOpen && (
-                <div className="bell-dropdown">
-                  <div className="bell-dropdown-header">
-                    <span>Daily Review</span>
-                    <button onClick={() => setReviewOpen(false)}>✕</button>
-                  </div>
-                  {reviewLoading && <div className="bell-empty">Analisi email e OneNote in corso…</div>}
-                  {!reviewLoading && reviewSuggestions.length === 0 && (
-                    <div className="bell-empty">Nessuna proposta al momento.</div>
-                  )}
-                  {!reviewLoading && reviewSuggestions.map(s => (
-                    <BellSuggestionItem
-                      key={s.id}
-                      suggestion={s}
-                      onAccept={handleAcceptSuggestion}
-                      onDismiss={handleDismissSuggestion}
-                    />
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
+  if (!account) {
+    return (
+      <div className="login-screen">
+        <div className="login-card">
+          <div className="login-title">Benvenuto</div>
+          <div className="login-desc">Accedi con il tuo account Microsoft per caricare<br />i tuoi taccuini OneNote automaticamente.</div>
+          <button className="login-btn" onClick={handleLogin}>
+            <svg width="16" height="16" viewBox="0 0 21 21" fill="none">
+              <rect x="1" y="1" width="9" height="9" fill="#f25022"/>
+              <rect x="11" y="1" width="9" height="9" fill="#7fba00"/>
+              <rect x="1" y="11" width="9" height="9" fill="#00a4ef"/>
+              <rect x="11" y="11" width="9" height="9" fill="#ffb900"/>
+            </svg>
+            Accedi con Microsoft
+          </button>
+          <div className="login-note">Solo permessi di lettura · nessun dato salvato</div>
         </div>
-        <div className="header-center">
-          <h1 className="logo">Mente Digitale</h1>
-        </div>
-        <div className="header-right">
-          {account && (
-            <div className="sync-status" title={sync.label}>
-              <span className={`sync-dot ${sync.state}`} />
-              <span className="sync-label-text">{sync.label}</span>
-            </div>
-          )}
-          {account && (
-            <div className="map-view-toggle">
-              <button className={mapViewMode === 'workbook' ? 'active' : ''} onClick={() => setMapViewMode('workbook')} title="Vista per taccuino">Taccuini</button>
-              <button className={mapViewMode === 'para' ? 'active' : ''} onClick={() => setMapViewMode('para')} title="Vista PARA">PARA</button>
-            </div>
-          )}
-          {account && (
-            <button className="search-btn" onClick={() => setSearchOpen(true)} title="Cerca (Ctrl+K)">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                <circle cx="11" cy="11" r="7" />
-                <line x1="21" y1="21" x2="16.5" y2="16.5" />
-              </svg>
-            </button>
-          )}
-          {account && (
-            <button className="search-btn" onClick={() => setDiaryOpen(true)} title="Diario (Ctrl+J)">
-              <span className="header-icon-emoji">🕯️</span>
-            </button>
-          )}
-          {account && (
-            <button className="search-btn" onClick={() => setColorSettingsOpen(true)} title="Colori taccuini e sezioni">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <circle cx="12" cy="12" r="3" />
-                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
-              </svg>
-            </button>
-          )}
-          <button className="refresh-btn" onClick={handleRefresh} title="Aggiorna tutto">↺</button>
-        </div>
-      </header>
+      </div>
+    );
+  }
 
-      {!account ? (
-        <div className="login-screen">
-          <div className="login-card">
-            <div className="login-title">Benvenuto</div>
-            <div className="login-desc">Accedi con il tuo account Microsoft per caricare<br />i tuoi taccuini OneNote automaticamente.</div>
-            <button className="login-btn" onClick={handleLogin}>
-              <svg width="16" height="16" viewBox="0 0 21 21" fill="none">
-                <rect x="1" y="1" width="9" height="9" fill="#f25022"/>
-                <rect x="11" y="1" width="9" height="9" fill="#7fba00"/>
-                <rect x="1" y="11" width="9" height="9" fill="#00a4ef"/>
-                <rect x="11" y="11" width="9" height="9" fill="#ffb900"/>
-              </svg>
-              Accedi con Microsoft
-            </button>
-            <div className="login-note">Solo permessi di lettura · nessun dato salvato</div>
-          </div>
+  // La vista Mappa è l'unica a cui serva il commutatore taccuini/PARA: tenerlo
+  // sempre in topbar lo renderebbe un comando che per cinque viste su sei non
+  // fa niente di visibile.
+  const onMap = location.pathname.startsWith('/mappa');
+
+  const topbar = (
+    <>
+      <div className="sync-status" title={sync.label}>
+        <span className={`sync-dot ${sync.state}`} />
+        <span className="sync-label-text">{sync.label}</span>
+      </div>
+      {onMap && (
+        <div className="map-view-toggle">
+          <button className={mapViewMode === 'workbook' ? 'active' : ''} onClick={() => setMapViewMode('workbook')} title="Vista per taccuino">Taccuini</button>
+          <button className={mapViewMode === 'para' ? 'active' : ''} onClick={() => setMapViewMode('para')} title="Vista PARA">PARA</button>
         </div>
-      ) : (
-        <>
-        <div className="canvas-area" style={{ display: plannerOpen ? 'none' : undefined }}>
-          <IdentityPanel open={identityOpen} onClose={() => setIdentityOpen(null)} />
-          <SchedulePanel
-            open={scheduleOpen}
-            onClose={() => setScheduleOpen(false)}
-            onExpand={() => { setScheduleOpen(false); setPlannerOpen(true); }}
-            preloadedTasks={scheduledTasks}
-            onSelectSection={handleSelectSection}
-            notebooks={notebooks}
-            sectionsMap={sectionsMap}
-          />
-          <MindMap
-            notebooks={notebooks}
-            sectionsMap={sectionsMap}
-            todoListsMap={todoListsMap}
-            todoCountMap={todoCountMap}
-            viewMode={mapViewMode}
-            onSelectSection={handleSelectSection}
-            onExpandNotebook={handleExpandNotebook}
-            externalZoom={zoom}
-            onZoomChange={setZoom}
-            onIdentityOpen={setIdentityOpen}
-          />
-          {/* Dock unificato in basso: Attività · GTD · Piano.
-              Smista e Review sono passati alla riga sommitale (a sx del
-              titolo). Un solo contenitore centrato — niente più pile di
-              bottoni flottanti che si sovrappongono ai pannelli. */}
-          <div className="bottom-dock">
-            <button
-              className={`dock-btn${scheduleOpen ? ' active' : ''}`}
-              onClick={() => setScheduleOpen(o => !o)}
-              title="Pannello Attività (task)">
-              <span className="dock-btn-icon">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                  <polyline points="3 5.5 4.5 7 7.5 4" />
-                  <line x1="10.5" y1="6" x2="21" y2="6" />
-                  <polyline points="3 11.5 4.5 13 7.5 10" />
-                  <line x1="10.5" y1="12" x2="21" y2="12" />
-                  <polyline points="3 17.5 4.5 19 7.5 16" />
-                  <line x1="10.5" y1="18" x2="21" y2="18" />
-                </svg>
-              </span>
-              <span className="dock-btn-label">Attività</span>
-            </button>
-            <div className="dock-sep" />
-            <button className="dock-gtd-btn" onClick={() => setGtdOpen(true)} title="Cattura pensiero (GTD)">
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
-                <line x1="12" y1="5" x2="12" y2="19" />
-                <line x1="5" y1="12" x2="19" y2="12" />
-              </svg>
-              GTD
-            </button>
-            <div className="dock-sep" />
-            <button
-              className={`dock-btn${plannerOpen ? ' active' : ''}`}
-              onClick={() => setPlannerOpen(true)}
-              title="Apri il Piano">
-              <span className="dock-btn-icon">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                  <rect x="3" y="5" width="18" height="16" rx="2" />
-                  <line x1="3" y1="10" x2="21" y2="10" />
-                  <line x1="8" y1="3" x2="8" y2="7" />
-                  <line x1="16" y1="3" x2="16" y2="7" />
-                </svg>
-              </span>
-              <span className="dock-btn-label">Piano</span>
-            </button>
-            <div className="dock-sep" />
-            <button
-              className={`dock-btn${diaryOpen ? ' active' : ''}`}
-              onClick={() => setDiaryOpen(true)}
-              title="Diario (Ctrl+J)">
-              <span className="dock-btn-icon">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H19v15H6.5A2.5 2.5 0 0 0 4 20.5z" />
-                  <line x1="8" y1="7.5" x2="15" y2="7.5" />
-                  <line x1="8" y1="11" x2="15" y2="11" />
-                </svg>
-              </span>
-              <span className="dock-btn-label">Diario</span>
-            </button>
-          </div>
-        </div>
-        {/* Pannello sezione (ToDo/OneNote/OneDrive) — fisso rispetto al
-            viewport, non alla vista corrente: così può aprirsi/restare aperto
-            sia dalla vista principale sia dal Piano (es. focus Pomodoro),
-            senza dover chiudere/cambiare vista. */}
-        <Panel
-          selected={selected}
-          pagesCache={pagesCache}
-          tasksCache={tasksCache}
-          calendarEvents={sectionCalendarEvents}
-          onClose={() => setSelected(null)}
-        />
-        <PlannerView
-          open={plannerOpen}
-          onClose={() => setPlannerOpen(false)}
-          preloadedTasks={scheduledTasks || []}
-          notebooks={notebooks}
-          sectionsMap={sectionsMap}
-          pagesCache={pagesCache}
-          autoAddTask={pendingPlannerTask}
-          onAutoAdded={() => setPendingPlannerTask(null)}
-          onTaskCompleted={handleTaskRemoved}
-          onTaskDeleted={handleTaskRemoved}
-          onTaskRenamed={(listId, taskId, title) => handleTaskPatched(listId, taskId, { title })}
-          onTaskDueChanged={(listId, taskId, dueDateTime) => handleTaskPatched(listId, taskId, { dueDateTime })}
-          onTaskRestored={handleTaskRestored}
-          onStartFocus={handleStartPomodoroFocus}
-          onEndFocus={handleEndPomodoroFocus}
-          calendarDirtyToken={calendarDirtyToken}
-        />
-        <EisenhowerTriage
-          open={eisenhowerOpen}
-          onClose={() => setEisenhowerOpen(false)}
-          tasks={scheduledTasks || []}
-        />
-        {/* In modalità Piano il dock in basso (dentro .canvas-area, nascosta)
-            non è visibile: si ripropone qui il pulsante GTD, fuori da quel
-            contenitore, come cerchio fisso in basso a destra. Si spegne
-            durante il focus Pomodoro: stesso angolo dello schermo del widget
-            del timer, e la visualizzazione è comunque bloccata. */}
-        {plannerOpen && !pomodoroFocus && (
-          <div className="fab-stack">
-            <button className="fab diary-fab" onClick={() => setDiaryOpen(true)} title="Diario (Ctrl+J)">
-              <span className="fab-emoji">🕯️</span>
-            </button>
-            <button className="fab gtd-fab" onClick={() => setGtdOpen(true)} title="Cattura pensiero (GTD)">+</button>
+      )}
+      <button
+        className={`search-btn tap-44${unclassifiedCount > 0 ? ' has-badge' : ''}`}
+        onClick={() => setEisenhowerOpen(true)}
+        title="Smistamento Eisenhower dei task non classificati">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+          <circle cx="12" cy="12" r="8.6" />
+          <path d="m14.8 9.2-1.9 4.1-4.1 1.9 1.9-4.1z" />
+        </svg>
+        {unclassifiedCount > 0 && <span className="header-badge">{unclassifiedCount}</span>}
+      </button>
+      <div className="bell-wrap">
+        <button
+          className={`search-btn tap-44${reviewOpen ? ' active' : ''}${reviewSuggestions.length ? ' has-badge' : ''}`}
+          onClick={() => setReviewOpen(o => !o)}
+          title="Proposte Daily Review">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" />
+            <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+          </svg>
+          {reviewSuggestions.length > 0 && <span className="header-badge">{reviewSuggestions.length}</span>}
+        </button>
+        {reviewOpen && (
+          <div className="bell-dropdown">
+            <div className="bell-dropdown-header">
+              <span>Daily Review</span>
+              <button onClick={() => setReviewOpen(false)}>✕</button>
+            </div>
+            {reviewLoading && <div className="bell-empty">Analisi email e OneNote in corso…</div>}
+            {!reviewLoading && reviewSuggestions.length === 0 && (
+              <div className="bell-empty">Nessuna proposta al momento.</div>
+            )}
+            {!reviewLoading && reviewSuggestions.map(s => (
+              <BellSuggestionItem
+                key={s.id}
+                suggestion={s}
+                onAccept={handleAcceptSuggestion}
+                onDismiss={handleDismissSuggestion}
+              />
+            ))}
           </div>
         )}
-        <GtdClarifyModal
-          open={gtdOpen}
-          onClose={() => { setGtdOpen(false); setGtdSeedText(''); }}
-          seedText={gtdSeedText}
-          todoLists={todoListsRef.current}
-          notebooks={notebooks}
-          sectionsMap={sectionsMap}
-          onTaskCreated={(task, { addToday }) => {
-            setScheduledTasks(prev => [...(prev || []), task]);
-            if (addToday) { setPendingPlannerTask(task); setPlannerOpen(true); }
-          }}
-          onTaskRemoved={handleTaskRemoved}
-          onEventCreated={event => {
-            setSectionCalendarEvents(prev => [...(prev || []), event]);
-            setCalendarDirtyToken(t => t + 1);
-          }}
-          onEventRemoved={eventId => {
-            setSectionCalendarEvents(prev => (prev || []).filter(e => e.id !== eventId));
-            setCalendarDirtyToken(t => t + 1);
-          }}
-        />
-        <SearchOverlay
-          open={searchOpen}
-          onClose={() => setSearchOpen(false)}
-          notebooks={notebooks}
-          sectionsMap={sectionsMap}
-          pagesCache={pagesCache}
-          tasks={scheduledTasks || []}
-          onSelectSection={(sec, nb, app) => { setPlannerOpen(false); handleSelectSection(sec, nb, app); }}
-        />
-        <DiaryPanel open={diaryOpen} onClose={() => setDiaryOpen(false)} />
-        <ColorSettingsModal
-          open={colorSettingsOpen}
-          onClose={() => setColorSettingsOpen(false)}
-          notebooks={notebooks}
-          sectionsMap={sectionsMap}
-          overrides={colorSettings}
-          onExpandNotebook={handleExpandNotebook}
-          onSetNotebookColor={setNotebookColor}
-          onSetSectionColor={setSectionColor}
-          onResetNotebookColor={resetNotebookColor}
-          onResetSectionColor={resetSectionColor}
-        />
-        </>
-      )}
+      </div>
+      <button className="search-btn tap-44" onClick={() => setSearchOpen(true)} title="Cerca (⌘K)">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round">
+          <circle cx="11" cy="11" r="7" />
+          <line x1="21" y1="21" x2="16.5" y2="16.5" />
+        </svg>
+      </button>
+      <button className="search-btn tap-44" onClick={handleRefresh} title="Aggiorna tutto">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M20.5 12a8.5 8.5 0 1 1-2.6-6.1" />
+          <polyline points="20.5 4 20.5 9 15.5 9" />
+        </svg>
+      </button>
+    </>
+  );
+
+  return (
+    <>
+      <AppShell
+        topbar={topbar}
+        onCapture={() => setGtdOpen(true)}
+        onOpenNotebooks={() => { setMapViewMode('para'); navigate('/mappa'); }}
+        onOpenSettings={() => setColorSettingsOpen(true)}>
+        <Routes>
+          <Route path="/oggi" element={
+            <ComingSoon
+              title="Oggi"
+              description="La home di sola lettura — cosa succede oggi, l'agenda del calendario, le azioni programmate e i recap brevi — arriva con la vista Oggi. Per ora la programmazione della giornata si fa dal Piano."
+              action={{ to: '/piano', label: 'Apri il Piano' }}
+            />
+          } />
+
+          <Route path="/piano" element={
+            <PlannerView
+              open
+              onClose={() => navigate('/oggi')}
+              preloadedTasks={scheduledTasks || []}
+              notebooks={notebooks}
+              sectionsMap={sectionsMap}
+              pagesCache={pagesCache}
+              autoAddTask={pendingPlannerTask}
+              onAutoAdded={() => setPendingPlannerTask(null)}
+              onTaskCompleted={handleTaskRemoved}
+              onTaskDeleted={handleTaskRemoved}
+              onTaskRenamed={(listId, taskId, title) => handleTaskPatched(listId, taskId, { title })}
+              onTaskDueChanged={(listId, taskId, dueDateTime) => handleTaskPatched(listId, taskId, { dueDateTime })}
+              onTaskRestored={handleTaskRestored}
+              onStartFocus={handleStartPomodoroFocus}
+              onEndFocus={handleEndPomodoroFocus}
+              calendarDirtyToken={calendarDirtyToken}
+            />
+          } />
+
+          <Route path="/attivita" element={
+            <div className="route-scroll">
+              <TaskPool
+                title="Attività"
+                tasks={scheduledTasks || []}
+                notebooks={notebooks}
+                sectionsMap={sectionsMap}
+                config={plannerConfig}
+                onTaskClick={handleTaskPoolClick}
+                draggable={false}
+              />
+            </div>
+          } />
+
+          <Route path="/sezioni/:sectionId?" element={
+            <ComingSoon
+              title="Sezioni"
+              description="Il workbook di ogni sezione PARA — pagine OneNote, file OneDrive e attività collegate in tre colonne — arriva con la vista Sezioni. Per ora si apre il pannello di una sezione dalla Mappa."
+              action={{ to: '/mappa', label: 'Vai alla Mappa' }}
+            />
+          } />
+
+          <Route path="/diario" element={<DiaryPanel open onClose={() => navigate(-1)} />} />
+
+          <Route path="/mappa" element={
+            <div className="canvas-area">
+              <IdentityPanel open={identityOpen} onClose={() => setIdentityOpen(null)} />
+              <MindMap
+                notebooks={notebooks}
+                sectionsMap={sectionsMap}
+                todoListsMap={todoListsMap}
+                todoCountMap={todoCountMap}
+                viewMode={mapViewMode}
+                onSelectSection={handleSelectSection}
+                onExpandNotebook={handleExpandNotebook}
+                externalZoom={zoom}
+                onZoomChange={setZoom}
+                onIdentityOpen={setIdentityOpen}
+              />
+            </div>
+          } />
+
+          {/* Finché la vista Oggi non esiste, la home resta la Mappa: mandare
+              l'apertura dell'app su un segnaposto sarebbe un passo indietro. */}
+          <Route path="*" element={<Navigate to="/mappa" replace />} />
+        </Routes>
+      </AppShell>
+
+      {/* Pannello sezione (ToDo/OneNote/OneDrive) — fisso rispetto al
+          viewport, non alla rotta corrente, così resta aperto anche
+          cambiando vista. Sparisce quando arriverà /sezioni/:id. */}
+      <Panel
+        selected={selected}
+        pagesCache={pagesCache}
+        tasksCache={tasksCache}
+        calendarEvents={sectionCalendarEvents}
+        onClose={() => setSelected(null)}
+      />
+      <EisenhowerTriage
+        open={eisenhowerOpen}
+        onClose={() => setEisenhowerOpen(false)}
+        tasks={scheduledTasks || []}
+      />
+      <GtdClarifyModal
+        open={gtdOpen}
+        onClose={() => { setGtdOpen(false); setGtdSeedText(''); }}
+        seedText={gtdSeedText}
+        todoLists={todoListsRef.current}
+        notebooks={notebooks}
+        sectionsMap={sectionsMap}
+        onTaskCreated={(task, { addToday }) => {
+          setScheduledTasks(prev => [...(prev || []), task]);
+          if (addToday) { setPendingPlannerTask(task); navigate('/piano'); }
+        }}
+        onTaskRemoved={handleTaskRemoved}
+        onEventCreated={event => {
+          setSectionCalendarEvents(prev => [...(prev || []), event]);
+          setCalendarDirtyToken(t => t + 1);
+        }}
+        onEventRemoved={eventId => {
+          setSectionCalendarEvents(prev => (prev || []).filter(e => e.id !== eventId));
+          setCalendarDirtyToken(t => t + 1);
+        }}
+      />
+      <SearchOverlay
+        open={searchOpen}
+        onClose={() => setSearchOpen(false)}
+        notebooks={notebooks}
+        sectionsMap={sectionsMap}
+        pagesCache={pagesCache}
+        tasks={scheduledTasks || []}
+        onSelectSection={(sec, nb, app) => { navigate('/mappa'); handleSelectSection(sec, nb, app); }}
+      />
+      <ColorSettingsModal
+        open={colorSettingsOpen}
+        onClose={() => setColorSettingsOpen(false)}
+        notebooks={notebooks}
+        sectionsMap={sectionsMap}
+        overrides={colorSettings}
+        onExpandNotebook={handleExpandNotebook}
+        onSetNotebookColor={setNotebookColor}
+        onSetSectionColor={setSectionColor}
+        onResetNotebookColor={resetNotebookColor}
+        onResetSectionColor={resetSectionColor}
+      />
       <UndoToast />
-    </div>
+    </>
   );
 }
 

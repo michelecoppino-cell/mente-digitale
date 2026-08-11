@@ -6,7 +6,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  font-family: 'Outfit', sans-serif;
+  font-family: var(--font-ui);
 }
 
 .eis-modal {
@@ -55,10 +55,10 @@
   border-radius: 7px;
   font-size: 12px;
   cursor: pointer;
-  font-family: 'Outfit', sans-serif;
+  font-family: var(--font-ui);
   transition: background 0.15s;
 }
-.eis-done-btn:hover { background: rgba(200,169,110,0.1); }
+.eis-done-btn:hover { background: rgba(212,164,74,0.1); }
 
 .eis-progress {
   font-size: 11px;
@@ -76,7 +76,7 @@
   margin-bottom: 16px;
 }
 .eis-task-list {
-  font-size: 10px;
+  font-size: 11px;
   color: var(--muted);
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -101,7 +101,7 @@
   border-radius: 8px;
   padding: 10px 8px;
   cursor: pointer;
-  font-family: 'Outfit', sans-serif;
+  font-family: var(--font-ui);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -112,7 +112,7 @@
 .eis-quadrant-btn:disabled { opacity: 0.5; cursor: default; }
 
 .eis-quadrant-key {
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 700;
   color: var(--q-color);
   letter-spacing: 0.05em;
@@ -124,7 +124,7 @@
   line-height: 1.3;
 }
 .eis-quadrant-short {
-  font-size: 10px;
+  font-size: 11px;
   color: var(--muted);
   font-style: italic;
 }
@@ -137,7 +137,7 @@
   color: var(--muted);
   font-size: 11px;
   cursor: pointer;
-  font-family: 'Outfit', sans-serif;
+  font-family: var(--font-ui);
   text-decoration: underline;
 }
 .eis-skip-btn:hover { color: var(--text); }

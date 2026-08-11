@@ -1,29 +1,27 @@
-@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;500&family=Outfit:wght@300;400;500&display=swap');
-
-:root {
-  --bg: #080a0e;
-  --surface: #0d1017;
-  --surface2: #131820;
-  --border: rgba(255,255,255,0.06);
-  --border2: rgba(255,255,255,0.11);
-  --text: #dde3ee;
-  --muted: #5a6278;
-  --accent: #c8a96e;
-  --r: 8px;
-  /* Colonna Pomodoro: focus = rosso (inline in PlannerView.css), tipi di pausa: */
-  --break-personal: #e6c94d;
-  --break-office: #9d7fd6;
-  --break-client: #5b8fd9;
-}
+@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;500&family=Inter:wght@400;500;600&display=swap');
+@import './tokens.css';
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
 
 body {
   background: var(--bg);
-  font-family: 'Outfit', sans-serif;
+  font-family: var(--font-ui);
   color: var(--text);
-  height: 100vh;
+  /* dvh e non vh: su iOS la barra degli indirizzi che si ritrae cambia
+     l'altezza del viewport, e con 100vh il fondo della pagina finiva sotto
+     la barra invece che sopra. */
+  height: 100dvh;
   overflow: hidden;
+}
+
+h1, h2, h3, .title { font-family: var(--font-title); font-weight: 400; }
+
+/* Anello di focus unico per tutta l'app. Prima ogni componente spegneva
+   l'outline per conto suo senza rimetterne uno: con la tastiera non si capiva
+   più dove si era. */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 ::-webkit-scrollbar { width: 4px; }

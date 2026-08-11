@@ -58,23 +58,33 @@ export {};
 
 /**
  * Lista di Microsoft To-Do (nell'app mappa 1:1 su un'Area / progetto PARA).
+ * `wellknownListName` vale 'defaultList' sulla lista predefinita di To-Do:
+ * è quella che il flusso GTD tratta come Inbox.
  * @typedef {Object} TodoList
  * @property {string} id
  * @property {string} displayName
+ * @property {string} [wellknownListName]
  */
 
 /**
  * Task di Microsoft To-Do. I campi `_listName` / `_listId` sono decorazioni
  * aggiunte dall'app quando il task viene messo nel pool globale, per sapere da
  * quale lista proviene senza doverlo riassociare.
+ * Il flusso GTD dell'app si legge da qui: `status` porta next/waiting/someday/done
+ * (vedi taskModel.js), `categories` il contesto, `checklistItems` le
+ * sottoattività. Solo la stima di durata non ha un campo nativo e sta nelle
+ * note come marker [MIN:n].
  * @typedef {Object} TodoTask
  * @property {string} id
  * @property {string} title
- * @property {string} [status]        `notStarted` | `completed` | ...
+ * @property {string} [status]        `notStarted` | `inProgress` | `waitingOnOthers` | `deferred` | `completed`
  * @property {string} [importance]    `low` | `normal` | `high`
- * @property {ItemBody} [body]        note del task; ospita i marker [EIS:Qn] e reminder-src
+ * @property {ItemBody} [body]        note del task; ospita i marker [EIS:Qn], [MIN:n] e reminder-src
  * @property {GraphDateTime|null} [dueDateTime]
  * @property {string} [createdDateTime]
+ * @property {string} [lastModifiedDateTime]
+ * @property {string} [completedDateTime]
+ * @property {string[]} [categories]  contesto dell'attività (Lavoro / Personale / Famiglia)
  * @property {ChecklistItem[]} [checklistItems]
  * @property {string} [_listName]
  * @property {string} [_listId]
