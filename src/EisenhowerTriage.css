@@ -142,3 +142,13 @@
 }
 .eis-skip-btn:hover { color: var(--text); }
 .eis-skip-btn:disabled { opacity: 0.5; cursor: default; }
+
+/* Quadranti come vista di Attività: stesso smistamento, senza velo né
+   cornice — la pagina è già il contenitore. */
+.eis-inline {
+  width: 100%;
+  max-width: 620px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+}

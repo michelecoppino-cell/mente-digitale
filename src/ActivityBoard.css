@@ -1,0 +1,277 @@
+/* Vista Attività — cinque colonne di pari larghezza, la colonna è lo stato. */
+
+.ab {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ── Testata: filtro, contesti, commutatore di vista ──────────────────── */
+
+.ab-head {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-5);
+  padding: var(--sp-4) var(--sp-7);
+  border-bottom: 1px solid var(--line);
+}
+
+.ab-search {
+  width: 260px;
+  height: 34px;
+  padding: 0 var(--sp-4);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: var(--fs-meta);
+}
+.ab-search::placeholder { color: var(--disabled); }
+.ab-search:focus { border-color: var(--accent-line); }
+
+.ab-chips { display: flex; gap: var(--sp-2); }
+
+.ab-filter {
+  height: 34px;
+  padding: 0 var(--sp-4);
+  background: none;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  color: var(--muted);
+  font-family: var(--font-ui);
+  font-size: var(--fs-chip);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: border-color var(--t), color var(--t);
+}
+.ab-filter:hover { color: var(--text-3); }
+.ab-filter.active {
+  border-color: var(--chip, var(--accent));
+  color: var(--chip, var(--accent));
+  background: color-mix(in srgb, var(--chip, var(--accent)) 10%, transparent);
+}
+
+.ab-views {
+  margin-left: auto;
+  display: flex;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  overflow: hidden;
+}
+.ab-views button {
+  height: 34px;
+  min-width: 78px;
+  padding: 0 var(--sp-4);
+  background: none;
+  border: none;
+  border-right: 1px solid var(--line);
+  color: var(--muted);
+  font-family: var(--font-ui);
+  font-size: var(--fs-chip);
+  cursor: pointer;
+  transition: background var(--t), color var(--t);
+}
+.ab-views button:last-child { border-right: none; }
+.ab-views button:hover { color: var(--text-3); }
+.ab-views button.active { background: var(--accent-tint); color: var(--accent); }
+
+/* ── Colonne ──────────────────────────────────────────────────────────── */
+
+.ab-columns {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+}
+
+.ab-col {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--line);
+  transition: background var(--t);
+}
+.ab-col:last-child { border-right: none; }
+.ab-col.drag-over { background: rgba(212, 164, 74, .05); }
+
+.ab-col-head {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  height: 44px;
+  padding: 0 var(--sp-5);
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.ab-count {
+  margin-left: auto;
+  font-size: var(--fs-micro);
+  color: var(--disabled);
+  font-variant-numeric: tabular-nums;
+}
+
+.ab-col-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--sp-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+
+/* ── Card ─────────────────────────────────────────────────────────────── */
+
+.ab-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  width: 100%;
+  min-height: var(--tap);
+  padding: var(--sp-4);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  color: var(--text-2);
+  font-family: var(--font-ui);
+  text-align: left;
+  cursor: grab;
+  transition: border-color var(--t), background var(--t), opacity var(--t);
+}
+.ab-card:hover { border-color: var(--accent-line); }
+.ab-card:active { cursor: grabbing; }
+.ab-card.dragging { opacity: .4; }
+
+.ab-card-title {
+  font-size: var(--fs-card);
+  line-height: 1.45;
+  color: var(--text);
+}
+
+.ab-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+.ab-card-waiting { font-size: var(--fs-chip); color: var(--text-3); }
+
+/* Inbox: da chiarire, e si vede. */
+.ab-card-inbox { border-left: 2px solid var(--accent); }
+
+/* Programmate: hanno già un posto nella giornata, l'accento è più quieto. */
+.ab-card-scheduled { border-left: 2px solid rgba(212, 164, 74, .5); }
+
+/* Un giorno: spente, ma leggibili. */
+.ab-card-someday { background: var(--surface-2); }
+.ab-card-someday .ab-card-title { color: var(--text-3); }
+
+/* ── Chip e meta ──────────────────────────────────────────────────────── */
+
+.ab-chip {
+  padding: 2px var(--sp-2);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  font-size: var(--fs-micro);
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.ab-chip-project {
+  border-color: color-mix(in srgb, var(--chip, var(--muted)) 40%, transparent);
+  color: var(--chip, var(--muted));
+}
+
+.ab-when { font-size: var(--fs-micro); color: var(--accent); white-space: nowrap; }
+.ab-when.slipped { color: var(--danger); }
+
+.ab-due { font-size: var(--fs-micro); color: var(--muted); white-space: nowrap; }
+.ab-due.overdue { color: var(--danger); }
+
+.ab-empty {
+  padding: var(--sp-4) var(--sp-2);
+  font-size: var(--fs-chip);
+  line-height: 1.6;
+  color: var(--disabled);
+}
+
+/* ── Vista Quadranti ──────────────────────────────────────────────────── */
+
+.ab-lens {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--sp-7);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--sp-6);
+}
+
+.ab-lens-note {
+  max-width: 620px;
+  font-size: var(--fs-meta);
+  line-height: 1.7;
+  color: var(--text-3);
+  text-align: center;
+}
+.ab-lens-note strong { color: var(--text); font-weight: 500; }
+
+/* ── Vista Scadenza ───────────────────────────────────────────────────── */
+
+.ab-deadlines {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--sp-5) var(--sp-7);
+}
+
+.ab-deadline-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-5);
+  width: 100%;
+  min-height: 46px;
+  padding: 0 var(--sp-3);
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--line-soft);
+  color: var(--text-2);
+  font-family: var(--font-ui);
+  font-size: var(--fs-row);
+  text-align: left;
+  cursor: pointer;
+}
+.ab-deadline-row:hover { background: rgba(255, 255, 255, .03); }
+
+.ab-deadline-row .ab-due { flex: 0 0 52px; font-size: var(--fs-chip); }
+.ab-deadline-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ab-deadline-list { flex: 0 0 auto; font-size: var(--fs-chip); color: var(--muted); }
+
+/* ── Schermi stretti ──────────────────────────────────────────────────────
+   Cinque colonne da 1fr sotto i 1100px danno colonne da 150px, dove il
+   titolo di un task va a capo cinque volte. Si scorre in orizzontale con
+   colonne a larghezza leggibile. */
+
+@media (max-width: 1100px) {
+  .ab-columns {
+    display: flex;
+    overflow-x: auto;
+  }
+  .ab-col { flex: 0 0 260px; }
+}
+
+@media (max-width: 860px) {
+  .ab-head {
+    flex-wrap: wrap;
+    gap: var(--sp-3);
+    padding: var(--sp-4);
+  }
+  .ab-search { width: 100%; }
+  .ab-views { margin-left: 0; }
+}

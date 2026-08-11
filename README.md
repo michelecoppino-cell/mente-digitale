@@ -15,7 +15,9 @@ Microsoft To-Do e al calendario Outlook, e un briefing di notizie generato con l
   vista giorno/settimana, eventi del calendario in sola lettura, sottostep ridimensionabili,
   piani salvati su OneDrive. Piano AI generato via Claude (`/api/daily-plan`) ed estrazione
   di action item dalle email.
-- **Attività** — tutti i task, filtrabili per PARA, taccuino e sezione.
+- **Attività** — le cinque colonne del flusso GTD (Inbox · Prossime azioni · In attesa · Programmate · Un giorno):
+  la colonna *è* lo stato, e trascinare una card fra colonne lo cambia su Microsoft To-Do. La matrice di
+  Eisenhower resta come lente sulle sole Prossime azioni, non è più la struttura.
 - **Briefing notizie** — riassunti AI dei feed ANSA (mondo, Italia, Friuli) via `/api/briefing`.
 - **Diario** (voce *Diario* nel menù, `⌘J`) — tre modalità distinte: *svuota testa* a schermo
   intero (timer 5/10 min, domanda selezionabile dall'elenco o rimovibile, righe che sbiadiscono
@@ -94,7 +96,7 @@ Sei destinazioni, ognuna con un indirizzo proprio. Il menù è il rail a sinistr
 |---|---|
 | `#/oggi` | Home di sola lettura — *in arrivo* |
 | `#/piano` | Il Piano: serbatoio, giornata a blocchi, pannello di dettaglio |
-| `#/attivita` | Tutte le attività |
+| `#/attivita` | Le cinque colonne del flusso, con le lenti Quadranti e Scadenza (`?vista=`, `?ctx=`) |
 | `#/sezioni/:id` | Workbook della sezione PARA — *in arrivo* |
 | `#/diario` | Diario |
 | `#/mappa` | La mappa mentale |
@@ -123,6 +125,14 @@ mappatura sta in `src/taskModel.js`.
 | `scheduled` | ha un blocco nel piano del giorno (`daily-plans` su OneDrive) |
 | `someday` | `status: deferred` |
 | `done` | `status: completed` |
+
+**Cattura** (`⌘N`) scrive solo il titolo, nella lista di default: il passo 1 non
+deve chiedere niente, o le cose non si catturano. **Chiarire** è il passo 2 e
+sta in un unico modale — contesto, sezione, durata, stato — ed è l'unico modo
+di uscire da Inbox: un task catturato è solo testo, e per stare in un'altra
+colonna gli serve almeno una sezione. Da lì passano anche le diramazioni del
+metodo: sotto i due minuti si fa subito, dipende da altri diventa *In attesa*
+con la persona, non adesso diventa *Un giorno*.
 
 Allo stesso modo: il **contesto** (Lavoro / Personale / Famiglia) è in
 `categories`, la **sezione** è la lista To-Do stessa, le **sottoattività** sono
