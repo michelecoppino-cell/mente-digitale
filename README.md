@@ -15,6 +15,11 @@ Microsoft To-Do e al calendario Outlook, e un briefing di notizie generato con l
   vista giorno/settimana, eventi del calendario in sola lettura, sottostep ridimensionabili,
   piani salvati su OneDrive. Piano AI generato via Claude (`/api/daily-plan`) ed estrazione
   di action item dalle email.
+- **Oggi** — la home. Cosa c'è adesso (o subito dopo), l'agenda del calendario in sola lettura, le
+  azioni programmate per il giorno, e a lato ricorrenze, diario e due riquadri ancora bloccati.
+  Non ha una lista propria: è tutto una query sul giorno corrente.
+- **Sezioni** — il workbook di una sezione PARA in tre colonne: pagine OneNote, file OneDrive,
+  attività della sezione. È dove atterra il Pomodoro avviato dal Piano.
 - **Attività** — le cinque colonne del flusso GTD (Inbox · Prossime azioni · In attesa · Programmate · Un giorno):
   la colonna *è* lo stato, e trascinare una card fra colonne lo cambia su Microsoft To-Do. La matrice di
   Eisenhower resta come lente sulle sole Prossime azioni, non è più la struttura.
@@ -94,10 +99,10 @@ Sei destinazioni, ognuna con un indirizzo proprio. Il menù è il rail a sinistr
 
 | Rotta | Vista |
 |---|---|
-| `#/oggi` | Home di sola lettura — *in arrivo* |
+| `#/oggi` | Home di sola lettura: adesso, agenda, azioni di oggi, recap |
 | `#/piano` | Il Piano: serbatoio, giornata a blocchi, pannello di dettaglio |
 | `#/attivita` | Le cinque colonne del flusso, con le lenti Quadranti e Scadenza (`?vista=`, `?ctx=`) |
-| `#/sezioni/:id` | Workbook della sezione PARA — *in arrivo* |
+| `#/sezioni/:id` | Workbook della sezione: pagine OneNote, file OneDrive, attività |
 | `#/diario` | Diario |
 | `#/mappa` | La mappa mentale |
 
@@ -106,6 +111,11 @@ Cloudflare Pages e, senza un `_redirects`, un ricaricamento su `/piano`
 chiederebbe al server un file che non esiste. Con l'hash la rotta non lascia mai
 il client, e le due pagine-scorciatoia (`/gtd.html`, `/diario.html`) restano
 file veri.
+
+**Movimento** e **Finanze**, in Oggi, sono due riquadri bloccati per davvero:
+nel codebase non esiste una fonte dati né per gli allenamenti né per i conti,
+quindi mostrano la forma sotto un velo e dicono cosa manca, invece di inventare
+numeri. Non c'è nulla da premere finché una fonte non c'è.
 
 Sopra il contenuto vive la **barra Pomodoro**: la sessione sta a livello di app
 (`PomodoroSession.jsx`), quindi il timer continua a girare — e la barra resta

@@ -1,0 +1,263 @@
+/* Oggi — tre bande dentro la colonna contenuto, griglia 1fr / 336px. */
+
+.today {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--sp-7);
+}
+
+.today-head {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-5);
+  margin-bottom: var(--sp-7);
+}
+
+.today-date {
+  font-family: var(--font-title);
+  font-size: 32px;
+  font-weight: 400;
+  color: var(--text);
+  line-height: 1.2;
+}
+
+.today-summary { margin-top: var(--sp-2); font-size: var(--fs-meta); color: var(--muted); }
+
+.today-plan-link {
+  margin-left: auto;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  height: var(--tap);
+  padding: 0 var(--sp-4);
+  border-radius: var(--r);
+  color: var(--accent);
+  font-size: var(--fs-meta);
+  text-decoration: none;
+}
+.today-plan-link:hover { background: var(--accent-tint); }
+
+.today-grid {
+  display: grid;
+  grid-template-columns: 1fr 336px;
+  gap: var(--sp-7);
+  align-items: start;
+}
+
+.today-col { display: flex; flex-direction: column; gap: var(--sp-6); min-width: 0; }
+
+/* ── Adesso ───────────────────────────────────────────────────────────── */
+
+.today-now {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  padding: var(--sp-6);
+  background: rgba(212, 164, 74, .07);
+  border: 1px solid rgba(212, 164, 74, .25);
+  border-radius: var(--r-lg);
+}
+.today-now.empty { background: none; border-color: var(--line); }
+
+.today-now-title {
+  font-family: var(--font-title);
+  font-size: 19px;
+  font-weight: 400;
+  color: var(--text);
+}
+
+.today-now-meta { font-size: var(--fs-chip); color: var(--text-3); }
+
+.today-now-actions { display: flex; gap: var(--sp-3); margin-top: var(--sp-2); }
+
+.today-btn {
+  height: 36px;
+  min-width: 96px;
+  padding: 0 var(--sp-4);
+  background: none;
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  color: var(--text-3);
+  font-family: var(--font-ui);
+  font-size: var(--fs-meta);
+  cursor: pointer;
+  transition: border-color var(--t), color var(--t), background var(--t);
+}
+.today-btn:hover { border-color: var(--accent-line); color: var(--text); }
+.today-btn.accent { border-color: var(--accent-line); color: var(--accent); }
+.today-btn.accent:hover { background: var(--accent-tint); }
+
+/* ── Blocchi di elenco ────────────────────────────────────────────────── */
+
+.today-block { display: flex; flex-direction: column; gap: var(--sp-2); }
+.today-block > .eyebrow { margin-bottom: var(--sp-2); }
+
+.today-empty { font-size: var(--fs-meta); color: var(--disabled); line-height: 1.6; }
+.today-empty a { color: var(--accent); text-decoration: none; }
+.today-empty a:hover { text-decoration: underline; }
+
+/* Eventi: di sola lettura, e si vede — bordo punteggiato e un filo spenti. */
+.today-event {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-4);
+  min-height: 54px;
+  padding: 0 var(--sp-5);
+  background: var(--surface);
+  border-left: 3px dotted #565b68;
+  border-radius: var(--r-sm);
+  opacity: .75;
+}
+
+.today-event-time { flex: 0 0 auto; font-size: var(--fs-chip); color: var(--text-3); font-variant-numeric: tabular-nums; }
+.today-event-title { flex: 1; min-width: 0; font-size: var(--fs-card); color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.today-event-cal { flex: 0 0 auto; font-size: var(--fs-micro); color: var(--muted); }
+
+/* Azioni */
+.today-action {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-4);
+  min-height: 46px;
+  padding: 0 var(--sp-2);
+  border-bottom: 1px solid var(--line-soft);
+}
+.today-action:last-child { border-bottom: none; }
+
+.today-check {
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  color: var(--accent);
+  cursor: pointer;
+  transition: border-color var(--t);
+}
+.today-check:hover:not(:disabled) { border-color: var(--accent); }
+.today-check:disabled { cursor: default; border-color: var(--accent-line); }
+
+.today-action-title { flex: 1; min-width: 0; font-size: var(--fs-row); color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.today-action.done .today-action-title { text-decoration: line-through; color: #7b808c; }
+
+.today-action-chip {
+  flex: 0 0 auto;
+  padding: 2px var(--sp-2);
+  border: 1px solid color-mix(in srgb, var(--chip, var(--muted)) 40%, transparent);
+  border-radius: var(--r-sm);
+  font-size: var(--fs-micro);
+  color: var(--chip, var(--muted));
+  white-space: nowrap;
+}
+
+.today-action-time { flex: 0 0 auto; font-size: var(--fs-chip); color: var(--muted); font-variant-numeric: tabular-nums; }
+
+/* ── Colonna destra ───────────────────────────────────────────────────── */
+
+.today-aside { display: flex; flex-direction: column; gap: var(--sp-5); min-width: 0; }
+
+.today-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  padding: var(--sp-6) var(--sp-6) var(--sp-5);
+  background: var(--surface);
+  border-radius: var(--r-lg);
+  overflow: hidden;
+}
+
+.today-rec { display: flex; align-items: center; gap: var(--sp-3); min-height: 38px; }
+
+.today-rec-badge {
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  font-size: var(--fs-micro);
+  color: var(--text-3);
+}
+
+.today-rec-name { flex: 1; min-width: 0; font-size: var(--fs-meta); color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.today-rec-date { flex: 0 0 auto; font-size: var(--fs-chip); color: var(--muted); font-variant-numeric: tabular-nums; }
+.today-rec-date.soon { color: var(--accent); }
+
+/* Riquadri bloccati: il contenuto c'è come forma, non come dato. */
+.today-card.locked { min-height: 150px; }
+
+.today-locked-ghost {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--sp-2);
+  height: 44px;
+  filter: blur(5px);
+  opacity: .5;
+}
+.today-locked-ghost span {
+  flex: 1;
+  background: rgba(212, 164, 74, .35);
+  border-radius: 3px;
+}
+.today-locked-ghost span:nth-child(1) { height: 60%; }
+.today-locked-ghost span:nth-child(2) { height: 100%; }
+.today-locked-ghost span:nth-child(3) { height: 35%; }
+.today-locked-ghost span:nth-child(4) { height: 80%; }
+.today-locked-ghost span:nth-child(5) { height: 20%; }
+.today-locked-ghost span:nth-child(6) { height: 70%; }
+.today-locked-ghost span:nth-child(7) { height: 45%; }
+
+/* Il velo copre solo il contenuto fantasma, non l'etichetta: sapere che
+   riquadro si sta guardando non deve costare uno sforzo. */
+.today-card.locked > .eyebrow { position: relative; z-index: 2; }
+
+.today-locked-veil {
+  position: absolute;
+  inset: 34px 0 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-2);
+  padding: var(--sp-5);
+  text-align: center;
+  color: var(--disabled);
+  background: rgba(20, 23, 28, .55);
+}
+
+.today-locked-note { font-size: var(--fs-micro); line-height: 1.55; color: var(--muted); }
+.today-locked-soon { font-size: var(--fs-micro); color: var(--disabled); }
+
+/* Diario: solo bordo, nessun fondo — è un invito, non una scheda di dati. */
+.today-diary {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  padding: var(--sp-6);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  text-decoration: none;
+  transition: border-color var(--t);
+}
+.today-diary:hover { border-color: var(--accent-line); }
+
+.today-diary-prompt { font-family: var(--font-title); font-size: var(--fs-row); color: var(--text-3); }
+.today-diary-streak { font-size: var(--fs-micro); color: var(--muted); }
+
+/* ── Schermi stretti ──────────────────────────────────────────────────── */
+
+@media (max-width: 1000px) {
+  .today { padding: var(--sp-5); }
+  .today-grid { grid-template-columns: 1fr; }
+  .today-head { flex-wrap: wrap; }
+  .today-date { font-size: 26px; }
+}
