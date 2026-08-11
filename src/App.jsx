@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { initAuth, getAccount, login, trySsoSilent } from './auth';
-import { getNotebooks, getSections, getTodoLists, getTodoTasks, getPages, getRecentEmails, getPageContentHtml, markOneNoteTagDone, getReminders, createTask, getCalendarEvents, getTasksForDeadlineDedup, invalidateCalendarsCache, loadColorSettings, saveColorSettings, migrateLegacyDriveFiles, loadPlannerConfig } from './api';
+import { getNotebooks, getSections, getTodoLists, getTodoTasks, getPages, getRecentEmails, getPageContentHtml, markOneNoteTagDone, getReminders, createTask, getCalendarEvents, getTasksForDeadlineDedup, invalidateCalendarsCache, loadColorSettings, saveColorSettings, migrateLegacyDriveFiles, loadPlannerConfig, loadDailyPlans, saveDailyPlans, updateTaskStatus } from './api';
 import { getMarker, setMarker, clearMarkers } from './markers';
 import { queryClient, qk, STALE } from './queryClient';
 import { extractEmailCandidates, extractOneNoteCandidates } from './dailyReview';
@@ -16,11 +16,15 @@ import GtdClarifyModal from './GtdClarifyModal';
 import EisenhowerTriage from './EisenhowerTriage';
 import ColorSettingsModal from './ColorSettingsModal';
 import DiaryPanel from './DiaryPanel';
-import TaskPool from './TaskPool';
+import ActivityBoard from './ActivityBoard';
+import ClarifyTaskModal from './ClarifyTaskModal';
+import QuickCapture from './QuickCapture';
 import AppShell from './AppShell';
 import { usePomodoro } from './pomodoroContext';
 import ComingSoon from './ComingSoon';
 import { parseEisenhower } from './eisenhower';
+import { graphStatusFor, STATUS_LABELS } from './taskModel';
+import { pushUndo } from './undo';
 import { COLORS } from './config';
 import UndoToast from './UndoToast';
 import './App.css';
@@ -170,7 +174,8 @@ export default function App() {
   const [searchOpen, setSearchOpen] = useState(false);
   // La cattura chiesta dalla scorciatoia è aperta già al primo render, non in
   // un effetto: così non si vede prima la vista sotto e poi il modale coprirla.
-  const [gtdOpen, setGtdOpen] = useState(() => launchIntent() === 'gtd');
+  const [gtdOpen, setGtdOpen] = useState(false);
+  const [captureOpen, setCaptureOpen] = useState(() => launchIntent() === 'gtd');
   const [eisenhowerOpen, setEisenhowerOpen] = useState(false);
   const [pendingPlannerTask, setPendingPlannerTask] = useState(null);
   const [reviewSuggestions, setReviewSuggestions] = useState([]);
@@ -188,6 +193,14 @@ export default function App() {
   // Config del Piano: la vista Attività ne ha bisogno per i colori di
   // progetto, altrimenti mostrerebbe quelli segnaposto del default.
   const [plannerConfig, setPlannerConfig] = useState(DEFAULT_CONFIG);
+  // Le liste To-Do servono alla board (per sapere qual è l'Inbox) e al
+  // chiarimento (per scegliere la sezione). todoListsRef non basta: è un ref,
+  // non fa ri-renderizzare quando arriva.
+  const [todoLists, setTodoLists] = useState([]);
+  // I piani giornalieri decidono quali task sono `scheduled`: lo stato non è
+  // sul task ma nell'esistenza di un blocco nel piano.
+  const [dailyPlans, setDailyPlans] = useState({});
+  const [clarifyTask, setClarifyTask] = useState(null);
   const [sectionCalendarEvents, setSectionCalendarEvents] = useState([]);
   // Incrementato ogni volta che un evento calendario viene creato fuori dal
   // Piano (es. dal popup GTD), per far invalidare a PlannerView la sua cache
@@ -246,7 +259,7 @@ export default function App() {
       }
       if (key === 'n') {
         e.preventDefault();
-        setGtdOpen(true);
+        setCaptureOpen(true);
       }
     }
     window.addEventListener('keydown', onKeyDown);
@@ -299,11 +312,19 @@ export default function App() {
       setNotebooks(nbs);
 
       // Liste ToDo
-      const todoLists = await fetchCached(qk.todolists(), getTodoLists, STALE.todolists, forceRefresh);
-      todoListsRef.current = todoLists;
+      const lists = await fetchCached(qk.todolists(), getTodoLists, STALE.todolists, forceRefresh);
+      todoListsRef.current = lists;
+      setTodoLists(lists);
       const map = {};
-      todoLists.forEach(l => { map[l.displayName.toLowerCase()] = { id: l.id, displayName: l.displayName }; });
+      lists.forEach(l => { map[l.displayName.toLowerCase()] = { id: l.id, displayName: l.displayName }; });
       setTodoListsMap(map);
+
+      // Piani giornalieri: da qui esce lo stato `scheduled` delle attività.
+      // Non blocca il caricamento — senza, la colonna Programmate resta vuota
+      // ma il resto della board funziona.
+      fetchCached(qk.dailyPlans(), loadDailyPlans, STALE.dailyPlans, forceRefresh)
+        .then(plans => setDailyPlans(plans || {}))
+        .catch(e => console.error('daily plans load', e));
 
       // Sezioni — mostra subito quelle già in cache (senza rifetch), poi si
       // espandono lazy al click. Su forceRefresh si parte vuoti e si ricarica
@@ -321,7 +342,7 @@ export default function App() {
       setSync({ state: 'ok', label: `${nbs.length} taccuini` });
 
       // Precarica task in background
-      setTimeout(() => preloadAllTasks(todoLists, forceRefresh), 1000);
+      setTimeout(() => preloadAllTasks(lists, forceRefresh), 1000);
 
       // Precarica pagine in background
       setTimeout(() => {
@@ -331,7 +352,7 @@ export default function App() {
       }, 2000);
 
       refreshDailyReview();
-      refreshDeadlineReminders(todoLists);
+      refreshDeadlineReminders(lists);
 
       // Precarica in coda (dopo task/pagine) tutti gli eventi Calendario dei
       // prossimi mesi in un'unica chiamata: il Pannello sezione li filtra poi
@@ -645,6 +666,77 @@ export default function App() {
     pomodoro.stop();
   }
 
+  // ── Vista Attività: le transizioni di stato ──────────────────────────────
+  // Lo stato vive su Graph, non in memoria: si scrive prima lì e si aggiorna
+  // il pool solo dopo, così una schermata che dice "In attesa" corrisponde
+  // sempre a un task che su To-Do è davvero waitingOnOthers.
+
+  async function handleChangeTaskStatus(task, status) {
+    const listId = task._listId;
+    const before = task.status;
+    try {
+      await updateTaskStatus(listId, task.id, graphStatusFor(status));
+      handleTaskPatched(listId, task.id, { status: graphStatusFor(status) });
+      pushUndo({
+        label: `Spostata in ${STATUS_LABELS[status]}`,
+        undo: async () => {
+          await updateTaskStatus(listId, task.id, before || 'notStarted');
+          handleTaskPatched(listId, task.id, { status: before });
+        },
+      });
+    } catch (e) {
+      console.error('cambio stato attività', e);
+    }
+  }
+
+  // Programmare vuol dire dare un'ora, e l'ora si dà sulla griglia: la board
+  // porta al Piano sul giorno corrente con il task già in mano, invece di
+  // inventare un orario per conto suo.
+  function handleScheduleTask(task) {
+    setPendingPlannerTask(task);
+    navigate('/piano');
+  }
+
+  // Toglie il blocco dal piano di ogni giorno in cui compare: senza blocco il
+  // task torna `next` da solo, perché `scheduled` non è un campo ma la
+  // presenza del blocco.
+  async function handleUnscheduleTask(task) {
+    const previous = dailyPlans;
+    const next = {};
+    for (const [date, plan] of Object.entries(dailyPlans || {})) {
+      next[date] = { ...plan, blocks: (plan.blocks || []).filter(b => b.taskId !== task.id) };
+    }
+    setDailyPlans(next);
+    try {
+      await saveDailyPlans(next);
+      queryClient.setQueryData(qk.dailyPlans(), next);
+      pushUndo({
+        label: 'Rimandata',
+        undo: async () => {
+          setDailyPlans(previous);
+          await saveDailyPlans(previous);
+          queryClient.setQueryData(qk.dailyPlans(), previous);
+        },
+      });
+    } catch (e) {
+      console.error('rimozione dal piano', e);
+      setDailyPlans(previous);
+    }
+  }
+
+  // Il chiarimento può aver spostato il task in un'altra lista: in quel caso
+  // Graph gli ha dato un id nuovo, quindi il vecchio va tolto dal pool e il
+  // nuovo aggiunto, non "aggiornato".
+  function handleTaskClarified(oldTask, newTask) {
+    if (!newTask) { handleTaskRemoved(oldTask._listId, oldTask.id); return; }
+    if (newTask.id === oldTask.id && newTask._listId === oldTask._listId) {
+      handleTaskPatched(oldTask._listId, oldTask.id, newTask);
+      return;
+    }
+    handleTaskRemoved(oldTask._listId, oldTask.id);
+    handleTaskRestored(newTask._listId, newTask);
+  }
+
   // Click su un task nella vista Attività: apre il pannello della sezione PARA
   // corrispondente alla lista To-Do del task, che è come le due cose sono
   // legate in tutta l'app (una lista = una sezione).
@@ -774,7 +866,7 @@ export default function App() {
     <>
       <AppShell
         topbar={topbar}
-        onCapture={() => setGtdOpen(true)}
+        onCapture={() => setCaptureOpen(true)}
         onOpenNotebooks={() => { setMapViewMode('para'); navigate('/mappa'); }}
         onOpenSettings={() => setColorSettingsOpen(true)}>
         <Routes>
@@ -808,17 +900,18 @@ export default function App() {
           } />
 
           <Route path="/attivita" element={
-            <div className="route-scroll">
-              <TaskPool
-                title="Attività"
-                tasks={scheduledTasks || []}
-                notebooks={notebooks}
-                sectionsMap={sectionsMap}
-                config={plannerConfig}
-                onTaskClick={handleTaskPoolClick}
-                draggable={false}
-              />
-            </div>
+            <ActivityBoard
+              tasks={scheduledTasks || []}
+              todoLists={todoLists}
+              plans={dailyPlans}
+              config={plannerConfig}
+              loading={scheduledTasks === null}
+              onOpenTask={handleTaskPoolClick}
+              onClarify={setClarifyTask}
+              onChangeStatus={handleChangeTaskStatus}
+              onSchedule={handleScheduleTask}
+              onUnschedule={handleUnscheduleTask}
+            />
           } />
 
           <Route path="/sezioni/:sectionId?" element={
@@ -864,6 +957,20 @@ export default function App() {
         tasksCache={tasksCache}
         calendarEvents={sectionCalendarEvents}
         onClose={() => setSelected(null)}
+      />
+      <QuickCapture
+        open={captureOpen}
+        todoLists={todoLists}
+        onClose={() => setCaptureOpen(false)}
+        onCaptured={task => setScheduledTasks(prev => [...(prev || []), task])}
+        onDecideNow={text => { setGtdSeedText(text); setGtdOpen(true); }}
+      />
+      <ClarifyTaskModal
+        task={clarifyTask}
+        todoLists={todoLists}
+        onClose={() => setClarifyTask(null)}
+        onSaved={handleTaskClarified}
+        onRemoved={t => handleTaskRemoved(t._listId, t.id)}
       />
       <EisenhowerTriage
         open={eisenhowerOpen}

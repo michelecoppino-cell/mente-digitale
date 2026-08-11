@@ -5,7 +5,19 @@ import './EisenhowerTriage.css';
 
 // Smistamento mattutino: mostra i task non ancora classificati uno alla volta
 // e li assegna a un quadrante Eisenhower, salvando subito nelle note del task.
-export default function EisenhowerTriage({ open, onClose, tasks = [] }) {
+//
+// `inline`: con la riorganizzazione i quadranti non sono più solo un modale
+// lanciato dalla topbar, ma anche una delle tre viste di Attività. In quel
+// caso lo stesso componente rende senza velo né cornice, dentro la colonna
+// che lo ospita — la logica di smistamento è la stessa, non va duplicata.
+/**
+ * @param {Object} props
+ * @param {boolean} props.open
+ * @param {() => void} props.onClose
+ * @param {import('./types').TodoTask[]} [props.tasks]
+ * @param {boolean} [props.inline]
+ */
+export default function EisenhowerTriage({ open, onClose, tasks = [], inline = false }) {
   const [queue, setQueue]         = useState([]);
   const [loading, setLoading]     = useState(true);
   const [index, setIndex]         = useState(0);
@@ -70,51 +82,56 @@ export default function EisenhowerTriage({ open, onClose, tasks = [] }) {
   const current  = queue[index];
   const finished = !loading && (queue.length === 0 || index >= queue.length);
 
+  const body = (
+    <div className="eis-body">
+      {loading && <div className="eis-status">Analisi task in corso…</div>}
+
+      {!loading && finished && (
+        <div className="eis-status">
+          {queue.length === 0
+            ? 'Tutti i task sono già classificati. Ottimo lavoro!'
+            : `Fatto! ${doneCount} task classificati.`}
+          <button className="eis-done-btn" onClick={onClose}>Chiudi</button>
+        </div>
+      )}
+
+      {!loading && !finished && current && (
+        <>
+          <div className="eis-progress">{index + 1} / {queue.length}</div>
+          <div className="eis-task-card">
+            <div className="eis-task-list">{current._listName}</div>
+            <div className="eis-task-title">{current.title}</div>
+          </div>
+          <div className="eis-quadrants">
+            {EIS_QUADRANTS.map(q => (
+              <button
+                key={q.key}
+                className="eis-quadrant-btn"
+                style={{ '--q-color': q.color }}
+                disabled={saving}
+                onClick={() => assign(q.key)}>
+                <span className="eis-quadrant-key">{q.key}</span>
+                <span className="eis-quadrant-label">{q.label}</span>
+                <span className="eis-quadrant-short">{q.short}</span>
+              </button>
+            ))}
+          </div>
+          <button className="eis-skip-btn" onClick={skip} disabled={saving}>Salta per ora</button>
+        </>
+      )}
+    </div>
+  );
+
+  if (inline) return <div className="eis-inline">{body}</div>;
+
   return (
     <div className="eis-overlay" onClick={onClose}>
       <div className="eis-modal" onClick={e => e.stopPropagation()}>
         <div className="eis-header">
-          <span>🧭 Smistamento Eisenhower</span>
+          <span>Smistamento Eisenhower</span>
           <button className="eis-close" onClick={onClose} title="Chiudi">✕</button>
         </div>
-
-        <div className="eis-body">
-          {loading && <div className="eis-status">Analisi task in corso…</div>}
-
-          {!loading && finished && (
-            <div className="eis-status">
-              {queue.length === 0
-                ? 'Tutti i task sono già classificati. Ottimo lavoro!'
-                : `Fatto! ${doneCount} task classificati.`}
-              <button className="eis-done-btn" onClick={onClose}>Chiudi</button>
-            </div>
-          )}
-
-          {!loading && !finished && current && (
-            <>
-              <div className="eis-progress">{index + 1} / {queue.length}</div>
-              <div className="eis-task-card">
-                <div className="eis-task-list">{current._listName}</div>
-                <div className="eis-task-title">{current.title}</div>
-              </div>
-              <div className="eis-quadrants">
-                {EIS_QUADRANTS.map(q => (
-                  <button
-                    key={q.key}
-                    className="eis-quadrant-btn"
-                    style={{ '--q-color': q.color }}
-                    disabled={saving}
-                    onClick={() => assign(q.key)}>
-                    <span className="eis-quadrant-key">{q.key}</span>
-                    <span className="eis-quadrant-label">{q.label}</span>
-                    <span className="eis-quadrant-short">{q.short}</span>
-                  </button>
-                ))}
-              </div>
-              <button className="eis-skip-btn" onClick={skip} disabled={saving}>Salta per ora</button>
-            </>
-          )}
-        </div>
+        {body}
       </div>
     </div>
   );
