@@ -1,0 +1,173 @@
+/* Sezioni — elenco 248px | workbook a tre colonne. */
+
+.sv {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+
+/* ── Elenco ───────────────────────────────────────────────────────────── */
+
+.sv-list {
+  flex: 0 0 248px;
+  width: 248px;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--sp-4);
+  background: var(--bg-rail);
+  border-right: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-5);
+}
+
+.sv-search {
+  height: 34px;
+  padding: 0 var(--sp-4);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: var(--fs-meta);
+}
+.sv-search::placeholder { color: var(--disabled); }
+.sv-search:focus { border-color: var(--accent-line); }
+
+.sv-group { display: flex; flex-direction: column; gap: 1px; }
+.sv-group > .eyebrow { margin-bottom: var(--sp-2); padding-left: var(--sp-3); }
+
+.sv-list-item {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  min-height: 40px;
+  padding: 0 var(--sp-3);
+  background: none;
+  border: none;
+  border-radius: var(--r-sm);
+  color: var(--text-3);
+  font-family: var(--font-ui);
+  font-size: var(--fs-meta);
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--t), color var(--t);
+}
+.sv-list-item:hover { background: rgba(255, 255, 255, .04); color: var(--text); }
+.sv-list-item.active { background: var(--accent-tint); color: var(--accent); }
+
+.sv-list-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sv-list-count { flex: 0 0 auto; font-size: var(--fs-micro); color: var(--muted); font-variant-numeric: tabular-nums; }
+
+/* ── Workbook ─────────────────────────────────────────────────────────── */
+
+.sv-workbook {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.sv-placeholder {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--sp-8);
+}
+
+.sv-head {
+  flex: 0 0 auto;
+  padding: var(--sp-6) var(--sp-7);
+  border-bottom: 1px solid var(--line);
+}
+
+.sv-title {
+  font-family: var(--font-title);
+  font-size: 26px;
+  font-weight: 400;
+  color: var(--text);
+}
+
+.sv-subtitle { margin-top: var(--sp-2); font-size: var(--fs-meta); color: var(--muted); }
+
+.sv-cols {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 1fr 1fr 300px;
+}
+
+.sv-col {
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--sp-5);
+  border-right: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+.sv-col:last-child { border-right: none; }
+.sv-col > .eyebrow { margin-bottom: var(--sp-2); }
+
+.sv-empty { font-size: var(--fs-chip); line-height: 1.6; color: var(--disabled); }
+
+/* Pagine OneNote */
+.sv-page {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  min-height: var(--tap);
+  padding: var(--sp-4) var(--sp-4);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+}
+.sv-page-title { flex: 1; min-width: 0; font-size: var(--fs-meta); color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sv-page-date { flex: 0 0 auto; font-size: var(--fs-micro); color: var(--muted); }
+
+/* Attività della sezione */
+.sv-task {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  min-height: 44px;
+  padding: 0 var(--sp-2);
+  border-bottom: 1px solid var(--line-soft);
+}
+.sv-task:last-child { border-bottom: none; }
+.sv-task-dot { flex: 0 0 auto; width: 6px; height: 6px; border-radius: 50%; }
+.sv-task-title { flex: 1; min-width: 0; font-size: var(--fs-meta); color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Quella su cui gira il Pomodoro. */
+.sv-task.current { background: var(--accent-tint); border-radius: var(--r-sm); padding: 0 var(--sp-3); }
+.sv-task.current .sv-task-title { color: var(--accent); }
+
+/* ── Schermi stretti ──────────────────────────────────────────────────── */
+
+@media (max-width: 1100px) {
+  .sv-cols { grid-template-columns: 1fr; overflow-y: auto; }
+  .sv-col { border-right: none; border-bottom: 1px solid var(--line); overflow: visible; }
+}
+
+@media (max-width: 860px) {
+  .sv { flex-direction: column; }
+  .sv-list {
+    flex: 0 0 auto;
+    width: 100%;
+    max-height: 40dvh;
+    border-right: none;
+    border-bottom: 1px solid var(--line);
+  }
+}
+
+/* OneDriveBox arriva dal pannello laterale della mappa, dove viveva dentro una
+   striscia da 385px con la sua intestazione e il suo padding. Qui la colonna è
+   già un contenitore: si tolgono i margini che raddoppiavano. */
+.sv-col-drive { padding-top: var(--sp-5); }
+.sv-col-drive .panel-col-header { padding: 0 0 var(--sp-3); }
+.sv-col-drive .panel-col-body { padding: 0; }
+.sv-col-drive .od-add-form { padding: var(--sp-2) 0; }
+.sv-col-drive .od-link-row { padding: var(--sp-2) 0; min-height: 46px; }

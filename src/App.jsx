@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { initAuth, getAccount, login, trySsoSilent } from './auth';
-import { getNotebooks, getSections, getTodoLists, getTodoTasks, getPages, getRecentEmails, getPageContentHtml, markOneNoteTagDone, getReminders, createTask, getCalendarEvents, getTasksForDeadlineDedup, invalidateCalendarsCache, loadColorSettings, saveColorSettings, migrateLegacyDriveFiles, loadPlannerConfig, loadDailyPlans, saveDailyPlans, updateTaskStatus } from './api';
+import { getNotebooks, getSections, getTodoLists, getTodoTasks, getPages, getRecentEmails, getPageContentHtml, markOneNoteTagDone, getReminders, createTask, getCalendarEvents, getTasksForDeadlineDedup, invalidateCalendarsCache, loadColorSettings, saveColorSettings, migrateLegacyDriveFiles, loadPlannerConfig, loadDailyPlans, saveDailyPlans, updateTaskStatus, completeTask } from './api';
 import { getMarker, setMarker, clearMarkers } from './markers';
 import { queryClient, qk, STALE } from './queryClient';
 import { extractEmailCandidates, extractOneNoteCandidates } from './dailyReview';
@@ -21,7 +21,8 @@ import ClarifyTaskModal from './ClarifyTaskModal';
 import QuickCapture from './QuickCapture';
 import AppShell from './AppShell';
 import { usePomodoro } from './pomodoroContext';
-import ComingSoon from './ComingSoon';
+import TodayView from './TodayView';
+import SectionsView from './SectionsView';
 import { parseEisenhower } from './eisenhower';
 import { graphStatusFor, STATUS_LABELS } from './taskModel';
 import { pushUndo } from './undo';
@@ -724,6 +725,46 @@ export default function App() {
     }
   }
 
+  // Completare un'azione da Oggi tocca due cose: il task su To-Do e il blocco
+  // nel piano del giorno. Il blocco va segnato comunque — è lo storico della
+  // giornata, e serve al Diario — anche se il task nel frattempo non esiste
+  // più su Graph (cancellato dal telefono, per dire).
+  async function handleCompleteBlock(block) {
+    const today = new Date();
+    const dateStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+    const previous = dailyPlans;
+    const plan = dailyPlans?.[dateStr];
+    if (!plan) return;
+
+    const next = {
+      ...dailyPlans,
+      [dateStr]: {
+        ...plan,
+        blocks: (plan.blocks || []).map(b =>
+          b.id === block.id ? { ...b, completed: true, completedAt: new Date().toISOString() } : b
+        ),
+      },
+    };
+    setDailyPlans(next);
+
+    try {
+      if (block.taskId && block.listId) {
+        await completeTask(block.listId, block.taskId);
+        handleTaskRemoved(block.listId, block.taskId);
+      }
+    } catch (e) {
+      console.error('completamento task da Oggi', e);
+    }
+
+    try {
+      await saveDailyPlans(next);
+      queryClient.setQueryData(qk.dailyPlans(), next);
+    } catch (e) {
+      console.error('salvataggio piano da Oggi', e);
+      setDailyPlans(previous);
+    }
+  }
+
   // Il chiarimento può aver spostato il task in un'altra lista: in quel caso
   // Graph gli ha dato un id nuovo, quindi il vecchio va tolto dal pool e il
   // nuovo aggiunto, non "aggiornato".
@@ -871,10 +912,11 @@ export default function App() {
         onOpenSettings={() => setColorSettingsOpen(true)}>
         <Routes>
           <Route path="/oggi" element={
-            <ComingSoon
-              title="Oggi"
-              description="La home di sola lettura — cosa succede oggi, l'agenda del calendario, le azioni programmate e i recap brevi — arriva con la vista Oggi. Per ora la programmazione della giornata si fa dal Piano."
-              action={{ to: '/piano', label: 'Apri il Piano' }}
+            <TodayView
+              plans={dailyPlans}
+              tasks={scheduledTasks || []}
+              calendarEvents={sectionCalendarEvents}
+              onCompleteBlock={handleCompleteBlock}
             />
           } />
 
@@ -915,10 +957,12 @@ export default function App() {
           } />
 
           <Route path="/sezioni/:sectionId?" element={
-            <ComingSoon
-              title="Sezioni"
-              description="Il workbook di ogni sezione PARA — pagine OneNote, file OneDrive e attività collegate in tre colonne — arriva con la vista Sezioni. Per ora si apre il pannello di una sezione dalla Mappa."
-              action={{ to: '/mappa', label: 'Vai alla Mappa' }}
+            <SectionsView
+              notebooks={notebooks}
+              sectionsMap={sectionsMap}
+              todoListsMap={todoListsMap}
+              tasks={scheduledTasks || []}
+              pagesCache={pagesCache}
             />
           } />
 
@@ -942,9 +986,7 @@ export default function App() {
             </div>
           } />
 
-          {/* Finché la vista Oggi non esiste, la home resta la Mappa: mandare
-              l'apertura dell'app su un segnaposto sarebbe un passo indietro. */}
-          <Route path="*" element={<Navigate to="/mappa" replace />} />
+          <Route path="*" element={<Navigate to="/oggi" replace />} />
         </Routes>
       </AppShell>
 
