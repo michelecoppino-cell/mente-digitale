@@ -3,6 +3,7 @@ import Skeleton from './Skeleton';
 import { EIS_QUADRANTS, parseEisenhower } from './eisenhower';
 import { DEFAULT_CONFIG, findProject, shadeColor, formatDueDate, dueDateSortValue, isTaskOverdue } from './plannerShared';
 import { sectionRole } from './paraConfig';
+import { taskEstimateMin } from './taskModel';
 
 const EMPTY_SET = new Set();
 
@@ -365,6 +366,13 @@ export default function TaskPool({
   );
 }
 
+/** "30m", "1h", "1h30" — la stima, nello spazio di una chip. */
+function fmtEstimate(min) {
+  if (min < 60) return `${min}m`;
+  const h = Math.floor(min / 60), m = min % 60;
+  return m ? `${h}h${String(m).padStart(2, '0')}` : `${h}h`;
+}
+
 function PoolTaskRow({ task, color, isScheduled, selected, draggable, onTaskClick, onDragStart, showListName = false }) {
   const due = formatDueDate(task.dueDateTime);
   const overdue = isTaskOverdue(task.dueDateTime);
@@ -377,6 +385,9 @@ function PoolTaskRow({ task, color, isScheduled, selected, draggable, onTaskClic
       <span className="planner-task-dot" style={{ background: color }} />
       <span className="planner-task-title">{task.title}</span>
       {showListName && task._listName && <span className="planner-eis-grid-task-section">{task._listName}</span>}
+      {/* La stima serve prima del trascinamento, non dopo: è quella che dice
+          se l'attività ci sta nel buco che si sta guardando. */}
+      <span className="planner-task-estimate" title="Stima di durata">{fmtEstimate(taskEstimateMin(task))}</span>
       {due && (
         <span className={`planner-due-badge${overdue ? ' overdue' : ''}`} title={`Scadenza: ${due}`}>{due}</span>
       )}

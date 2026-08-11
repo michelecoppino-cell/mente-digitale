@@ -100,7 +100,7 @@ Sei destinazioni, ognuna con un indirizzo proprio. Il menù è il rail a sinistr
 | Rotta | Vista |
 |---|---|
 | `#/oggi` | Home di sola lettura: adesso, agenda, azioni di oggi, recap |
-| `#/piano` | Il Piano: serbatoio, giornata a blocchi, pannello di dettaglio |
+| `#/piano` | Il Piano: serbatoio, giornata a blocchi, capacità della giornata, pannello di dettaglio |
 | `#/attivita` | Le cinque colonne del flusso, con le lenti Quadranti e Scadenza (`?vista=`, `?ctx=`) |
 | `#/sezioni/:id` | Workbook della sezione: pagine OneNote, file OneDrive, attività |
 | `#/diario` | Diario |
@@ -119,7 +119,9 @@ numeri. Non c'è nulla da premere finché una fonte non c'è.
 
 Sopra il contenuto vive la **barra Pomodoro**: la sessione sta a livello di app
 (`PomodoroSession.jsx`), quindi il timer continua a girare — e la barra resta
-visibile — anche cambiando vista.
+visibile — anche cambiando vista. Si avvia dal pannello di dettaglio del Piano,
+che porta a `#/sezioni/:id`: è il passaggio che lega la programmazione al posto
+di lavoro.
 
 ## Il flusso di un'attività
 
