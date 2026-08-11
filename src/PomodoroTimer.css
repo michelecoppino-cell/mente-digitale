@@ -12,7 +12,7 @@
   padding: 14px 18px 16px;
   width: 200px;
   box-shadow: 0 12px 40px rgba(0,0,0,0.5);
-  font-family: 'Outfit', sans-serif;
+  font-family: var(--font-ui);
   transition: right 0.15s ease;
 }
 
@@ -49,7 +49,7 @@
 .pomodoro-close:hover { color: var(--text); }
 
 .pomodoro-time {
-  font-family: 'Playfair Display', serif;
+  font-family: var(--font-title);
   font-size: 34px;
   color: var(--text);
   text-align: center;
@@ -71,10 +71,10 @@
   border-radius: 7px;
   font-size: 12px;
   cursor: pointer;
-  font-family: 'Outfit', sans-serif;
+  font-family: var(--font-ui);
   transition: background 0.15s;
 }
-.pomodoro-btn:hover { background: rgba(200,169,110,0.1); }
+.pomodoro-btn:hover { background: rgba(212,164,74,0.1); }
 
 .pomodoro-btn-secondary {
   border-color: var(--border2);
@@ -95,9 +95,9 @@
   color: var(--muted);
   padding: 5px 0;
   border-radius: 7px;
-  font-size: 10.5px;
+  font-size: 11px;
   cursor: pointer;
-  font-family: 'Outfit', sans-serif;
+  font-family: var(--font-ui);
   transition: background 0.15s, border-color 0.15s, color 0.15s;
 }
 .pomodoro-break-btn.personal { border-color: rgba(230,201,77,0.45); color: var(--break-personal); }
@@ -112,7 +112,7 @@
   margin-top: 10px;
   padding-top: 10px;
   border-top: 1px solid var(--border);
-  font-size: 10.5px;
+  font-size: 11px;
   color: var(--muted);
   text-align: center;
   line-height: 1.4;
@@ -143,13 +143,13 @@
   max-width: 360px;
   text-align: center;
   box-shadow: 0 24px 64px rgba(0,0,0,0.6);
-  font-family: 'Outfit', sans-serif;
+  font-family: var(--font-ui);
 }
 
 .pomodoro-alert-icon { font-size: 44px; margin-bottom: 10px; }
 
 .pomodoro-alert-title {
-  font-family: 'Playfair Display', serif;
+  font-family: var(--font-title);
   font-size: 22px;
   color: var(--accent);
   margin-bottom: 10px;

@@ -7,7 +7,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  font-family: 'Outfit', sans-serif;
+  font-family: var(--font-ui);
   /* In standalone su iPhone la pagina passa sotto la barra di stato e sotto
      l'indicatore Home: senza questi margini l'intestazione del diario finisce
      dietro l'orologio e la rete. */
@@ -59,7 +59,7 @@
   border-radius: 7px;
   font-size: 12px;
   font-weight: 500;
-  font-family: 'Outfit', sans-serif;
+  font-family: var(--font-ui);
   cursor: pointer;
 }
 .diary-primary-btn:disabled { opacity: 0.45; cursor: default; }
@@ -71,7 +71,7 @@
   padding: 6px 14px;
   border-radius: 7px;
   font-size: 12px;
-  font-family: 'Outfit', sans-serif;
+  font-family: var(--font-ui);
   cursor: pointer;
   transition: border-color 0.15s, color 0.15s;
 }
@@ -83,7 +83,7 @@
   background: none; border: none;
   color: var(--muted);
   font-size: 11px;
-  font-family: 'Outfit', sans-serif;
+  font-family: var(--font-ui);
   cursor: pointer;
   padding: 4px 6px;
 }
@@ -104,7 +104,7 @@
   border-radius: 10px;
   padding: 14px 10px;
   cursor: pointer;
-  font-family: 'Outfit', sans-serif;
+  font-family: var(--font-ui);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -115,7 +115,7 @@
 .diary-mode-card:hover { border-color: var(--accent); transform: translateY(-1px); }
 .diary-mode-icon { font-size: 20px; }
 .diary-mode-label { font-size: 12.5px; color: var(--text); }
-.diary-mode-desc { font-size: 10.5px; color: var(--muted); line-height: 1.4; }
+.diary-mode-desc { font-size: 11px; color: var(--muted); line-height: 1.4; }
 
 .diary-nudge {
   font-size: 11.5px;
@@ -130,8 +130,8 @@
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  background: rgba(200,169,110,0.08);
-  border: 1px solid rgba(200,169,110,0.28);
+  background: rgba(212,164,74,0.08);
+  border: 1px solid rgba(212,164,74,0.28);
   border-radius: 8px;
   padding: 8px 12px;
   margin-bottom: 14px;
@@ -148,7 +148,7 @@
 }
 .diary-trend svg { width: 100%; height: 34px; flex: 1; }
 .diary-trend-label {
-  font-size: 10px;
+  font-size: 11px;
   color: var(--muted);
   text-transform: uppercase;
   letter-spacing: 0.07em;
@@ -162,10 +162,9 @@
   border: 1px solid var(--border);
   border-radius: 7px;
   color: var(--text);
-  font-family: 'Outfit', sans-serif;
+  font-family: var(--font-ui);
   font-size: 12px;
   padding: 7px 11px;
-  outline: none;
 }
 .diary-search:focus { border-color: var(--accent); }
 
@@ -181,8 +180,8 @@
   border: 1px solid var(--border);
   border-radius: 20px;
   color: var(--muted);
-  font-size: 10.5px;
-  font-family: 'Outfit', sans-serif;
+  font-size: 11px;
+  font-family: var(--font-ui);
   padding: 2px 9px;
   cursor: pointer;
 }
@@ -202,7 +201,7 @@
 .diary-entry.sealed { opacity: 0.6; }
 .diary-entry-head { display: flex; flex-direction: column; gap: 2px; margin-bottom: 7px; }
 .diary-entry-date { font-size: 12px; color: var(--text); text-transform: capitalize; }
-.diary-entry-meta { font-size: 10.5px; color: var(--muted); }
+.diary-entry-meta { font-size: 11px; color: var(--muted); }
 .diary-entry-text {
   font-size: 13px;
   color: #c0c6d4;
@@ -268,7 +267,7 @@
 .diary-timer-btn {
   background: none; border: 1px solid var(--border);
   border-radius: 20px; color: var(--muted);
-  font-size: 10.5px; font-family: 'Outfit', sans-serif;
+  font-size: 11px; font-family: var(--font-ui);
   padding: 3px 10px; cursor: pointer;
 }
 .diary-timer-btn:hover, .diary-timer-btn.active { border-color: var(--accent); color: var(--accent); }
@@ -296,13 +295,13 @@
   border: none;
   padding: 0;
   cursor: pointer;
-  font-family: 'Playfair Display', serif;
+  font-family: var(--font-title);
   font-size: 15px;
   line-height: 1.4;
   color: var(--accent);
   text-align: center;
 }
-.diary-seed-caret { font-size: 10px; opacity: 0.7; }
+.diary-seed-caret { font-size: 11px; opacity: 0.7; }
 .diary-seed.no-seed { opacity: 0.5; }
 .diary-seed-btn {
   background: none;
@@ -310,7 +309,7 @@
   color: var(--accent);
   opacity: 0.6;
   font-size: 12px;
-  font-family: 'Outfit', sans-serif;
+  font-family: var(--font-ui);
   cursor: pointer;
   padding: 4px 6px;
   line-height: 1;
@@ -338,10 +337,9 @@
   flex: 1;
   background: transparent;
   border: none;
-  outline: none;
   resize: none;
   color: #d6dbe6;
-  font-family: 'Playfair Display', serif;
+  font-family: var(--font-title);
   font-size: clamp(15px, 2.1vw, 19px);
   line-height: 1.95;
   padding: 40px 4px 20px;
@@ -382,22 +380,22 @@
   border: none;
   border-radius: 7px;
   color: #b8bfd0;
-  font-family: 'Outfit', sans-serif;
+  font-family: var(--font-ui);
   font-size: 12.5px;
   line-height: 1.5;
   padding: 8px 10px;
   cursor: pointer;
 }
 .diary-seed-option:hover { background: rgba(255,255,255,0.05); color: var(--text); }
-.diary-seed-option.active { color: var(--accent); background: rgba(200,169,110,0.1); }
+.diary-seed-option.active { color: var(--accent); background: rgba(212,164,74,0.1); }
 
 /* Pannello "come funziona": istruzioni della pagina e pratiche da cui viene */
 .diary-help-btn {
   background: none;
   border: none;
   color: var(--muted);
-  font-family: 'Outfit', sans-serif;
-  font-size: 10.5px;
+  font-family: var(--font-ui);
+  font-size: 11px;
   letter-spacing: 0.06em;
   text-transform: uppercase;
   text-decoration: underline;
@@ -421,7 +419,7 @@
 .diary-help-head { display: flex; align-items: center; justify-content: space-between; }
 .diary-help-title {
   color: var(--accent);
-  font-size: 10.5px;
+  font-size: 11px;
   letter-spacing: 0.1em;
   text-transform: uppercase;
   margin-bottom: 8px;
@@ -455,11 +453,10 @@
   border: 1px solid var(--border);
   border-radius: 7px;
   color: #c8cede;
-  font-family: 'Outfit', sans-serif;
+  font-family: var(--font-ui);
   font-size: 13px;
   line-height: 1.7;
   padding: 9px 12px;
-  outline: none;
   resize: vertical;
 }
 .diary-input:focus { border-color: var(--accent); }
@@ -473,7 +470,7 @@
   border-radius: 20px;
   color: var(--muted);
   font-size: 11.5px;
-  font-family: 'Outfit', sans-serif;
+  font-family: var(--font-ui);
   padding: 4px 12px;
   cursor: pointer;
 }
@@ -484,7 +481,7 @@
   font-size: 11.5px; color: var(--muted);
   line-height: 1.6; margin-top: 8px; font-style: italic;
 }
-.diary-export-count { font-size: 10.5px; color: var(--muted); margin: 12px 0 6px; }
+.diary-export-count { font-size: 11px; color: var(--muted); margin: 12px 0 6px; }
 .diary-preview {
   width: 100%;
   height: 220px;
@@ -497,10 +494,9 @@
   line-height: 1.6;
   padding: 10px 12px;
   resize: vertical;
-  outline: none;
 }
 .diary-privacy {
-  font-size: 10.5px; color: var(--muted);
+  font-size: 11px; color: var(--muted);
   text-align: center; margin-top: 12px; line-height: 1.5;
 }
 
@@ -590,7 +586,7 @@
   border: none;
   background: rgba(4, 5, 8, 0.75);
   color: #fff;
-  font-size: 10px;
+  font-size: 11px;
   line-height: 1;
   cursor: pointer;
 }
@@ -603,7 +599,7 @@
   border-bottom: 1px solid var(--border);
   color: var(--text);
   font-family: inherit;
-  font-size: 10.5px;
+  font-size: 11px;
   padding: 2px 1px;
 }
 .diary-photo-caption:focus { outline: none; border-bottom-color: var(--accent); }
@@ -622,7 +618,7 @@
 }
 .diary-photo-add:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
 .diary-photo-add:disabled { cursor: default; opacity: 0.7; }
-.diary-photo-error { font-size: 10.5px; color: #e0836a; margin-top: 5px; }
+.diary-photo-error { font-size: 11px; color: #e0836a; margin-top: 5px; }
 
 /* Nella schermata di scrittura la griglia sta fra il foglio e i pulsanti:
    niente crescita verticale, altrimenti su iPhone con la tastiera aperta

@@ -98,7 +98,7 @@ export default function OneDriveBox({ sectionId, color = 'var(--accent)' }) {
     <>
       <div className="panel-col-header" style={{ color }}>
         <span>OneDrive</span>
-        {odSyncing && <span style={{ fontSize: 9, color: 'var(--muted)', marginLeft: 4 }}>↑</span>}
+        {odSyncing && <span style={{ fontSize: 11, color: 'var(--muted)', marginLeft: 4 }}>↑</span>}
         <button className="od-add-btn" onClick={() => setAddingOD(a => !a)} title="Aggiungi link">+</button>
       </div>
       {addingOD && (

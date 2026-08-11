@@ -11,6 +11,10 @@ export const EIS_QUADRANTS = [
 
 const MARKER_RE = /\[EIS:(Q[1-4])\]/;
 
+// Esportato perché taskModel deve poter togliere questo marker dalle note
+// insieme agli altri, senza riscriversi la stessa espressione.
+export const EIS_MARKER_RE = MARKER_RE;
+
 /**
  * Estrae il quadrante Eisenhower dal marker [EIS:Qn] in testa alle note.
  * @param {string|null|undefined} bodyContent

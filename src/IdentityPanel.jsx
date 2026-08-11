@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { loadIdentityDoc, saveIdentityDoc } from './api';
 
-const OCRA = '#c8a96e';
+const OCRA = '#d4a44a';
 
 const DEFAULT_BUSSOLA = {
   sections: [

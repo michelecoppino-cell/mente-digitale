@@ -343,6 +343,64 @@ export async function updateTaskDueDate(listId, taskId, dueDate) {
   });
 }
 
+// Contesto dell'attività: `categories` è un campo nativo di To-Do, quindi la
+// scelta resta leggibile anche aprendo il task da un'altra app.
+/**
+ * @param {string} listId
+ * @param {string} taskId
+ * @param {string[]} categories
+ * @returns {Promise<any>}
+ */
+export async function updateTaskCategories(listId, taskId, categories) {
+  return call(`/me/todo/lists/${listId}/tasks/${taskId}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ categories })
+  });
+}
+
+// Sposta un task in un'altra lista — cioè, nel modello PARA dell'app, in
+// un'altra sezione. Graph non ha una "move": si ricrea il task nella lista di
+// destinazione con tutto ciò che porta con sé e si cancella l'originale, in
+// quest'ordine, così un errore a metà lascia un doppione (recuperabile) invece
+// di far sparire il task.
+/**
+ * @param {string} fromListId
+ * @param {string} toListId
+ * @param {import('./types').TodoTask} task
+ * @returns {Promise<import('./types').TodoTask>}
+ */
+export async function moveTaskToList(fromListId, toListId, task) {
+  /** @type {Record<string, any>} */
+  const payload = {
+    title: task.title,
+    status: task.status || 'notStarted',
+    importance: task.importance || 'normal',
+  };
+  if (task.body) payload.body = { content: task.body.content || '', contentType: 'text' };
+  if (task.dueDateTime) payload.dueDateTime = task.dueDateTime;
+  if (task.categories?.length) payload.categories = task.categories;
+
+  const created = await call(`/me/todo/lists/${toListId}/tasks`, {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  });
+
+  // Le sottoattività non si possono creare nello stesso POST del task.
+  for (const item of task.checklistItems || []) {
+    try {
+      await call(`/me/todo/lists/${toListId}/tasks/${created.id}/checklistItems`, {
+        method: 'POST',
+        body: JSON.stringify({ displayName: item.displayName, isChecked: item.isChecked })
+      });
+    } catch (e) {
+      console.error('move task: sottoattività non copiata', item.displayName, e);
+    }
+  }
+
+  await call(`/me/todo/lists/${fromListId}/tasks/${task.id}`, { method: 'DELETE' });
+  return created;
+}
+
 /**
  * @param {string} listId
  * @param {string} taskId

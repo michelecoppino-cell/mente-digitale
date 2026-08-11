@@ -10,8 +10,8 @@ import { polygonHull } from 'd3-polygon';
 import 'd3-transition';
 import { sectionRole, paraSectionLabel } from './paraConfig';
 
-const FONT = 'Outfit, sans-serif';
-const OCRA = '#c8a96e';
+const FONT = 'Inter, system-ui, sans-serif';
+const OCRA = '#d4a44a';
 
 // Le 4 aree PARA come "gruppi" fissi al posto dei taccuini, quando
 // viewMode === 'para'. Colori distinti dal palette dell'app (config.js).
@@ -632,14 +632,14 @@ export default function MindMap({
         .attr('class', 'badge-circle')
         .attr('data-secid', n.id)
         .attr('cx', bx).attr('cy', by).attr('r', 7)
-        .attr('fill', n.color).attr('stroke', '#080a0e').attr('stroke-width', 1.5);
+        .attr('fill', n.color).attr('stroke', '#0e1013').attr('stroke-width', 1.5);
       badgeLayer.append('text')
         .attr('class', 'badge-text')
         .attr('data-secid', n.id)
         .attr('x', bx).attr('y', by)
         .attr('text-anchor', 'middle').attr('dominant-baseline', 'central')
         .attr('font-size', 7).attr('font-weight', 700)
-        .attr('fill', '#080a0e').attr('pointer-events', 'none')
+        .attr('fill', '#0e1013').attr('pointer-events', 'none')
         .text(count > 9 ? '9+' : count);
     });
   }

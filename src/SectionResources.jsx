@@ -35,7 +35,7 @@ export default function SectionResources({ section, notebook, pagesCache }) {
   }, [section?.id]); // eslint-disable-line
 
   if (!section) return null;
-  const color = section?._color || notebook?._color || '#c8a96e';
+  const color = section?._color || notebook?._color || '#d4a44a';
 
   return (
     <>

@@ -15,9 +15,9 @@ Microsoft To-Do e al calendario Outlook, e un briefing di notizie generato con l
   vista giorno/settimana, eventi del calendario in sola lettura, sottostep ridimensionabili,
   piani salvati su OneDrive. Piano AI generato via Claude (`/api/daily-plan`) ed estrazione
   di action item dalle email.
-- **Pannello attività** — task raggruppati per scadenza + calendario settimanale/mensile.
+- **Attività** — tutti i task, filtrabili per PARA, taccuino e sezione.
 - **Briefing notizie** — riassunti AI dei feed ANSA (mondo, Italia, Friuli) via `/api/briefing`.
-- **Diario** (🕯️ nell'header, `Ctrl/Cmd+J`) — tre modalità distinte: *svuota testa* a schermo
+- **Diario** (voce *Diario* nel menù, `⌘J`) — tre modalità distinte: *svuota testa* a schermo
   intero (timer 5/10 min, domanda selezionabile dall'elenco o rimovibile, righe che sbiadiscono
   mentre scrivi, pannello "come funziona" con il metodo e le fonti), *rituale della sera* (tre
   domande, gratitudini, umore ed energia) e *scrittura libera*, che è solo il foglio — niente
@@ -28,8 +28,8 @@ Microsoft To-Do e al calendario Outlook, e un briefing di notizie generato con l
   finisce solo il nome. Timeline con ricerca e tag. Il bottone
   **Copia per l'AI** compone il markdown di un periodo (con la Bussola come contesto) da
   incollare in una chat AI per chiedere supporto. Voci salvate su OneDrive in file mensili;
-  il diario non passa da alcuna funzione server. Su telefono, con il Piano aperto,
-  Diario e GTD restano raggiungibili come due pulsanti tondi in basso a destra.
+  il diario non passa da alcuna funzione server. Diario e cattura sono sempre
+  raggiungibili dal menù, da qualunque vista.
 
 ### Importare il Diario dell'iPhone
 
@@ -77,18 +77,72 @@ cartella di destinazione vengono uniti, non sostituiti.
 iOS ignora gli `shortcuts` del manifest: per avere più icone servono più pagine da
 aggiungere alla Home. `public/gtd.html` e `public/diario.html` esistono per questo — hanno
 icona, nome e status bar propri e, quando vengono lanciate dalla loro icona (`standalone`),
-rimbalzano sull'app con `?apri=gtd` / `?apri=diario`, che `App.jsx` traduce nell'apertura
-del pannello giusto già al primo render. Viste in Safari restano invece ferme, altrimenti
+rimbalzano sull'app con `?apri=gtd` / `?apri=diario`, che `App.jsx` traduce nella cattura
+rapida o nella rotta del Diario già al primo render. Viste in Safari restano invece ferme, altrimenti
 si finirebbe per aggiungere alla Home l'app invece della scorciatoia.
 
 Per installarle: apri `/gtd.html` (e poi `/diario.html`) in Safari → Condividi →
 *Aggiungi a Home*.
 
+## Navigazione
+
+Sei destinazioni, ognuna con un indirizzo proprio. Il menù è il rail a sinistra
+(216 px, riducibile a sole icone, drawer su schermo stretto); in cima il pulsante
+**Cattura** (`⌘N` da qualunque vista).
+
+| Rotta | Vista |
+|---|---|
+| `#/oggi` | Home di sola lettura — *in arrivo* |
+| `#/piano` | Il Piano: serbatoio, giornata a blocchi, pannello di dettaglio |
+| `#/attivita` | Tutte le attività |
+| `#/sezioni/:id` | Workbook della sezione PARA — *in arrivo* |
+| `#/diario` | Diario |
+| `#/mappa` | La mappa mentale |
+
+Le rotte stanno nell'hash e non nel path: l'app è servita come sito statico da
+Cloudflare Pages e, senza un `_redirects`, un ricaricamento su `/piano`
+chiederebbe al server un file che non esiste. Con l'hash la rotta non lascia mai
+il client, e le due pagine-scorciatoia (`/gtd.html`, `/diario.html`) restano
+file veri.
+
+Sopra il contenuto vive la **barra Pomodoro**: la sessione sta a livello di app
+(`PomodoroSession.jsx`), quindi il timer continua a girare — e la barra resta
+visibile — anche cambiando vista.
+
+## Il flusso di un'attività
+
+Sei stati, un solo verso, letti e scritti sui campi veri di Microsoft To-Do:
+chi apre lo stesso task dall'app To-Do del telefono vede lo stesso stato. La
+mappatura sta in `src/taskModel.js`.
+
+| Stato | Dove vive su To-Do |
+|---|---|
+| `inbox` | lista di default (`wellknownListName === 'defaultList'`) |
+| `next` | `status: notStarted` |
+| `waiting` | `status: waitingOnOthers` |
+| `scheduled` | ha un blocco nel piano del giorno (`daily-plans` su OneDrive) |
+| `someday` | `status: deferred` |
+| `done` | `status: completed` |
+
+Allo stesso modo: il **contesto** (Lavoro / Personale / Famiglia) è in
+`categories`, la **sezione** è la lista To-Do stessa, le **sottoattività** sono
+i `checklistItems`, la **nota** è `body.content`.
+
+Un solo campo non ha una casa nativa in To-Do, la **stima di durata**: sta nelle
+note come marker `[MIN:45]`, con la stessa convenzione del quadrante Eisenhower
+`[EIS:Qn]`.
+
+## Design token
+
+Colori, tipografia, spazi, raggi e target di tocco stanno una volta sola in
+`src/tokens.css`. I CSS per componente li leggono da lì: cambiare l'accento è
+una riga, non una ricerca-e-sostituzione in dieci file.
+
 ## Architettura
 
 | Componente | Tecnologia |
 |---|---|
-| Frontend | React 19 + Vite, D3 per la mappa |
+| Frontend | React 19 + Vite, react-router (hash), D3 per la mappa |
 | Autenticazione | MSAL Browser (account Microsoft personale, scope Graph in sola lettura + To-Do/Files in scrittura) |
 | Dati | Microsoft Graph (OneNote, To-Do, Calendar, OneDrive, Mail) con cache localStorage a TTL. I file JSON dell'app stanno nella cartella `mente-digitale/` di OneDrive (quelli rimasti in root vengono spostati automaticamente al primo avvio) |
 | Backend | Cloudflare Pages Functions (`functions/api/*`) |
