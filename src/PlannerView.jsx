@@ -15,6 +15,8 @@ import { queryClient, qk, STALE } from './queryClient';
 import Skeleton from './Skeleton';
 import PomodoroTimer from './PomodoroTimer';
 import TaskPool from './TaskPool';
+import { useNavigate } from 'react-router-dom';
+import { usePomodoro } from './pomodoroContext';
 import WorkbookPool from './WorkbookPool';
 import SectionResources from './SectionResources';
 import { DEFAULT_CONFIG, findProject, shadeColor, hexToRgba } from './plannerShared';
@@ -1827,6 +1829,7 @@ export default function PlannerView({
           </div>
         </div>
         <div className="planner-header-actions">
+          <DayCapacity blocks={todayPlan.blocks || []} config={config} />
           <div className="planner-cal-filter-wrap">
             <button className="planner-action-btn" disabled={locked} onClick={() => setCalFilterOpen(v => !v)} title="Filtra calendari">
               Calendari ▾
@@ -2304,7 +2307,12 @@ export default function PlannerView({
                 <Fragment key={block.id}>
                 <div
                   className={`planner-block${block.completed ? ' completed' : ''}${isVertical ? ' vertical-layout' : ''}`}
-                  style={{ top: top + 2, height, borderLeftColor: blockColor, background: blockColor }}
+                  style={{
+                    top: top + 2, height,
+                    background: hexToRgba(blockColor, 0.10),
+                    borderColor: hexToRgba(blockColor, 0.22),
+                    borderLeftColor: blockColor,
+                  }}
                   draggable={!locked && !block.completed && resizingId !== block.id}
                   onClick={e => {
                     e.stopPropagation();
@@ -2515,6 +2523,42 @@ export default function PlannerView({
 // fascia Pomodoro (lavoro o uno dei tre tipi di pausa) e, per una fascia
 // esistente, permette di cancellarla. Un backdrop trasparente a tutto
 // schermo chiude il menu al clic fuori, come i pop-up del diagramma GTD.
+// Quanto della giornata è già impegnato. Il Piano diceva cosa c'è ma non
+// quanto pesa: due ore libere e otto sembravano uguali finché non si contava
+// a mano. La barra somma le ore piazzate sulle ore lavorative disponibili.
+/**
+ * @param {{ blocks: import('./types').PlanBlock[], config: import('./types').PlannerConfig }} props
+ */
+function DayCapacity({ blocks, config }) {
+  const available = Math.max(0, t2m(config.workdayEnd) - t2m(config.workdayStart));
+  const planned = (blocks || [])
+    .filter(b => !b.completed)
+    .reduce((sum, b) => sum + Math.max(0, t2m(b.endTime) - t2m(b.startTime)), 0);
+  const done = (blocks || [])
+    .filter(b => b.completed)
+    .reduce((sum, b) => sum + Math.max(0, t2m(b.endTime) - t2m(b.startTime)), 0);
+  const free = Math.max(0, available - planned - done);
+
+  const pct = (/** @type {number} */ v) => available ? Math.min(100, (v / available) * 100) : 0;
+  const fmt = (/** @type {number} */ min) => {
+    const h = Math.floor(min / 60), m = min % 60;
+    if (!h) return `${m}min`;
+    return m ? `${h}h${String(m).padStart(2, '0')}` : `${h}h`;
+  };
+
+  return (
+    <div className="planner-capacity" title={`Giornata lavorativa ${config.workdayStart}–${config.workdayEnd}`}>
+      <span className="planner-capacity-text">
+        {fmt(planned + done)} pianificate · {fmt(free)} libere
+      </span>
+      <span className="planner-capacity-bar">
+        <span className="planner-capacity-done" style={{ width: `${pct(done)}%` }} />
+        <span className="planner-capacity-planned" style={{ width: `${pct(planned)}%` }} />
+      </span>
+    </div>
+  );
+}
+
 function FocusSessionPopup({ popup, onPickType, onDelete, onClose }) {
   const width = 180, height = onDelete ? 190 : 150;
   const left = Math.min(Math.max(8, popup.x + 10), window.innerWidth - width - 8);
@@ -2671,6 +2715,20 @@ function CalendarEventModal({ mode, event, defaultDate, defaultStartTime, defaul
 
 // ── TaskDetailPanel ───────────────────────────────────────────────────────────
 function TaskDetailPanel({ task, notebooks = [], sectionsMap = {}, pagesCache = null, onClose, onCompleted, onDeleted, onRenamed, onDueChanged, onRestored }) {
+  const navigate = useNavigate();
+  const { start: startPomodoro } = usePomodoro();
+  // La sezione PARA del task è la sezione OneNote che si chiama come la sua
+  // lista To-Do: è la convenzione su cui poggia tutta l'app. Senza, il
+  // pomodoro non saprebbe quale workbook aprire e il bottone non compare.
+  const sectionId = (() => {
+    const name = (task?._listName || '').toLowerCase();
+    if (!name) return null;
+    for (const sects of Object.values(sectionsMap || {})) {
+      const sec = (sects || []).find(x => (x.displayName || '').toLowerCase() === name);
+      if (sec) return sec.id;
+    }
+    return null;
+  })();
   const [loading, setLoading]         = useState(true);
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft]   = useState(task.title);
@@ -3067,6 +3125,31 @@ function TaskDetailPanel({ task, notebooks = [], sectionsMap = {}, pagesCache = 
             {itemError && <div className="planner-checklist-error">{itemError}</div>}
           </div>
 
+          {/* Avviare il pomodoro da qui è ciò che lega la programmazione al
+              posto di lavoro: la sessione sale a livello di app e porta al
+              workbook della sezione, dove stanno le pagine e i file che
+              servono a farla davvero, questa attività. */}
+          {sectionId && (
+            <button
+              className="planner-pomodoro-start"
+              onClick={() => {
+                startPomodoro({
+                  taskId: task.id,
+                  taskTitle: task.title,
+                  sectionId,
+                  sectionName: task._listName || null,
+                  durationMin: 25,
+                });
+                navigate(`/sezioni/${sectionId}`);
+              }}>
+              <span className="planner-pomodoro-dot" />
+              Avvia pomodoro
+              <span className="planner-pomodoro-caption">
+                apre Sezioni sul workbook {task._listName || 'della sezione'}
+              </span>
+            </button>
+          )}
+
           <SectionResources section={section} notebook={notebook} pagesCache={pagesCache} />
         </>
       )}
@@ -3450,7 +3533,12 @@ function WeeklyTimeline({
                 return (
                   <div key={block.id}
                     className={`planner-week-task-block${block.completed ? ' completed' : ''}${isVertical ? ' vertical-layout' : ''}`}
-                    style={{ top: top + 2, height, borderLeftColor: blockColor, background: blockColor }}
+                    style={{
+                    top: top + 2, height,
+                    background: hexToRgba(blockColor, 0.10),
+                    borderColor: hexToRgba(blockColor, 0.22),
+                    borderLeftColor: blockColor,
+                  }}
                     title={`${block.startTime}–${block.endTime} · ${block.taskTitle} (trascina per spostare, Ctrl+trascina per duplicare)`}
                     draggable={!block.completed && !locked && resizingId !== block.id}
                     onClick={e => e.stopPropagation()}

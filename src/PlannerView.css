@@ -835,9 +835,9 @@
   position: absolute;
   left: 0;
   right: 6px;
-  height: 2px;
+  height: 1px;
   background: var(--accent);
-  box-shadow: 0 0 5px rgba(212,164,74,0.65);
+  box-shadow: 0 0 5px rgba(212,164,74,0.5);
   z-index: 4;
   pointer-events: none;
 }
@@ -846,8 +846,8 @@
   position: absolute;
   left: 0;
   top: 50%;
-  width: 7px;
-  height: 7px;
+  width: 11px;
+  height: 11px;
   border-radius: 50%;
   background: var(--accent);
   transform: translate(-50%, -50%);
@@ -959,9 +959,10 @@
   position: absolute;
   left: 92px;
   right: 6px;
-  border-radius: 4px;
-  background: #4a90a4;
-  border-left: 3px solid #3a7688;
+  border-radius: var(--r-sm);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-left: 3px dotted #565b68;
   padding: 3px 6px;
   overflow: hidden;
   pointer-events: auto;
@@ -973,24 +974,22 @@
   box-shadow: 0 1px 4px rgba(0,0,0,0.35);
   transition: background 0.15s;
 }
-.planner-cal-event:hover { background: #57a3b8; }
-.planner-cal-event.shared {
-  background: #3d7f8b;
-  border-left-color: #2f6272;
-}
-.planner-cal-event.shared:hover { background: #4a90a4; }
+/* Un evento condiviso da qualcun altro è ancora più "non tuo": il bordo si
+   spegne del tutto invece di cambiare colore di fondo. */
+.planner-cal-event:hover { border-color: var(--border2); }
+.planner-cal-event.shared { border-left-color: #3f4450; }
 
 .planner-event-time {
   font-size: 11px;
-  color: rgba(255,255,255,0.8);
+  color: var(--muted);
   line-height: 1.2;
   flex-shrink: 0;
 }
 
 .planner-event-title {
-  font-size: 11px;
-  font-weight: 500;
-  color: #fff;
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--text-3);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1002,7 +1001,8 @@
   position: absolute;
   left: 92px;
   right: 6px;
-  border-radius: 5px;
+  border-radius: var(--r-sm);
+  border: 1px solid;
   border-left: 3px solid;
   padding: 4px 7px;
   overflow: hidden;
@@ -2206,3 +2206,89 @@ input[type="time"].planner-modal-select::-webkit-calendar-picker-indicator {
 }
 .pomodoro-fab:hover { transform: translateY(-1px); box-shadow: 0 12px 30px rgba(212,164,74,0.45); }
 .pomodoro-fab:active { transform: scale(0.94); }
+
+/* ── Capacità della giornata ──
+   Quanto della giornata lavorativa è già impegnato: verde per le ore fatte,
+   ocra per quelle piazzate ma ancora davanti. Non è una campitura decorativa
+   ma la sola cosa che risponda a "ci sta?". */
+.planner-capacity {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  flex-shrink: 0;
+}
+
+.planner-capacity-text {
+  font-size: var(--fs-micro);
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.planner-capacity-bar {
+  position: relative;
+  display: flex;
+  width: 180px;
+  height: 8px;
+  border-radius: 4px;
+  background: var(--line-soft);
+  overflow: hidden;
+}
+
+.planner-capacity-done { background: var(--ctx-lavoro); }
+.planner-capacity-planned { background: var(--accent); opacity: .75; }
+
+/* ── Avvia pomodoro ──
+   In fondo al dettaglio: è l'ultimo gesto, quello che chiude la
+   programmazione e apre il lavoro. */
+.planner-pomodoro-start {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  width: 100%;
+  min-height: var(--tap);
+  margin-top: var(--sp-4);
+  padding: var(--sp-3) var(--sp-4) var(--sp-3) 30px;
+  background: rgba(212, 164, 74, .08);
+  border: 1px solid var(--accent-line);
+  border-radius: var(--r);
+  color: var(--accent);
+  font-family: var(--font-ui);
+  font-size: var(--fs-meta);
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--t);
+}
+.planner-pomodoro-start:hover { background: var(--accent-tint); }
+
+.planner-pomodoro-dot {
+  position: absolute;
+  left: var(--sp-4);
+  top: 15px;
+  width: 9px;
+  height: 9px;
+  border: 1px solid var(--accent);
+  border-radius: 50%;
+}
+
+.planner-pomodoro-caption {
+  font-size: var(--fs-micro);
+  color: var(--muted);
+  line-height: 1.4;
+}
+
+@media (max-width: 860px) {
+  .planner-capacity-bar { width: 120px; }
+}
+
+/* Chip della stima nel serbatoio: piccola, spenta, a destra del titolo. */
+.planner-task-estimate {
+  flex-shrink: 0;
+  padding: 1px 6px;
+  border: 1px solid var(--border2);
+  border-radius: var(--r-sm);
+  font-size: var(--fs-micro);
+  color: var(--muted);
+  white-space: nowrap;
+}
