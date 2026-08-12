@@ -1,9 +1,10 @@
 import { useState, useEffect, useRef, lazy, Suspense } from 'react';
 import { Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { initAuth, getAccount, login, trySsoSilent } from './auth';
-import { getNotebooks, getSections, getTodoLists, getTodoTasks, getPages, getRecentEmails, getPageContentHtml, markOneNoteTagDone, getReminders, createTask, getCalendarEvents, getTasksForDeadlineDedup, invalidateCalendarsCache, loadColorSettings, saveColorSettings, migrateLegacyDriveFiles, loadPlannerConfig, loadDailyPlans, saveDailyPlans, updateTaskStatus, completeTask } from './api';
+import { getNotebooks, getSections, getTodoLists, getPages, getRecentEmails, getPageContentHtml, markOneNoteTagDone, getReminders, createTask, getCalendarEvents, getTasksForDeadlineDedup, invalidateCalendarsCache, loadColorSettings, saveColorSettings, migrateLegacyDriveFiles, loadPlannerConfig, loadDailyPlans, saveDailyPlans, updateTaskStatus, completeTask } from './api';
 import { getMarker, setMarker, clearMarkers } from './markers';
 import { queryClient, qk, STALE } from './queryClient';
+import { syncTasksForList } from './taskSync';
 import { extractEmailCandidates, extractOneNoteCandidates } from './dailyReview';
 import { parseReminderSubject, reminderMarker, hasReminderMarker } from './deadlineReminders';
 import { shadeColor, DEFAULT_CONFIG } from './plannerShared';
@@ -19,7 +20,7 @@ import { graphStatusFor, STATUS_LABELS } from './taskModel';
 import { pushUndo } from './undo';
 import { COLORS } from './config';
 import { whenIdle } from './idle';
-import { notifyError } from './notify';
+import { notifyError, notifyInfo } from './notify';
 import UndoToast from './UndoToast';
 import Toaster from './Toaster';
 import './App.css';
@@ -583,17 +584,29 @@ export default function App() {
     setReviewSuggestions(prev => prev.filter(s => s.id !== suggestion.id));
   }
 
+  // Le attività di tutte le liste. Ogni lista si aggiorna in modo incrementale —
+  // «cosa è cambiato da quando ho guardato» invece di «dammi tutto» — con un
+  // riallineamento completo una volta al giorno e sempre su «Aggiorna tutto»
+  // (vedi taskSync.js, che spiega perché non i delta token).
   async function preloadAllTasks(lists, forceRefresh = false) {
     const allTasks = [];
     const counts = {};
     let anyError = false;
+    let letti = 0;
     for (const l of lists) {
       try {
-        const tasks = await fetchCached(qk.tasks(l.id), () => getTodoTasks(l.id), STALE.tasks, forceRefresh);
+        const { tasks, mode, changed } = await syncTasksForList(l, { forceFull: forceRefresh });
         tasksCache.current[l.id] = tasks;
         tasks.forEach(t => allTasks.push({ ...t, _listName: l.displayName, _listId: l.id }));
         if (tasks.length > 0) counts[l.displayName.toLowerCase()] = tasks.length;
-        await new Promise(r => setTimeout(r, 200));
+        // Il respiro fra le richieste serviva a non far arrabbiare Graph con
+        // dodici letture complete di fila. Una lettura incrementale che torna
+        // vuota non ha bisogno di essere distanziata: la maggior parte dei
+        // risvegli ora non aspetta più nulla.
+        if (mode === 'completo' || changed > 0) {
+          letti++;
+          await new Promise(r => setTimeout(r, 200));
+        }
       } catch (e) {
         console.error('preload tasks', l.displayName, e);
         anyError = true;
@@ -612,6 +625,10 @@ export default function App() {
     setTodoCountMap(counts);
     if (anyError) {
       setSync({ state: 'error', label: 'Errore aggiornamento task — dati non aggiornati' });
+    } else if (letti === 0) {
+      // Nessuna lista ha avuto bisogno di essere riletta: vale la pena dirlo,
+      // perché è il caso normale e spiega perché è stato istantaneo.
+      setSync({ state: 'ok', label: `${notebooksRef.current.length} taccuini · attività aggiornate` });
     }
   }
 
@@ -800,6 +817,25 @@ export default function App() {
     navigate('/piano');
   }
 
+  // Salva il piano e adotta quello che è davvero finito su OneDrive.
+  //
+  // Da quando la scrittura è condizionata all'eTag (vedi putDriveJson), un
+  // salvataggio che trova il file cambiato non si perde e non sovrascrive: fonde
+  // le due versioni e restituisce la fusione in `_merged`. Se non la si adotta,
+  // lo schermo continua a mostrare la propria copia mentre su OneDrive c'è
+  // un'altra cosa — cioè il problema di prima, spostato di un passo.
+  async function persistPlans(next) {
+    const res = await saveDailyPlans(next);
+    const merged = res?._merged;
+    const effective = merged || next;
+    setDailyPlans(effective);
+    queryClient.setQueryData(qk.dailyPlans(), effective);
+    if (merged) {
+      notifyInfo('Il piano era cambiato su un altro dispositivo: ho unito le due versioni.');
+    }
+    return effective;
+  }
+
   // Toglie il blocco dal piano di ogni giorno in cui compare: senza blocco il
   // task torna `next` da solo, perché `scheduled` non è un campo ma la
   // presenza del blocco.
@@ -811,14 +847,12 @@ export default function App() {
     }
     setDailyPlans(next);
     try {
-      await saveDailyPlans(next);
-      queryClient.setQueryData(qk.dailyPlans(), next);
+      await persistPlans(next);
       pushUndo({
         label: 'Rimandata',
         undo: async () => {
           setDailyPlans(previous);
-          await saveDailyPlans(previous);
-          queryClient.setQueryData(qk.dailyPlans(), previous);
+          await persistPlans(previous);
         },
       });
     } catch (e) {
@@ -864,8 +898,7 @@ export default function App() {
     }
 
     try {
-      await saveDailyPlans(next);
-      queryClient.setQueryData(qk.dailyPlans(), next);
+      await persistPlans(next);
     } catch (e) {
       setDailyPlans(previous);
       notifyError('Non ho potuto salvare il piano di oggi: la spunta non è stata registrata.', e);

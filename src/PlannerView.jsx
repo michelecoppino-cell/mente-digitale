@@ -19,6 +19,7 @@ import TaskDetailPanel from './TaskDetailPanel';
 import { DEFAULT_CONFIG, findProject, shadeColor, hexToRgba } from './plannerShared';
 import { ESTIMATE_CHOICES, DEFAULT_ESTIMATE_MIN, taskEstimateMin } from './taskModel';
 import { pushUndo } from './undo';
+import { notifyError, notifyInfo } from './notify';
 import './PlannerView.css';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -900,6 +901,24 @@ export default function PlannerView({
   }
 
   // ── Save ────────────────────────────────────────────────────────────────────
+  // Salva il piano e adotta quello che è davvero finito su OneDrive: da quando la
+  // scrittura è condizionata all'eTag, un salvataggio che trova il file cambiato
+  // da un altro dispositivo lo fonde invece di sovrascriverlo, e restituisce la
+  // fusione. Tenersi la propria copia significherebbe mostrare una griglia che su
+  // OneDrive non esiste.
+  async function persistPlans(next) {
+    const res = await saveDailyPlans(next);
+    const merged = res?._merged;
+    if (!merged) return next;
+    plansRef.current = merged;
+    setPlans(merged);
+    const cur = merged[currentDateRef.current];
+    if (cur) setTodayPlan(cur);
+    queryClient.setQueryData(qk.dailyPlans(), merged);
+    notifyInfo('Il piano era cambiato su un altro dispositivo: ho unito le due versioni.');
+    return merged;
+  }
+
   function scheduleSave(updatedPlan) {
     setSaveStatus('saving');
     clearTimeout(saveTimerRef.current);
@@ -910,11 +929,11 @@ export default function PlannerView({
         plansRef.current = updated;
         setPlans(updated);
         queryClient.setQueryData(qk.dailyPlans(), updated);
-        await saveDailyPlans(updated);
+        await persistPlans(updated);
         setSaveStatus('saved');
       } catch (e) {
-        console.error('save plans', e);
         setSaveStatus('error');
+        notifyError('Il piano non è stato salvato su OneDrive. Le modifiche restano a schermo: riprova fra un momento.', e);
       }
     }, SAVE_DEBOUNCE);
   }
@@ -974,11 +993,11 @@ export default function PlannerView({
       if (!plansLoadedRef.current) { setSaveStatus('error'); return; }
       try {
         queryClient.setQueryData(qk.dailyPlans(), plansRef.current);
-        await saveDailyPlans(plansRef.current);
+        await persistPlans(plansRef.current);
         setSaveStatus('saved');
       } catch (e) {
-        console.error('save plans', e);
         setSaveStatus('error');
+        notifyError('Il piano non è stato salvato su OneDrive. Le modifiche restano a schermo: riprova fra un momento.', e);
       }
     }, SAVE_DEBOUNCE);
   }
