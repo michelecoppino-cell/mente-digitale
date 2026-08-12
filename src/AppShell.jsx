@@ -9,6 +9,7 @@
 import { useEffect, useState } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import { usePomodoro } from './pomodoroContext';
+import { useMediaQuery } from './useMediaQuery';
 import './AppShell.css';
 
 /** Le sei destinazioni del menù, nell'ordine in cui compaiono nel rail. */
@@ -71,27 +72,6 @@ function Icon({ name }) {
     );
     default: return null;
   }
-}
-
-/**
- * Vero quando la media query è soddisfatta. Serve perché il panino ha un solo
- * handler ma due significati — drawer da telefono, rail ridotto da desktop — e
- * la soglia va letta in JS, non solo in CSS.
- * @param {string} query
- */
-function useMediaQuery(query) {
-  const [matches, setMatches] = useState(
-    () => typeof window !== 'undefined' && !!window.matchMedia?.(query).matches
-  );
-  useEffect(() => {
-    if (!window.matchMedia) return undefined;
-    const mq = window.matchMedia(query);
-    const onChange = (/** @type {MediaQueryListEvent} */ e) => setMatches(e.matches);
-    setMatches(mq.matches);
-    mq.addEventListener('change', onChange);
-    return () => mq.removeEventListener('change', onChange);
-  }, [query]);
-  return matches;
 }
 
 /** mm:ss a partire dai millisecondi trascorsi. */

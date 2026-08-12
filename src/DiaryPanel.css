@@ -748,3 +748,8 @@
   line-height: 1.7;
 }
 .diary-import-dettaglio { font-size: 11px; color: var(--muted); }
+
+/* Su touch il cestino di una voce non ha un hover che lo scopra. */
+@media (hover: none) {
+  .diary-entry-del { opacity: 1; }
+}
