@@ -11,7 +11,7 @@
 
 .cset-modal {
   background: var(--surface);
-  border: 1px solid var(--border2);
+  border: 1px solid var(--line);
   border-radius: 12px;
   width: min(440px, 90vw);
   max-height: 80vh;
@@ -24,7 +24,7 @@
   justify-content: space-between;
   align-items: center;
   padding: 16px 20px;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--line-soft);
   font-size: 14px;
   font-weight: 500;
   color: var(--text);
@@ -57,7 +57,7 @@
 }
 
 .cset-group {
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--line-soft);
   padding: 8px 0;
 }
 .cset-group:last-child { border-bottom: none; }

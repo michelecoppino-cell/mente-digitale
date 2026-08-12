@@ -7,7 +7,7 @@
   bottom: 20px;
   z-index: 500;
   background: var(--surface);
-  border: 1px solid var(--border2);
+  border: 1px solid var(--line);
   border-radius: 12px;
   padding: 14px 18px 16px;
   width: 200px;
@@ -81,7 +81,7 @@
 }
 
 .pomodoro-btn-secondary {
-  border-color: var(--border2);
+  border-color: var(--line);
   color: var(--muted);
 }
 @media (hover: hover) {
@@ -97,7 +97,7 @@
 .pomodoro-break-btn {
   flex: 1;
   background: none;
-  border: 1px solid var(--border2);
+  border: 1px solid var(--line);
   color: var(--muted);
   padding: 5px 0;
   border-radius: 7px;
@@ -126,7 +126,7 @@
 .pomodoro-stats {
   margin-top: 10px;
   padding-top: 10px;
-  border-top: 1px solid var(--border);
+  border-top: 1px solid var(--line-soft);
   font-size: 11px;
   color: var(--muted);
   text-align: center;
@@ -152,7 +152,7 @@
 
 .pomodoro-alert-card {
   background: var(--surface);
-  border: 1px solid var(--border2);
+  border: 1px solid var(--line);
   border-radius: 16px;
   padding: 36px 40px;
   max-width: 360px;

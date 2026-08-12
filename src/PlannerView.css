@@ -15,7 +15,7 @@
   align-items: center;
   justify-content: space-between;
   padding: 10px 20px;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--line-soft);
   background: rgba(8,10,14,0.95);
   flex-shrink: 0;
   gap: 16px;
@@ -40,7 +40,7 @@
 
 .planner-nav-btn {
   background: none;
-  border: 1px solid var(--border2);
+  border: 1px solid var(--line);
   color: var(--muted);
   width: 26px; height: 26px;
   border-radius: 6px;
@@ -87,7 +87,7 @@
 
 .planner-action-btn {
   background: none;
-  border: 1px solid var(--border2);
+  border: 1px solid var(--line);
   color: var(--muted);
   padding: 5px 12px;
   border-radius: 7px;
@@ -120,8 +120,8 @@
   min-width: 200px;
   max-height: 280px;
   overflow-y: auto;
-  background: var(--surface2);
-  border: 1px solid var(--border2);
+  background: var(--surface-2);
+  border: 1px solid var(--line);
   border-radius: 10px;
   padding: 8px;
   box-shadow: 0 12px 34px rgba(0,0,0,0.5);
@@ -153,7 +153,7 @@
   .planner-cal-filter-dot-btn:hover { border-color: #fff; }
 }
 .planner-cal-filter-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.planner-cal-filter-divider { border-top: 1px solid var(--border2); margin: 4px 2px; }
+.planner-cal-filter-divider { border-top: 1px solid var(--line); margin: 4px 2px; }
 
 /* Riga di swatch colore Graph (enum fisso, non hex libero) sotto il
    calendario di cui si è cliccato il pallino — stessa lista di preset già
@@ -179,7 +179,7 @@
 
 .planner-close-btn {
   background: none;
-  border: 1px solid var(--border2);
+  border: 1px solid var(--line);
   color: var(--muted);
   width: 28px; height: 28px;
   border-radius: 7px;
@@ -209,7 +209,7 @@
   align-items: center;
   justify-content: space-between;
   padding: 10px 14px 8px;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--line-soft);
   font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.07em;
@@ -227,7 +227,7 @@
 
 .planner-filter-btn {
   background: none;
-  border: 1px solid var(--border2);
+  border: 1px solid var(--line);
   color: var(--muted);
   padding: 2px 8px;
   border-radius: 5px;
@@ -273,7 +273,7 @@
   overflow-y: auto;
   padding: 8px 10px;
   scrollbar-width: thin;
-  scrollbar-color: var(--border2) transparent;
+  scrollbar-color: var(--line) transparent;
 }
 
 /* Scheduled (already on timeline) state */
@@ -322,7 +322,7 @@
   gap: 7px;
   padding: 6px 8px;
   border-radius: 6px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--line-soft);
   margin-bottom: 3px;
   background: rgba(255,255,255,0.015);
   cursor: grab;
@@ -405,7 +405,7 @@
 .workbook-pool-name-input {
   flex: 1;
   min-width: 0;
-  background: var(--surface2);
+  background: var(--surface-2);
   border: 1px solid var(--accent);
   border-radius: 4px;
   color: var(--text);
@@ -465,7 +465,7 @@
 
 .workbook-pool-add-input {
   width: 100%;
-  background: var(--surface2);
+  background: var(--surface-2);
   border: 1px solid var(--accent);
   border-radius: 6px;
   color: var(--text);
@@ -479,7 +479,7 @@
 .workbook-pool-suggestions {
   margin-bottom: 6px;
   padding-bottom: 6px;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--line-soft);
 }
 .workbook-pool-suggestions-label {
   font-size: 11px;
@@ -511,8 +511,8 @@
   display: flex;
   flex-direction: column;
   gap: 10px;
-  background: var(--surface2);
-  border: 1px solid var(--border2);
+  background: var(--surface-2);
+  border: 1px solid var(--line);
   border-radius: 10px;
   padding: 12px;
   box-shadow: 0 12px 34px rgba(0,0,0,0.5);
@@ -575,7 +575,7 @@
 .workbook-color-slider-num {
   width: 42px;
   background: var(--surface);
-  border: 1px solid var(--border2);
+  border: 1px solid var(--line);
   border-radius: 5px;
   color: var(--text);
   font-size: 11px;
@@ -588,13 +588,13 @@
   gap: 4px;
   font-size: 12px;
   color: var(--muted);
-  border-top: 1px solid var(--border);
+  border-top: 1px solid var(--line-soft);
   padding-top: 8px;
 }
 .workbook-color-hex-input {
   flex: 1;
   background: var(--surface);
-  border: 1px solid var(--border2);
+  border: 1px solid var(--line);
   border-radius: 5px;
   color: var(--text);
   font-size: 12px;
@@ -607,14 +607,14 @@
 .planner-eis-filter-row,
 .planner-stacked-filter-row {
   padding-top: 0;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--line-soft);
 }
 
 .planner-eis-badge {
   font-size: 11px;
   font-weight: 700;
   color: var(--q-color, var(--muted));
-  border: 1px solid var(--q-color, var(--border2));
+  border: 1px solid var(--q-color, var(--line));
   border-radius: 3px;
   padding: 0 4px;
   flex-shrink: 0;
@@ -625,7 +625,7 @@
   font-size: 11px;
   font-weight: 600;
   color: var(--muted);
-  border: 1px solid var(--border2);
+  border: 1px solid var(--line);
   border-radius: 3px;
   padding: 0 4px;
   flex-shrink: 0;
@@ -676,7 +676,7 @@
   display: flex;
   flex-direction: column;
   min-height: 0;
-  border: 1px solid var(--q-color, var(--border2));
+  border: 1px solid var(--q-color, var(--line));
   border-radius: 8px;
   background: rgba(255,255,255,0.015);
   overflow: hidden;
@@ -688,7 +688,7 @@
   align-items: baseline;
   gap: 6px;
   padding: 7px 9px;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--line-soft);
 }
 
 .planner-eis-cell-key {
@@ -708,7 +708,7 @@
   overflow-y: auto;
   padding: 6px 8px;
   scrollbar-width: thin;
-  scrollbar-color: var(--border2) transparent;
+  scrollbar-color: var(--line) transparent;
 }
 
 .planner-eis-cell-empty {
@@ -735,7 +735,7 @@
   width: 5px;
   cursor: col-resize;
   background: transparent;
-  border-left: 1px solid var(--border);
+  border-left: 1px solid var(--line-soft);
   transition: background 0.15s, border-left-color 0.15s;
   z-index: 5;
 }
@@ -761,10 +761,10 @@
   box-sizing: border-box;
   padding-left: 46px; /* spazio per la colonna del tempo concentrato Pomodoro */
   scrollbar-width: thin;
-  scrollbar-color: var(--border2) transparent;
+  scrollbar-color: var(--line) transparent;
 }
 .planner-timeline-body::-webkit-scrollbar { width: 4px; }
-.planner-timeline-body::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
+.planner-timeline-body::-webkit-scrollbar-thumb { background: var(--line); border-radius: 2px; }
 
 /* Slot rows (grid lines) */
 .planner-slot {
@@ -894,7 +894,7 @@
   width: 34px;
   padding: 3px 2px;
   border-radius: 4px;
-  background: var(--surface2);
+  background: var(--surface-2);
   border: 1px solid rgba(212,164,74,0.4);
   color: var(--accent);
   font-size: 11px;
@@ -920,8 +920,8 @@
   position: fixed;
   z-index: 501;
   width: 180px;
-  background: var(--surface2);
-  border: 1px solid var(--border2);
+  background: var(--surface-2);
+  border: 1px solid var(--line);
   border-radius: 10px;
   padding: 10px;
   box-shadow: 0 12px 34px rgba(0,0,0,0.5);
@@ -1020,7 +1020,7 @@
 /* Un evento condiviso da qualcun altro è ancora più "non tuo": il bordo si
    spegne del tutto invece di cambiare colore di fondo. */
 @media (hover: hover) {
-  .planner-cal-event:hover { border-color: var(--border2); }
+  .planner-cal-event:hover { border-color: var(--line); }
 }
 .planner-cal-event.shared { border-left-color: #3f4450; }
 
@@ -1238,7 +1238,7 @@
   overflow-y: auto;
   padding: 10px 12px;
   scrollbar-width: thin;
-  scrollbar-color: var(--border2) transparent;
+  scrollbar-color: var(--line) transparent;
 }
 
 /* Con il widget Pomodoro attivo (fisso in basso a destra, stesso angolo di
@@ -1272,7 +1272,7 @@
 
 .planner-modal {
   background: var(--surface);
-  border: 1px solid var(--border2);
+  border: 1px solid var(--line);
   border-radius: 12px;
   width: min(480px, 90vw);
   max-height: 80vh;
@@ -1285,7 +1285,7 @@
   justify-content: space-between;
   align-items: center;
   padding: 16px 20px;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--line-soft);
   font-size: 14px;
   font-weight: 500;
   color: var(--text);
@@ -1311,7 +1311,7 @@
   display: flex;
   gap: 8px;
   padding: 8px 0;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--line-soft);
   font-size: 13px;
   color: var(--text);
   line-height: 1.4;
@@ -1341,7 +1341,7 @@
 .planner-modal-step-text { flex: 1; }
 .planner-modal-done-badge {
   font-size: 11px; color: var(--muted);
-  border: 1px solid var(--border2); border-radius: 3px; padding: 0 4px;
+  border: 1px solid var(--line); border-radius: 3px; padding: 0 4px;
 }
 
 .planner-modal-apply-btn {
@@ -1374,8 +1374,8 @@
   color: var(--muted);
 }
 .planner-modal-select {
-  background: var(--surface2);
-  border: 1px solid var(--border2);
+  background: var(--surface-2);
+  border: 1px solid var(--line);
   border-radius: 6px;
   color: var(--text);
   font-size: 12px;
@@ -1456,7 +1456,7 @@ input[type="time"].planner-modal-select::-webkit-calendar-picker-indicator {
   flex-wrap: wrap;
   gap: 4px;
   padding: 4px 8px;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--line-soft);
   background: rgba(8,10,14,0.55);
   min-height: 28px;
 }
@@ -1482,13 +1482,13 @@ input[type="time"].planner-modal-select::-webkit-calendar-picker-indicator {
 .planner-week-allday-row {
   display: flex;
   flex-shrink: 0;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--line-soft);
   min-height: 24px;
   background: rgba(8,10,14,0.45);
 }
 .planner-week-allday-col {
   flex: 1;
-  border-left: 1px solid var(--border);
+  border-left: 1px solid var(--line-soft);
   display: flex;
   flex-wrap: wrap;
   gap: 2px;
@@ -1549,7 +1549,7 @@ input[type="time"].planner-modal-select::-webkit-calendar-picker-indicator {
 /* ── View toggle (Giorno / Settimana) ── */
 .planner-view-toggle {
   display: flex;
-  border: 1px solid var(--border2);
+  border: 1px solid var(--line);
   border-radius: 6px;
   overflow: hidden;
   margin-left: 6px;
@@ -1589,18 +1589,18 @@ input[type="time"].planner-modal-select::-webkit-calendar-picker-indicator {
 .planner-week-head {
   display: flex;
   flex-shrink: 0;
-  border-bottom: 1px solid var(--border2);
+  border-bottom: 1px solid var(--line);
   background: rgba(8,10,14,0.95);
 }
 
 .planner-week-gutter {
   width: 44px;
   flex-shrink: 0;
-  border-right: 1px solid var(--border2);
+  border-right: 1px solid var(--line);
 }
 .planner-week-gutter.right {
   border-right: none;
-  border-left: 1px solid var(--border2);
+  border-left: 1px solid var(--line);
 }
 
 .planner-week-day-header {
@@ -1611,7 +1611,7 @@ input[type="time"].planner-modal-select::-webkit-calendar-picker-indicator {
   font-weight: 600;
   color: rgba(255,255,255,0.75);
   cursor: pointer;
-  border-left: 1px solid var(--border2);
+  border-left: 1px solid var(--line);
   transition: color 0.15s, background 0.15s;
   text-transform: capitalize;
 }
@@ -1625,23 +1625,23 @@ input[type="time"].planner-modal-select::-webkit-calendar-picker-indicator {
   flex: 1;
   overflow-y: auto;
   scrollbar-width: thin;
-  scrollbar-color: var(--border2) transparent;
+  scrollbar-color: var(--line) transparent;
 }
 /* Scrollbar stretta: puramente estetica. L'allineamento con l'header (che
    non scrolla e quindi non perde questa larghezza) è garantito a runtime da
    WeeklyTimeline via JS (scrollbarW), che misura la larghezza reale e la
    applica come padding-right all'header e alla riga eventi tutto il giorno. */
 .planner-week-body::-webkit-scrollbar { width: 4px; }
-.planner-week-body::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
+.planner-week-body::-webkit-scrollbar-thumb { background: var(--line); border-radius: 2px; }
 
 .planner-week-gutter-col {
   width: 44px;
   flex-shrink: 0;
-  border-right: 1px solid var(--border2);
+  border-right: 1px solid var(--line);
 }
 .planner-week-gutter-col.right {
   border-right: none;
-  border-left: 1px solid var(--border2);
+  border-left: 1px solid var(--line);
 }
 
 .planner-week-slot-label {
@@ -1657,7 +1657,7 @@ input[type="time"].planner-modal-select::-webkit-calendar-picker-indicator {
 .planner-week-day-col {
   flex: 1;
   position: relative;
-  border-left: 1px solid var(--border2);
+  border-left: 1px solid var(--line);
   min-width: 0;
 }
 .planner-week-day-col.today { background: rgba(212,164,74,0.08); }
@@ -1988,7 +1988,7 @@ input[type="time"].planner-modal-select::-webkit-calendar-picker-indicator {
 }
 .planner-task-detail-due-input {
   background: rgba(255,255,255,0.04);
-  border: 1px solid var(--border2);
+  border: 1px solid var(--line);
   border-radius: 4px;
   color: var(--text);
   font-size: 11px;
@@ -2000,7 +2000,7 @@ input[type="time"].planner-modal-select::-webkit-calendar-picker-indicator {
 .planner-task-detail-header-actions { display: flex; gap: 4px; margin-top: 8px; }
 .planner-task-detail-action {
   background: none;
-  border: 1px solid var(--border2);
+  border: 1px solid var(--line);
   color: var(--muted);
   width: 24px; height: 22px;
   border-radius: 5px;
@@ -2035,7 +2035,7 @@ input[type="time"].planner-modal-select::-webkit-calendar-picker-indicator {
 
 .planner-task-detail-notes {
   background: rgba(255,255,255,0.04);
-  border: 1px solid var(--border2);
+  border: 1px solid var(--line);
   border-radius: 5px;
   color: var(--text);
   font-size: 11px;
@@ -2102,7 +2102,7 @@ input[type="time"].planner-modal-select::-webkit-calendar-picker-indicator {
 
 .planner-checklist-add { display: flex; gap: 4px; margin-top: 6px; }
 .planner-checklist-input {
-  flex: 1; background: rgba(255,255,255,0.04); border: 1px solid var(--border2);
+  flex: 1; background: rgba(255,255,255,0.04); border: 1px solid var(--line);
   border-radius: 4px; color: var(--text); font-size: 11px;
   font-family: var(--font-ui); padding: 4px 7px;
 }
@@ -2126,7 +2126,7 @@ input[type="time"].planner-modal-select::-webkit-calendar-picker-indicator {
 /* ── Header planner toggle button (App.css addition) ── */
 .planner-toggle-btn {
   background: none;
-  border: 1px solid var(--border2);
+  border: 1px solid var(--line);
   color: var(--muted);
   padding: 5px 10px;
   border-radius: 6px;
@@ -2262,7 +2262,7 @@ input[type="time"].planner-modal-select::-webkit-calendar-picker-indicator {
 
 .planner-month-cell {
   background: rgba(255,255,255,0.04);
-  border: 1px solid var(--border2);
+  border: 1px solid var(--line);
   border-radius: 8px;
   padding: 5px 6px;
   min-width: 0;
@@ -2453,7 +2453,7 @@ input[type="time"].planner-modal-select::-webkit-calendar-picker-indicator {
 .planner-task-estimate {
   flex-shrink: 0;
   padding: 1px 6px;
-  border: 1px solid var(--border2);
+  border: 1px solid var(--line);
   border-radius: var(--r-sm);
   font-size: var(--fs-micro);
   color: var(--muted);

@@ -90,14 +90,6 @@
   --break-office:   #9d7fd6;
   --break-client:   #5b8fd9;
 
-  /* ── Alias di compatibilità ─────────────────────────────────────────────
-     I CSS per componente scritti prima dei token usano ancora questi nomi.
-     Restano qui come ponte, così la palette è comunque una sola: vanno tolti
-     man mano che ciascun file passa ai nomi nuovi. */
-  --surface2: var(--surface-2);
-  --border:   var(--line-soft);
-  --border2:  var(--line);
-
   /* App.css li usa in quattro punti ma non erano definiti da nessuna parte:
      quelle regole `border-radius` finora non facevano nulla. */
   --border-radius-md: var(--r-sm);
