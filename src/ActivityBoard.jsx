@@ -9,7 +9,7 @@
 // La lente Eisenhower resta disponibile come vista alternativa (Quadranti),
 // applicata alle sole Prossime azioni: è una lettura del serbatoio, non più
 // la struttura.
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
   taskStatus, inboxListId, indexScheduled, taskContext, taskEstimateMin,
@@ -35,6 +35,11 @@ const VIEWS = [
   { key: 'quadranti', label: 'Quadranti' },
   { key: 'scadenza',  label: 'Scadenza' },
 ];
+
+/** Quanto tenere premuta una card prima che si apra «Sposta in…». */
+const LONG_PRESS_MS = 450;
+/** Oltre questo scarto in px la pressione è uno scorrimento, non una pressione. */
+const LONG_PRESS_SLOP = 10;
 
 /** 'YYYY-MM-DD' locale. */
 function todayStr() {
@@ -68,10 +73,46 @@ function fmtWhen(/** @type {{date: string, startTime: string}} */ placement) {
  * @param {{ date: string, startTime: string, endTime: string, completed: boolean }|null} props.placement
  * @param {boolean} props.dragging
  * @param {(t: import('./types').TodoTask) => void} props.onClick
+ * @param {(t: import('./types').TodoTask) => void} props.onLongPress  apre «Sposta in…»
  * @param {(t: import('./types').TodoTask) => void} props.onDragStart
  * @param {() => void} props.onDragEnd
  */
-function TaskCard({ task, status, config, placement, dragging, onClick, onDragStart, onDragEnd }) {
+function TaskCard({ task, status, config, placement, dragging, onClick, onLongPress, onDragStart, onDragEnd }) {
+  // Pressione lunga: da telefono è l'unico modo di cambiare colonna a un task,
+  // perché il drag & drop delle colonne è su eventi HTML5 che su touch non
+  // partono nemmeno. Lo scorrimento della colonna deve continuare a funzionare,
+  // quindi un movimento oltre lo slop annulla la pressione invece di bloccarlo.
+  const pressTimerRef = useRef(/** @type {number|null} */ (null));
+  const pressStartRef = useRef({ x: 0, y: 0 });
+  const pressFiredRef = useRef(false);
+
+  function cancelPress() {
+    if (pressTimerRef.current !== null) {
+      clearTimeout(pressTimerRef.current);
+      pressTimerRef.current = null;
+    }
+  }
+
+  useEffect(() => cancelPress, []);
+
+  function handleTouchStart(/** @type {import('react').TouchEvent} */ e) {
+    const t = e.touches[0];
+    pressStartRef.current = { x: t.clientX, y: t.clientY };
+    pressFiredRef.current = false;
+    cancelPress();
+    pressTimerRef.current = window.setTimeout(() => {
+      pressTimerRef.current = null;
+      pressFiredRef.current = true;
+      onLongPress(task);
+    }, LONG_PRESS_MS);
+  }
+
+  function handleTouchMove(/** @type {import('react').TouchEvent} */ e) {
+    const t = e.touches[0];
+    if (Math.abs(t.clientX - pressStartRef.current.x) > LONG_PRESS_SLOP ||
+        Math.abs(t.clientY - pressStartRef.current.y) > LONG_PRESS_SLOP) cancelPress();
+  }
+
   const ctx = taskContext(task);
   const project = findProject(task, config);
   const waiting = status === 'waiting' ? parseWaitingFor(task) : null;
@@ -83,9 +124,21 @@ function TaskCard({ task, status, config, placement, dragging, onClick, onDragSt
     <button
       className={`ab-card ab-card-${status}${dragging ? ' dragging' : ''}`}
       draggable
+      title="Tieni premuta la card per spostarla"
       onDragStart={e => { e.dataTransfer.effectAllowed = 'move'; onDragStart(task); }}
       onDragEnd={onDragEnd}
-      onClick={() => onClick(task)}>
+      onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMove}
+      onTouchEnd={cancelPress}
+      onTouchCancel={cancelPress}
+      // Su iOS la pressione lunga aprirebbe il menù di sistema sopra il nostro.
+      onContextMenu={e => e.preventDefault()}
+      // Il click che segue il touchend va ignorato: la pressione lunga ha già
+      // fatto il suo, aprire anche il task sarebbe un secondo comando gratis.
+      onClick={() => {
+        if (pressFiredRef.current) { pressFiredRef.current = false; return; }
+        onClick(task);
+      }}>
       <span className="ab-card-title">{task.title}</span>
 
       <span className="ab-card-meta">
@@ -139,6 +192,11 @@ export default function ActivityBoard({
   const [query, setQuery] = useState('');
   const [dragTask, setDragTask] = useState(/** @type {import('./types').TodoTask|null} */ (null));
   const [dragOver, setDragOver] = useState(/** @type {string|null} */ (null));
+  // Il task su cui è aperto «Sposta in…», e la colonna al centro dello
+  // scorrimento orizzontale — sotto i 1100px le cinque colonne non ci stanno.
+  const [moveFor, setMoveFor] = useState(/** @type {import('./types').TodoTask|null} */ (null));
+  const [activeCol, setActiveCol] = useState(0);
+  const columnsRef = useRef(/** @type {HTMLDivElement|null} */ (null));
 
   const setParam = (/** @type {string} */ key, /** @type {string} */ value) => {
     const next = new URLSearchParams(params);
@@ -177,26 +235,58 @@ export default function ActivityBoard({
     return out;
   }, [visible, scheduled, inboxId]);
 
-  function handleDrop(/** @type {string} */ target) {
-    setDragOver(null);
-    const task = dragTask;
-    setDragTask(null);
-    if (!task) return;
+  const statusOf = (/** @type {import('./types').TodoTask} */ task) =>
+    taskStatus(task, { scheduledIds: new Set(scheduled.keys()), inboxListId: inboxId });
 
-    const from = taskStatus(task, { scheduledIds: new Set(scheduled.keys()), inboxListId: inboxId });
+  /**
+   * Le regole di transizione fra colonne, scritte una volta sola: le usa il
+   * trascinamento da desktop e il menù «Sposta in…» da telefono.
+   */
+  function moveTask(/** @type {import('./types').TodoTask} */ task, /** @type {string} */ from, /** @type {string} */ target) {
     if (from === target) return;
 
     // Uscire da Inbox non è uno spostamento ma il passo di chiarimento: un
     // task di Inbox è solo testo, e per stare in un'altra colonna gli servono
     // contesto, sezione e durata.
     if (from === 'inbox') { onClarify(task); return; }
-    // Nessuno finisce in Inbox trascinandocelo: l'Inbox è dove le cose
-    // arrivano, non dove si rimandano.
+    // Nessuno finisce in Inbox: l'Inbox è dove le cose arrivano, non dove si
+    // rimandano.
     if (target === 'inbox') return;
 
     if (target === 'scheduled') { onSchedule(task); return; }
     if (from === 'scheduled') { onUnschedule(task); if (target !== 'next') onChangeStatus(task, target); return; }
     onChangeStatus(task, target);
+  }
+
+  function handleDrop(/** @type {string} */ target) {
+    setDragOver(null);
+    const task = dragTask;
+    setDragTask(null);
+    if (!task) return;
+    moveTask(task, statusOf(task), target);
+  }
+
+  /** Porta al centro la colonna toccata nella riga di pastiglie. */
+  function scrollToColumn(/** @type {number} */ index) {
+    const kid = columnsRef.current?.children?.[index];
+    kid?.scrollIntoView({ behavior: 'smooth', inline: 'start', block: 'nearest' });
+  }
+
+  // Quale colonna si sta guardando: la pastiglia attiva la legge dallo
+  // scorrimento, così scorrere col dito e toccare una pastiglia raccontano la
+  // stessa cosa. Con cinque colonne i rect sono cinque per evento, e React
+  // scarta da sé i setState che non cambiano il valore.
+  function handleColumnsScroll() {
+    const el = columnsRef.current;
+    if (!el) return;
+    const base = el.getBoundingClientRect().left;
+    let best = 0;
+    let bestDist = Infinity;
+    Array.from(el.children).forEach((kid, i) => {
+      const dist = Math.abs(kid.getBoundingClientRect().left - base);
+      if (dist < bestDist) { bestDist = dist; best = i; }
+    });
+    setActiveCol(best);
   }
 
   const header = (
@@ -290,7 +380,28 @@ export default function ActivityBoard({
   return (
     <div className="ab">
       {header}
-      <div className="ab-columns">
+
+      {/* Solo su schermo stretto (CSS). Sotto i 1100px le colonne scorrono in
+          orizzontale: su un telefono da 390px se ne vede una e mezza, e niente
+          diceva quante fossero né a che punto si era. Le pastiglie sono l'indice
+          e la navigazione insieme; il suggerimento dice l'unica cosa che da
+          telefono non si può indovinare. */}
+      <div className="ab-mobile-nav">
+        <div className="ab-pills">
+          {COLUMNS.map((col, i) => (
+            <button
+              key={col.status}
+              className={`ab-pill${activeCol === i ? ' active' : ''}`}
+              onClick={() => scrollToColumn(i)}>
+              {col.label}
+              <span className="ab-pill-count">{byStatus[col.status].length}</span>
+            </button>
+          ))}
+        </div>
+        <p className="ab-touch-hint">Tieni premuta una card per spostarla di colonna.</p>
+      </div>
+
+      <div className="ab-columns" ref={columnsRef} onScroll={handleColumnsScroll}>
         {COLUMNS.map(col => (
           <div
             key={col.status}
@@ -313,6 +424,7 @@ export default function ActivityBoard({
                   placement={scheduled.get(t.id) || null}
                   dragging={dragTask?.id === t.id}
                   onClick={col.status === 'inbox' ? onClarify : onOpenTask}
+                  onLongPress={setMoveFor}
                   onDragStart={setDragTask}
                   onDragEnd={() => { setDragTask(null); setDragOver(null); }}
                 />
@@ -321,6 +433,65 @@ export default function ActivityBoard({
           </div>
         ))}
       </div>
+
+      {moveFor && (
+        <MoveSheet
+          task={moveFor}
+          from={statusOf(moveFor)}
+          onClose={() => setMoveFor(null)}
+          onClarify={onClarify}
+          onMove={moveTask}
+        />
+      )}
     </div>
+  );
+}
+
+/**
+ * Foglio «Sposta in…», aperto dalla pressione lunga su una card.
+ * @param {Object} props
+ * @param {import('./types').TodoTask} props.task
+ * @param {string} props.from                                             colonna di partenza
+ * @param {() => void} props.onClose
+ * @param {(t: import('./types').TodoTask) => void} props.onClarify
+ * @param {(t: import('./types').TodoTask, from: string, to: string) => void} props.onMove
+ */
+function MoveSheet({ task, from, onClose, onClarify, onMove }) {
+  // Nessuno finisce in Inbox per spostamento, e la colonna in cui il task è
+  // già non è una destinazione: restano le mete vere.
+  const options = COLUMNS.filter(c => c.status !== 'inbox' && c.status !== from);
+
+  return (
+    <>
+      <div className="ab-move-scrim" onClick={onClose} />
+      <div className="ab-move-sheet" role="dialog" aria-label="Sposta l'attività">
+        <div className="ab-move-title">{task.title}</div>
+        {from === 'inbox' ? (
+          // Da Inbox non si sposta: prima si chiarisce. Il foglio lo dice
+          // invece di non aprirsi, così la regola si impara una volta.
+          <>
+            <p className="ab-move-note">
+              Da Inbox non si sposta: prima va chiarita — contesto, sezione, durata.
+            </p>
+            <button className="ab-move-option" onClick={() => { onClose(); onClarify(task); }}>
+              Chiariscila
+            </button>
+          </>
+        ) : (
+          <>
+            <div className="eyebrow ab-move-eyebrow">Sposta in</div>
+            {options.map(col => (
+              <button
+                key={col.status}
+                className="ab-move-option"
+                onClick={() => { onClose(); onMove(task, from, col.status); }}>
+                {col.label}
+              </button>
+            ))}
+          </>
+        )}
+        <button className="ab-move-cancel" onClick={onClose}>Annulla</button>
+      </div>
+    </>
   );
 }

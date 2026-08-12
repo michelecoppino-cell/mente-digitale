@@ -82,6 +82,52 @@
 }
 .ab-views button.active { background: var(--accent-tint); color: var(--accent); }
 
+/* ── Indice delle colonne su schermo stretto ──────────────────────────────
+   Le pastiglie e il suggerimento della pressione lunga servono solo quando le
+   cinque colonne non ci stanno insieme: sopra i 1100px il flusso si legge tutto
+   in una schermata e non c'è niente da indicizzare. */
+
+.ab-mobile-nav { display: none; }
+
+.ab-pills {
+  display: flex;
+  gap: var(--sp-2);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.ab-pills::-webkit-scrollbar { display: none; }
+
+.ab-pill {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  flex: 0 0 auto;
+  height: 30px;
+  padding: 0 var(--sp-3);
+  background: none;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  color: var(--muted);
+  font-family: var(--font-ui);
+  font-size: var(--fs-chip);
+  white-space: nowrap;
+  cursor: pointer;
+  transition: border-color var(--t), color var(--t);
+}
+.ab-pill.active { border-color: var(--accent-line); color: var(--accent); }
+
+.ab-pill-count {
+  font-size: var(--fs-micro);
+  color: var(--disabled);
+  font-variant-numeric: tabular-nums;
+}
+.ab-pill.active .ab-pill-count { color: var(--accent); }
+
+.ab-touch-hint {
+  font-size: var(--fs-micro);
+  color: var(--disabled);
+}
+
 /* ── Colonne ──────────────────────────────────────────────────────────── */
 
 .ab-columns {
@@ -144,6 +190,10 @@
   font-family: var(--font-ui);
   text-align: left;
   cursor: grab;
+  /* La pressione lunga apre «Sposta in…»: senza questi due, su iOS parte
+     prima la selezione del testo e il menù di sistema "Copia / Condividi". */
+  user-select: none;
+  -webkit-touch-callout: none;
   transition: border-color var(--t), background var(--t), opacity var(--t);
 }
 @media (hover: hover) {
@@ -267,11 +317,26 @@
    colonne a larghezza leggibile. */
 
 @media (max-width: 1100px) {
+  .ab-mobile-nav {
+    flex: 0 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-2);
+    padding: var(--sp-3) var(--sp-4);
+    border-bottom: 1px solid var(--line-soft);
+  }
+
   .ab-columns {
     display: flex;
     overflow-x: auto;
+    /* Lo scorrimento si ferma su una colonna alla volta, invece di lasciarne
+       una e mezza a metà: è quello che rende leggibile una lista che sfora. */
+    scroll-snap-type: x mandatory;
   }
-  .ab-col { flex: 0 0 260px; }
+  .ab-col {
+    flex: 0 0 260px;
+    scroll-snap-align: start;
+  }
 }
 
 @media (max-width: 860px) {
@@ -282,4 +347,81 @@
   }
   .ab-search { width: 100%; }
   .ab-views { margin-left: 0; }
+}
+
+/* ── «Sposta in…» ─────────────────────────────────────────────────────────
+   Il cambio di colonna è su eventi HTML5 di drag, che su touch non partono:
+   senza questo foglio, da telefono lo stato di un task non si cambia. Si apre
+   con la pressione lunga sulla card — un gesto solo touch, quindi da mouse il
+   trascinamento resta l'unica strada e non cambia niente. Su schermo largo il
+   foglio si stringe al centro invece di stendersi per duemila pixel. */
+
+.ab-move-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 330;
+  background: rgba(0, 0, 0, .5);
+}
+
+.ab-move-sheet {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 340;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  width: min(100%, 460px);
+  margin-inline: auto;
+  max-height: 82dvh;
+  overflow-y: auto;
+  padding: var(--sp-5) var(--sp-4);
+  padding-bottom: calc(var(--sp-4) + env(safe-area-inset-bottom, 0px));
+  background: var(--bg-rail);
+  border-top: 1px solid var(--line);
+  border-radius: var(--r-xl) var(--r-xl) 0 0;
+  box-shadow: 0 -12px 32px rgba(0, 0, 0, .5);
+}
+
+.ab-move-title {
+  font-size: var(--fs-card);
+  line-height: 1.45;
+  color: var(--text);
+}
+
+.ab-move-eyebrow { margin-top: var(--sp-3); }
+
+.ab-move-note {
+  font-size: var(--fs-meta);
+  line-height: 1.6;
+  color: var(--text-3);
+}
+
+.ab-move-option {
+  min-height: var(--tap);
+  padding: 0 var(--sp-4);
+  background: none;
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  color: var(--text-2);
+  font-family: var(--font-ui);
+  font-size: var(--fs-row);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color var(--t), color var(--t);
+}
+@media (hover: hover) {
+  .ab-move-option:hover { border-color: var(--accent-line); color: var(--text); }
+}
+
+.ab-move-cancel {
+  min-height: var(--tap);
+  margin-top: var(--sp-2);
+  background: none;
+  border: none;
+  color: var(--muted);
+  font-family: var(--font-ui);
+  font-size: var(--fs-meta);
+  cursor: pointer;
 }
