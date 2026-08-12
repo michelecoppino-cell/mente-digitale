@@ -53,7 +53,9 @@
   cursor: pointer;
   transition: background var(--t), color var(--t);
 }
-.sv-list-item:hover { background: rgba(255, 255, 255, .04); color: var(--text); }
+@media (hover: hover) {
+  .sv-list-item:hover { background: rgba(255, 255, 255, .04); color: var(--text); }
+}
 .sv-list-item.active { background: var(--accent-tint); color: var(--accent); }
 
 .sv-list-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

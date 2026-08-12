@@ -39,7 +39,9 @@
   font-size: var(--fs-meta);
   cursor: pointer;
 }
-.clarify-close:hover { color: var(--text); background: rgba(255, 255, 255, .05); }
+@media (hover: hover) {
+  .clarify-close:hover { color: var(--text); background: rgba(255, 255, 255, .05); }
+}
 
 .clarify-title {
   width: 100%;
@@ -70,7 +72,9 @@
   cursor: pointer;
   transition: border-color var(--t), color var(--t), background var(--t);
 }
-.clarify-chip:hover { border-color: var(--accent-line); }
+@media (hover: hover) {
+  .clarify-chip:hover { border-color: var(--accent-line); }
+}
 .clarify-chip.active {
   border-color: var(--chip, var(--accent));
   color: var(--chip, var(--accent));
@@ -110,7 +114,9 @@
   cursor: pointer;
   transition: border-color var(--t), background var(--t);
 }
-.clarify-outcome:hover { border-color: var(--accent-line); }
+@media (hover: hover) {
+  .clarify-outcome:hover { border-color: var(--accent-line); }
+}
 .clarify-outcome.active { border-color: var(--accent); background: var(--accent-tint); }
 .clarify-outcome.active .clarify-outcome-label { color: var(--accent); }
 
@@ -159,7 +165,9 @@
   cursor: pointer;
   transition: border-color var(--t), color var(--t), background var(--t);
 }
-.clarify-btn:hover:not(:disabled) { border-color: var(--accent-line); color: var(--text); }
+@media (hover: hover) {
+  .clarify-btn:hover:not(:disabled) { border-color: var(--accent-line); color: var(--text); }
+}
 .clarify-btn:disabled { opacity: .45; cursor: default; }
 
 .clarify-btn.primary {
@@ -167,10 +175,14 @@
   border-color: var(--accent-line);
   color: var(--accent);
 }
-.clarify-btn.primary:hover:not(:disabled) { background: var(--accent-tint); }
+@media (hover: hover) {
+  .clarify-btn.primary:hover:not(:disabled) { background: var(--accent-tint); }
+}
 
 .clarify-btn.danger { color: var(--muted); }
-.clarify-btn.danger:hover:not(:disabled) { border-color: rgba(192, 122, 122, .45); color: var(--danger); }
+@media (hover: hover) {
+  .clarify-btn.danger:hover:not(:disabled) { border-color: rgba(192, 122, 122, .45); color: var(--danger); }
+}
 
 @media (max-width: 640px) {
   .clarify { padding: var(--sp-5); gap: var(--sp-4); }

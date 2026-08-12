@@ -36,7 +36,9 @@
   font-size: var(--fs-meta);
   text-decoration: none;
 }
-.today-plan-link:hover { background: var(--accent-tint); }
+@media (hover: hover) {
+  .today-plan-link:hover { background: var(--accent-tint); }
+}
 
 .today-grid {
   display: grid;
@@ -84,9 +86,13 @@
   cursor: pointer;
   transition: border-color var(--t), color var(--t), background var(--t);
 }
-.today-btn:hover { border-color: var(--accent-line); color: var(--text); }
+@media (hover: hover) {
+  .today-btn:hover { border-color: var(--accent-line); color: var(--text); }
+}
 .today-btn.accent { border-color: var(--accent-line); color: var(--accent); }
-.today-btn.accent:hover { background: var(--accent-tint); }
+@media (hover: hover) {
+  .today-btn.accent:hover { background: var(--accent-tint); }
+}
 
 /* ── Blocchi di elenco ────────────────────────────────────────────────── */
 
@@ -95,7 +101,9 @@
 
 .today-empty { font-size: var(--fs-meta); color: var(--disabled); line-height: 1.6; }
 .today-empty a { color: var(--accent); text-decoration: none; }
-.today-empty a:hover { text-decoration: underline; }
+@media (hover: hover) {
+  .today-empty a:hover { text-decoration: underline; }
+}
 
 /* Eventi: di sola lettura, e si vede — bordo punteggiato e un filo spenti. */
 .today-event {
@@ -139,7 +147,9 @@
   cursor: pointer;
   transition: border-color var(--t);
 }
-.today-check:hover:not(:disabled) { border-color: var(--accent); }
+@media (hover: hover) {
+  .today-check:hover:not(:disabled) { border-color: var(--accent); }
+}
 .today-check:disabled { cursor: default; border-color: var(--accent-line); }
 
 .today-action-title { flex: 1; min-width: 0; font-size: var(--fs-row); color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -248,7 +258,9 @@
   text-decoration: none;
   transition: border-color var(--t);
 }
-.today-diary:hover { border-color: var(--accent-line); }
+@media (hover: hover) {
+  .today-diary:hover { border-color: var(--accent-line); }
+}
 
 .today-diary-prompt { font-family: var(--font-title); font-size: var(--fs-row); color: var(--text-3); }
 .today-diary-streak { font-size: var(--fs-micro); color: var(--muted); }

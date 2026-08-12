@@ -16,7 +16,9 @@
   cursor: pointer;
   transition: background 0.12s, color 0.12s;
 }
-.map-view-toggle button:hover { background: rgba(255,255,255,0.05); color: var(--text); }
+@media (hover: hover) {
+  .map-view-toggle button:hover { background: rgba(255,255,255,0.05); color: var(--text); }
+}
 .map-view-toggle button.active { background: rgba(212,164,74,0.12); border-color: var(--accent); color: var(--accent); }
 
 /* Sync status */
@@ -53,7 +55,9 @@
   display: flex; align-items: center; justify-content: center;
   transition: background 0.15s, color 0.15s;
 }
-.search-btn:hover { background: rgba(255,255,255,0.06); color: var(--text); }
+@media (hover: hover) {
+  .search-btn:hover { background: rgba(255,255,255,0.06); color: var(--text); }
+}
 .search-btn.has-badge { border-color: var(--accent); color: var(--accent); }
 .search-btn.active { background: rgba(212,164,74,0.14); border-color: var(--accent); color: var(--accent); }
 
@@ -105,7 +109,9 @@
   background: none; border: none; color: var(--muted); cursor: pointer;
   font-size: 12px; transition: color 0.12s;
 }
-.bell-dropdown-header button:hover { color: var(--text); }
+@media (hover: hover) {
+  .bell-dropdown-header button:hover { color: var(--text); }
+}
 
 .bell-empty {
   font-size: 11px;
@@ -163,7 +169,9 @@
   font-family: var(--font-ui);
   transition: background 0.15s;
 }
-.bell-accept-btn:hover { background: rgba(212,164,74,0.1); }
+@media (hover: hover) {
+  .bell-accept-btn:hover { background: rgba(212,164,74,0.1); }
+}
 
 .bell-dismiss-btn {
   background: none;
@@ -175,7 +183,9 @@
   cursor: pointer;
   transition: background 0.15s;
 }
-.bell-dismiss-btn:hover { background: rgba(255,255,255,0.06); color: var(--text); }
+@media (hover: hover) {
+  .bell-dismiss-btn:hover { background: rgba(255,255,255,0.06); color: var(--text); }
+}
 
 .search-overlay {
   position: fixed;
@@ -376,7 +386,9 @@
   font-family: var(--font-ui);
   transition: background 0.2s, transform 0.1s;
 }
-.login-btn:hover { background: rgba(212,164,74,0.22); transform: translateY(-1px); }
+@media (hover: hover) {
+  .login-btn:hover { background: rgba(212,164,74,0.22); transform: translateY(-1px); }
+}
 
 .login-note { font-size: 11px; color: var(--muted); margin-top: 16px; line-height: 1.6; }
 
@@ -444,7 +456,9 @@
   flex-shrink: 0;
   transition: background 0.15s;
 }
-.panel-close:hover { background: rgba(255,255,255,0.05); color: var(--text); }
+@media (hover: hover) {
+  .panel-close:hover { background: rgba(255,255,255,0.05); color: var(--text); }
+}
 
 .panel-body { flex: 1; overflow-y: auto; padding: 16px 20px; }
 
@@ -470,7 +484,9 @@
   background: rgba(255,255,255,0.015);
   transition: background 0.15s;
 }
-.link-row:hover { background: rgba(255,255,255,0.04); }
+@media (hover: hover) {
+  .link-row:hover { background: rgba(255,255,255,0.04); }
+}
 
 .link-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
 
@@ -505,9 +521,13 @@
   transition: background 0.15s, color 0.15s;
   white-space: nowrap;
 }
-.link-btn:hover { background: rgba(255,255,255,0.06); color: var(--text); }
+@media (hover: hover) {
+  .link-btn:hover { background: rgba(255,255,255,0.06); color: var(--text); }
+}
 .link-btn.primary { border-color: var(--accent); color: var(--accent); }
-.link-btn.primary:hover { background: rgba(212,164,74,0.12); }
+@media (hover: hover) {
+  .link-btn.primary:hover { background: rgba(212,164,74,0.12); }
+}
 
 /* ── Panel tabs ── */
 .panel-tabs {
@@ -531,7 +551,9 @@
   letter-spacing: 0.04em;
 }
 
-.panel-tab:hover { color: var(--text); }
+@media (hover: hover) {
+  .panel-tab:hover { color: var(--text); }
+}
 
 .panel-tab.active {
   color: var(--tab-color, var(--accent));
@@ -550,7 +572,9 @@
   background: rgba(255,255,255,0.015);
   transition: background 0.15s;
 }
-.task-row:hover { background: rgba(255,255,255,0.04); }
+@media (hover: hover) {
+  .task-row:hover { background: rgba(255,255,255,0.04); }
+}
 
 .task-check {
   width: 14px;
@@ -613,7 +637,9 @@
   user-select: none;
   height: 36px;
 }
-.calendar-toggle:hover { background: rgba(255,255,255,0.03); }
+@media (hover: hover) {
+  .calendar-toggle:hover { background: rgba(255,255,255,0.03); }
+}
 .calendar-toggle-icon { font-size: 14px; }
 .calendar-toggle-label { font-size: 12px; color: var(--muted); flex: 1; }
 .calendar-toggle-arrow { font-size: 11px; color: var(--muted); }
@@ -632,7 +658,9 @@
   display: flex; align-items: center; justify-content: center;
   transition: background 0.15s;
 }
-.cal-nav-btn:hover { background: rgba(255,255,255,0.06); color: var(--text); }
+@media (hover: hover) {
+  .cal-nav-btn:hover { background: rgba(255,255,255,0.06); color: var(--text); }
+}
 .cal-month-label { font-size: 13px; font-weight: 500; color: var(--text); }
 
 .cal-grid {
@@ -659,7 +687,9 @@
   position: relative;
   padding: 1px;
 }
-.cal-cell:hover { background: rgba(255,255,255,0.05); }
+@media (hover: hover) {
+  .cal-cell:hover { background: rgba(255,255,255,0.05); }
+}
 .cal-cell.empty { cursor: default; }
 .cal-cell.today .cal-day-num {
   background: var(--accent);
@@ -722,7 +752,9 @@
   width: 32px; font-size: 18px; cursor: pointer; font-family: var(--font-ui);
   transition: background 0.15s;
 }
-.add-task-btn:hover:not(:disabled) { background: rgba(255,255,255,0.06); }
+@media (hover: hover) {
+  .add-task-btn:hover:not(:disabled) { background: rgba(255,255,255,0.06); }
+}
 .add-task-btn:disabled { opacity: 0.4; cursor: default; }
 
 /* ── Schedule panel inner layout ── */
@@ -753,7 +785,9 @@
   transition: background 0.12s;
   position: relative;
 }
-.mini-cal-cell:hover { background: rgba(255,255,255,0.06); }
+@media (hover: hover) {
+  .mini-cal-cell:hover { background: rgba(255,255,255,0.06); }
+}
 .mini-cal-cell.empty { cursor: default; }
 .mini-cal-cell.today {
   background: rgba(212,164,74,0.15);
@@ -865,7 +899,9 @@
   transition: color 0.15s;
   flex-shrink: 0;
 }
-.onenote-open-link:hover { color: var(--text); }
+@media (hover: hover) {
+  .onenote-open-link:hover { color: var(--text); }
+}
 
 .page-link {
   font-size: 12px;
@@ -878,7 +914,9 @@
   line-height: 1.3;
 }
 .page-link:last-child { border-bottom: none; }
-.page-link:hover { background: rgba(255,255,255,0.05); color: var(--accent); }
+@media (hover: hover) {
+  .page-link:hover { background: rgba(255,255,255,0.05); color: var(--accent); }
+}
 
 /* OneDrive */
 .od-add-btn {
@@ -893,7 +931,9 @@
   display: flex; align-items: center; justify-content: center;
   transition: background 0.15s;
 }
-.od-add-btn:hover { background: rgba(255,255,255,0.06); color: var(--text); }
+@media (hover: hover) {
+  .od-add-btn:hover { background: rgba(255,255,255,0.06); color: var(--text); }
+}
 
 .od-add-form {
   padding: 6px 12px 4px;
@@ -932,13 +972,17 @@
   flex: 1; font-size: 12px; color: var(--text);
   cursor: pointer; transition: color 0.12s;
 }
-.od-link-name:hover { color: var(--accent); }
+@media (hover: hover) {
+  .od-link-name:hover { color: var(--accent); }
+}
 .od-remove-btn {
   background: none; border: none; color: var(--muted);
   font-size: 11px; cursor: pointer; padding: 2px 4px;
   transition: color 0.12s;
 }
-.od-remove-btn:hover { color: #c07a7a; }
+@media (hover: hover) {
+  .od-remove-btn:hover { color: #c07a7a; }
+}
 
 /* Task row nel panel */
 .task-row-item {
@@ -974,7 +1018,9 @@
   cursor: pointer;
   transition: background 0.15s;
 }
-.od-open-btn:hover { background: rgba(255,255,255,0.06); }
+@media (hover: hover) {
+  .od-open-btn:hover { background: rgba(255,255,255,0.06); }
+}
 
 /* ── Schedule panel larghezza aumentata ── */
 
@@ -1003,7 +1049,9 @@
   font-size: 13px;
   transition: background 0.15s, color 0.15s;
 }
-.refresh-btn:hover { background: rgba(255,255,255,0.06); color: var(--text); }
+@media (hover: hover) {
+  .refresh-btn:hover { background: rgba(255,255,255,0.06); color: var(--text); }
+}
 
 /* Titolo panel dx centrato */
 .panel-title {
@@ -1032,7 +1080,9 @@
   transition: color 0.15s;
   line-height: 1;
 }
-.od-edit-btn:hover { color: var(--text); }
+@media (hover: hover) {
+  .od-edit-btn:hover { color: var(--text); }
+}
 
 /* Font globale +10% peso e dimensione */
 body {
@@ -1082,7 +1132,9 @@ body {
   min-width: 0;
   border: 1px solid transparent;
 }
-.cal-week-col:hover { background: rgba(255,255,255,0.04); }
+@media (hover: hover) {
+  .cal-week-col:hover { background: rgba(255,255,255,0.04); }
+}
 .cal-week-col.today { background: rgba(212,164,74,0.06); border-color: rgba(212,164,74,0.2); }
 .cal-week-col.selected { background: rgba(255,255,255,0.07); border-color: rgba(255,255,255,0.12); }
 .cal-week-dow {
@@ -1165,7 +1217,9 @@ body {
   width: 100%;
   transition: color 0.15s, border-color 0.15s;
 }
-.work-cal-connect-btn:hover { color: #7eb8c9; border-color: #7eb8c9; }
+@media (hover: hover) {
+  .work-cal-connect-btn:hover { color: #7eb8c9; border-color: #7eb8c9; }
+}
 .work-cal-info {
   display: flex;
   align-items: center;
@@ -1191,7 +1245,9 @@ body {
   flex-shrink: 0;
   transition: color 0.12s;
 }
-.work-cal-disconnect:hover { color: #c07a7a; }
+@media (hover: hover) {
+  .work-cal-disconnect:hover { color: #c07a7a; }
+}
 
 /* Badge "az" eventi aziendali nel dettaglio giorno */
 .cal-work-badge {
@@ -1257,7 +1313,9 @@ body {
   line-height: 1;
   transition: color 0.12s;
 }
-.week-day-detail-close:hover { color: var(--text); }
+@media (hover: hover) {
+  .week-day-detail-close:hover { color: var(--text); }
+}
 
 .mini-cal-day-num { font-size: 11px; color: var(--text); line-height: 1.2; flex-shrink: 0; }
 .mini-cal-cell.today .mini-cal-day-num {
@@ -1295,7 +1353,9 @@ body {
   z-index: 2;
   flex-shrink: 0;
 }
-.panel-close-tab:hover { background: rgba(255,255,255,0.06); color: var(--text); }
+@media (hover: hover) {
+  .panel-close-tab:hover { background: rgba(255,255,255,0.06); color: var(--text); }
+}
 
 /* Padding sx panel-col-body aumentato */
 .panel-col-body { padding-left: 16px; }

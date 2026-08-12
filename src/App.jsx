@@ -87,6 +87,16 @@ function launchIntent() {
   } catch { return null; }
 }
 
+// Modo della Mappa (taccuini | para) — vedi mapViewMode in App.
+const MAP_VIEW_MODE_KEY = 'md_map_view_mode_v1';
+
+function readMapViewMode() {
+  try {
+    const saved = localStorage.getItem(MAP_VIEW_MODE_KEY);
+    return saved === 'para' || saved === 'workbook' ? saved : 'workbook';
+  } catch { return 'workbook'; }
+}
+
 function suggestionSignature(a) {
   return `${a.source || 'email'}::${a.title || ''}::${a.extractedAction || ''}`;
 }
@@ -170,7 +180,10 @@ export default function App() {
   const [selected, setSelected] = useState(null);
   const [sync, setSync] = useState({ state: 'idle', label: 'Non connesso' });
   const [zoom, setZoom] = useState(1);
-  const [mapViewMode, setMapViewMode] = useState('workbook');
+  // La Mappa riapre come l'hai lasciata: il commutatore Taccuini/PARA è una
+  // preferenza, non un parametro di sessione, e ripartire sempre da «Taccuini»
+  // costringeva a rimetterlo su PARA ogni volta.
+  const [mapViewMode, setMapViewMode] = useState(readMapViewMode);
   const [identityOpen, setIdentityOpen] = useState(null);
   const [searchOpen, setSearchOpen] = useState(false);
   // La cattura chiesta dalla scorciatoia è aperta già al primo render, non in
@@ -235,6 +248,10 @@ export default function App() {
       }
     });
   }, []);
+
+  useEffect(() => {
+    try { localStorage.setItem(MAP_VIEW_MODE_KEY, mapViewMode); } catch { /* storage non disponibile */ }
+  }, [mapViewMode]);
 
   // Il parametro `apri` ha fatto il suo lavoro al primo render: si toglie
   // dall'URL, così chiudere il pannello e ricaricare la pagina non lo riapre.
@@ -908,7 +925,6 @@ export default function App() {
       <AppShell
         topbar={topbar}
         onCapture={() => setCaptureOpen(true)}
-        onOpenNotebooks={() => { setMapViewMode('para'); navigate('/mappa'); }}
         onOpenSettings={() => setColorSettingsOpen(true)}>
         <Routes>
           <Route path="/oggi" element={

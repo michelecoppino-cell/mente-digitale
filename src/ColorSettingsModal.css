@@ -36,7 +36,9 @@
   background: none; border: none; color: var(--muted); cursor: pointer;
   font-size: 14px; transition: color 0.12s;
 }
-.cset-close:hover { color: var(--text); }
+@media (hover: hover) {
+  .cset-close:hover { color: var(--text); }
+}
 
 .cset-body { padding: 14px 20px 22px; }
 
@@ -95,4 +97,6 @@
   padding: 2px 4px;
   transition: color 0.12s;
 }
-.cset-reset-btn:hover { color: var(--accent); }
+@media (hover: hover) {
+  .cset-reset-btn:hover { color: var(--accent); }
+}

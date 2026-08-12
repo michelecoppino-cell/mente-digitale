@@ -54,9 +54,6 @@ function Icon({ name }) {
     case 'map': return (
       <svg {...common}><circle cx="12" cy="12" r="2.6" /><circle cx="5" cy="6" r="1.9" /><circle cx="19" cy="6.6" r="1.9" /><circle cx="6" cy="18.4" r="1.9" /><circle cx="18.4" cy="17.6" r="1.9" /><path d="M10.1 10.6 6.5 7.4M13.8 10.9l3.6-2.9M10.3 13.7l-2.9 3.2M13.9 13.5l3.1 2.7" /></svg>
     );
-    case 'notebooks': return (
-      <svg {...common}><rect x="4" y="3.6" width="12" height="16.8" rx="1.8" /><path d="M18.5 6.4v13.2a.8.8 0 0 1-.8.8H7.4" /></svg>
-    );
     // Cursori e non un ingranaggio: a 17px un ingranaggio è la stessa
     // macchia rotonda con raggi del sole di "Oggi", e nel rail le due voci
     // finivano indistinguibili col menù ridotto a sole icone.
@@ -69,8 +66,32 @@ function Icon({ name }) {
     case 'menu': return (
       <svg {...common} strokeWidth={1.9}><path d="M4 7h16M4 12h16M4 17h16" /></svg>
     );
+    case 'more': return (
+      <svg {...common} strokeWidth={2}><circle cx="5.5" cy="12" r="1.2" fill="currentColor" /><circle cx="12" cy="12" r="1.2" fill="currentColor" /><circle cx="18.5" cy="12" r="1.2" fill="currentColor" /></svg>
+    );
     default: return null;
   }
+}
+
+/**
+ * Vero quando la media query è soddisfatta. Serve perché il panino ha un solo
+ * handler ma due significati — drawer da telefono, rail ridotto da desktop — e
+ * la soglia va letta in JS, non solo in CSS.
+ * @param {string} query
+ */
+function useMediaQuery(query) {
+  const [matches, setMatches] = useState(
+    () => typeof window !== 'undefined' && !!window.matchMedia?.(query).matches
+  );
+  useEffect(() => {
+    if (!window.matchMedia) return undefined;
+    const mq = window.matchMedia(query);
+    const onChange = (/** @type {MediaQueryListEvent} */ e) => setMatches(e.matches);
+    setMatches(mq.matches);
+    mq.addEventListener('change', onChange);
+    return () => mq.removeEventListener('change', onChange);
+  }, [query]);
+  return matches;
 }
 
 /** mm:ss a partire dai millisecondi trascorsi. */
@@ -82,6 +103,10 @@ function fmtElapsed(/** @type {number} */ ms) {
 /**
  * Barra della sessione Pomodoro. Resta montata qui, sopra il contenuto, in
  * tutte le viste finché il timer gira, e riporta al workbook con un click.
+ *
+ * Da telefono non viene montata: 48px di topbar più 52px di barra si mangiano
+ * un sesto di uno schermo da 667, quindi sotto gli 860px la sessione va a
+ * vivere dentro la topbar (vedi PomodoroInline).
  */
 function PomodoroBar() {
   const { session, elapsedMs, pause, resume, stop } = usePomodoro();
@@ -122,26 +147,97 @@ function PomodoroBar() {
 }
 
 /**
+ * La sessione Pomodoro dentro la topbar, da telefono: il panino e il timer
+ * sulla stessa riga. Stesso bersaglio della barra grande — un tocco riporta al
+ * workbook della sezione — ma senza rubare una seconda riga allo schermo.
+ */
+function PomodoroInline() {
+  const { session, elapsedMs } = usePomodoro();
+  const navigate = useNavigate();
+  if (!session) return null;
+
+  const pct = Math.min(1, elapsedMs / (session.durationMin * 60_000));
+
+  return (
+    <button
+      className="pomo-inline"
+      onClick={() => session.sectionId && navigate(`/sezioni/${session.sectionId}`)}
+      disabled={!session.sectionId}
+      title={session.sectionId ? 'Torna al workbook della sezione' : undefined}>
+      <span
+        className="pomo-bar-dial"
+        style={/** @type {import('react').CSSProperties} */ ({ '--pomo-pct': `${pct * 360}deg` })} />
+      <span className="pomo-inline-time">{fmtElapsed(elapsedMs)}</span>
+      <span className="pomo-inline-task">{session.taskTitle || 'Sessione di concentrazione'}</span>
+    </button>
+  );
+}
+
+/** Pausa/riprendi e chiusura della sessione, dentro il menù «altro». */
+function PomodoroMenuActions({ onDone }) {
+  const { session, pause, resume, stop } = usePomodoro();
+  if (!session) return null;
+  return (
+    <>
+      <button
+        className="shell-menu-item"
+        onClick={() => { session.state === 'running' ? pause() : resume(); onDone(); }}>
+        {session.state === 'running' ? 'Pausa' : 'Riprendi'}
+      </button>
+      <button className="shell-menu-item accent" onClick={() => { stop(); onDone(); }}>
+        Chiudi e completa
+      </button>
+      <div className="shell-menu-sep" />
+    </>
+  );
+}
+
+/**
  * @param {Object} props
  * @param {import('react').ReactNode} props.children      contenuto della rotta corrente
  * @param {import('react').ReactNode} [props.topbar]      azioni globali in alto a destra
  * @param {() => void} props.onCapture                    apre la cattura rapida (⌘N)
- * @param {() => void} [props.onOpenNotebooks]
  * @param {() => void} [props.onOpenSettings]
  */
-export default function AppShell({ children, topbar, onCapture, onOpenNotebooks, onOpenSettings }) {
+export default function AppShell({ children, topbar, onCapture, onOpenSettings }) {
   const [collapsed, setCollapsed] = useState(() => localStorage.getItem(RAIL_COLLAPSED_KEY) === '1');
   // Su schermo stretto il rail è un drawer sopra il contenuto, non una colonna
   // che gli ruba larghezza.
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const narrow = useMediaQuery('(max-width: 860px)');
+  const { session } = usePomodoro();
+  // Topbar e barra Pomodoro si fondono in una riga sola quando lo schermo è
+  // stretto e la sessione gira.
+  const fused = narrow && !!session;
 
   useEffect(() => { localStorage.setItem(RAIL_COLLAPSED_KEY, collapsed ? '1' : '0'); }, [collapsed]);
+  useEffect(() => { if (!fused) setMenuOpen(false); }, [fused]);
+
+  // Un solo comando, un solo handler: da telefono apre e chiude il drawer, da
+  // desktop riduce e riespande il rail. Il bottone è disegnato due volte —
+  // in testa al rail e in topbar — ma non se ne vede mai più di uno: quello
+  // del rail è fuori schermo finché il drawer è chiuso, quello della topbar
+  // sparisce sopra gli 860px.
+  function toggleMenu() {
+    if (narrow) setDrawerOpen(o => !o);
+    else setCollapsed(c => !c);
+  }
+
+  const menuBtnTitle = narrow
+    ? (drawerOpen ? 'Chiudi il menù' : 'Apri il menù')
+    : (collapsed ? 'Espandi il menù' : 'Riduci il menù');
 
   return (
     <div className={`shell${collapsed ? ' rail-collapsed' : ''}${drawerOpen ? ' drawer-open' : ''}`}>
       <div className="shell-scrim" onClick={() => setDrawerOpen(false)} />
 
       <nav className="rail" aria-label="Navigazione principale">
+        <button className="rail-menu tap-44" onClick={toggleMenu} title={menuBtnTitle}>
+          <Icon name="menu" />
+          <span className="rail-label">Menù</span>
+        </button>
+
         <button
           className="rail-capture"
           onClick={() => { onCapture(); setDrawerOpen(false); }}
@@ -165,34 +261,46 @@ export default function AppShell({ children, topbar, onCapture, onOpenNotebooks,
           ))}
         </div>
 
+        {/* Nel piede resta solo Impostazioni: «Taccuini · PARA» portava alla
+            stessa rotta della voce Mappa, e il commutatore Taccuini/PARA che
+            preselezionava è già in topbar quando si è su /mappa. */}
         <div className="rail-foot">
-          <button className="rail-item" onClick={() => { onOpenNotebooks?.(); setDrawerOpen(false); }} title="Taccuini · PARA">
-            <Icon name="notebooks" />
-            <span className="rail-label">Taccuini · PARA</span>
-          </button>
           <button className="rail-item" onClick={() => { onOpenSettings?.(); setDrawerOpen(false); }} title="Impostazioni">
             <Icon name="settings" />
             <span className="rail-label">Impostazioni</span>
-          </button>
-          <button
-            className="rail-collapse"
-            onClick={() => setCollapsed(c => !c)}
-            title={collapsed ? 'Espandi il menù' : 'Riduci il menù'}>
-            {collapsed ? '›' : '‹'}
           </button>
         </div>
       </nav>
 
       <div className="shell-main">
-        <PomodoroBar />
-        <header className="shell-topbar">
-          <button
-            className="shell-drawer-btn tap-44"
-            onClick={() => setDrawerOpen(o => !o)}
-            title="Menù">
+        {!fused && <PomodoroBar />}
+        <header className={`shell-topbar${fused ? ' fused' : ''}`}>
+          <button className="shell-drawer-btn tap-44" onClick={toggleMenu} title={menuBtnTitle}>
             <Icon name="menu" />
           </button>
-          <div className="shell-topbar-actions">{topbar}</div>
+
+          {fused ? (
+            <>
+              <PomodoroInline />
+              <button
+                className={`shell-more-btn tap-44${menuOpen ? ' active' : ''}`}
+                onClick={() => setMenuOpen(o => !o)}
+                title="Altre azioni">
+                <Icon name="more" />
+              </button>
+              {menuOpen && (
+                <>
+                  <div className="shell-menu-scrim" onClick={() => setMenuOpen(false)} />
+                  <div className="shell-menu">
+                    <PomodoroMenuActions onDone={() => setMenuOpen(false)} />
+                    <div className="shell-menu-actions" onClick={() => setMenuOpen(false)}>{topbar}</div>
+                  </div>
+                </>
+              )}
+            </>
+          ) : (
+            <div className="shell-topbar-actions">{topbar}</div>
+          )}
         </header>
         <div className="shell-content">{children}</div>
       </div>
