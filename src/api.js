@@ -1464,6 +1464,24 @@ export async function getReminders(startISO, endISO) {
   return d?.value || [];
 }
 
+// Ricerca nella posta. `$search` di Graph (non un `$filter` con `contains`, che
+// su messages non è supportato) e nessun `$orderby`: le due cose insieme Graph le
+// rifiuta, e con la ricerca l'ordine per pertinenza è quello che serve.
+/**
+ * @param {string} query
+ * @param {number} [top]
+ * @returns {Promise<import('./types').EmailMessage[]>}
+ */
+export async function searchMessages(query, top = 5) {
+  const params = [
+    `$search="${encodeURIComponent(query).replace(/"/g, '')}"`,
+    '$select=id,subject,from,bodyPreview,receivedDateTime,webLink',
+    `$top=${top}`,
+  ].join('&');
+  const d = await call(`/me/messages?${params}`);
+  return d?.value || [];
+}
+
 /** @returns {Promise<import('./types').EmailMessage[]>} */
 export async function getRecentEmails() {
   const yesterday = new Date();

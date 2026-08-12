@@ -10,25 +10,8 @@ import { useEffect, useState } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import { usePomodoro, usePomodoroElapsed } from './pomodoroContext';
 import { useMediaQuery } from './useMediaQuery';
+import { DESTINATIONS } from './destinations';
 import './AppShell.css';
-
-/**
- * Le destinazioni del menù, nell'ordine in cui compaiono nel rail.
- *
- * Finanze sta in fondo e vale per una voce sola: dentro ha sette schede
- * (saldo, spese, tasse, fatture…) che vivono in una barra propria, non qui —
- * portarle nel rail avrebbe raddoppiato il menù principale per una parte sola
- * dell'app. Vedi finanze/FinanzeSection.tsx.
- */
-const DESTINATIONS = [
-  { to: '/oggi',     label: 'Oggi',     icon: 'sun' },
-  { to: '/piano',    label: 'Piano',    icon: 'calendar' },
-  { to: '/attivita', label: 'Attività', icon: 'check' },
-  { to: '/sezioni',  label: 'Sezioni',  icon: 'book' },
-  { to: '/diario',   label: 'Diario',   icon: 'candle' },
-  { to: '/mappa',    label: 'Mappa',    icon: 'map' },
-  { to: '/finanze',  label: 'Finanze',  icon: 'euro' },
-];
 
 const RAIL_COLLAPSED_KEY = 'md_rail_collapsed_v1';
 

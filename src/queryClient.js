@@ -69,6 +69,10 @@ export const qk = {
   colorSettings: () => /** @type {const} */ (['colorSettings']),
   /** @param {string} ym 'YYYY-MM' — la striscia dipende dal mese corrente */
   diaryStreak:   (ym) => /** @type {const} */ (['diaryStreak', ym]),
+  // Diario: l'indice dei mesi e i mesi stessi, letti dalla ricerca (⌘K).
+  diaryIndex:    () => /** @type {const} */ (['diaryIndex']),
+  /** @param {string} ym 'YYYY-MM' */
+  diaryMonth:    (ym) => /** @type {const} */ (['diaryMonth', ym]),
   // PlannerView.jsx — file singoli su OneDrive + bulk eventi ±3 mesi
   plannerConfig:      () => /** @type {const} */ (['plannerConfig']),
   dailyPlans:         () => /** @type {const} */ (['dailyPlans']),

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, lazy, Suspense } from 'react';
+import { useState, useEffect, useMemo, useRef, lazy, Suspense } from 'react';
 import { Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { initAuth, getAccount, login, trySsoSilent } from './auth';
 import { getNotebooks, getSections, getTodoLists, getPages, getRecentEmails, getPageContentHtml, markOneNoteTagDone, getReminders, createTask, getCalendarEvents, getTasksForDeadlineDedup, invalidateCalendarsCache, loadColorSettings, saveColorSettings, migrateLegacyDriveFiles, loadPlannerConfig, loadDailyPlans, saveDailyPlans, updateTaskStatus, completeTask } from './api';
@@ -14,13 +14,14 @@ import Panel from './Panel';
 import GtdClarifyModal from './GtdClarifyModal';
 import QuickCapture from './QuickCapture';
 import AppShell from './AppShell';
+import { DESTINATIONS } from './destinations';
 import { usePomodoro } from './pomodoroContext';
 import TodayView from './TodayView';
 import { graphStatusFor, STATUS_LABELS } from './taskModel';
 import { pushUndo } from './undo';
 import { COLORS } from './config';
 import { whenIdle } from './idle';
-import { useGlobalShortcuts } from './shortcuts';
+import { useGlobalShortcuts, CMD } from './shortcuts';
 import ShortcutsHelp from './ShortcutsHelp';
 import { notifyError, notifyInfo } from './notify';
 import UndoToast from './UndoToast';
@@ -896,6 +897,33 @@ export default function App() {
     }
   }
 
+  // I comandi raggiungibili da ⌘K. Non sono un elenco a parte di funzioni: sono
+  // gli stessi gesti che si fanno col mouse dal rail e dalla topbar, con un nome
+  // che si possa scrivere. Le destinazioni vengono da AppShell (DESTINATIONS),
+  // così una voce di menù nuova compare qui senza doversi ricordare di aggiungerla.
+  const commands = useMemo(() => {
+    /** @type {{ id: string, label: string, hint?: string, keys?: string[], run: () => void }[]} */
+    const out = DESTINATIONS.map(d => ({
+      id: `vai:${d.to}`,
+      label: `Vai a ${d.label}`,
+      hint: 'Navigazione',
+      run: () => navigate(d.to),
+    }));
+    out.push(
+      { id: 'cattura', label: 'Cattura un pensiero', hint: 'Finisce in Inbox', keys: [CMD, 'N'], run: () => setCaptureOpen(true) },
+      { id: 'chiarisci', label: 'Chiarire un pensiero', hint: 'Il diagramma GTD', run: () => { setGtdSeedText(''); setGtdOpen(true); } },
+      { id: 'aggiorna', label: 'Aggiorna tutto', hint: 'Rilegge taccuini, liste e attività', run: () => { handleRefresh(); } },
+      { id: 'colori', label: 'Colori di taccuini e sezioni', hint: 'Impostazioni', run: () => setColorSettingsOpen(true) },
+      { id: 'scorciatoie', label: 'Scorciatoie da tastiera', hint: 'Elenco', keys: ['?'], run: () => setHelpOpen(true) },
+      { id: 'proposte', label: 'Proposte della Daily Review', hint: 'Email e OneNote', run: () => setReviewOpen(true) },
+      { id: 'oggi-domani', label: 'Programma la giornata', hint: 'Apre il Piano', run: () => navigate('/piano') },
+    );
+    return out;
+    // handleRefresh è ricreata a ogni render ma fa sempre la stessa cosa: tenerla
+    // fra le dipendenze rifarebbe l'elenco a ogni giro senza alcun guadagno.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [navigate]);
+
   // «Aggiorna tutto» non svuota più lo schermo prima di ricaricare: azzerare
   // taccuini, sezioni e attività faceva sparire tutta l'interfaccia per i
   // secondi del ricaricamento, per poi rimettere quasi sempre le stesse cose.
@@ -1162,6 +1190,9 @@ export default function App() {
           setCalendarDirtyToken(t => t + 1);
         }}
       />
+      {/* onWarmPages: cercare completa l'indice locale — le sezioni di cui non si
+          è mai caricato l'elenco pagine entrano nella coda di precarico che già
+          esiste, e i risultati compaiono man mano che arrivano. */}
       <SearchOverlay
         open={searchOpen}
         onClose={() => setSearchOpen(false)}
@@ -1169,7 +1200,10 @@ export default function App() {
         sectionsMap={sectionsMap}
         pagesCache={pagesCache}
         tasks={scheduledTasks || []}
+        commands={commands}
         onSelectSection={(sec, nb, app) => { navigate('/mappa'); handleSelectSection(sec, nb, app); }}
+        onWarmPages={ids => ids.forEach(id => enqueuePagePreload(id))}
+        onOpenDiaryEntry={() => navigate('/diario')}
       />
       {/* Montata solo quando serve: è l'unica modale a stare in un chunk a
           parte, e senza il montaggio condizionato il chunk verrebbe scaricato
