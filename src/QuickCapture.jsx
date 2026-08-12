@@ -27,6 +27,16 @@ export default function QuickCapture({ open, todoLists, onClose, onCaptured, onD
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
 
+  // Chiudere il riquadro non lo smonta — `open` è una prop, e lo stato qui
+  // dentro sopravvive. Ogni apertura riparte quindi pulita: senza, la seconda
+  // cattura si trovava il campo con l'errore di quella prima. Aggiustamento
+  // durante il render e non un effetto, come in ClarifyTaskModal.
+  const [prevOpen, setPrevOpen] = useState(open);
+  if (open !== prevOpen) {
+    setPrevOpen(open);
+    if (open) { setText(''); setError(''); setBusy(false); }
+  }
+
   if (!open) return null;
 
   const inboxId = inboxListId(todoLists);
@@ -45,6 +55,11 @@ export default function QuickCapture({ open, todoLists, onClose, onCaptured, onD
       const task = await createTask(inboxId, title);
       onCaptured({ ...task, _listId: inboxId, _listName: list?.displayName });
       setText('');
+      // Il riquadro si chiude ma resta montato: senza rimettere `busy` a false
+      // la cattura successiva usciva subito dalla guardia qui sopra e il
+      // bottone restava disabilitato — si poteva catturare una cosa sola per
+      // sessione.
+      setBusy(false);
       onClose();
     } catch (e) {
       console.error('cattura', e);
