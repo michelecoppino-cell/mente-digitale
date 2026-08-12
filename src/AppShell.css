@@ -26,7 +26,30 @@
 .shell.rail-collapsed .rail-label,
 .shell.rail-collapsed .rail-kbd { display: none; }
 .shell.rail-collapsed .rail-capture,
+.shell.rail-collapsed .rail-menu,
 .shell.rail-collapsed .rail-item { justify-content: center; padding-inline: 0; }
+
+/* Panino: l'unico comando del menù, in testa al rail. Prima il collasso era
+   affidato a una freccetta tipografica in fondo alla colonna, colore
+   --disabled: c'era ma non si vedeva. Qui è un'icona vera, in cima, con l'area
+   di 44px, e col rail ridotto resta centrata sui 64px — l'unica cosa visibile
+   oltre alle icone, quella che riapre il menù. */
+.rail-menu {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  height: var(--tap);
+  padding: 0 var(--sp-4);
+  background: none;
+  border: none;
+  border-radius: var(--r);
+  color: var(--text-3);
+  cursor: pointer;
+  transition: background var(--t), color var(--t);
+}
+@media (hover: hover) {
+  .rail-menu:hover { background: rgba(255, 255, 255, .04); color: var(--text); }
+}
 
 /* Cattura */
 .rail-capture {
@@ -44,7 +67,9 @@
   cursor: pointer;
   transition: background var(--t), border-color var(--t);
 }
-.rail-capture:hover { background: var(--accent-tint); border-color: var(--accent); }
+@media (hover: hover) {
+  .rail-capture:hover { background: var(--accent-tint); border-color: var(--accent); }
+}
 
 .rail-kbd {
   margin-left: auto;
@@ -74,7 +99,9 @@
   white-space: nowrap;
   transition: background var(--t), color var(--t);
 }
-.rail-item:hover { background: rgba(255, 255, 255, .04); color: var(--text); }
+@media (hover: hover) {
+  .rail-item:hover { background: rgba(255, 255, 255, .04); color: var(--text); }
+}
 .rail-item.active { background: var(--accent-tint); color: var(--accent); }
 
 .rail-foot {
@@ -86,22 +113,9 @@
   gap: 2px;
 }
 .rail-foot .rail-item { height: 40px; font-size: var(--fs-meta); color: var(--muted); }
-.rail-foot .rail-item:hover { color: var(--text-3); }
-
-.rail-collapse {
-  align-self: flex-end;
-  width: var(--tap);
-  height: 32px;
-  margin-top: var(--sp-1);
-  background: none;
-  border: none;
-  color: var(--disabled);
-  font-size: var(--fs-row);
-  cursor: pointer;
-  border-radius: var(--r-sm);
+@media (hover: hover) {
+  .rail-foot .rail-item:hover { color: var(--text-3); }
 }
-.rail-collapse:hover { color: var(--text-3); background: rgba(255, 255, 255, .04); }
-.shell.rail-collapsed .rail-collapse { align-self: center; }
 
 /* ── Colonna principale ───────────────────────────────────────────────── */
 
@@ -114,6 +128,7 @@
 }
 
 .shell-topbar {
+  position: relative;   /* ancora del menù "⋯" della topbar fusa */
   flex: 0 0 auto;
   min-height: 48px;
   display: flex;
@@ -148,6 +163,90 @@
   cursor: pointer;
 }
 
+/* ── Topbar fusa con la barra Pomodoro ───────────────────────────────────
+   Da telefono, con la sessione in corso, la topbar diventa la barra Pomodoro:
+   panino, quadrante, tempo e titolo su una riga sola, poi pausa e "⋯". Prima
+   le due barre erano 48 + 52 = 100px di cromo fisso — su uno schermo da 667 un
+   settimo dell'altezza, prima di vedere una riga di contenuto. */
+
+.shell-topbar.merged {
+  gap: var(--sp-3);
+  border-bottom-color: rgba(212, 164, 74, .25);
+  background: rgba(212, 164, 74, .09);
+}
+
+.shell-pomo-inline {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  background: none;
+  border: none;
+  padding: 0;
+  color: inherit;
+  font-family: var(--font-ui);
+  text-align: left;
+  cursor: pointer;
+}
+.shell-pomo-inline:disabled { cursor: default; }
+
+.shell-pomo-actions {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  /* Come .shell-topbar-actions: i due bottoni portano .tap-44, e con un gap
+     più stretto le aree cliccabili si sovrapporrebbero. */
+  gap: var(--sp-4);
+}
+
+.shell-icon-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  background: none;
+  border: none;
+  border-radius: var(--r-sm);
+  color: var(--text-3);
+  cursor: pointer;
+  transition: color var(--t);
+}
+@media (hover: hover) {
+  .shell-icon-btn:hover { color: var(--text); }
+}
+
+.shell-more-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 130;
+}
+
+.shell-more-panel {
+  position: absolute;
+  z-index: 140;
+  top: 100%;
+  right: var(--sp-4);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--sp-4);
+  padding: var(--sp-4);
+  background: var(--bg-rail);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, .45);
+}
+
+/* Le stesse azioni globali della topbar larga, incolonnate: il contenuto è
+   `topbar` così com'è, non una seconda copia da tenere allineata. */
+.shell-more-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-4);
+}
+
 .shell-content {
   flex: 1;
   min-height: 0;
@@ -155,6 +254,11 @@
   overflow: hidden;
   display: flex;
   flex-direction: column;
+  /* Nelle app installate su iPhone l'ultima riga di ogni vista finirebbe
+     sotto l'indicatore Home. Sta qui e non su ogni contenitore scrollabile
+     (.today, .ab-col-body, la timeline del Piano) perché è il padre di tutti:
+     una volta sola, e nessuna vista può dimenticarselo. */
+  padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 
 /* ── Barra Pomodoro ───────────────────────────────────────────────────── */
@@ -237,9 +341,13 @@
   cursor: pointer;
   transition: border-color var(--t), color var(--t);
 }
-.pomo-bar-btn:hover { border-color: var(--accent-line); color: var(--text); }
+@media (hover: hover) {
+  .pomo-bar-btn:hover { border-color: var(--accent-line); color: var(--text); }
+}
 .pomo-bar-btn.primary { border-color: var(--accent-line); color: var(--accent); }
-.pomo-bar-btn.primary:hover { background: var(--accent-tint); }
+@media (hover: hover) {
+  .pomo-bar-btn.primary:hover { background: var(--accent-tint); }
+}
 
 /* ── Scrim del drawer ─────────────────────────────────────────────────── */
 
@@ -266,8 +374,8 @@
   .shell.rail-collapsed .rail { width: 240px; flex-basis: 240px; }
   .shell.rail-collapsed .rail-label { display: flex; }
   .shell.rail-collapsed .rail-capture,
+  .shell.rail-collapsed .rail-menu,
   .shell.rail-collapsed .rail-item { justify-content: flex-start; padding-inline: var(--sp-4); }
-  .rail-collapse { display: none; }
 
   .shell.drawer-open .shell-scrim {
     display: block;

@@ -49,7 +49,9 @@
   display: flex; align-items: center; justify-content: center;
   transition: background 0.15s, color 0.15s;
 }
-.planner-nav-btn:hover { background: rgba(255,255,255,0.06); color: var(--text); }
+@media (hover: hover) {
+  .planner-nav-btn:hover { background: rgba(255,255,255,0.06); color: var(--text); }
+}
 .planner-nav-btn:disabled { opacity: 0.4; cursor: default; }
 
 .planner-date {
@@ -72,7 +74,9 @@
   font-family: var(--font-ui);
   transition: background 0.15s;
 }
-.planner-today-btn:hover { background: rgba(212,164,74,0.1); }
+@media (hover: hover) {
+  .planner-today-btn:hover { background: rgba(212,164,74,0.1); }
+}
 .planner-today-btn:disabled { opacity: 0.4; cursor: default; }
 
 .planner-header-actions {
@@ -93,12 +97,18 @@
   transition: background 0.15s, color 0.15s, border-color 0.15s;
   display: flex; align-items: center; gap: 5px;
 }
-.planner-action-btn:hover:not(:disabled) { background: rgba(255,255,255,0.06); color: var(--text); }
+@media (hover: hover) {
+  .planner-action-btn:hover:not(:disabled) { background: rgba(255,255,255,0.06); color: var(--text); }
+}
 .planner-action-btn:disabled { opacity: 0.5; cursor: default; }
 .planner-action-btn.accent { border-color: var(--accent); color: var(--accent); }
-.planner-action-btn.accent:hover:not(:disabled) { background: rgba(212,164,74,0.1); }
+@media (hover: hover) {
+  .planner-action-btn.accent:hover:not(:disabled) { background: rgba(212,164,74,0.1); }
+}
 .planner-action-btn.loading { opacity: 0.7; }
-.planner-action-btn.danger:hover:not(:disabled) { color: #c07a7a; border-color: #c07a7a; background: rgba(192,122,122,0.1); }
+@media (hover: hover) {
+  .planner-action-btn.danger:hover:not(:disabled) { color: #c07a7a; border-color: #c07a7a; background: rgba(192,122,122,0.1); }
+}
 
 .planner-cal-filter-wrap { position: relative; }
 .planner-cal-filter-backdrop { position: fixed; inset: 0; z-index: 500; }
@@ -130,14 +140,18 @@
   color: var(--text);
   cursor: pointer;
 }
-.planner-cal-filter-item:hover { background: rgba(255,255,255,0.06); }
+@media (hover: hover) {
+  .planner-cal-filter-item:hover { background: rgba(255,255,255,0.06); }
+}
 .planner-cal-filter-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
 .planner-cal-filter-dot-btn {
   padding: 0;
   border: 1px solid rgba(255,255,255,0.35);
   cursor: pointer;
 }
-.planner-cal-filter-dot-btn:hover { border-color: #fff; }
+@media (hover: hover) {
+  .planner-cal-filter-dot-btn:hover { border-color: #fff; }
+}
 .planner-cal-filter-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .planner-cal-filter-divider { border-top: 1px solid var(--border2); margin: 4px 2px; }
 
@@ -175,7 +189,9 @@
   transition: background 0.15s, color 0.15s;
   margin-left: 4px;
 }
-.planner-close-btn:hover { background: rgba(255,255,255,0.06); color: var(--text); }
+@media (hover: hover) {
+  .planner-close-btn:hover { background: rgba(255,255,255,0.06); color: var(--text); }
+}
 .planner-close-btn:disabled { opacity: 0.4; cursor: default; }
 
 /* ── Body: 3 columns ── */
@@ -220,7 +236,9 @@
   font-family: var(--font-ui);
   transition: background 0.15s, color 0.15s;
 }
-.planner-filter-btn:hover { background: rgba(255,255,255,0.05); color: var(--text); }
+@media (hover: hover) {
+  .planner-filter-btn:hover { background: rgba(255,255,255,0.05); color: var(--text); }
+}
 .planner-filter-btn.active {
   border-color: var(--proj-color, var(--accent));
   color: var(--proj-color, var(--accent));
@@ -311,7 +329,9 @@
   transition: background 0.15s, border-color 0.15s;
   user-select: none;
 }
-.planner-pool-task:hover { background: rgba(255,255,255,0.04); }
+@media (hover: hover) {
+  .planner-pool-task:hover { background: rgba(255,255,255,0.04); }
+}
 .planner-pool-task:active { cursor: grabbing; }
 .planner-pool-task.rollover { border-color: rgba(212,164,74,0.3); }
 .planner-pool-task.important { border-color: rgba(192,132,160,0.3); }
@@ -364,8 +384,10 @@
   border-radius: 6px;
   position: relative;
 }
-.workbook-pool-row:hover,
-.workbook-pool-subrow:hover { background: rgba(255,255,255,0.04); }
+@media (hover: hover) {
+  .workbook-pool-row:hover,
+  .workbook-pool-subrow:hover { background: rgba(255,255,255,0.04); }
+}
 .workbook-pool-subrow { padding-left: 20px; }
 
 .workbook-pool-name {
@@ -434,9 +456,12 @@
   align-items: center;
   justify-content: center;
 }
-.workbook-pool-row:hover .workbook-pool-icon-btn,
-.workbook-pool-subrow:hover .workbook-pool-icon-btn { display: flex; }
-.workbook-pool-icon-btn:hover { background: rgba(255,255,255,0.08); color: var(--text); }
+@media (hover: hover) {
+  .workbook-pool-row:hover .workbook-pool-icon-btn,
+  .workbook-pool-subrow:hover .workbook-pool-icon-btn { display: flex; }
+
+  .workbook-pool-icon-btn:hover { background: rgba(255,255,255,0.08); color: var(--text); }
+}
 
 .workbook-pool-add-input {
   width: 100%;
@@ -470,7 +495,9 @@
   padding: 6px 8px;
   border-radius: 6px;
 }
-.workbook-pool-suggestion-row:hover { background: rgba(255,255,255,0.04); }
+@media (hover: hover) {
+  .workbook-pool-suggestion-row:hover { background: rgba(255,255,255,0.04); }
+}
 .workbook-pool-suggestion-add { display: flex; }
 
 /* Popup colore — renderizzato in un portale su document.body e posizionato
@@ -511,7 +538,9 @@
   padding: 0;
   flex-shrink: 0;
 }
-.workbook-color-swatch:hover { transform: scale(1.15); }
+@media (hover: hover) {
+  .workbook-color-swatch:hover { transform: scale(1.15); }
+}
 .workbook-color-native {
   width: 22px; height: 22px;
   border: none;
@@ -710,9 +739,11 @@
   transition: background 0.15s, border-left-color 0.15s;
   z-index: 5;
 }
-.planner-col-resize:hover {
-  background: rgba(212,164,74,0.18);
-  border-left-color: rgba(212,164,74,0.45);
+@media (hover: hover) {
+  .planner-col-resize:hover {
+    background: rgba(212,164,74,0.18);
+    border-left-color: rgba(212,164,74,0.45);
+  }
 }
 
 /* ── Timeline column ── */
@@ -802,8 +833,10 @@
   pointer-events: auto;
   cursor: grab;
 }
-.planner-focus-bar.editable:hover {
-  filter: brightness(1.25);
+@media (hover: hover) {
+  .planner-focus-bar.editable:hover {
+    filter: brightness(1.25);
+  }
 }
 .planner-focus-bar.editable:active {
   cursor: grabbing;
@@ -920,22 +953,30 @@
   font-family: var(--font-ui);
   transition: background 0.15s;
 }
-.planner-focus-popup-type:hover { background: rgba(217,83,79,0.22); }
+@media (hover: hover) {
+  .planner-focus-popup-type:hover { background: rgba(217,83,79,0.22); }
+}
 .planner-focus-popup-type.personal {
   background: rgba(230,201,77,0.12);
   border-color: rgba(230,201,77,0.6);
 }
-.planner-focus-popup-type.personal:hover { background: rgba(230,201,77,0.22); }
+@media (hover: hover) {
+  .planner-focus-popup-type.personal:hover { background: rgba(230,201,77,0.22); }
+}
 .planner-focus-popup-type.office {
   background: rgba(157,127,214,0.12);
   border-color: rgba(157,127,214,0.6);
 }
-.planner-focus-popup-type.office:hover { background: rgba(157,127,214,0.22); }
+@media (hover: hover) {
+  .planner-focus-popup-type.office:hover { background: rgba(157,127,214,0.22); }
+}
 .planner-focus-popup-type.client {
   background: rgba(91,143,217,0.12);
   border-color: rgba(91,143,217,0.6);
 }
-.planner-focus-popup-type.client:hover { background: rgba(91,143,217,0.22); }
+@media (hover: hover) {
+  .planner-focus-popup-type.client:hover { background: rgba(91,143,217,0.22); }
+}
 
 .planner-focus-popup-delete {
   display: block;
@@ -951,7 +992,9 @@
   font-family: var(--font-ui);
   transition: background 0.15s;
 }
-.planner-focus-popup-delete:hover { background: rgba(217,83,79,0.12); }
+@media (hover: hover) {
+  .planner-focus-popup-delete:hover { background: rgba(217,83,79,0.12); }
+}
 
 /* Calendar events — absolute within timeline-body; sopra i task blocks
    (z-index maggiore) e cliccabili per aprire il modale di modifica. */
@@ -976,7 +1019,9 @@
 }
 /* Un evento condiviso da qualcun altro è ancora più "non tuo": il bordo si
    spegne del tutto invece di cambiare colore di fondo. */
-.planner-cal-event:hover { border-color: var(--border2); }
+@media (hover: hover) {
+  .planner-cal-event:hover { border-color: var(--border2); }
+}
 .planner-cal-event.shared { border-left-color: #3f4450; }
 
 .planner-event-time {
@@ -1038,7 +1083,9 @@
   flex-shrink: 0;
   transition: opacity 0.15s;
 }
-.planner-block-check:hover { opacity: 0.7; }
+@media (hover: hover) {
+  .planner-block-check:hover { opacity: 0.7; }
+}
 .planner-block-check:disabled { opacity: 0.35; cursor: default; }
 
 .planner-block-title {
@@ -1060,7 +1107,9 @@
   opacity: 0;
   transition: opacity 0.15s;
 }
-.planner-block:hover .planner-block-actions { opacity: 1; }
+@media (hover: hover) {
+  .planner-block:hover .planner-block-actions { opacity: 1; }
+}
 
 .planner-block-btn {
   background: none;
@@ -1073,9 +1122,13 @@
   border-radius: 3px;
   transition: background 0.12s, color 0.12s;
 }
-.planner-block-btn:hover { background: rgba(255,255,255,0.12); color: var(--text); }
+@media (hover: hover) {
+  .planner-block-btn:hover { background: rgba(255,255,255,0.12); color: var(--text); }
+}
 .planner-block-btn:disabled { opacity: 0.35; cursor: default; }
-.planner-block-btn:disabled:hover { background: none; color: var(--muted); }
+@media (hover: hover) {
+  .planner-block-btn:disabled:hover { background: none; color: var(--muted); }
+}
 
 .planner-block-meta {
   display: flex;
@@ -1154,8 +1207,10 @@
   transform: translateY(-50%);
   border-top: 1.5px dashed rgba(255,255,255,0.7);
 }
-.planner-substep-divider:hover::after {
-  border-top-color: rgba(255,255,255,1);
+@media (hover: hover) {
+  .planner-substep-divider:hover::after {
+    border-top-color: rgba(255,255,255,1);
+  }
 }
 
 /* Drop indicator */
@@ -1201,8 +1256,8 @@
   text-transform: none;
 }
 .planner-save-status.saving { color: var(--accent); }
-.planner-save-status.saved  { color: #86c07a; }
-.planner-save-status.error  { color: #c07a7a; }
+.planner-save-status.saved { color: #86c07a; }
+.planner-save-status.error { color: #c07a7a; }
 
 /* ── Breakdown Modal ── */
 .planner-modal-overlay {
@@ -1239,7 +1294,9 @@
   background: none; border: none; color: var(--muted); cursor: pointer;
   font-size: 14px; transition: color 0.12s;
 }
-.planner-modal-header button:hover { color: var(--text); }
+@media (hover: hover) {
+  .planner-modal-header button:hover { color: var(--text); }
+}
 
 .planner-modal-body { padding: 16px 20px; }
 
@@ -1275,7 +1332,9 @@
   transition: background 0.12s;
   align-items: center;
 }
-.planner-modal-step.selectable:hover { background: rgba(255,255,255,0.05); }
+@media (hover: hover) {
+  .planner-modal-step.selectable:hover { background: rgba(255,255,255,0.05); }
+}
 .planner-modal-step.selectable.selected { background: rgba(212,164,74,0.08); }
 .planner-modal-step.selectable.done .planner-modal-step-text { text-decoration: line-through; color: var(--muted); }
 .planner-modal-check { font-size: 14px; flex-shrink: 0; color: var(--accent); }
@@ -1297,7 +1356,9 @@
   transition: background 0.15s;
   width: 100%;
 }
-.planner-modal-apply-btn:hover { background: rgba(212,164,74,0.1); }
+@media (hover: hover) {
+  .planner-modal-apply-btn:hover { background: rgba(212,164,74,0.1); }
+}
 .planner-modal-apply-btn:disabled { opacity: 0.4; cursor: default; }
 
 /* ── Add/edit calendar event form ── */
@@ -1370,7 +1431,9 @@ input[type="time"].planner-modal-select::-webkit-calendar-picker-indicator {
   font-family: var(--font-ui);
   transition: background 0.15s;
 }
-.planner-event-delete-btn:hover:not(:disabled) { background: rgba(192,122,122,0.12); }
+@media (hover: hover) {
+  .planner-event-delete-btn:hover:not(:disabled) { background: rgba(192,122,122,0.12); }
+}
 .planner-event-delete-btn:disabled { opacity: 0.4; cursor: default; }
 
 /* ── Calendar out-of-range banner ── */
@@ -1411,7 +1474,9 @@ input[type="time"].planner-modal-select::-webkit-calendar-picker-indicator {
   cursor: pointer;
   transition: background 0.15s;
 }
-.planner-allday-chip:hover { background: rgba(126,184,201,0.34); }
+@media (hover: hover) {
+  .planner-allday-chip:hover { background: rgba(126,184,201,0.34); }
+}
 
 /* All-day row in week view */
 .planner-week-allday-row {
@@ -1447,8 +1512,10 @@ input[type="time"].planner-modal-select::-webkit-calendar-picker-indicator {
   border-radius: 0 0 5px 5px;
   z-index: 10;
 }
-.planner-block-resize:hover {
-  background: rgba(255,255,255,0.15);
+@media (hover: hover) {
+  .planner-block-resize:hover {
+    background: rgba(255,255,255,0.15);
+  }
 }
 
 /* Workbook block in vista Giorno — stessa bozza "a spettro ampio" della vista
@@ -1502,9 +1569,11 @@ input[type="time"].planner-modal-select::-webkit-calendar-picker-indicator {
   color: var(--accent);
 }
 .planner-view-toggle button:disabled { opacity: 0.4; cursor: default; }
-.planner-view-toggle button:hover:not(.active) {
-  background: rgba(255,255,255,0.05);
-  color: var(--text);
+@media (hover: hover) {
+  .planner-view-toggle button:hover:not(.active) {
+    background: rgba(255,255,255,0.05);
+    color: var(--text);
+  }
 }
 
 /* ── Weekly grid ── */
@@ -1546,7 +1615,9 @@ input[type="time"].planner-modal-select::-webkit-calendar-picker-indicator {
   transition: color 0.15s, background 0.15s;
   text-transform: capitalize;
 }
-.planner-week-day-header:hover { color: var(--text); background: rgba(255,255,255,0.06); }
+@media (hover: hover) {
+  .planner-week-day-header:hover { color: var(--text); background: rgba(255,255,255,0.06); }
+}
 .planner-week-day-header.today { color: var(--accent); font-weight: 700; background: rgba(212,164,74,0.1); }
 
 .planner-week-body {
@@ -1616,7 +1687,9 @@ input[type="time"].planner-modal-select::-webkit-calendar-picker-indicator {
   box-shadow: 0 1px 4px rgba(0,0,0,0.35);
   transition: background 0.15s;
 }
-.planner-week-cal-event:hover { background: #5aa0b5; }
+@media (hover: hover) {
+  .planner-week-cal-event:hover { background: #5aa0b5; }
+}
 
 /* Task blocks in week view */
 .planner-week-task-block {
@@ -1681,8 +1754,11 @@ input[type="time"].planner-modal-select::-webkit-calendar-picker-indicator {
   justify-content: center;
   z-index: 11;
 }
-.planner-week-workbook-block:hover .planner-week-workbook-block-remove { display: flex; }
-.planner-week-workbook-block-remove:hover { background: rgba(0,0,0,0.55); }
+@media (hover: hover) {
+  .planner-week-workbook-block:hover .planner-week-workbook-block-remove { display: flex; }
+
+  .planner-week-workbook-block-remove:hover { background: rgba(0,0,0,0.55); }
+}
 
 /* Nota libera dentro un workbook block — doppio clic sul blocco per
    crearne una nel punto cliccato, testo multi-riga con a-capo liberi,
@@ -1707,7 +1783,9 @@ input[type="time"].planner-modal-select::-webkit-calendar-picker-indicator {
   opacity: 0;
   transition: opacity 0.15s;
 }
-.planner-block-note:hover .planner-block-note-drag { opacity: 1; }
+@media (hover: hover) {
+  .planner-block-note:hover .planner-block-note-drag { opacity: 1; }
+}
 .planner-block-note-drag:active { cursor: grabbing; }
 .planner-block-note-text {
   flex: 1;
@@ -1740,8 +1818,11 @@ input[type="time"].planner-modal-select::-webkit-calendar-picker-indicator {
   opacity: 0;
   transition: opacity 0.15s;
 }
-.planner-block-note:hover .planner-block-note-remove { opacity: 1; }
-.planner-block-note-remove:hover { background: rgba(0,0,0,0.55); }
+@media (hover: hover) {
+  .planner-block-note:hover .planner-block-note-remove { opacity: 1; }
+
+  .planner-block-note-remove:hover { background: rgba(0,0,0,0.55); }
+}
 .planner-block-note-input {
   flex: 1;
   font-family: var(--font-ui);
@@ -1886,7 +1967,9 @@ input[type="time"].planner-modal-select::-webkit-calendar-picker-indicator {
 .planner-task-detail { padding: 12px; display: flex; flex-direction: column; gap: 14px; }
 .planner-task-detail-header { position: relative; padding-right: 24px; }
 .planner-task-detail-title { font-size: 13px; font-weight: 600; color: var(--text); line-height: 1.3; cursor: text; }
-.planner-task-detail-title:hover { color: var(--accent); }
+@media (hover: hover) {
+  .planner-task-detail-title:hover { color: var(--accent); }
+}
 .planner-task-detail-title-input {
   width: 100%;
   background: rgba(255,255,255,0.05);
@@ -1926,15 +2009,21 @@ input[type="time"].planner-modal-select::-webkit-calendar-picker-indicator {
   display: flex; align-items: center; justify-content: center;
   transition: background 0.15s, color 0.15s, border-color 0.15s;
 }
-.planner-task-detail-action:hover { background: rgba(255,255,255,0.06); color: var(--text); border-color: var(--accent); }
+@media (hover: hover) {
+  .planner-task-detail-action:hover { background: rgba(255,255,255,0.06); color: var(--text); border-color: var(--accent); }
+}
 .planner-task-detail-action:disabled { opacity: 0.4; cursor: default; }
-.planner-task-detail-action.danger:hover { color: #c07a7a; border-color: #c07a7a; }
+@media (hover: hover) {
+  .planner-task-detail-action.danger:hover { color: #c07a7a; border-color: #c07a7a; }
+}
 .planner-task-detail-close {
   position: absolute; top: 0; right: 0;
   background: none; border: none; color: var(--muted); cursor: pointer; font-size: 12px;
   transition: color 0.12s;
 }
-.planner-task-detail-close:hover { color: var(--text); }
+@media (hover: hover) {
+  .planner-task-detail-close:hover { color: var(--text); }
+}
 .planner-task-detail-loading { font-size: 11px; color: var(--muted); padding: 8px 12px; }
 .planner-task-detail-section { display: flex; flex-direction: column; gap: 6px; }
 .planner-task-detail-section-label {
@@ -1974,31 +2063,42 @@ input[type="time"].planner-modal-select::-webkit-calendar-picker-indicator {
   flex-shrink: 0; width: 12px; text-align: center; color: var(--muted);
   cursor: grab; font-size: 11px; opacity: 0; transition: opacity 0.15s;
 }
-.planner-checklist-item:hover .planner-checklist-handle { opacity: 0.6; }
+@media (hover: hover) {
+  .planner-checklist-item:hover .planner-checklist-handle { opacity: 0.6; }
+}
 .planner-checklist-check {
   background: none; border: none; color: var(--muted); cursor: pointer;
   font-size: 12px; padding: 0; flex-shrink: 0; width: 18px; text-align: center;
   transition: color 0.12s;
 }
-.planner-checklist-check:hover { color: var(--accent); }
+@media (hover: hover) {
+  .planner-checklist-check:hover { color: var(--accent); }
+}
 .planner-checklist-text { flex: 1; font-size: 11px; color: var(--text); line-height: 1.3; cursor: text; }
 .planner-checklist-edit-input { flex: 1; margin: 0; padding: 2px 4px; }
 .planner-checklist-move {
   display: flex; flex-direction: column; flex-shrink: 0; opacity: 0; transition: opacity 0.15s;
 }
-.planner-checklist-item:hover .planner-checklist-move { opacity: 1; }
+@media (hover: hover) {
+  .planner-checklist-item:hover .planner-checklist-move { opacity: 1; }
+}
 .planner-checklist-move-btn {
   background: none; border: none; color: var(--muted); cursor: pointer;
   font-size: 11px; line-height: 1; padding: 1px 2px;
 }
-.planner-checklist-move-btn:hover:not(:disabled) { color: var(--accent); }
+@media (hover: hover) {
+  .planner-checklist-move-btn:hover:not(:disabled) { color: var(--accent); }
+}
 .planner-checklist-move-btn:disabled { opacity: 0.25; cursor: default; }
 .planner-checklist-delete {
   background: none; border: none; color: var(--muted); cursor: pointer;
   font-size: 11px; padding: 0; opacity: 0; flex-shrink: 0; transition: opacity 0.15s;
 }
-.planner-checklist-item:hover .planner-checklist-delete { opacity: 1; }
-.planner-checklist-delete:hover { color: #c07a7a; }
+@media (hover: hover) {
+  .planner-checklist-item:hover .planner-checklist-delete { opacity: 1; }
+
+  .planner-checklist-delete:hover { color: #c07a7a; }
+}
 
 .planner-checklist-add { display: flex; gap: 4px; margin-top: 6px; }
 .planner-checklist-input {
@@ -2036,7 +2136,9 @@ input[type="time"].planner-modal-select::-webkit-calendar-picker-indicator {
   transition: background 0.15s, color 0.15s, border-color 0.15s;
   font-family: var(--font-ui);
 }
-.planner-toggle-btn:hover { background: rgba(255,255,255,0.06); color: var(--text); }
+@media (hover: hover) {
+  .planner-toggle-btn:hover { background: rgba(255,255,255,0.06); color: var(--text); }
+}
 .planner-toggle-btn.active {
   border-color: var(--accent);
   color: var(--accent);
@@ -2114,7 +2216,9 @@ input[type="time"].planner-modal-select::-webkit-calendar-picker-indicator {
   overflow: hidden;
   transition: background 0.12s, border-color 0.12s;
 }
-.planner-month-cell:hover { background: rgba(255,255,255,0.09); border-color: rgba(255,255,255,0.22); }
+@media (hover: hover) {
+  .planner-month-cell:hover { background: rgba(255,255,255,0.09); border-color: rgba(255,255,255,0.22); }
+}
 .planner-month-cell.empty { background: none; border-color: transparent; cursor: default; }
 .planner-month-cell.today { border-color: rgba(212,164,74,0.7); background: rgba(212,164,74,0.1); }
 
@@ -2158,7 +2262,9 @@ input[type="time"].planner-modal-select::-webkit-calendar-picker-indicator {
   cursor: pointer;
   transition: background 0.15s;
 }
-.planner-month-chip.event:hover { background: rgba(126,184,201,0.4); }
+@media (hover: hover) {
+  .planner-month-chip.event:hover { background: rgba(126,184,201,0.4); }
+}
 .planner-month-chip.block {
   background: rgba(255,255,255,0.1);
   color: var(--text);
@@ -2204,7 +2310,9 @@ input[type="time"].planner-modal-select::-webkit-calendar-picker-indicator {
   box-shadow: 0 8px 24px rgba(0,0,0,0.35);
   transition: transform 0.15s, box-shadow 0.15s;
 }
-.pomodoro-fab:hover { transform: translateY(-1px); box-shadow: 0 12px 30px rgba(212,164,74,0.45); }
+@media (hover: hover) {
+  .pomodoro-fab:hover { transform: translateY(-1px); box-shadow: 0 12px 30px rgba(212,164,74,0.45); }
+}
 .pomodoro-fab:active { transform: scale(0.94); }
 
 /* ── Capacità della giornata ──
@@ -2260,7 +2368,9 @@ input[type="time"].planner-modal-select::-webkit-calendar-picker-indicator {
   cursor: pointer;
   transition: background var(--t);
 }
-.planner-pomodoro-start:hover { background: var(--accent-tint); }
+@media (hover: hover) {
+  .planner-pomodoro-start:hover { background: var(--accent-tint); }
+}
 
 .planner-pomodoro-dot {
   position: absolute;

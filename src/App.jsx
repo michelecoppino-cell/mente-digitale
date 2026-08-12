@@ -32,6 +32,22 @@ import './App.css';
 
 const DEFAULT_COLOR_SETTINGS = { notebooks: {}, sections: {} };
 
+// Il commutatore Taccuini/PARA della Mappa ricorda l'ultima scelta: chi lavora
+// per aree apre la Mappa dieci volte al giorno e la rimetteva su PARA ogni
+// volta. Prima quel giro si faceva con una voce di menù "Taccuini · PARA" che
+// portava alla stessa rotta della Mappa solo per preselezionare l'interruttore
+// che sta già in topbar — la voce è stata tolta, la memoria la sostituisce.
+const MAP_VIEW_MODE_KEY = 'md_map_view_mode_v1';
+const MAP_VIEW_MODES = ['workbook', 'para'];
+
+function initialMapViewMode() {
+  try {
+    const saved = localStorage.getItem(MAP_VIEW_MODE_KEY);
+    if (saved && MAP_VIEW_MODES.includes(saved)) return saved;
+  } catch { /* storage non disponibile */ }
+  return 'workbook';
+}
+
 // Applica gli override di colore (persistiti, vedi initColorSettings /
 // applyColorSettings) a un taccuino o alle sue sezioni, mutandoli sul posto —
 // stessa convenzione già in uso per nb._color prima di questa feature, così
@@ -170,7 +186,7 @@ export default function App() {
   const [selected, setSelected] = useState(null);
   const [sync, setSync] = useState({ state: 'idle', label: 'Non connesso' });
   const [zoom, setZoom] = useState(1);
-  const [mapViewMode, setMapViewMode] = useState('workbook');
+  const [mapViewMode, setMapViewMode] = useState(initialMapViewMode);
   const [identityOpen, setIdentityOpen] = useState(null);
   const [searchOpen, setSearchOpen] = useState(false);
   // La cattura chiesta dalla scorciatoia è aperta già al primo render, non in
@@ -244,6 +260,10 @@ export default function App() {
     // Il pathname da solo butterebbe via anche l'hash, cioè la rotta corrente.
     window.history.replaceState(null, '', window.location.pathname + window.location.hash);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    try { localStorage.setItem(MAP_VIEW_MODE_KEY, mapViewMode); } catch { /* storage non disponibile */ }
+  }, [mapViewMode]);
 
   // Scorciatoie: ⌘K ricerca globale, ⌘J diario, ⌘N cattura da qualunque vista
   useEffect(() => {
@@ -908,7 +928,6 @@ export default function App() {
       <AppShell
         topbar={topbar}
         onCapture={() => setCaptureOpen(true)}
-        onOpenNotebooks={() => { setMapViewMode('para'); navigate('/mappa'); }}
         onOpenSettings={() => setColorSettingsOpen(true)}>
         <Routes>
           <Route path="/oggi" element={

@@ -47,7 +47,9 @@
   white-space: nowrap;
   transition: border-color var(--t), color var(--t);
 }
-.ab-filter:hover { color: var(--text-3); }
+@media (hover: hover) {
+  .ab-filter:hover { color: var(--text-3); }
+}
 .ab-filter.active {
   border-color: var(--chip, var(--accent));
   color: var(--chip, var(--accent));
@@ -75,7 +77,9 @@
   transition: background var(--t), color var(--t);
 }
 .ab-views button:last-child { border-right: none; }
-.ab-views button:hover { color: var(--text-3); }
+@media (hover: hover) {
+  .ab-views button:hover { color: var(--text-3); }
+}
 .ab-views button.active { background: var(--accent-tint); color: var(--accent); }
 
 /* ── Colonne ──────────────────────────────────────────────────────────── */
@@ -142,7 +146,9 @@
   cursor: grab;
   transition: border-color var(--t), background var(--t), opacity var(--t);
 }
-.ab-card:hover { border-color: var(--accent-line); }
+@media (hover: hover) {
+  .ab-card:hover { border-color: var(--accent-line); }
+}
 .ab-card:active { cursor: grabbing; }
 .ab-card.dragging { opacity: .4; }
 
@@ -247,7 +253,9 @@
   text-align: left;
   cursor: pointer;
 }
-.ab-deadline-row:hover { background: rgba(255, 255, 255, .03); }
+@media (hover: hover) {
+  .ab-deadline-row:hover { background: rgba(255, 255, 255, .03); }
+}
 
 .ab-deadline-row .ab-due { flex: 0 0 52px; font-size: var(--fs-chip); }
 .ab-deadline-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

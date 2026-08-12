@@ -23,6 +23,27 @@ const DESTINATIONS = [
 
 const RAIL_COLLAPSED_KEY = 'md_rail_collapsed_v1';
 
+/** Sotto questa larghezza il rail è un drawer sopra il contenuto e non una
+ *  colonna che gli ruba spazio. Va tenuta allineata alle media query di
+ *  AppShell.css: è la stessa soglia, scritta una volta per il layout e una
+ *  per il comportamento del panino. */
+const DRAWER_QUERY = '(max-width: 860px)';
+
+/** Vero finché la finestra soddisfa la media query, e aggiornato quando
+ *  cambia — ruotare il telefono o allargare la finestra deve cambiare cosa fa
+ *  il panino, non solo come è disegnato il rail. */
+function useMediaQuery(/** @type {string} */ query) {
+  const [matches, setMatches] = useState(() => window.matchMedia(query).matches);
+  useEffect(() => {
+    const mq = window.matchMedia(query);
+    const onChange = () => setMatches(mq.matches);
+    onChange();
+    mq.addEventListener('change', onChange);
+    return () => mq.removeEventListener('change', onChange);
+  }, [query]);
+  return matches;
+}
+
 /**
  * Icone di linea, disegnate a mano: il riferimento di design chiede forme
  * vere e vieta esplicitamente le emoji nell'interfaccia.
@@ -54,9 +75,6 @@ function Icon({ name }) {
     case 'map': return (
       <svg {...common}><circle cx="12" cy="12" r="2.6" /><circle cx="5" cy="6" r="1.9" /><circle cx="19" cy="6.6" r="1.9" /><circle cx="6" cy="18.4" r="1.9" /><circle cx="18.4" cy="17.6" r="1.9" /><path d="M10.1 10.6 6.5 7.4M13.8 10.9l3.6-2.9M10.3 13.7l-2.9 3.2M13.9 13.5l3.1 2.7" /></svg>
     );
-    case 'notebooks': return (
-      <svg {...common}><rect x="4" y="3.6" width="12" height="16.8" rx="1.8" /><path d="M18.5 6.4v13.2a.8.8 0 0 1-.8.8H7.4" /></svg>
-    );
     // Cursori e non un ingranaggio: a 17px un ingranaggio è la stessa
     // macchia rotonda con raggi del sole di "Oggi", e nel rail le due voci
     // finivano indistinguibili col menù ridotto a sole icone.
@@ -69,6 +87,15 @@ function Icon({ name }) {
     case 'menu': return (
       <svg {...common} strokeWidth={1.9}><path d="M4 7h16M4 12h16M4 17h16" /></svg>
     );
+    case 'more': return (
+      <svg {...common} strokeWidth={2}><circle cx="5.5" cy="12" r=".6" /><circle cx="12" cy="12" r=".6" /><circle cx="18.5" cy="12" r=".6" /></svg>
+    );
+    case 'pause': return (
+      <svg {...common} strokeWidth={2}><path d="M9.5 5.5v13M14.5 5.5v13" /></svg>
+    );
+    case 'play': return (
+      <svg {...common}><path d="M8 5.4 18.5 12 8 18.6z" /></svg>
+    );
     default: return null;
   }
 }
@@ -77,6 +104,11 @@ function Icon({ name }) {
 function fmtElapsed(/** @type {number} */ ms) {
   const total = Math.floor(ms / 1000);
   return `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`;
+}
+
+/** Frazione di sessione già trascorsa, da 0 a 1. */
+function sessionPct(/** @type {{durationMin: number}} */ session, /** @type {number} */ elapsedMs) {
+  return Math.min(1, elapsedMs / (session.durationMin * 60_000));
 }
 
 /**
@@ -88,7 +120,7 @@ function PomodoroBar() {
   const navigate = useNavigate();
   if (!session) return null;
 
-  const pct = Math.min(1, elapsedMs / (session.durationMin * 60_000));
+  const pct = sessionPct(session, elapsedMs);
 
   return (
     <div className="pomo-bar">
@@ -122,26 +154,84 @@ function PomodoroBar() {
 }
 
 /**
+ * Sessione Pomodoro compressa in una riga di topbar: quadrante, tempo, titolo.
+ * Serve alla fusione da telefono — la barra intera e la topbar assieme sono
+ * 100px di cromo fisso, su uno schermo da 667 è un settimo dello schermo.
+ */
+function PomodoroInline() {
+  const { session, elapsedMs } = usePomodoro();
+  const navigate = useNavigate();
+  if (!session) return null;
+
+  return (
+    <button
+      className="shell-pomo-inline"
+      onClick={() => session.sectionId && navigate(`/sezioni/${session.sectionId}`)}
+      disabled={!session.sectionId}
+      title={session.sectionId ? 'Torna al workbook della sezione' : undefined}>
+      <span
+        className="pomo-bar-dial"
+        style={/** @type {import('react').CSSProperties} */ ({ '--pomo-pct': `${sessionPct(session, elapsedMs) * 360}deg` })} />
+      <span className="pomo-bar-time">{fmtElapsed(elapsedMs)}</span>
+      <span className="pomo-bar-task">{session.taskTitle || 'Sessione di concentrazione'}</span>
+    </button>
+  );
+}
+
+/**
  * @param {Object} props
  * @param {import('react').ReactNode} props.children      contenuto della rotta corrente
  * @param {import('react').ReactNode} [props.topbar]      azioni globali in alto a destra
  * @param {() => void} props.onCapture                    apre la cattura rapida (⌘N)
- * @param {() => void} [props.onOpenNotebooks]
  * @param {() => void} [props.onOpenSettings]
  */
-export default function AppShell({ children, topbar, onCapture, onOpenNotebooks, onOpenSettings }) {
+export default function AppShell({ children, topbar, onCapture, onOpenSettings }) {
   const [collapsed, setCollapsed] = useState(() => localStorage.getItem(RAIL_COLLAPSED_KEY) === '1');
   // Su schermo stretto il rail è un drawer sopra il contenuto, non una colonna
   // che gli ruba larghezza.
   const [drawerOpen, setDrawerOpen] = useState(false);
+  // Il menù "⋯" è legato alla sessione che l'ha aperto, non a un booleano: se
+  // la sessione finisce mentre è aperto, la topbar torna larga e il menù si
+  // chiude da sé, senza riaprirsi a sorpresa sulla sessione successiva.
+  const [actionsOpenFor, setActionsOpenFor] = useState(/** @type {string|null} */ (null));
+  const narrow = useMediaQuery(DRAWER_QUERY);
+  const { session, pause, resume, stop } = usePomodoro();
 
   useEffect(() => { localStorage.setItem(RAIL_COLLAPSED_KEY, collapsed ? '1' : '0'); }, [collapsed]);
+
+  // Da telefono, con il pomodoro in corso, topbar e barra della sessione si
+  // fondono in una riga sola: il panino e il timer accanto, e le azioni
+  // globali dietro il "⋯". Fuori da questo caso restano due righe distinte.
+  const merged = narrow && !!session;
+  const actionsOpen = merged && actionsOpenFor === session.startedAt;
+  const closeActions = () => setActionsOpenFor(null);
+
+  // Un solo comando per il menù, sempre nello stesso posto: da telefono apre e
+  // chiude il drawer, da schermo grande alterna il rail fra etichette e sole
+  // icone. Prima erano due bottoni diversi — un panino che su desktop non
+  // compariva mai, e una freccetta `‹` in fondo al rail.
+  function toggleMenu() {
+    if (narrow) setDrawerOpen(o => !o);
+    else setCollapsed(c => !c);
+  }
+
+  const menuTitle = narrow
+    ? (drawerOpen ? 'Chiudi il menù' : 'Apri il menù')
+    : (collapsed ? 'Espandi il menù' : 'Riduci il menù');
 
   return (
     <div className={`shell${collapsed ? ' rail-collapsed' : ''}${drawerOpen ? ' drawer-open' : ''}`}>
       <div className="shell-scrim" onClick={() => setDrawerOpen(false)} />
 
       <nav className="rail" aria-label="Navigazione principale">
+        <button
+          className="rail-menu tap-44"
+          onClick={toggleMenu}
+          aria-label={menuTitle}
+          title={menuTitle}>
+          <Icon name="menu" />
+        </button>
+
         <button
           className="rail-capture"
           onClick={() => { onCapture(); setDrawerOpen(false); }}
@@ -166,33 +256,70 @@ export default function AppShell({ children, topbar, onCapture, onOpenNotebooks,
         </div>
 
         <div className="rail-foot">
-          <button className="rail-item" onClick={() => { onOpenNotebooks?.(); setDrawerOpen(false); }} title="Taccuini · PARA">
-            <Icon name="notebooks" />
-            <span className="rail-label">Taccuini · PARA</span>
-          </button>
           <button className="rail-item" onClick={() => { onOpenSettings?.(); setDrawerOpen(false); }} title="Impostazioni">
             <Icon name="settings" />
             <span className="rail-label">Impostazioni</span>
-          </button>
-          <button
-            className="rail-collapse"
-            onClick={() => setCollapsed(c => !c)}
-            title={collapsed ? 'Espandi il menù' : 'Riduci il menù'}>
-            {collapsed ? '›' : '‹'}
           </button>
         </div>
       </nav>
 
       <div className="shell-main">
-        <PomodoroBar />
-        <header className="shell-topbar">
+        {!merged && <PomodoroBar />}
+        <header className={`shell-topbar${merged ? ' merged' : ''}`}>
+          {/* Lo stesso comando del panino nel rail: da telefono il rail è
+              fuori schermo, quindi qui c'è l'unico appiglio per aprirlo. */}
           <button
             className="shell-drawer-btn tap-44"
-            onClick={() => setDrawerOpen(o => !o)}
-            title="Menù">
+            onClick={toggleMenu}
+            aria-label={menuTitle}
+            title={menuTitle}>
             <Icon name="menu" />
           </button>
-          <div className="shell-topbar-actions">{topbar}</div>
+
+          {merged ? (
+            <>
+              <PomodoroInline />
+              <div className="shell-pomo-actions">
+                <button
+                  className="shell-icon-btn tap-44"
+                  onClick={session.state === 'running' ? pause : resume}
+                  aria-label={session.state === 'running' ? 'Metti in pausa' : 'Riprendi'}
+                  title={session.state === 'running' ? 'Pausa' : 'Riprendi'}>
+                  <Icon name={session.state === 'running' ? 'pause' : 'play'} />
+                </button>
+                <button
+                  className="shell-icon-btn tap-44"
+                  onClick={() => setActionsOpenFor(open => open ? null : session.startedAt)}
+                  aria-expanded={actionsOpen}
+                  aria-label="Altre azioni"
+                  title="Altre azioni">
+                  <Icon name="more" />
+                </button>
+              </div>
+              {actionsOpen && (
+                <>
+                  <div className="shell-more-scrim" onClick={closeActions} />
+                  {/* Il click su una voce chiude il menù, tranne dentro la
+                      campanella: quella apre il suo elenco lì dentro, e
+                      chiudere il menù lo porterebbe via con sé. */}
+                  <div
+                    className="shell-more-panel"
+                    onClick={e => {
+                      if (!(e.target instanceof Element) || !e.target.closest('.bell-wrap')) closeActions();
+                    }}>
+                    <button
+                      className="pomo-bar-btn primary"
+                      onClick={() => { stop(); closeActions(); }}>
+                      Chiudi e completa
+                    </button>
+                    <div className="shell-more-actions">{topbar}</div>
+                  </div>
+                </>
+              )}
+            </>
+          ) : (
+            <div className="shell-topbar-actions">{topbar}</div>
+          )}
         </header>
         <div className="shell-content">{children}</div>
       </div>

@@ -7,6 +7,13 @@
  *
  * Regola dell'accento: è una linea, un bordo, una velatura al 10%. Mai una
  * campitura piena su un'area grande.
+ *
+ * Regola dell'hover: ogni regola `:hover` di questo progetto sta dentro un
+ * `@media (hover: hover)`. Su un touch screen il browser lascia lo stato hover
+ * attaccato all'elemento toccato finché non se ne tocca un altro: la voce del
+ * menù appena premuta sembrava ancora attiva, e due voci sembravano accese
+ * insieme. Vale anche per il codice nuovo — un `:hover` fuori dal guard è un
+ * elemento che da telefono resta illuminato.
  */
 
 :root {

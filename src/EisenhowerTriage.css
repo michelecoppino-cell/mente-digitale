@@ -33,7 +33,9 @@
   background: none; border: none; color: var(--muted); cursor: pointer;
   font-size: 14px; transition: color 0.12s;
 }
-.eis-close:hover { color: var(--text); }
+@media (hover: hover) {
+  .eis-close:hover { color: var(--text); }
+}
 
 .eis-body { padding: 18px 20px 22px; }
 
@@ -58,7 +60,9 @@
   font-family: var(--font-ui);
   transition: background 0.15s;
 }
-.eis-done-btn:hover { background: rgba(212,164,74,0.1); }
+@media (hover: hover) {
+  .eis-done-btn:hover { background: rgba(212,164,74,0.1); }
+}
 
 .eis-progress {
   font-size: 11px;
@@ -108,7 +112,9 @@
   gap: 2px;
   transition: background 0.15s;
 }
-.eis-quadrant-btn:hover:not(:disabled) { background: rgba(255,255,255,0.06); }
+@media (hover: hover) {
+  .eis-quadrant-btn:hover:not(:disabled) { background: rgba(255,255,255,0.06); }
+}
 .eis-quadrant-btn:disabled { opacity: 0.5; cursor: default; }
 
 .eis-quadrant-key {
@@ -140,7 +146,9 @@
   font-family: var(--font-ui);
   text-decoration: underline;
 }
-.eis-skip-btn:hover { color: var(--text); }
+@media (hover: hover) {
+  .eis-skip-btn:hover { color: var(--text); }
+}
 .eis-skip-btn:disabled { opacity: 0.5; cursor: default; }
 
 /* Quadranti come vista di Attività: stesso smistamento, senza velo né
