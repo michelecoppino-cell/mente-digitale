@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, lazy, Suspense } from 'react';
 import { Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { initAuth, getAccount, login, trySsoSilent } from './auth';
 import { getNotebooks, getSections, getTodoLists, getTodoTasks, getPages, getRecentEmails, getPageContentHtml, markOneNoteTagDone, getReminders, createTask, getCalendarEvents, getTasksForDeadlineDedup, invalidateCalendarsCache, loadColorSettings, saveColorSettings, migrateLegacyDriveFiles, loadPlannerConfig, loadDailyPlans, saveDailyPlans, updateTaskStatus, completeTask } from './api';
@@ -27,6 +27,8 @@ import { pushUndo } from './undo';
 import { COLORS } from './config';
 import UndoToast from './UndoToast';
 import './App.css';
+
+const FinanzeSection = lazy(() => import('./finanze/FinanzeSection'));
 
 const DEFAULT_COLOR_SETTINGS = { notebooks: {}, sections: {} };
 
@@ -961,6 +963,16 @@ export default function App() {
           } />
 
           <Route path="/diario" element={<DiaryPanel />} />
+
+          {/* Finanze porta con sé recharts e sette pagine di tabelle: mezzo
+              megabyte che non deve pesare sull'avvio di «Oggi», visto che è la
+              sezione in cui si entra qualche volta al mese. Caricata alla prima
+              visita e poi in cache come ogni chunk. */}
+          <Route path="/finanze/:sezione?" element={
+            <Suspense fallback={<div className="finanze-attesa muted">Caricamento…</div>}>
+              <FinanzeSection />
+            </Suspense>
+          } />
 
           <Route path="/mappa" element={
             <div className="canvas-area">

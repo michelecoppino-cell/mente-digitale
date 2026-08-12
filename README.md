@@ -38,6 +38,31 @@ Microsoft To-Do e al calendario Outlook, e un briefing di notizie generato con l
   il diario non passa da alcuna funzione server. Diario e cattura sono sempre
   raggiungibili dal menù, da qualunque vista.
 
+- **Finanze** — contabilità personale, saldo reale e proiezione futura, assorbita dall'app
+  omonima che prima viveva per conto suo. Nel menù è **una** voce; dentro, sette schede
+  (saldo, analisi spese, proiezione, fatture, tasse, movimenti, impostazioni) che sono rotte
+  vere, quindi indirizzabili e con il tasto indietro funzionante. Vedi sotto.
+
+### Finanze
+
+I dati stanno in **IndexedDB**, non su Microsoft Graph come il resto dell'app: sono un
+singolo snapshot JSON (movimenti categorizzati, fatture, anni fiscali, mutui, parametri)
+con la stessa forma del file di export. Il backup va su OneDrive in
+`mente-digitale/mente-digitale-finanze.json`, con l'accesso Microsoft già fatto dall'app —
+niente secondo login, niente registrazione Azure dedicata.
+
+**Portare qui i dati della vecchia app**: quando Finanze era separata il backup viveva in
+`Apps/Finanze/finanze.json`, una cartella che mente-digitale non può leggere (usava lo scope
+`Files.ReadWrite.AppFolder` al posto di `Files.ReadWrite`). Si recupera una volta sola:
+*Esporta JSON* dalla vecchia app, *Finanze → Impostazioni → Importa JSON* qui. Da lì in poi
+la sincronizzazione riparte dalla cartella nuova.
+
+**PIN.** La sezione si apre con un PIN numerico, si richiude da sola dopo mezz'ora e subito
+col pulsante *Blocca* nella barra delle schede. Serve a non lasciare i conti in chiaro su uno
+schermo aperto in ufficio: non è cifratura — i dati in IndexedDB restano leggibili a chi ha
+accesso al browser e sa dove guardare, e sei cifre si provano tutte in un istante. Si cambia
+o si toglie da *Finanze → Impostazioni*.
+
 ### Importare il Diario dell'iPhone
 
 Due strade per la stessa cosa, con lo stesso parser (`src/appleDiary.js`) sotto: gli id

@@ -1238,3 +1238,25 @@ export async function getRecentEmails() {
   const d = await call(`/me/messages?${params}`);
   return d?.value || [];
 }
+
+// ── OneDrive Finanze ─────────────────────────────────────────────────────────
+// Il backup della sezione Finanze: un unico JSON con l'intero stato (movimenti,
+// fatture, tasse, parametri), lo stesso formato dell'export manuale.
+//
+// Prima dell'assorbimento in mente-digitale, Finanze era un'app a sé con la
+// propria registrazione Azure e lo scope `Files.ReadWrite.AppFolder`, quindi il
+// backup viveva in `Apps/Finanze`. Qui riusa il login e la cartella di tutto il
+// resto: un solo consenso Microsoft, un solo `handleRedirectPromise`. Il vecchio
+// file nell'AppFolder non è raggiungibile con questo scope e va recuperato una
+// volta sola con l'import JSON.
+const OD_FINANZE_FILE = 'mente-digitale-finanze.json';
+
+/** @returns {Promise<any|null>} lo snapshot salvato, o null se non esiste ancora */
+export async function loadFinanze() {
+  return getDriveJson(OD_FINANZE_FILE, null);
+}
+
+/** @param {any} data @returns {Promise<any>} */
+export async function saveFinanze(data) {
+  return putDriveJson(OD_FINANZE_FILE, data);
+}

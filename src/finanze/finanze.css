@@ -1,0 +1,922 @@
+.finanze-root {
+  --bg: #f6f7f9;
+  --bg-card: #ffffff;
+  --bg-elev: #f0f2f5;
+  --testo: #1b1f24;
+  --muted: #6b7280;
+  --bordo: #e3e6ea;
+  --primario: #2f6feb;
+  --primario-testo: #ffffff;
+  --entrata: #1a9c5b;
+  --uscita: #d23b3b;
+  --ombra: 0 1px 3px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.04);
+  --raggio: 10px;
+  --sidebar-w: 220px;
+}
+@media (prefers-color-scheme: dark) {
+  .finanze-root {
+      --bg: #14171c;
+      --bg-card: #1c2027;
+      --bg-elev: #232830;
+      --testo: #e7eaee;
+      --muted: #9aa3af;
+      --bordo: #2c323b;
+      --primario: #4b86f0;
+      --entrata: #35c07e;
+      --uscita: #ef6a6a;
+      --ombra: none;
+    }
+}
+.finanze-root * {
+  box-sizing: border-box;
+}
+.finanze-root {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica,
+    Arial, sans-serif;
+  background: var(--bg);
+  color: var(--testo);
+  font-size: 14px;
+  line-height: 1.45;
+}
+.finanze-root h1,
+.finanze-root h2,
+.finanze-root h3 {
+  margin: 0 0 0.4em;
+  font-weight: 650;
+}
+.finanze-root button {
+  font: inherit;
+  cursor: pointer;
+}
+.finanze-root input,
+.finanze-root select {
+  font: inherit;
+  padding: 7px 9px;
+  border: 1px solid var(--bordo);
+  border-radius: 7px;
+  background: var(--bg-card);
+  color: var(--testo);
+}
+.finanze-root input:focus,
+.finanze-root select:focus {
+  outline: 2px solid var(--primario);
+  outline-offset: -1px;
+}
+.finanze-root .muted {
+  color: var(--muted);
+}
+.finanze-root .entrata {
+  color: var(--entrata);
+}
+.finanze-root .uscita {
+  color: var(--uscita);
+}
+/* ---------- Componenti ---------- */
+.finanze-root .card {
+  background: var(--bg-card);
+  border: 1px solid var(--bordo);
+  border-radius: var(--raggio);
+  padding: 16px;
+  box-shadow: var(--ombra);
+  margin-bottom: 16px;
+}
+.finanze-root button.primario {
+  background: var(--primario);
+  color: var(--primario-testo);
+  border: none;
+  border-radius: 8px;
+  padding: 9px 16px;
+  font-weight: 600;
+}
+.finanze-root button.primario:hover {
+  filter: brightness(1.05);
+}
+.finanze-root button.secondario {
+  background: var(--bg-elev);
+  color: var(--testo);
+  border: 1px solid var(--bordo);
+  border-radius: 8px;
+  padding: 8px 14px;
+  font-weight: 500;
+}
+.finanze-root button.secondario:hover {
+  border-color: var(--primario);
+}
+.finanze-root .errore {
+  color: var(--uscita);
+  font-size: 13px;
+}
+.finanze-root .riga-azioni {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.finanze-root .stat-griglia {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.finanze-root .stat {
+  background: var(--bg-card);
+  border: 1px solid var(--bordo);
+  border-radius: var(--raggio);
+  padding: 14px 16px;
+  box-shadow: var(--ombra);
+}
+.finanze-root .stat .etichetta {
+  font-size: 12px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+.finanze-root .stat .valore {
+  font-size: 22px;
+  font-weight: 700;
+  margin-top: 4px;
+}
+/* ---------- Tabelle ---------- */
+.finanze-root .tabella-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--bordo);
+  border-radius: var(--raggio);
+  background: var(--bg-card);
+}
+.finanze-root table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 13px;
+}
+.finanze-root th,
+.finanze-root td {
+  padding: 7px 10px;
+  text-align: left;
+  border-bottom: 1px solid var(--bordo);
+  white-space: nowrap;
+}
+.finanze-root th {
+  background: var(--bg-elev);
+  font-weight: 600;
+  position: sticky;
+  top: 0;
+  /* Sopra la barra di selezione multipla (sticky, z-index 4): altrimenti il
+     menu del filtro colonna resterebbe coperto quando entrambe sono "incollate". */
+  z-index: 6;
+}
+/* Intestazioni su due righe (gruppi di colonne): la seconda riga si aggancia
+   sotto la prima invece di sovrapporvisi. */
+.finanze-root thead tr:nth-child(2) th {
+  top: 33px;
+}
+.finanze-root td.num,
+.finanze-root th.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.finanze-root tbody tr:hover {
+  background: var(--bg-elev);
+}
+/* ---------- Filtro/ordinamento per colonna (stile Excel) ---------- */
+.finanze-root .th-riga {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+.finanze-root .th-testo {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.finanze-root .th-filtro-btn {
+  flex-shrink: 0;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1;
+  user-select: none;
+}
+.finanze-root .th-filtro-btn:hover,
+.finanze-root .th-filtro-btn.th-filtro-aperto {
+  background: var(--bg-card);
+  color: var(--testo);
+}
+.finanze-root .th-filtro-btn.th-filtro-attivo {
+  color: var(--primario);
+  font-weight: 700;
+}
+/* Finestra pop-up centrata (es. giornate lavorate di una fattura), montata
+   in un portal su <body>. */
+.finanze-root .modale-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+.finanze-root .modale-box {
+  background: var(--bg-card);
+  border: 1px solid var(--bordo);
+  border-radius: var(--raggio);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+  padding: 18px 20px;
+  width: 100%;
+  max-width: 360px;
+  max-height: 85vh;
+  overflow-y: auto;
+}
+.finanze-root .modale-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.finanze-root .modale-header h3 {
+  margin: 0;
+}
+.finanze-root .modale-box .form-griglia {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+/* Il popover e' in un portal su <body> (position:fixed, coordinate calcolate
+   in JS): cosi' non viene tagliato dallo scroll orizzontale della tabella
+   (.tabella-wrap ha overflow-x:auto, che clippa anche in verticale). */
+.finanze-root .filtro-pop {
+  position: fixed;
+  width: max-content;
+  min-width: 190px;
+  max-width: min(280px, 80vw);
+  max-height: min(70vh, 420px);
+  overflow-y: auto;
+  background: var(--bg-card);
+  border: 1px solid var(--bordo);
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.22);
+  padding: 10px;
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-weight: 400;
+  font-size: 12px;
+  text-transform: none;
+  white-space: normal;
+  cursor: default;
+}
+.finanze-root .filtro-pop input,
+.finanze-root .filtro-pop select {
+  width: 100%;
+}
+.finanze-root .filtro-ordina {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.finanze-root .filtro-ordina button {
+  padding: 4px 8px;
+  font-size: 12px;
+}
+.finanze-root .filtro-campo-pop {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.finanze-root .filtro-lista-scroll {
+  max-height: 180px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  border-top: 1px solid var(--bordo);
+  padding-top: 4px;
+}
+.finanze-root .filtro-lista-voce {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 400;
+  cursor: pointer;
+}
+.finanze-root .filtro-lista-tutto {
+  border-bottom: 1px solid var(--bordo);
+  padding-bottom: 6px;
+}
+.finanze-root .filtro-pop-azioni {
+  display: flex;
+  justify-content: space-between;
+  gap: 6px;
+  margin-top: 2px;
+}
+.finanze-root .filtro-pop-azioni button {
+  padding: 4px 8px;
+  font-size: 12px;
+}
+.finanze-root table select,
+.finanze-root table input {
+  padding: 3px 6px;
+  font-size: 12px;
+}
+.finanze-root .vuoto {
+  padding: 40px 20px;
+  text-align: center;
+  color: var(--muted);
+}
+/* Avviso informativo (es. dati aggiornati da OneDrive all'avvio). */
+.finanze-root .banner-info {
+  border-color: var(--primario);
+}
+/* ---------- Pannelli richiudibili (details/summary) ---------- */
+.finanze-root .pannello > summary {
+  cursor: pointer;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 650;
+  font-size: 15px;
+  user-select: none;
+}
+.finanze-root .pannello > summary::-webkit-details-marker {
+  display: none;
+}
+.finanze-root .pannello-freccia {
+  display: inline-block;
+  transition: transform 0.15s ease;
+  color: var(--muted);
+}
+.finanze-root .pannello[open] .pannello-freccia {
+  transform: rotate(90deg);
+}
+.finanze-root .pannello-sotto {
+  font-weight: 400;
+  font-size: 12px;
+}
+.finanze-root .pannello-titolo-riga {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex: 1;
+  gap: 8px;
+}
+.finanze-root .pannello-corpo {
+  margin-top: 10px;
+}
+.finanze-root .chip {
+  display: inline-block;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  background: var(--bg-elev);
+  border: 1px solid var(--bordo);
+}
+.finanze-root label.campo {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+  font-weight: 500;
+}
+.finanze-root .form-griglia {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 12px;
+}
+/* ---------- Filtri movimenti ---------- */
+.finanze-root .filtri {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+  margin-bottom: 12px;
+}
+.finanze-root .filtro-campo {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.finanze-root .filtro-campo input {
+  padding: 5px 7px;
+}
+.finanze-root .filtri-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+/* Riga di un movimento marcato come trasferimento/giroconto. */
+.finanze-root tr.riga-trasf > td:first-child {
+  border-left: 3px solid var(--primario);
+}
+/* Giroconto interno tra conti propri: bordo neutro tratteggiato. */
+.finanze-root tr.riga-interna > td:first-child {
+  border-left: 3px dashed var(--muted);
+}
+/* Rata di mutuo: bordo viola (equity immobiliare). */
+.finanze-root tr.riga-mutuo > td:first-child {
+  border-left: 3px solid #b279a2;
+}
+/* Badge del conto/banca di provenienza. */
+.finanze-root .chip-conto {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 110px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.finanze-root .chip-conto .pallino {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+/* Richiesta banca in fase di import CSV (campo obbligatorio, evidenziato). */
+.finanze-root .import-banca {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px;
+  padding: 12px;
+  margin-bottom: 14px;
+  border: 1px solid var(--primario);
+  border-radius: 8px;
+  background: var(--bg-elev);
+}
+.finanze-root .import-banca .muted {
+  flex: 1 1 220px;
+  padding-bottom: 6px;
+}
+/* Blocco di un mutuo in Impostazioni. */
+.finanze-root .mutuo-blocco {
+  border-top: 1px solid var(--bordo);
+  padding-top: 12px;
+  margin-top: 12px;
+}
+.finanze-root .mutuo-blocco:first-of-type {
+  border-top: none;
+  padding-top: 0;
+  margin-top: 0;
+}
+/* Movimento annullato: resta in elenco (traccia) ma grigio e barrato,
+   ed e' escluso da tutti i calcoli. */
+.finanze-root tr.riga-annullata > td {
+  color: var(--muted);
+  opacity: 0.65;
+}
+.finanze-root tr.riga-annullata .cella-causale,
+.finanze-root tr.riga-annullata .cella-importo,
+.finanze-root tr.riga-annullata > td:nth-child(2) {
+  text-decoration: line-through;
+}
+.finanze-root .cella-note {
+  width: 140px;
+  min-width: 90px;
+}
+/* Modifica manuale dell'importo (doppio click): l'input evidenzia che il
+   valore e' in corso di modifica e non ancora confermato. */
+.finanze-root .cella-importo-mod {
+  cursor: pointer;
+}
+.finanze-root .input-importo-inline {
+  width: 88px;
+  padding: 3px 6px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  border: 1px dashed #c98a1c;
+  background: rgba(201, 138, 28, 0.12);
+}
+.finanze-root .input-importo-inline:focus {
+  outline: 2px solid #c98a1c;
+  outline-offset: -1px;
+}
+/* Barra delle azioni sulla selezione multipla. */
+.finanze-root .barra-selezione {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  margin-bottom: 12px;
+  border-color: var(--primario);
+  position: sticky;
+  top: 54px;
+  z-index: 4;
+}
+.finanze-root .barra-gruppo {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+/* ---------- Info (i): popover con la formula del valore calcolato ---------- */
+.finanze-root details.info {
+  display: inline-block;
+  position: relative;
+  vertical-align: middle;
+  margin-left: 4px;
+}
+.finanze-root details.info > summary {
+  list-style: none;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  border: 1px solid var(--muted);
+  color: var(--muted);
+  font-size: 10px;
+  font-style: italic;
+  font-weight: 700;
+  font-family: Georgia, serif;
+  line-height: 1;
+  user-select: none;
+}
+.finanze-root details.info > summary::-webkit-details-marker {
+  display: none;
+}
+.finanze-root details.info[open] > summary {
+  border-color: var(--primario);
+  color: var(--primario);
+}
+.finanze-root .info-pop {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(300px, 78vw);
+  background: var(--bg-card);
+  border: 1px solid var(--bordo);
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
+  padding: 10px 12px;
+  z-index: 30;
+  font-size: 12px;
+  font-weight: 400;
+  font-style: normal;
+  color: var(--testo);
+  text-transform: none;
+  letter-spacing: normal;
+  text-align: left;
+  line-height: 1.5;
+  white-space: normal;
+}
+.finanze-root .info-pop code {
+  font-size: 11px;
+  background: var(--bg-elev);
+  padding: 1px 4px;
+  border-radius: 4px;
+}
+/* ---------- Editor categorie (Impostazioni) ---------- */
+.finanze-root .lista-categorie {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.finanze-root .cat-riga {
+  display: grid;
+  grid-template-columns: 170px 1fr;
+  gap: 10px;
+  align-items: center;
+}
+.finanze-root .cat-nome {
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+.finanze-root .cat-rimuovi {
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  padding: 0 4px;
+}
+.finanze-root .cat-rimuovi:hover {
+  color: var(--uscita);
+}
+.finanze-root .cat-descr {
+  width: 100%;
+}
+/* ---------- Proiezione: grafico + editor affiancati (desktop) ---------- */
+.finanze-root .proiezione-griglia {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+.finanze-root .colonna-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+.finanze-root .colonna-grafico {
+  margin-bottom: 0;
+}
+@media (min-width: 1024px) {
+  .finanze-root .proiezione-griglia {
+      grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+      align-items: start;
+    }
+  .finanze-root .colonna-grafico {
+      position: sticky;
+      top: 76px;
+    }
+}
+/* ---------- Responsive ---------- */
+@media (max-width: 560px) {
+  .finanze-root .cat-riga {
+      grid-template-columns: 1fr;
+      gap: 4px;
+    }
+  /* Su schermi stretti il popover (i) diventa un foglietto in basso. */
+  .finanze-root .info-pop {
+      position: fixed;
+      left: 12px;
+      right: 12px;
+      bottom: 16px;
+      top: auto;
+      transform: none;
+      width: auto;
+      font-size: 13px;
+    }
+}
+@media (max-width: 760px) {
+  .finanze-root .card {
+      padding: 12px;
+      margin-bottom: 12px;
+    }
+  /* Su iOS un font < 16px fa zoomare la pagina al focus degli input. */
+  .finanze-root input,
+  .finanze-root select,
+  .finanze-root textarea {
+      font-size: 16px;
+    }
+  .finanze-root table select,
+  .finanze-root table input {
+      font-size: 14px;
+    }
+  .finanze-root .stat-griglia {
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      gap: 8px;
+    }
+  .finanze-root .stat {
+      padding: 10px 12px;
+    }
+  .finanze-root .stat .valore {
+      font-size: 18px;
+    }
+  /* Filtri e azioni: gli input si allargano per essere comodi col pollice. */
+  .finanze-root .filtri {
+      gap: 6px;
+    }
+  .finanze-root .filtri > input,
+  .finanze-root .filtri > select {
+      flex: 1 1 45%;
+      min-width: 0;
+    }
+  .finanze-root .filtro-campo {
+      flex: 1 1 45%;
+    }
+  .finanze-root .filtro-campo input {
+      flex: 1;
+      min-width: 0;
+    }
+  .finanze-root .riga-azioni {
+      gap: 8px;
+    }
+  /* Le tabelle scorrono in orizzontale con inerzia. */
+  .finanze-root .tabella-wrap {
+      -webkit-overflow-scrolling: touch;
+    }
+  .finanze-root button.primario,
+  .finanze-root button.secondario {
+      padding: 10px 14px; /* area di tocco piu' generosa */
+    }
+}
+/* ---------- Saldo reale: layout grafico + colonna laterale ---------- */
+.finanze-root .saldo-griglia {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 16px;
+  align-items: start;
+  margin-bottom: 16px;
+}
+.finanze-root .saldo-grafico-card {
+  margin-bottom: 0;
+}
+.finanze-root .saldo-grafico {
+  width: 100%;
+  height: 420px;
+}
+.finanze-root .saldo-torta {
+  width: 100%;
+  height: 240px;
+}
+.finanze-root .saldo-lato {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.finanze-root .saldo-lato .card {
+  margin-bottom: 0;
+}
+.finanze-root .saldo-riepilogo {
+  display: flex;
+  flex-direction: column;
+}
+.finanze-root .riep-riga {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 10px;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--bordo);
+}
+.finanze-root .riep-riga:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+.finanze-root .riep-etichetta {
+  font-size: 12px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.finanze-root .riep-valore {
+  font-size: 18px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.finanze-root .riep-riga.forte .riep-valore {
+  font-size: 20px;
+}
+@media (min-width: 1024px) {
+  .finanze-root .saldo-griglia {
+      grid-template-columns: minmax(0, 1.9fr) minmax(300px, 1fr);
+    }
+  /* Il riepilogo resta visibile scorrendo il grafico. */
+  .finanze-root .saldo-lato {
+      position: sticky;
+      top: 76px;
+    }
+}
+@media (max-width: 760px) {
+  /* Su smartphone tutto in colonna: grafico, poi torta, poi riepilogo. */
+  .finanze-root .saldo-grafico {
+      height: 300px;
+    }
+  .finanze-root .saldo-torta {
+      height: 220px;
+    }
+  .finanze-root .riep-valore {
+      font-size: 17px;
+    }
+}
+
+/* ---------- Guscio della sezione dentro mente-digitale ---------- */
+/* La sidebar, la topbar e il panino di Finanze sono spariti con l'assorbimento
+   in mente-digitale: li fa AppShell. Qui restano la barra delle schede — le
+   sette voci che prima stavano nel menù laterale — e il lucchetto del PIN. */
+
+.finanze-root {
+  min-height: 100%;
+  padding: 0;
+}
+
+.finanze-schede {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border-bottom: 1px solid var(--bordo);
+  background: var(--bg-card);
+  position: sticky;
+  top: 0;
+  z-index: 5;
+}
+
+/* Sette voci su uno schermo da telefono non ci stanno: invece di andare a capo
+   (due righe rubate al contenuto prima ancora di cominciare) la lista scorre in
+   orizzontale, con la scheda attiva sempre raggiungibile col pollice. */
+.finanze-schede-lista {
+  display: flex;
+  gap: 2px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  flex: 1;
+  min-width: 0;
+}
+
+.finanze-schede-lista::-webkit-scrollbar {
+  display: none;
+}
+
+.finanze-scheda {
+  flex: 0 0 auto;
+  padding: 11px 14px;
+  border-bottom: 2px solid transparent;
+  color: var(--muted);
+  text-decoration: none;
+  white-space: nowrap;
+  font-weight: 550;
+}
+
+.finanze-scheda:hover {
+  color: var(--testo);
+  background: var(--bg-elev);
+}
+
+.finanze-scheda.attiva {
+  color: var(--primario);
+  border-bottom-color: var(--primario);
+}
+
+.finanze-blocca {
+  flex: 0 0 auto;
+  margin-right: 12px;
+  padding: 6px 12px;
+  border: 1px solid var(--bordo);
+  border-radius: 7px;
+  background: var(--bg-card);
+  color: var(--muted);
+}
+
+.finanze-blocca:hover {
+  color: var(--testo);
+  border-color: var(--muted);
+}
+
+.finanze-pagina {
+  padding: 16px;
+  max-width: 1400px;
+}
+
+.finanze-banner {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.finanze-attesa {
+  padding: 32px 16px;
+  text-align: center;
+}
+
+/* ---------- Lucchetto ---------- */
+
+.finanze-lock {
+  display: flex;
+  justify-content: center;
+  padding: 64px 16px;
+}
+
+.finanze-lock-box {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+  max-width: 260px;
+  padding: 24px;
+  background: var(--bg-card);
+  border: 1px solid var(--bordo);
+  border-radius: var(--raggio);
+  box-shadow: var(--ombra);
+  text-align: center;
+}
+
+.finanze-lock-box h2 {
+  margin: 0;
+}
+
+@media (max-width: 760px) {
+  .finanze-pagina {
+    padding: 12px;
+  }
+  .finanze-lock {
+    padding: 32px 16px;
+  }
+}

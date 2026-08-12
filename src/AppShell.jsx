@@ -12,7 +12,14 @@ import { usePomodoro } from './pomodoroContext';
 import { useMediaQuery } from './useMediaQuery';
 import './AppShell.css';
 
-/** Le sei destinazioni del menù, nell'ordine in cui compaiono nel rail. */
+/**
+ * Le destinazioni del menù, nell'ordine in cui compaiono nel rail.
+ *
+ * Finanze sta in fondo e vale per una voce sola: dentro ha sette schede
+ * (saldo, spese, tasse, fatture…) che vivono in una barra propria, non qui —
+ * portarle nel rail avrebbe raddoppiato il menù principale per una parte sola
+ * dell'app. Vedi finanze/FinanzeSection.tsx.
+ */
 const DESTINATIONS = [
   { to: '/oggi',     label: 'Oggi',     icon: 'sun' },
   { to: '/piano',    label: 'Piano',    icon: 'calendar' },
@@ -20,6 +27,7 @@ const DESTINATIONS = [
   { to: '/sezioni',  label: 'Sezioni',  icon: 'book' },
   { to: '/diario',   label: 'Diario',   icon: 'candle' },
   { to: '/mappa',    label: 'Mappa',    icon: 'map' },
+  { to: '/finanze',  label: 'Finanze',  icon: 'euro' },
 ];
 
 const RAIL_COLLAPSED_KEY = 'md_rail_collapsed_v1';
@@ -54,6 +62,13 @@ function Icon({ name }) {
     );
     case 'map': return (
       <svg {...common}><circle cx="12" cy="12" r="2.6" /><circle cx="5" cy="6" r="1.9" /><circle cx="19" cy="6.6" r="1.9" /><circle cx="6" cy="18.4" r="1.9" /><circle cx="18.4" cy="17.6" r="1.9" /><path d="M10.1 10.6 6.5 7.4M13.8 10.9l3.6-2.9M10.3 13.7l-2.9 3.2M13.9 13.5l3.1 2.7" /></svg>
+    );
+    // Il simbolo dell'euro e non un portafoglio: un portafoglio a 17px è un
+    // rettangolo arrotondato con una riga dentro, cioè il calendario di
+    // «Piano». L'arco aperto con le due sbarre invece non somiglia a nulla
+    // altro nel rail.
+    case 'euro': return (
+      <svg {...common}><path d="M17.4 6.9a6.6 6.6 0 1 0 0 10.2" /><path d="M4.6 10.6h8.2M4.6 13.4h8.2" /></svg>
     );
     // Cursori e non un ingranaggio: a 17px un ingranaggio è la stessa
     // macchia rotonda con raggi del sole di "Oggi", e nel rail le due voci
