@@ -117,27 +117,44 @@
 .sv-empty { font-size: var(--fs-chip); line-height: 1.6; color: var(--disabled); }
 
 /* Pagine OneNote */
-.sv-page {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-3);
-  min-height: var(--tap);
-  padding: var(--sp-4) var(--sp-4);
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: var(--r);
-}
-.sv-page-title { flex: 1; min-width: 0; font-size: var(--fs-meta); color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.sv-page-date { flex: 0 0 auto; font-size: var(--fs-micro); color: var(--muted); }
+/* L'albero delle pagine: le righe si separano da sole con la propria linea
+   (.page-link in App.css), quindi niente gap ereditato dalla colonna. */
+.sv-pages { display: flex; flex-direction: column; }
 
-/* Attività della sezione */
+/* Apri l'intera sezione nell'app OneNote del computer. */
+.sv-open-section {
+  align-self: flex-start;
+  padding: var(--sp-2) 0;
+  background: none;
+  border: none;
+  color: var(--onenote);
+  font-family: var(--font-ui);
+  font-size: var(--fs-micro);
+  cursor: pointer;
+}
+@media (hover: hover) {
+  .sv-open-section:hover { text-decoration: underline; }
+}
+
+/* Attività della sezione — un bottone: al clic si apre il cassetto di
+   dettaglio, lo stesso pannello che il Piano ha nella terza colonna. */
 .sv-task {
   display: flex;
   align-items: center;
   gap: var(--sp-3);
+  width: 100%;
   min-height: 44px;
   padding: 0 var(--sp-2);
+  background: none;
+  border: none;
   border-bottom: 1px solid var(--line-soft);
+  font-family: var(--font-ui);
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--t);
+}
+@media (hover: hover) {
+  .sv-task:hover { background: rgba(255, 255, 255, 0.04); }
 }
 .sv-task:last-child { border-bottom: none; }
 .sv-task-dot { flex: 0 0 auto; width: 6px; height: 6px; border-radius: 50%; }

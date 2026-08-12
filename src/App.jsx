@@ -795,22 +795,6 @@ export default function App() {
     handleTaskRestored(newTask._listId, newTask);
   }
 
-  // Click su un task nella vista Attività: apre il pannello della sezione PARA
-  // corrispondente alla lista To-Do del task, che è come le due cose sono
-  // legate in tutta l'app (una lista = una sezione).
-  function handleTaskPoolClick(task) {
-    if (!task?._listName) return;
-    const lower = task._listName.toLowerCase();
-    for (const [nbId, sects] of Object.entries(sectionsMap || {})) {
-      const sec = sects.find(s => s.displayName.toLowerCase() === lower);
-      if (sec) {
-        const nb = notebooks.find(n => n.id === nbId) || { id: nbId, _color: 'var(--accent)' };
-        handleSelectSection(sec, nb, 'todo');
-        return;
-      }
-    }
-  }
-
   async function handleRefresh() {
     setSelected(null);
     setNotebooks([]);
@@ -950,6 +934,7 @@ export default function App() {
               onTaskDeleted={handleTaskRemoved}
               onTaskRenamed={(listId, taskId, title) => handleTaskPatched(listId, taskId, { title })}
               onTaskDueChanged={(listId, taskId, dueDateTime) => handleTaskPatched(listId, taskId, { dueDateTime })}
+              onTaskPatched={handleTaskPatched}
               onTaskRestored={handleTaskRestored}
               onStartFocus={handleStartPomodoroFocus}
               onEndFocus={handleEndPomodoroFocus}
@@ -964,11 +949,16 @@ export default function App() {
               plans={dailyPlans}
               config={plannerConfig}
               loading={scheduledTasks === null}
-              onOpenTask={handleTaskPoolClick}
+              notebooks={notebooks}
+              sectionsMap={sectionsMap}
+              pagesCache={pagesCache}
               onClarify={setClarifyTask}
               onChangeStatus={handleChangeTaskStatus}
               onSchedule={handleScheduleTask}
               onUnschedule={handleUnscheduleTask}
+              onTaskRemoved={handleTaskRemoved}
+              onTaskPatched={handleTaskPatched}
+              onTaskRestored={handleTaskRestored}
             />
           } />
 
@@ -979,10 +969,13 @@ export default function App() {
               todoListsMap={todoListsMap}
               tasks={scheduledTasks || []}
               pagesCache={pagesCache}
+              onTaskRemoved={handleTaskRemoved}
+              onTaskPatched={handleTaskPatched}
+              onTaskRestored={handleTaskRestored}
             />
           } />
 
-          <Route path="/diario" element={<DiaryPanel open onClose={() => navigate(-1)} />} />
+          <Route path="/diario" element={<DiaryPanel />} />
 
           <Route path="/mappa" element={
             <div className="canvas-area">

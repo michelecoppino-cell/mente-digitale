@@ -1,29 +1,19 @@
-.diary-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 420;
-  background: rgba(4, 5, 8, 0.88);
-  backdrop-filter: blur(3px);
-  display: flex;
-  align-items: center;
-  justify-content: center;
+/* Il Diario è una scheda, non più una finestra sopra le altre: vive nel
+   contenuto della rotta come Oggi, Piano e Attività, e scorre con la pagina.
+   Solo la scrittura resta a tutto schermo (vedi .diary-writer). */
+.diary-page {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
   font-family: var(--font-ui);
-  /* In standalone su iPhone la pagina passa sotto la barra di stato e sotto
-     l'indicatore Home: senza questi margini l'intestazione del diario finisce
-     dietro l'orologio e la rete. */
-  padding: calc(env(safe-area-inset-top, 0px) + 10px) 0 calc(env(safe-area-inset-bottom, 0px) + 10px);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 
 .diary-panel {
-  background: var(--surface);
-  border: 1px solid var(--border2);
-  border-radius: 14px;
-  width: min(620px, 94vw);
-  max-height: min(88vh, 100%);
+  width: min(680px, 100%);
+  margin: 0 auto;
   display: flex;
   flex-direction: column;
-  overflow: hidden;
-  box-shadow: 0 20px 70px rgba(0,0,0,0.6);
 }
 
 .diary-header {
@@ -50,7 +40,7 @@
   .diary-close:hover { color: var(--text); }
 }
 
-.diary-body { overflow-y: auto; padding: 18px 20px 22px; }
+.diary-body { padding: 18px 20px 22px; }
 
 /* ── Bottoni condivisi ───────────────────────────────────────────────────── */
 .diary-primary-btn {
@@ -257,6 +247,8 @@
   top: 0;
   left: 0;
   right: 0;
+  /* Sopra il rail e la topbar: mentre si scrive l'app non c'è. */
+  z-index: 430;
   background: radial-gradient(ellipse at 50% 0%, #10131c 0%, var(--bg) 70%);
   display: flex;
   flex-direction: column;
@@ -531,7 +523,7 @@
 
 @media (max-width: 640px) {
   .diary-modes { grid-template-columns: 1fr; }
-  .diary-panel { max-height: 100%; width: 96vw; }
+  .diary-panel { width: 100%; }
   .diary-writer {
     padding:
       calc(env(safe-area-inset-top, 0px) + 12px)

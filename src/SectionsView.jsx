@@ -17,6 +17,9 @@ import { usePomodoro } from './pomodoroContext';
 import { taskContext, contextColor } from './taskModel';
 import OneDriveBox from './OneDriveBox';
 import Skeleton from './Skeleton';
+import TaskDetailDrawer from './TaskDetailDrawer';
+import { PageTree } from './Panel';
+import { openProtocol } from './protocolLink';
 import './SectionsView.css';
 
 /** @type {Record<string, string>} */
@@ -47,12 +50,20 @@ function flattenSections(notebooks, sectionsMap) {
  * @param {Record<string, {id: string, displayName: string}>} props.todoListsMap
  * @param {import('./types').TodoTask[]} props.tasks
  * @param {{ current: Record<string, import('./types').Page[]> }} props.pagesCache
+ * @param {(listId: string, taskId: string) => void} [props.onTaskRemoved]
+ * @param {(listId: string, taskId: string, patch: Object) => void} [props.onTaskPatched]
+ * @param {(listId: string, task: import('./types').TodoTask) => void} [props.onTaskRestored]
  */
-export default function SectionsView({ notebooks, sectionsMap, todoListsMap, tasks, pagesCache }) {
+export default function SectionsView({
+  notebooks, sectionsMap, todoListsMap, tasks, pagesCache,
+  onTaskRemoved, onTaskPatched, onTaskRestored,
+}) {
   const { sectionId } = useParams();
   const navigate = useNavigate();
   const { session } = usePomodoro();
   const [query, setQuery] = useState('');
+  // L'attività aperta nel cassetto di dettaglio — lo stesso pannello del Piano.
+  const [openTask, setOpenTask] = useState(/** @type {import('./types').TodoTask|null} */ (null));
 
   const sections = useMemo(() => flattenSections(notebooks, sectionsMap), [notebooks, sectionsMap]);
   const active = sections.find(s => s.id === sectionId) || null;
@@ -96,7 +107,12 @@ export default function SectionsView({ notebooks, sectionsMap, todoListsMap, tas
     [tasks, list]
   );
 
-  const openTaskId = session?.taskId || null;
+  const pomodoroTaskId = session?.taskId || null;
+  // Il task aperto va riletto dal pool: rinominarlo dal cassetto aggiorna il
+  // pool, e la copia tenuta qui resterebbe quella di prima.
+  const detailTask = openTask ? (tasks || []).find(t => t.id === openTask.id) || openTask : null;
+  // Il link `onenote:` che apre l'intera sezione nell'app desktop.
+  const sectionClientUrl = active?.links?.oneNoteClientUrl?.href || null;
 
   const aside = (
     <nav className="sv-list" aria-label="Sezioni">
@@ -165,18 +181,20 @@ export default function SectionsView({ notebooks, sectionsMap, todoListsMap, tas
           {/* OneNote */}
           <section className="sv-col">
             <span className="eyebrow" style={{ color: 'var(--onenote)' }}>OneNote</span>
+            {sectionClientUrl && (
+              <button className="sv-open-section" onClick={() => openProtocol(sectionClientUrl)}>
+                ↗ Apri la sezione in OneNote
+              </button>
+            )}
             {pages === null && <><Skeleton /><Skeleton /><Skeleton /></>}
             {pages?.length === 0 && <p className="sv-empty">Nessuna pagina in questa sezione</p>}
-            {pages?.map(p => (
-              <div className="sv-page" key={p.id}>
-                <span className="sv-page-title">{p.title || '(senza titolo)'}</span>
-                {p.lastModifiedDateTime && (
-                  <span className="sv-page-date">
-                    {new Date(p.lastModifiedDateTime).toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit' })}
-                  </span>
-                )}
-              </div>
-            ))}
+            {/* L'albero delle pagine, con le sottopagine raggruppate sotto la
+                loro pagina madre e chiuse di partenza: OneNote le annida fino a
+                due livelli, e un elenco piatto le rendeva indistinguibili.
+                Un clic apre la pagina nell'app OneNote del computer. */}
+            {pages && pages.length > 0 && (
+              <div className="sv-pages"><PageTree pages={pages} /></div>
+            )}
           </section>
 
           {/* OneDrive — riusa il componente che già gestisce i link per sezione */}
@@ -190,17 +208,35 @@ export default function SectionsView({ notebooks, sectionsMap, todoListsMap, tas
             {!list && <p className="sv-empty">Nessuna lista To-Do con questo nome</p>}
             {list && sectionTasks.length === 0 && <p className="sv-empty">Nessuna attività aperta</p>}
             {sectionTasks.map(t => (
-              <div className={`sv-task${t.id === openTaskId ? ' current' : ''}`} key={t.id}>
+              <button
+                className={`sv-task${t.id === pomodoroTaskId ? ' current' : ''}`}
+                key={t.id}
+                onClick={() => setOpenTask(t)}
+                title="Apri note, sottoattività e stato">
                 <span
                   className="sv-task-dot"
                   style={/** @type {import('react').CSSProperties} */ ({ background: contextColor(taskContext(t)) })}
                 />
                 <span className="sv-task-title">{t.title}</span>
-              </div>
+              </button>
             ))}
           </section>
         </div>
       </div>
+
+      <TaskDetailDrawer
+        task={detailTask}
+        notebooks={notebooks}
+        sectionsMap={sectionsMap}
+        pagesCache={pagesCache}
+        onClose={() => setOpenTask(null)}
+        onCompleted={() => { if (detailTask) onTaskRemoved?.(detailTask._listId || '', detailTask.id); setOpenTask(null); }}
+        onDeleted={() => { if (detailTask) onTaskRemoved?.(detailTask._listId || '', detailTask.id); setOpenTask(null); }}
+        onRenamed={title => { if (detailTask) onTaskPatched?.(detailTask._listId || '', detailTask.id, { title }); }}
+        onDueChanged={dueDateTime => { if (detailTask) onTaskPatched?.(detailTask._listId || '', detailTask.id, { dueDateTime }); }}
+        onPatched={patch => { if (detailTask) onTaskPatched?.(detailTask._listId || '', detailTask.id, patch); }}
+        onRestored={(listId, restored) => onTaskRestored?.(listId, restored)}
+      />
     </div>
   );
 }
