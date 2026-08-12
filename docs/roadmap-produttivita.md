@@ -1,5 +1,13 @@
 # Roadmap: Pomodoro, Eisenhower, GTD, Daily Review in Mente Digitale
 
+> **Nota di aggiornamento.** Questo è il documento di pianificazione di una
+> sessione passata, lasciato com'era scritto allora. Il punto 1 — la matrice di
+> Eisenhower — è stato costruito e poi **rimosso**: avere insieme il flusso GTD
+> a colonne e i quadranti voleva dire due modi di dire la stessa cosa sullo
+> stesso task. Oggi lo stato di un'attività è la colonna in cui sta, e basta.
+> Del marker `[EIS:Qn]` resta solo la ripulitura delle note vecchie, in
+> `taskModel.noteText`. Tutto il resto del documento vale ancora.
+
 ## Contesto
 
 Sessione precedente: mappatura generale di GTD/Eisenhower/PARA/Time Blocking/Pomodoro

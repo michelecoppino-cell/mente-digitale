@@ -21,8 +21,8 @@ Microsoft To-Do e al calendario Outlook, e un briefing di notizie generato con l
 - **Sezioni** — il workbook di una sezione PARA in tre colonne: pagine OneNote, file OneDrive,
   attività della sezione. È dove atterra il Pomodoro avviato dal Piano.
 - **Attività** — le cinque colonne del flusso GTD (Inbox · Prossime azioni · In attesa · Programmate · Un giorno):
-  la colonna *è* lo stato, e trascinare una card fra colonne lo cambia su Microsoft To-Do. La matrice di
-  Eisenhower resta come lente sulle sole Prossime azioni, non è più la struttura.
+  la colonna *è* lo stato, e trascinare una card fra colonne lo cambia su Microsoft To-Do. Un clic su una
+  card apre il pannello di dettaglio — note, sottoattività, stima, scadenza, stato.
 - **Briefing notizie** — riassunti AI dei feed ANSA (mondo, Italia, Friuli) via `/api/briefing`.
 - **Diario** (voce *Diario* nel menù, `⌘J`) — tre modalità distinte: *svuota testa* a schermo
   intero (timer 5/10 min, domanda selezionabile dall'elenco o rimovibile, righe che sbiadiscono
@@ -101,7 +101,7 @@ Sei destinazioni, ognuna con un indirizzo proprio. Il menù è il rail a sinistr
 |---|---|
 | `#/oggi` | Home di sola lettura: adesso, agenda, azioni di oggi, recap |
 | `#/piano` | Il Piano: serbatoio, giornata a blocchi, capacità della giornata, pannello di dettaglio |
-| `#/attivita` | Le cinque colonne del flusso, con le lenti Quadranti e Scadenza (`?vista=`, `?ctx=`) |
+| `#/attivita` | Le cinque colonne del flusso, con la lente Scadenza (`?vista=`, `?ctx=`) |
 | `#/sezioni/:id` | Workbook della sezione: pagine OneNote, file OneDrive, attività |
 | `#/diario` | Diario |
 | `#/mappa` | La mappa mentale |
@@ -150,9 +150,10 @@ Allo stesso modo: il **contesto** (Lavoro / Personale / Famiglia) è in
 `categories`, la **sezione** è la lista To-Do stessa, le **sottoattività** sono
 i `checklistItems`, la **nota** è `body.content`.
 
-Un solo campo non ha una casa nativa in To-Do, la **stima di durata**: sta nelle
-note come marker `[MIN:45]`, con la stessa convenzione del quadrante Eisenhower
-`[EIS:Qn]`.
+Due cose sole non hanno una casa nativa in To-Do. La **stima di durata** sta
+nelle note come marker `[MIN:45]`. La **persona che si aspetta**, quando un'attività
+è in attesa, sta nella prima riga delle note come `In attesa da: Nome` — scritta
+per esteso e non come codice, perché chi apre il task da To-Do legga una frase.
 
 ## Design token
 

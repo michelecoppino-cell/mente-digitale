@@ -1,7 +1,6 @@
 import { useState, useMemo } from 'react';
 import { createTask, deleteTask, createNotePage, createCalendarEvent, deleteCalendarEvent } from './api';
 import { sectionRole, paraSectionLabel } from './paraConfig';
-import { EIS_QUADRANTS, withEisenhowerMarker } from './eisenhower';
 import { pushUndo } from './undo';
 import './GtdClarifyModal.css';
 
@@ -51,9 +50,8 @@ export default function GtdClarifyModal({ open, onClose, todoLists = [], noteboo
     await createNotePage(sectionId, text.slice(0, 60) || 'Idea', text);
   }
 
-  async function submitProjectTask(text, { listId, quadrant }) {
-    const opts = quadrant ? { body: withEisenhowerMarker('', quadrant) } : {};
-    const task = await createTask(listId, text, opts);
+  async function submitProjectTask(text, { listId }) {
+    const task = await createTask(listId, text);
     const list = todoLists.find(l => l.id === listId);
     onTaskCreated?.({ ...task, _listId: listId, _listName: list?.displayName || '' }, { addToday: false });
     pushUndo({
@@ -231,7 +229,6 @@ function GtdLeafPopup({ leaf, seedText, onClose }) {
   const [text, setText] = useState(seedText || '');
   const [listId, setListId] = useState(leaf.todoLists?.[0]?.id || '');
   const [sectionId, setSectionId] = useState(leaf.sections?.[0]?.id || '');
-  const [quadrant, setQuadrant] = useState(null);
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState(false);
 
@@ -244,7 +241,7 @@ function GtdLeafPopup({ leaf, seedText, onClose }) {
     setBusy(true);
     try {
       if (leaf.kind === 'log') await leaf.onSubmit(text.trim());
-      else if (leaf.kind === 'list') await leaf.onSubmit(text.trim(), { listId, quadrant });
+      else if (leaf.kind === 'list') await leaf.onSubmit(text.trim(), { listId });
       else if (leaf.kind === 'section') await leaf.onSubmit(text.trim(), { sectionId });
       setBusy(false);
       setDone(true);
@@ -274,24 +271,6 @@ function GtdLeafPopup({ leaf, seedText, onClose }) {
                   <select className="gtd-select" value={listId} onChange={e => setListId(e.target.value)}>
                     {leaf.todoLists.map(l => <option key={l.id} value={l.id}>{l.displayName}</option>)}
                   </select>
-                </label>
-              )}
-              {needsList && (
-                <label className="gtd-popup-field">
-                  <span>Matrice di Eisenhower (facoltativo)</span>
-                  <div className="gtd-quadrant-grid">
-                    {EIS_QUADRANTS.map(q => (
-                      <button
-                        key={q.key}
-                        type="button"
-                        className={`gtd-quadrant-btn${quadrant === q.key ? ' active' : ''}`}
-                        style={{ '--q-color': q.color }}
-                        onClick={() => setQuadrant(prev => prev === q.key ? null : q.key)}>
-                        <span className="gtd-quadrant-key">{q.key}</span>
-                        <span className="gtd-quadrant-short">{q.short}</span>
-                      </button>
-                    ))}
-                  </div>
                 </label>
               )}
               {needsSection && (

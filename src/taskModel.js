@@ -23,7 +23,6 @@
 //
 // Invariante: un task ha uno e un solo stato. La colonna in cui appare è
 // derivata da qui, mai un'etichetta salvata a parte.
-import { EIS_MARKER_RE } from './eisenhower';
 
 /** @typedef {'inbox'|'next'|'waiting'|'scheduled'|'someday'|'done'} TaskStatus */
 
@@ -79,10 +78,16 @@ export const ESTIMATE_CHOICES = [
 ];
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Stima di durata — marker [MIN:n] in testa alle note, stessa forma di [EIS:Qn]
+// Stima di durata — marker [MIN:n] in testa alle note
 // ─────────────────────────────────────────────────────────────────────────────
 
 const MIN_MARKER_RE = /\[MIN:(\d{1,4})\]/;
+
+// La matrice di Eisenhower non c'è più: avere insieme il flusso e i quadranti
+// voleva dire due modi di dire la stessa cosa. Il marker però è ancora scritto
+// nelle note dei task creati prima, su To-Do, e nessuno lo toglierà per noi:
+// resta qui solo per non farlo comparire in mezzo al testo di una nota.
+const LEGACY_EIS_MARKER_RE = /\[EIS:Q[1-4]\]/;
 
 /**
  * @param {string|null|undefined} bodyContent
@@ -169,7 +174,7 @@ export function waitingDays(sinceIso) {
  */
 export function noteText(bodyContent) {
   return (bodyContent || '')
-    .replace(EIS_MARKER_RE, '')
+    .replace(LEGACY_EIS_MARKER_RE, '')
     .replace(MIN_MARKER_RE, '')
     .replace(WAITING_RE, '')
     .replace(/^[ \t\n]+/, '')

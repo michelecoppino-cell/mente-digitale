@@ -2,7 +2,7 @@
 //
 // Questo file non esporta nulla a runtime: serve solo a dare un nome unico ai
 // "contratti impliciti" sparsi nel codice (i campi decorati come _listName /
-// _calColor, i marker testuali [EIS:Qn], la forma dei blocchi del piano con
+// _calColor, il marker testuale [MIN:n], la forma dei blocchi del piano con
 // subSteps) così che editor e `npm run typecheck` possano segnalare in anticipo
 // un campo rinominato o un payload malformato — i punti dove oggi un refactoring
 // romperebbe qualcosa in silenzio.
@@ -88,7 +88,7 @@ export {};
  * @property {string} title
  * @property {string} [status]        `notStarted` | `inProgress` | `waitingOnOthers` | `deferred` | `completed`
  * @property {string} [importance]    `low` | `normal` | `high`
- * @property {ItemBody} [body]        note del task; ospita i marker [EIS:Qn], [MIN:n] e reminder-src
+ * @property {ItemBody} [body]        note del task; ospita il marker [MIN:n], la riga «In attesa da:» e reminder-src
  * @property {GraphDateTime|null} [dueDateTime]
  * @property {string} [createdDateTime]
  * @property {string} [lastModifiedDateTime]
@@ -177,11 +177,6 @@ export {};
  * @typedef {Object} ColorSettings
  * @property {Record<string, string>} notebooks   notebookId -> hex
  * @property {Record<string, string>} sections    sectionId  -> hex
- */
-
-/**
- * Quadrante della matrice di Eisenhower, codificato come marker [EIS:Qn].
- * @typedef {'Q1'|'Q2'|'Q3'|'Q4'} EisenhowerKey
  */
 
 /**

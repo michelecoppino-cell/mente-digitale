@@ -5,10 +5,6 @@
 // diceva *dove* stava un task, non *a che punto* fosse. Qui la colonna è lo
 // stato — un task ne ha uno solo, e la colonna in cui appare è derivata da
 // taskModel.taskStatus, mai un'etichetta salvata a parte.
-//
-// La lente Eisenhower resta disponibile come vista alternativa (Quadranti),
-// applicata alle sole Prossime azioni: è una lettura del serbatoio, non più
-// la struttura.
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
@@ -16,7 +12,6 @@ import {
   parseWaitingFor, waitingDays, CONTEXTS, isSlipped,
 } from './taskModel';
 import { DEFAULT_CONFIG, findProject, formatDueDate, dueDateSortValue, isTaskOverdue } from './plannerShared';
-import EisenhowerTriage from './EisenhowerTriage';
 import Skeleton from './Skeleton';
 import TaskDetailDrawer from './TaskDetailDrawer';
 import './ActivityBoard.css';
@@ -33,7 +28,6 @@ const COLUMNS = [
 
 const VIEWS = [
   { key: 'flusso',    label: 'Flusso' },
-  { key: 'quadranti', label: 'Quadranti' },
   { key: 'scadenza',  label: 'Scadenza' },
 ];
 
@@ -280,7 +274,7 @@ export default function ActivityBoard({
   );
 
   // Montato una volta sola, in coda a ogni ramo del render: il cassetto è lo
-  // stesso in Flusso, Quadranti e Scadenza.
+  // stesso in Flusso e in Scadenza.
   const drawer = (
     <TaskDetailDrawer
       task={detailTask}
@@ -309,23 +303,6 @@ export default function ActivityBoard({
             </div>
           ))}
         </div>
-      </div>
-    );
-  }
-
-  // Quadranti: la lente Eisenhower sulle sole Prossime azioni.
-  if (view === 'quadranti') {
-    return (
-      <div className="ab">
-        {header}
-        <div className="ab-lens">
-          <p className="ab-lens-note">
-            I quadranti guardano le <strong>Prossime azioni</strong>: {byStatus.next.length} attività pronte, senza data.
-            È la lettura da fare in revisione settimanale, non la struttura del flusso.
-          </p>
-          <EisenhowerTriage open inline tasks={byStatus.next} onClose={() => setParam('vista', '')} />
-        </div>
-        {drawer}
       </div>
     );
   }

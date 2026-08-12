@@ -35,7 +35,7 @@
 .sync-dot.error { background: #c07a7a; }
 
 .sync-label-text { white-space: nowrap; }
-/* Sotto questa soglia il gruppo di controlli a destra (ricerca, GTD, Eisenhower,
+/* Sotto questa soglia il gruppo di controlli a destra (ricerca, GTD,
    campanella, zoom, refresh) non ci sta più tutto insieme: si nascondono prima
    gli elementi meno essenziali (testo sync, zoom) per evitare che il gruppo
    trabocchi e vada a sovrapporsi al logo centrale. */
