@@ -196,12 +196,13 @@ function TaskRow({ task, status, color, placement, dragging, selected, onClick, 
  * @param {(listId: string, taskId: string) => void} [props.onTaskRemoved]
  * @param {(listId: string, taskId: string, patch: Object) => void} [props.onTaskPatched]
  * @param {(listId: string, task: import('./types').TodoTask) => void} [props.onTaskRestored]
+ * @param {(taskId: string, min: number) => void} [props.onEstimateChanged]  riscala i blocchi già a piano
  */
 export default function ActivityBoard({
   tasks = [], todoLists = [], plans = {}, config = DEFAULT_CONFIG, loading = false,
   notebooks = [], sectionsMap = {}, pagesCache = null,
   onClarify, onChangeStatus, onSchedule, onUnschedule,
-  onTaskRemoved, onTaskPatched, onTaskRestored,
+  onTaskRemoved, onTaskPatched, onTaskRestored, onEstimateChanged,
 }) {
   // Filtri e vista stanno nell'URL: la vista è ricaricabile e condivisibile
   // com'è, invece di ripartire sempre da capo.
@@ -473,6 +474,10 @@ export default function ActivityBoard({
     onRenamed: (/** @type {string} */ title) => { if (detailTask) onTaskPatched?.(detailTask._listId || '', detailTask.id, { title }); },
     onDueChanged: (/** @type {any} */ dueDateTime) => { if (detailTask) onTaskPatched?.(detailTask._listId || '', detailTask.id, { dueDateTime }); },
     onPatched: (/** @type {Object} */ patch) => { if (detailTask) onTaskPatched?.(detailTask._listId || '', detailTask.id, patch); },
+    // Cambiare la stima da qui riscala anche i blocchi già in agenda, come fa
+    // il Piano quando la si cambia da lì: la durata dichiarata e quella
+    // pianificata sono la stessa cosa detta in due posti.
+    onEstimateChanged: (/** @type {number} */ min) => { if (detailTask) onEstimateChanged?.(detailTask.id, min); },
     onRestored: (/** @type {string} */ listId, /** @type {any} */ restored) => onTaskRestored?.(listId, restored),
     // Lo stato lo sa la board, non Graph: una programmata su To-Do è un
     // `notStarted` come tutti gli altri, e il pannello mostrava «Prossima

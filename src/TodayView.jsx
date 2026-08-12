@@ -125,8 +125,9 @@ function useDiaryStreak(enabled = true) {
  * @param {import('./types').TodoTask[]} props.tasks
  * @param {import('./types').CalendarEvent[]} props.calendarEvents
  * @param {(block: any) => void} props.onCompleteBlock
+ * @param {(block: any) => void} [props.onUnplanBlock]  toglie il blocco e rimette il task fra le prossime azioni
  */
-export default function TodayView({ plans, tasks, calendarEvents, onCompleteBlock }) {
+export default function TodayView({ plans, tasks, calendarEvents, onCompleteBlock, onUnplanBlock }) {
   const navigate = useNavigate();
   // Un tick al minuto: basta a far avanzare "restano 1h40" e a far passare la
   // card da ADESSO a PROSSIMO senza ricaricare.
@@ -204,9 +205,21 @@ export default function TodayView({ plans, tasks, calendarEvents, onCompleteBloc
                     : `fra ${fmtLeft(t2m(focus.startTime) - nowMin)}`,
                 ].filter(Boolean).join(' · ')}
               </p>
+              {/* Il terzo esito, che mancava: l'azione non si fa oggi e non si
+                  sa quando rifarla. «Sposta» chiede un'ora nuova, «Completa»
+                  mente; questo toglie il blocco e la rimette fra le prossime
+                  azioni, dove aspetterà senza una data. */}
               <div className="today-now-actions">
                 <button className="today-btn accent" onClick={() => onCompleteBlock(focus)}>Completa</button>
                 <button className="today-btn" onClick={() => navigate('/piano')}>Sposta</button>
+                {onUnplanBlock && focus.taskId && (
+                  <button
+                    className="today-btn"
+                    title="Toglie il blocco dal piano: l'attività torna fra le prossime azioni, senza data"
+                    onClick={() => onUnplanBlock(focus)}>
+                    Rimetti fra le prossime
+                  </button>
+                )}
               </div>
             </section>
           ) : (
@@ -262,6 +275,15 @@ export default function TodayView({ plans, tasks, calendarEvents, onCompleteBloc
                       style={/** @type {import('react').CSSProperties} */ ({ '--chip': contextColor(ctx) })}>
                       {b.listName}
                     </span>
+                  )}
+                  {onUnplanBlock && b.taskId && !b.completed && (
+                    <button
+                      className="today-action-unplan"
+                      title={`Rimetti "${b.taskTitle}" fra le prossime azioni`}
+                      aria-label={`Rimetti "${b.taskTitle}" fra le prossime azioni`}
+                      onClick={() => onUnplanBlock(b)}>
+                      ↩
+                    </button>
                   )}
                   <span className="today-action-time">{b.startTime}</span>
                 </div>

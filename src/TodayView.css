@@ -71,7 +71,9 @@
 
 .today-now-meta { font-size: var(--fs-chip); color: var(--text-3); }
 
-.today-now-actions { display: flex; gap: var(--sp-3); margin-top: var(--sp-2); }
+/* Tre bottoni: da telefono vanno a capo invece di stringersi fino a tagliare
+   l'etichetta più lunga. */
+.today-now-actions { display: flex; flex-wrap: wrap; gap: var(--sp-3); margin-top: var(--sp-2); }
 
 .today-btn {
   height: 36px;
@@ -164,6 +166,29 @@
   font-size: var(--fs-micro);
   color: var(--chip, var(--muted));
   white-space: nowrap;
+}
+
+/* Rimette l'attività fra le prossime azioni: sta spenta finché non si passa
+   sulla riga, come un'azione secondaria che non deve competere con la spunta. */
+.today-action-unplan {
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: var(--r-sm);
+  color: var(--disabled);
+  font-size: var(--fs-chip);
+  line-height: 1;
+  cursor: pointer;
+  transition: color var(--t), border-color var(--t);
+}
+@media (hover: hover) {
+  .today-action:hover .today-action-unplan { color: var(--muted); }
+  .today-action-unplan:hover { color: var(--accent); border-color: var(--accent-line); }
 }
 
 .today-action-time { flex: 0 0 auto; font-size: var(--fs-chip); color: var(--muted); font-variant-numeric: tabular-nums; }

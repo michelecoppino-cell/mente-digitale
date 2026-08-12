@@ -6,7 +6,7 @@ import { getMarker, setMarker, clearMarkers } from './markers';
 import { queryClient, qk, STALE } from './queryClient';
 import { extractEmailCandidates, extractOneNoteCandidates } from './dailyReview';
 import { parseReminderSubject, reminderMarker, hasReminderMarker } from './deadlineReminders';
-import { shadeColor, DEFAULT_CONFIG } from './plannerShared';
+import { shadeColor, DEFAULT_CONFIG, timeToMinutes, minutesToTime, snapMinutes } from './plannerShared';
 import MindMap from './MindMap';
 import IdentityPanel from './IdentityPanel';
 import SearchOverlay from './SearchOverlay';
@@ -743,6 +743,59 @@ export default function App() {
     }
   }
 
+  // Cambiare la stima riscala i blocchi già a piano, ovunque la si cambi: nel
+  // Piano lo fa PlannerView sul proprio stato, ma dalla vista Attività il
+  // piano è quello tenuto qui, e senza questo la durata dichiarata e quella
+  // pianificata tornavano a non parlarsi.
+  async function handleTaskEstimateChanged(taskId, minutes) {
+    if (!taskId) return;
+    const dur = snapMinutes(minutes);
+    const previous = dailyPlans;
+    let touched = false;
+    const next = {};
+    for (const [date, plan] of Object.entries(dailyPlans || {})) {
+      next[date] = {
+        ...plan,
+        blocks: (plan.blocks || []).map(b => {
+          if (b.taskId !== taskId || b.completed) return b;
+          const endTime = minutesToTime(Math.min(timeToMinutes(b.startTime) + dur, 24 * 60));
+          if (endTime === b.endTime) return b;
+          touched = true;
+          return { ...b, endTime };
+        }),
+      };
+    }
+    if (!touched) return;
+    setDailyPlans(next);
+    try {
+      await saveDailyPlans(next);
+      queryClient.setQueryData(qk.dailyPlans(), next);
+    } catch (e) {
+      console.error('riscalatura blocchi dopo cambio stima', e);
+      setDailyPlans(previous);
+    }
+  }
+
+  // Da Oggi: l'azione non si fa e non si sa quando rifarla. Il blocco esce dal
+  // piano — «programmata» è la presenza del blocco, non un campo — e il task
+  // torna una prossima azione, non un completato: è il terzo esito che
+  // mancava accanto a «Completa» e «Sposta».
+  async function handleUnplanBlock(block) {
+    if (!block?.taskId) return;
+    await handleUnscheduleTask({ id: block.taskId });
+    const task = (scheduledTasks || []).find(t => t.id === block.taskId);
+    const listId = task?._listId || block.listId;
+    // Un task in attesa o rimandato «un giorno» resterebbe tale anche senza
+    // blocco: per rivederlo fra le prossime azioni serve lo stato di Graph.
+    if (!listId || !task || !task.status || task.status === 'notStarted') return;
+    try {
+      await updateTaskStatus(listId, task.id, 'notStarted');
+      handleTaskPatched(listId, task.id, { status: 'notStarted' });
+    } catch (e) {
+      console.error('ritorno fra le prossime azioni', e);
+    }
+  }
+
   // Completare un'azione da Oggi tocca due cose: il task su To-Do e il blocco
   // nel piano del giorno. Il blocco va segnato comunque — è lo storico della
   // giornata, e serve al Diario — anche se il task nel frattempo non esiste
@@ -893,6 +946,7 @@ export default function App() {
               tasks={scheduledTasks || []}
               calendarEvents={sectionCalendarEvents}
               onCompleteBlock={handleCompleteBlock}
+              onUnplanBlock={handleUnplanBlock}
             />
           } />
 
@@ -935,6 +989,7 @@ export default function App() {
               onTaskRemoved={handleTaskRemoved}
               onTaskPatched={handleTaskPatched}
               onTaskRestored={handleTaskRestored}
+              onEstimateChanged={handleTaskEstimateChanged}
             />
           } />
 

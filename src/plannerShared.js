@@ -17,6 +17,33 @@ export const DEFAULT_CONFIG = {
   hiddenCalendarIds: null,
 };
 
+// La griglia del Piano è a mezz'ore: ogni durata ci si allinea. Stava dentro
+// PlannerView insieme alle conversioni orario↔minuti, ma da quando la stima di
+// un task e l'altezza del suo blocco sono la stessa cosa quei conti servono
+// anche fuori — ad Attività, che riscala i blocchi già a piano, e a Oggi.
+export const SNAP_MIN = 30;
+
+/** Minuti da mezzanotte di una "HH:MM". @param {string} t @returns {number} */
+export function timeToMinutes(t) {
+  const [h, m] = (t || '0:0').split(':').map(Number);
+  return (h || 0) * 60 + (m || 0);
+}
+
+/** "HH:MM" da minuti da mezzanotte. @param {number} min @returns {string} */
+export function minutesToTime(min) {
+  return `${String(Math.floor(min / 60)).padStart(2, '0')}:${String(min % 60).padStart(2, '0')}`;
+}
+
+/**
+ * Una durata portata alla mezz'ora della griglia, arrotondando in su: mezz'ora
+ * è anche il minimo, perché un blocco più basso non si legge.
+ * @param {number} minutes
+ * @returns {number}
+ */
+export function snapMinutes(minutes) {
+  return Math.max(SNAP_MIN, Math.ceil(minutes / SNAP_MIN) * SNAP_MIN);
+}
+
 /**
  * @param {import('./types').TodoTask} task
  * @param {import('./types').PlannerConfig} cfg

@@ -4,7 +4,7 @@ import {
   loadPlannerConfig, savePlannerConfig,
   completeTask, getCalendarEvents, getCalendars, updateCalendarColor,
   createCalendarEvent, updateCalendarEvent, deleteCalendarEvent, moveCalendarEvent,
-  patchCalendarEvent, graphDateTime, getTask,
+  patchCalendarEvent, graphDateTime, getTask, updateTaskBody,
   loadPomodoroStats, savePomodoroStats,
   loadWorkbooks, saveWorkbooks, getWorkbookCalendarId, getWorkbookEvents, WORKBOOK_CALENDAR_NAME,
   loadIdealWeek, saveIdealWeek,
@@ -16,8 +16,14 @@ import TaskPool from './TaskPool';
 import { useMediaQuery } from './useMediaQuery';
 import WorkbookPool from './WorkbookPool';
 import TaskDetailPanel from './TaskDetailPanel';
-import { DEFAULT_CONFIG, findProject, shadeColor, hexToRgba } from './plannerShared';
-import { ESTIMATE_CHOICES, DEFAULT_ESTIMATE_MIN, taskEstimateMin } from './taskModel';
+import {
+  DEFAULT_CONFIG, findProject, shadeColor, hexToRgba,
+  SNAP_MIN, snapMinutes, timeToMinutes as t2m, minutesToTime as m2t,
+} from './plannerShared';
+import {
+  ESTIMATE_CHOICES, DEFAULT_ESTIMATE_MIN, taskEstimateMin,
+  parseEstimate, withEstimateMarker, plainBody, bodyPatch,
+} from './taskModel';
 import { pushUndo } from './undo';
 import './PlannerView.css';
 
@@ -30,21 +36,14 @@ const DEFAULT_DURATION = 60;
 // Il blocco dura quanto la stima del task ([MIN:n] nelle note, impostata nel
 // chiarimento o dal pannello Dettagli). Prima ogni blocco nasceva di un'ora
 // fissa e la stima serviva solo a colorare una chip nel serbatoio: la durata
-// dichiarata e quella pianificata non si parlavano.
-const SNAP_MIN = 30; // la griglia è a mezz'ore: le durate ci si allineano
+// dichiarata e quella pianificata non si parlavano. Il conto è ora in
+// plannerShared (SNAP_MIN/snapMinutes/t2m/m2t), perché lo fanno anche le viste
+// fuori dal Piano.
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
-function t2m(t) {
-  const [h, m] = t.split(':').map(Number);
-  return h * 60 + (m || 0);
-}
-function m2t(min) {
-  return `${String(Math.floor(min / 60)).padStart(2,'0')}:${String(min % 60).padStart(2,'0')}`;
-}
 /** La stima del task, arrotondata in su alla mezz'ora della griglia. */
 function blockMinutesFor(task) {
-  const est = taskEstimateMin(task);
-  return Math.max(SNAP_MIN, Math.ceil(est / SNAP_MIN) * SNAP_MIN);
+  return snapMinutes(taskEstimateMin(task));
 }
 function slots(start, end) {
   const out = [];
@@ -348,6 +347,8 @@ export default function PlannerView({
   todayPlanRef.current   = todayPlan;
   const pomodoroStatsRef = useRef(pomodoroStatsMap);
   pomodoroStatsRef.current = pomodoroStatsMap;
+  const preloadedTasksRef = useRef([]);
+  preloadedTasksRef.current = preloadedTasks;
 
   const workbooksRef           = useRef([]);
   const workbooksLoadedRef     = useRef(false);
@@ -929,12 +930,30 @@ export default function PlannerView({
     });
   }
 
-  // Cambiare la stima di un task riscala i suoi blocchi già a piano — su tutti
-  // i giorni, non solo quello aperto: se la stessa attività è in agenda tre
-  // volte, ha la stessa durata tutte e tre. L'inizio non si tocca.
+  // Stirare un blocco in altezza è un modo di dire quanto ci vuole: la stima
+  // del task segue la durata scelta sulla griglia. Senza, il numero restava
+  // quello di prima — «30m» nel serbatoio e in Attività — e il blocco
+  // successivo della stessa attività nasceva di nuovo della durata vecchia.
+  async function persistEstimateFromBlock(block, minutes) {
+    if (!block?.taskId || !block?.listId) return;
+    try {
+      const pooled = preloadedTasksRef.current.find(t => t.id === block.taskId);
+      const body = pooled ? plainBody(pooled) : plainBody(await getTask(block.listId, block.taskId));
+      if (parseEstimate(body) === minutes) return;
+      const next = withEstimateMarker(body, minutes);
+      await updateTaskBody(block.listId, block.taskId, next);
+      onTaskPatched?.(block.listId, block.taskId, bodyPatch(next));
+    } catch (e) {
+      console.error('stima dopo resize blocco', e);
+    }
+  }
+
+  // Il verso opposto: cambiare la stima riscala i blocchi già a piano — su
+  // tutti i giorni, non solo quello aperto: se la stessa attività è in agenda
+  // tre volte, ha la stessa durata tutte e tre. L'inizio non si tocca.
   function resizeBlocksForTask(taskId, minutes) {
     if (!taskId) return;
-    const dur = Math.max(SNAP_MIN, Math.ceil(minutes / SNAP_MIN) * SNAP_MIN);
+    const dur = snapMinutes(minutes);
     mutatePlansMulti(all => {
       const next = {};
       for (const [date, plan] of Object.entries(all || {})) {
@@ -1334,6 +1353,10 @@ export default function PlannerView({
     function onUp() {
       document.removeEventListener('mousemove', onMove);
       document.removeEventListener('mouseup', onUp);
+      const final = (plansRef.current[day]?.blocks || []).find(b => b.id === block.id);
+      if (final && t2m(final.endTime) !== startEndMin) {
+        persistEstimateFromBlock(final, t2m(final.endTime) - t2m(final.startTime));
+      }
     }
     document.addEventListener('mousemove', onMove);
     document.addEventListener('mouseup', onUp);
@@ -1637,7 +1660,8 @@ export default function PlannerView({
   function handleResizeStart(e, block) {
     e.preventDefault();
     e.stopPropagation();
-    resizingRef.current = { blockId: block.id, startY: e.clientY, startEndMin: t2m(block.endTime), blockStartMin: t2m(block.startTime) };
+    const initialEndMin = t2m(block.endTime);
+    resizingRef.current = { blockId: block.id, startY: e.clientY, startEndMin: initialEndMin, blockStartMin: t2m(block.startTime) };
     setResizingId(block.id);
 
     function onMove(ev) {
@@ -1659,6 +1683,10 @@ export default function PlannerView({
       document.removeEventListener('mousemove', onMove);
       document.removeEventListener('mouseup', onUp);
       scheduleSave(todayPlanRef.current);
+      const final = (todayPlanRef.current.blocks || []).find(b => b.id === block.id);
+      if (final && t2m(final.endTime) !== initialEndMin) {
+        persistEstimateFromBlock(final, t2m(final.endTime) - t2m(final.startTime));
+      }
     }
 
     document.addEventListener('mousemove', onMove);
@@ -1834,9 +1862,17 @@ export default function PlannerView({
   // Note, sottoattività, stima e «Avvia pomodoro» del task selezionato. Uno
   // solo, montato o nella terza colonna (desktop) o nel foglio dal basso
   // (telefono): due istanze vorrebbero dire due caricamenti da Graph.
+  //
+  // Il task va riletto dal pool a ogni giro invece di usare la copia messa da
+  // parte al clic: stirare il blocco ne riscrive la stima, e la copia ferma
+  // qui direbbe ancora la durata di prima. Aperto da un blocco, poi, la copia
+  // è solo id+titolo+lista — dal pool arriva il task intero.
+  const selectedTaskLive = selectedTask
+    ? preloadedTasks.find(t => t.id === selectedTask.id) || selectedTask
+    : null;
   const detailBody = selectedTask ? (
     <TaskDetailPanel
-      task={selectedTask}
+      task={selectedTaskLive}
       notebooks={notebooks}
       sectionsMap={sectionsMap}
       pagesCache={pagesCache}

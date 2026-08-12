@@ -19,7 +19,7 @@ import {
 } from './api';
 import {
   ESTIMATE_CHOICES, DEFAULT_ESTIMATE_MIN, parseEstimate, withEstimateMarker,
-  graphStatusFor, parseWaitingFor, withWaitingFor, waitingDays,
+  graphStatusFor, parseWaitingFor, withWaitingFor, waitingDays, plainBody, bodyPatch,
 } from './taskModel';
 import { usePomodoro } from './pomodoroContext';
 import { pushUndo } from './undo';
@@ -137,14 +137,20 @@ export default function TaskDetailPanel({ task, notebooks = [], sectionsMap = {}
   // il task viene programmato, o il blocco tolto — la pastiglia lo segue.
   useEffect(() => { if (status) setFlowStatus(status); }, [status, task.id]);
 
+  // La durata può cambiare da fuori: stirare in altezza un blocco nel Piano è
+  // un modo di dire quanto ci vuole, e riscrive il marker nelle note. Qui si
+  // recepisce la sola stima, senza toccare il testo che si sta scrivendo.
+  const externalEstimate = parseEstimate(task?.body?.content);
+  useEffect(() => {
+    if (externalEstimate == null || loading) return;
+    setNotes(prev => (parseEstimate(prev) === externalEstimate ? prev : withEstimateMarker(prev, externalEstimate)));
+  }, [externalEstimate, loading]);
+
   async function load() {
     setLoading(true);
     try {
       const full = await getTask(task._listId, task.id);
-      let body = full.body?.content || '';
-      if (full.body?.contentType === 'html') {
-        body = body.replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').trim();
-      }
+      const body = plainBody(full);
       setNotes(body);
       setItems((full.checklistItems || []).sort((a, b) => a.isChecked - b.isChecked));
       setDueDraft(full.dueDateTime?.dateTime ? full.dueDateTime.dateTime.slice(0, 10) : '');
@@ -188,12 +194,18 @@ export default function TaskDetailPanel({ task, notebooks = [], sectionsMap = {}
     setSavingEstimate(true);
     try {
       await updateTaskBody(task._listId, task.id, next);
+      // La stima vive nel body, e il body del task nel pool è la copia che
+      // legge tutto il resto dell'app: senza rimandarlo indietro la riga in
+      // Attività continuava a dire «30m» e un blocco trascinato nel Piano
+      // nasceva della durata vecchia.
+      onPatched?.(bodyPatch(next));
       onEstimateChanged?.(min);
       pushUndo({
         label: `Stima portata a ${ESTIMATE_CHOICES.find(c => c.min === min)?.label ?? `${min}m`}`,
         undo: async () => {
           await updateTaskBody(task._listId, task.id, prev);
           setNotes(prev);
+          onPatched?.(bodyPatch(prev));
           onEstimateChanged?.(estimate);
         },
       });
@@ -279,7 +291,10 @@ export default function TaskDetailPanel({ task, notebooks = [], sectionsMap = {}
     clearTimeout(notesTimerRef.current);
     notesTimerRef.current = setTimeout(async () => {
       setSavingNotes(true);
-      try { await updateTaskBody(task._listId, task.id, val); } catch (e) { console.error('save notes', e); }
+      try {
+        await updateTaskBody(task._listId, task.id, val);
+        onPatched?.(bodyPatch(val));
+      } catch (e) { console.error('save notes', e); }
       setSavingNotes(false);
     }, 1200);
   }

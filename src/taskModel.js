@@ -120,6 +120,31 @@ export function taskEstimateMin(task) {
   return parseEstimate(task?.body?.content) ?? DEFAULT_ESTIMATE_MIN;
 }
 
+/**
+ * Il testo delle note di un task, ripulito dai tag se Graph lo restituisce in
+ * HTML: chi riscrive il body lo manda sempre come `text`, e senza questo passo
+ * un task creato da Outlook si ritroverebbe il proprio markup in chiaro dentro
+ * la nota.
+ * @param {import('./types').TodoTask} task
+ * @returns {string}
+ */
+export function plainBody(task) {
+  const content = task?.body?.content || '';
+  if (task?.body?.contentType !== 'html') return content;
+  return content.replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').trim();
+}
+
+/**
+ * Il patch da passare al pool dopo aver riscritto le note su Graph: il corpo
+ * è la sola fonte della stima, quindi finché non torna indietro fin qui ogni
+ * vista continua a leggere la durata vecchia.
+ * @param {string} content
+ * @returns {{ body: { content: string, contentType: string } }}
+ */
+export function bodyPatch(content) {
+  return { body: { content, contentType: 'text' } };
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // In attesa di qualcuno
 // ─────────────────────────────────────────────────────────────────────────────
