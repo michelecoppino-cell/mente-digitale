@@ -1,6 +1,5 @@
 import { useMemo, useState } from 'react';
 import Skeleton from './Skeleton';
-import { EIS_QUADRANTS, parseEisenhower } from './eisenhower';
 import { DEFAULT_CONFIG, findProject, shadeColor, formatDueDate, dueDateSortValue, isTaskOverdue } from './plannerShared';
 import { sectionRole } from './paraConfig';
 import { taskEstimateMin } from './taskModel';
@@ -179,8 +178,6 @@ export default function TaskPool({
   const deadlineSortedTasks = [...poolTasks].sort((a, b) =>
     dueDateSortValue(a.dueDateTime) - dueDateSortValue(b.dueDateTime));
 
-  const unclassifiedPoolTasks = poolTasks.filter(t => !parseEisenhower(t.body?.content));
-
   function handleDragStart(e, task, color) {
     e.dataTransfer.setData('text/plain', JSON.stringify({ type: 'task', task }));
     const ghost = document.createElement('div');
@@ -206,7 +203,6 @@ export default function TaskPool({
           {showViewToggle && (
             <div className="planner-view-toggle">
               <button className={poolViewMode === 'list' ? 'active' : ''} onClick={() => setPoolViewMode('list')}>Lista</button>
-              <button className={poolViewMode === 'quadrants' ? 'active' : ''} onClick={() => setPoolViewMode('quadrants')}>Quadranti</button>
               <button className={poolViewMode === 'deadline' ? 'active' : ''} onClick={() => setPoolViewMode('deadline')}>Scadenza</button>
             </div>
           )}
@@ -302,43 +298,6 @@ export default function TaskPool({
               : <div className="planner-empty">Nessun task in questa lista</div>
           )}
         </div>
-      ) : poolViewMode === 'quadrants' ? (
-        <div className="planner-pool-body planner-eis-grid-body">
-          {unclassifiedPoolTasks.length > 0 && (
-            <div className="planner-eis-unclassified-banner">
-              ⚠️ Alcuni task non sono catalogati
-            </div>
-          )}
-          <div className="planner-eis-grid">
-            {EIS_QUADRANTS.map(q => {
-              const qTasks = poolTasks.filter(t => parseEisenhower(t.body?.content) === q.key);
-              return (
-                <div key={q.key} className="planner-eis-cell" style={{ '--q-color': q.color }}>
-                  <div className="planner-eis-cell-header">
-                    <span className="planner-eis-cell-key">{q.key}</span>
-                    <span className="planner-eis-cell-label">{q.label}</span>
-                  </div>
-                  <div className="planner-eis-cell-tasks">
-                    {qTasks.map(task => (
-                      <PoolTaskRow
-                        key={task.id}
-                        task={task}
-                        color={q.color}
-                        isScheduled={scheduledIds.has(task.id)}
-                        selected={selectedTaskId === task.id}
-                        draggable={draggable}
-                        onTaskClick={onTaskClick}
-                        onDragStart={handleDragStart}
-                        showListName
-                      />
-                    ))}
-                    {qTasks.length === 0 && <div className="planner-eis-cell-empty">Nessun task</div>}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
       ) : (
         <div className="planner-pool-body">
           {deadlineSortedTasks.map(task => (
@@ -384,7 +343,7 @@ function PoolTaskRow({ task, color, isScheduled, selected, draggable, onTaskClic
       onDragStart={draggable && !isScheduled ? e => onDragStart(e, task, color) : undefined}>
       <span className="planner-task-dot" style={{ background: color }} />
       <span className="planner-task-title">{task.title}</span>
-      {showListName && task._listName && <span className="planner-eis-grid-task-section">{task._listName}</span>}
+      {showListName && task._listName && <span className="planner-pool-task-section">{task._listName}</span>}
       {/* La stima serve prima del trascinamento, non dopo: è quella che dice
           se l'attività ci sta nel buco che si sta guardando. */}
       <span className="planner-task-estimate" title="Stima di durata">{fmtEstimate(taskEstimateMin(task))}</span>

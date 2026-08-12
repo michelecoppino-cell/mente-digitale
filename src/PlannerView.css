@@ -603,21 +603,9 @@
   letter-spacing: 0.03em;
 }
 
-.planner-eis-filter-row,
 .planner-stacked-filter-row {
   padding-top: 0;
   border-bottom: 1px solid var(--border);
-}
-
-.planner-eis-badge {
-  font-size: 11px;
-  font-weight: 700;
-  color: var(--q-color, var(--muted));
-  border: 1px solid var(--q-color, var(--border2));
-  border-radius: 3px;
-  padding: 0 4px;
-  flex-shrink: 0;
-  letter-spacing: 0.03em;
 }
 
 .planner-due-badge {
@@ -645,80 +633,8 @@
   line-height: 1.6;
 }
 
-/* ── Vista Quadranti Eisenhower nel Task Pool ── */
-.planner-eis-grid-body {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.planner-eis-unclassified-banner {
-  flex-shrink: 0;
-  padding: 6px 10px;
-  background: rgba(212,164,74,0.08);
-  border: 1px solid rgba(212,164,74,0.2);
-  border-radius: 6px;
-  font-size: 11px;
-  color: var(--accent);
-}
-
-.planner-eis-grid {
-  flex: 1;
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  grid-template-rows: 1fr 1fr;
-  gap: 8px;
-  min-height: 420px;
-}
-
-.planner-eis-cell {
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-  border: 1px solid var(--q-color, var(--border2));
-  border-radius: 8px;
-  background: rgba(255,255,255,0.015);
-  overflow: hidden;
-}
-
-.planner-eis-cell-header {
-  flex-shrink: 0;
-  display: flex;
-  align-items: baseline;
-  gap: 6px;
-  padding: 7px 9px;
-  border-bottom: 1px solid var(--border);
-}
-
-.planner-eis-cell-key {
-  font-size: 11px;
-  font-weight: 700;
-  color: var(--q-color);
-  letter-spacing: 0.04em;
-}
-
-.planner-eis-cell-label {
-  font-size: 11px;
-  color: var(--muted);
-}
-
-.planner-eis-cell-tasks {
-  flex: 1;
-  overflow-y: auto;
-  padding: 6px 8px;
-  scrollbar-width: thin;
-  scrollbar-color: var(--border2) transparent;
-}
-
-.planner-eis-cell-empty {
-  font-size: 11px;
-  color: var(--muted);
-  font-style: italic;
-  padding: 6px 0;
-  text-align: center;
-}
-
-.planner-eis-grid-task-section {
+/* Il nome della lista accanto al task, nella vista Scadenza del serbatoio. */
+.planner-pool-task-section {
   font-size: 11px;
   color: var(--muted);
   flex-shrink: 0;

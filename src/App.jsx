@@ -13,7 +13,6 @@ import SearchOverlay from './SearchOverlay';
 import Panel from './Panel';
 import PlannerView from './PlannerView';
 import GtdClarifyModal from './GtdClarifyModal';
-import EisenhowerTriage from './EisenhowerTriage';
 import ColorSettingsModal from './ColorSettingsModal';
 import DiaryPanel from './DiaryPanel';
 import ActivityBoard from './ActivityBoard';
@@ -23,7 +22,6 @@ import AppShell from './AppShell';
 import { usePomodoro } from './pomodoroContext';
 import TodayView from './TodayView';
 import SectionsView from './SectionsView';
-import { parseEisenhower } from './eisenhower';
 import { graphStatusFor, STATUS_LABELS } from './taskModel';
 import { pushUndo } from './undo';
 import { COLORS } from './config';
@@ -190,7 +188,6 @@ export default function App() {
   // un effetto: così non si vede prima la vista sotto e poi il modale coprirla.
   const [gtdOpen, setGtdOpen] = useState(false);
   const [captureOpen, setCaptureOpen] = useState(() => launchIntent() === 'gtd');
-  const [eisenhowerOpen, setEisenhowerOpen] = useState(false);
   const [pendingPlannerTask, setPendingPlannerTask] = useState(null);
   const [reviewSuggestions, setReviewSuggestions] = useState([]);
   const [reviewOpen, setReviewOpen] = useState(false);
@@ -647,7 +644,7 @@ export default function App() {
 
   // Aggiorna la lista globale dei task (e la cache del Panel di sezione) dopo
   // un completamento/eliminazione/rinomina fatti dal pannello Piano, così
-  // Task Pool, Panel e Smistamento Eisenhower restano coerenti senza dover
+  // Task Pool e Panel restano coerenti senza dover
   // ricaricare tutto da Graph.
   function updateTasksEverywhere(listId, updater) {
     setScheduledTasks(prev => updater(prev || []));
@@ -805,8 +802,6 @@ export default function App() {
     await load(true);
   }
 
-  const unclassifiedCount = (scheduledTasks || []).filter(t => !parseEisenhower(t.body?.content)).length;
-
   if (!ready) return null;
 
   if (!account) {
@@ -847,16 +842,6 @@ export default function App() {
           <button className={mapViewMode === 'para' ? 'active' : ''} onClick={() => setMapViewMode('para')} title="Vista PARA">PARA</button>
         </div>
       )}
-      <button
-        className={`search-btn tap-44${unclassifiedCount > 0 ? ' has-badge' : ''}`}
-        onClick={() => setEisenhowerOpen(true)}
-        title="Smistamento Eisenhower dei task non classificati">
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
-          <circle cx="12" cy="12" r="8.6" />
-          <path d="m14.8 9.2-1.9 4.1-4.1 1.9 1.9-4.1z" />
-        </svg>
-        {unclassifiedCount > 0 && <span className="header-badge">{unclassifiedCount}</span>}
-      </button>
       <div className="bell-wrap">
         <button
           className={`search-btn tap-44${reviewOpen ? ' active' : ''}${reviewSuggestions.length ? ' has-badge' : ''}`}
@@ -1022,11 +1007,6 @@ export default function App() {
         onClose={() => setClarifyTask(null)}
         onSaved={handleTaskClarified}
         onRemoved={t => handleTaskRemoved(t._listId, t.id)}
-      />
-      <EisenhowerTriage
-        open={eisenhowerOpen}
-        onClose={() => setEisenhowerOpen(false)}
-        tasks={scheduledTasks || []}
       />
       <GtdClarifyModal
         open={gtdOpen}
