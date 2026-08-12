@@ -10,8 +10,9 @@
 // "Decidi ora" resta per quando invece si sa già dove va: apre l'albero di
 // decisione di sempre, con il testo già scritto dentro.
 import { useState } from 'react';
-import { createTask } from './api';
 import { inboxListId } from './taskModel';
+import { tryOrQueue } from './writeQueue';
+import { useDialog } from './useDialog';
 import './QuickCapture.css';
 
 /**
@@ -21,8 +22,9 @@ import './QuickCapture.css';
  * @param {() => void} props.onClose
  * @param {(task: import('./types').TodoTask) => void} props.onCaptured
  * @param {(text: string) => void} props.onDecideNow
+ * @param {(text: string) => void} [props.onQueued]   accodata: la rete non c'era
  */
-export default function QuickCapture({ open, todoLists, onClose, onCaptured, onDecideNow }) {
+export default function QuickCapture({ open, todoLists, onClose, onCaptured, onDecideNow, onQueued }) {
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -34,6 +36,8 @@ export default function QuickCapture({ open, todoLists, onClose, onCaptured, onD
     setWasOpen(open);
     if (open) { setText(''); setBusy(false); setError(''); }
   }
+  // Escape, Tab che resta dentro, e il fuoco che torna dove era: vedi useDialog.
+  const boxRef = useDialog(open, onClose);
 
   if (!open) return null;
 
@@ -50,8 +54,15 @@ export default function QuickCapture({ open, todoLists, onClose, onCaptured, onD
     setError('');
     try {
       const list = todoLists.find(l => l.id === inboxId);
-      const task = await createTask(inboxId, title);
-      onCaptured({ ...task, _listId: inboxId, _listName: list?.displayName });
+      // Senza rete la cattura non fallisce: finisce in coda e viene salvata
+      // appena il collegamento torna (vedi writeQueue.js). È il gesto che deve
+      // funzionare sempre — in metropolitana, in fila, in ascensore.
+      const res = await tryOrQueue('crea-attività', { listId: inboxId, title }, title);
+      if (res.ok) {
+        onCaptured({ ...res.result, _listId: inboxId, _listName: list?.displayName });
+      } else {
+        onQueued?.(title);
+      }
       setText('');
       setBusy(false);
       onClose();
@@ -64,7 +75,13 @@ export default function QuickCapture({ open, todoLists, onClose, onCaptured, onD
 
   return (
     <div className="qc-overlay" onClick={onClose}>
-      <div className="qc" onClick={e => e.stopPropagation()} role="dialog" aria-label="Cattura un pensiero">
+      <div
+        ref={boxRef}
+        className="qc"
+        onClick={e => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Cattura un pensiero">
         <span className="eyebrow">Cattura</span>
         <textarea
           className="qc-input"
@@ -72,14 +89,18 @@ export default function QuickCapture({ open, todoLists, onClose, onCaptured, onD
           onChange={e => setText(e.target.value)}
           onKeyDown={e => {
             // Invio manda, Maiusc+Invio va a capo: catturare è un gesto solo.
+            // (Escape lo gestisce useDialog, per tutta la modale e non solo per
+            // questo campo.)
             if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); capture(); }
-            if (e.key === 'Escape') onClose();
           }}
           placeholder="Cosa ti è venuto in mente?"
           rows={3}
           autoFocus
         />
-        <p className="qc-hint">Finisce in Inbox. La chiarisci dopo, da Attività.</p>
+        <p className="qc-hint">
+          Finisce in Inbox. La chiarisci dopo, da Attività.
+          {!navigator.onLine && ' Ora sei senza rete: la salvo appena torna.'}
+        </p>
 
         {error && <div className="qc-error">{error}</div>}
 

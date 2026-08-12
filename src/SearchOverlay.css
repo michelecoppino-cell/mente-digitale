@@ -1,0 +1,155 @@
+/* Finestra della ricerca / tastiera dei comandi (SearchOverlay.jsx).
+ *
+ * Le regole stavano in App.css, dove erano finite quando la ricerca era una
+ * scatola con tre righe di risultati. Ora il componente è cresciuto e se le
+ * porta dietro: aprirlo da solo — in una prova, o in una vista futura — non deve
+ * dipendere dal fatto che qualcuno abbia importato il CSS dell'app.
+ *
+ * Resta in App.css `.search-btn`, che malgrado il nome è l'icona in topbar e non
+ * ha niente a che vedere con questa finestra.
+ */
+
+.search-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 400; /* sopra planner (200) e identity (300) */
+  background: rgba(0,0,0,0.6);
+  backdrop-filter: blur(3px);
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding-top: 12vh;
+}
+
+.search-box {
+  width: min(640px, 92vw);
+  max-height: 65vh;
+  background: #0d0f17;
+  border: 1px solid var(--border2);
+  border-radius: 12px;
+  box-shadow: 0 12px 48px rgba(0,0,0,0.65);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.search-input-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 13px 16px;
+  border-bottom: 1px solid var(--border);
+  color: var(--muted);
+  flex-shrink: 0;
+}
+
+.search-input {
+  flex: 1;
+  background: none;
+  border: none;
+  color: var(--text);
+  font-size: 14px;
+  font-family: var(--font-ui);
+}
+.search-input::placeholder { color: var(--muted); }
+
+.search-kbd, .search-hint kbd {
+  font-family: var(--font-ui);
+  font-size: 11px;
+  color: var(--muted);
+  border: 1px solid var(--border2);
+  border-radius: 4px;
+  padding: 1px 5px;
+  text-transform: uppercase;
+}
+
+.search-results {
+  overflow-y: auto;
+  padding: 6px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border2) transparent;
+}
+
+.search-result {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 7px;
+  cursor: pointer;
+  min-width: 0;
+}
+.search-result.active { background: rgba(212,164,74,0.09); }
+
+.search-result-icon { font-size: 12px; flex-shrink: 0; width: 16px; text-align: center; }
+.search-result-label {
+  font-size: 13px;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex-shrink: 1;
+}
+.search-star { color: var(--accent); }
+.search-result-sub {
+  font-size: 11px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1;
+  text-align: right;
+}
+/* La pastiglia col tipo su ogni riga non serve più: i risultati sono raggruppati
+   sotto un'intestazione, e ripetere «PAGINA» dodici volte di fila era rumore. */
+
+/* Intestazione di famiglia dentro l'elenco (Comandi, Sezioni, Diario…). */
+.search-group {
+  padding: var(--sp-4) var(--sp-4) var(--sp-2);
+  position: sticky;
+  top: 0;
+  background: #0d0f17;
+  z-index: 1;
+}
+.search-results > div:first-child .search-group { padding-top: var(--sp-2); }
+
+/* I tasti della scorciatoia, sulla riga di un comando. */
+.search-result-keys { display: flex; gap: 3px; flex-shrink: 0; }
+.search-result-keys kbd {
+  font-family: var(--font-ui);
+  font-size: var(--fs-micro);
+  color: var(--text-3);
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 1px 5px;
+}
+
+/* Il diario e la posta arrivano dalla rete: un puntino che pulsa dice che si sta
+   ancora cercando, senza spostare niente di quello che c'è già a schermo. */
+.search-busy {
+  flex-shrink: 0;
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: search-busy-pulse 1s ease-in-out infinite;
+}
+@keyframes search-busy-pulse {
+  0%, 100% { opacity: .25; }
+  50%      { opacity: 1; }
+}
+
+.search-empty { font-size: 12px; color: var(--muted); padding: 18px; text-align: center; }
+
+.search-hint {
+  display: flex;
+  gap: 14px;
+  padding: 8px 16px;
+  border-top: 1px solid var(--border);
+  font-size: 11px;
+  color: var(--muted);
+  flex-shrink: 0;
+}
+.search-hint span { display: flex; align-items: center; gap: 4px; }
+.search-hint span:last-child { margin-left: auto; }
+@media (max-width: 640px) { .search-hint span:not(:last-child) { display: none; } }

@@ -20,33 +20,73 @@ async function getTokenCached() {
 export function invalidateTokenCache() { _cachedToken = null; _cachedTokenExp = 0; }
 
 /**
+ * Le opzioni di una chiamata a Graph: come RequestInit, ma con gli header come
+ * semplice dizionario — un valore `undefined` toglie l'header predefinito.
+ * @typedef {Omit<RequestInit, 'headers'> & { headers?: Record<string, string|undefined> }} GraphInit
+ */
+
+/**
  * Chiamata a Microsoft Graph con retry/backoff, un giro extra sul 401 (token
  * fresco) e gestione di 429/503/504. Accetta path relativi (`/me/...`) o URL
  * assoluti (i @odata.nextLink di paginazione).
  * @param {string} path
- * @param {RequestInit} [options]
+ * @param {GraphInit} [options]
  * @param {number} [retries]
  * @returns {Promise<any>}
  */
 async function call(path, options = {}, retries = 3) {
+  const r = await callRaw(path, options, retries);
+  if (r.status === 204) return null;
+  return r.json();
+}
+
+/**
+ * Il motore di `call`: restituisce la Response invece del JSON, così anche le
+ * chiamate che non parlano JSON — l'HTML di una pagina OneNote, il PUT di un
+ * file su OneDrive, il caricamento di una foto del diario — passano dagli stessi
+ * tentativi, dallo stesso backoff sul 429 e dallo stesso giro extra sul 401.
+ *
+ * Prima ognuna di quelle faceva `fetch` a mano con il token in cache: bastava
+ * che il token fosse scaduto (la cache lo tiene 45 minuti, senza guardare la
+ * scadenza vera) perché un salvataggio uscisse con un 401 secco, senza
+ * riprovare. Sul percorso di lettura era un fastidio; sul salvataggio di una
+ * voce di diario o del piano del giorno era il testo appena scritto che non
+ * arrivava su OneDrive — e con la rete di un telefono succede.
+ *
+ * @param {string} path
+ * @param {GraphInit} [options]
+ * @param {number} [retries]
+ * @returns {Promise<Response>}
+ */
+async function callRaw(path, options = {}, retries = 3) {
   // Accetta anche URL assoluti: i link di paginazione @odata.nextLink di Graph
   // arrivano già completi di host.
   const url = path.startsWith('https://') ? path : GRAPH + path;
+  const { headers: extraHeaders, ...rest } = options;
   let retried401 = false;
   for (let attempt = 0; attempt < retries; attempt++) {
     let r;
     try {
       const token = await getTokenCached();
-      r = await fetch(url, {
-        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-        ...options
-      });
+      // Il Content-Type predefinito resta JSON, ma un chiamante può sostituirlo
+      // (xhtml per le pagine OneNote, il tipo del file per una foto) — o
+      // toglierlo del tutto passandolo `undefined`, come serve al multipart,
+      // dove il boundary lo deve mettere il browser.
+      /** @type {Record<string, string|undefined>} */
+      const headers = {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+        ...extraHeaders,
+      };
+      for (const k of Object.keys(headers)) {
+        if (headers[k] === undefined) delete headers[k];
+      }
+      r = await fetch(url, { ...rest, headers: /** @type {Record<string, string>} */ (headers) });
     } catch (e) {
       if (attempt === retries - 1) throw e;
       await new Promise(res => setTimeout(res, (attempt + 1) * 1000));
       continue;
     }
-    if (r.status === 204) return null;
     // Il token cachato può risultare scaduto (es. dopo una pausa lunga):
     // invalida la cache e riprova una volta sola con un token fresco prima
     // di arrendersi con un errore secco. Il giro extra non consuma uno dei
@@ -78,10 +118,13 @@ async function call(path, options = {}, retries = 3) {
       err.status = r.status; // permette ai chiamanti di distinguere 404 da errori transitori
       throw err;
     }
-    return r.json();
+    return r;
   }
   throw new Error(`Graph error: tentativi esauriti per ${path}`);
 }
+
+/** Un corpo multipart: il Content-Type (col boundary) lo mette il browser. */
+const MULTIPART = /** @type {Record<string, string|undefined>} */ ({ 'Content-Type': undefined });
 
 // Segue @odata.nextLink e concatena i .value di tutte le pagine: senza,
 // le liste più lunghe di $top venivano troncate in silenzio (task mancanti,
@@ -189,21 +232,87 @@ export async function migrateLegacyDriveFiles() {
   return moved;
 }
 
+// ── Scritture che non si sovrascrivono a vicenda ────────────────────────────
+// Ogni file dell'app veniva riscritto per intero con un PUT senza condizioni.
+// Sui file che si leggono prima di scrivere (il diario) il rischio era stretto;
+// sul piano del giorno era largo: la mappa di tutti i giorni sta in un file
+// solo, tenuta in memoria per l'intera sessione, e riscritta a ogni blocco che
+// si sposta. Spostare un blocco dal telefono mentre il portatile ha in memoria
+// la versione di dieci minuti prima significava che il secondo salvataggio
+// cancellava il primo, senza un errore e senza un modo di accorgersene.
+//
+// La cura è quella standard di OneDrive: l'eTag del file letto viene rimandato
+// come `If-Match`, e Graph rifiuta con 412 la scrittura se nel frattempo il file
+// è cambiato. A quel punto non ci si arrende: si rilegge la versione remota e si
+// fonde. La fusione ha bisogno di tre versioni — quella da cui si è partiti
+// (`_base`), la propria e la remota — perché senza sapere da dove si è partiti
+// non si distingue «l'altro ha aggiunto un blocco» da «io l'ho cancellato».
+//
+/** L'eTag dell'ultima versione letta o scritta di ciascun file. @type {Map<string, string>} */
+const _etags = new Map();
+/** L'ultimo contenuto letto o scritto: la base della fusione a tre vie. @type {Map<string, any>} */
+const _base = new Map();
+
+/** @param {string} filename @param {Response} r */
+function rememberEtag(filename, r) {
+  const tag = r.headers.get('ETag') || r.headers.get('etag');
+  if (tag) _etags.set(filename, tag);
+}
+
+/**
+ * @template T
+ * @typedef {(base: T|null, mine: T, remote: T) => T} Merge3
+ */
+
 // PUT di un file JSON nella cartella dell'app su OneDrive
 /**
  * @param {string} filename
  * @param {any} data
+ * @param {Merge3<any>} [merge]  come fondere se il file è cambiato sotto di noi
  * @returns {Promise<any>}
  */
-async function putDriveJson(filename, data) {
+async function putDriveJson(filename, data, merge) {
   await ensureAppFolder();
-  const token = await getTokenCached();
-  const r = await fetch(`${GRAPH}${drivePath(filename)}:/content`, {
-    method: 'PUT',
-    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify(data, null, 2),
-  });
-  if (!r.ok) throw new Error(`Save ${filename} error ${r.status}`);
+  const etag = _etags.get(filename);
+  // Passa da callRaw: un salvataggio è la cosa che meno di tutte deve arrendersi
+  // al primo 401 o al primo singhiozzo di rete — dietro c'è il testo che
+  // l'utente ha appena scritto.
+  let r;
+  try {
+    r = await callRaw(`${drivePath(filename)}:/content`, {
+      method: 'PUT',
+      headers: etag ? { 'If-Match': etag } : undefined,
+      body: JSON.stringify(data, null, 2),
+    });
+  } catch (e) {
+    const status = /** @type {any} */ (e)?.status;
+    // 412: il file è cambiato dopo l'ultima lettura. 409 lo restituisce Graph in
+    // alcune condizioni di conflitto sullo stesso item — si tratta allo stesso
+    // modo. Senza una funzione di fusione non si può decidere per conto
+    // dell'utente: l'errore risale, e chi ha chiesto il salvataggio lo dice.
+    if ((status !== 412 && status !== 409) || !merge) {
+      // L'eTag potrebbe essere quello sbagliato (file ricreato altrove): si
+      // scorda, così il tentativo successivo riparte da una lettura pulita.
+      if (status === 412 || status === 409) _etags.delete(filename);
+      throw e;
+    }
+    _etags.delete(filename);
+    const remote = await getDriveJson(filename, null);
+    const merged = merge(_base.get(filename) ?? null, data, remote);
+    r = await callRaw(`${drivePath(filename)}:/content`, {
+      method: 'PUT',
+      headers: _etags.get(filename) ? { 'If-Match': /** @type {string} */ (_etags.get(filename)) } : undefined,
+      body: JSON.stringify(merged, null, 2),
+    });
+    rememberEtag(filename, r);
+    _base.set(filename, merged);
+    // Il chiamante deve sapere che quello che è finito su OneDrive non è
+    // esattamente quello che aveva mandato.
+    const out = await r.json();
+    return { ...out, _merged: merged };
+  }
+  rememberEtag(filename, r);
+  _base.set(filename, data);
   return r.json();
 }
 
@@ -240,11 +349,7 @@ export async function getPages(sectionId) {
  * @returns {Promise<string>}
  */
 export async function getPageContentHtml(pageId) {
-  const token = await getTokenCached();
-  const r = await fetch(`${GRAPH}/me/onenote/pages/${pageId}/content`, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  if (!r.ok) throw new Error(`Page content error ${r.status}`);
+  const r = await callRaw(`/me/onenote/pages/${pageId}/content`);
   return r.text();
 }
 
@@ -259,6 +364,25 @@ export async function getTodoLists() {
  */
 export async function getTodoTasks(listId) {
   return callPagedValues(`/me/todo/lists/${listId}/tasks?$filter=status ne 'completed'&$orderby=importance desc,createdDateTime desc&$top=50`);
+}
+
+// Le attività di una lista cambiate dopo un certo istante — comprese quelle
+// completate, che nel serbatoio vanno rimosse invece che aggiornate. È la
+// richiesta su cui si appoggia la sincronizzazione incrementale (taskSync.js):
+// la risposta normale è vuota, quindi si può fare spesso.
+//
+// Nessun `$orderby`: qui l'ordine non serve (chi chiama fonde per id) e mescolare
+// un filtro su un campo con un ordinamento su un altro è il modo più rapido di
+// farsi rifiutare la query da Graph.
+/**
+ * @param {string} listId
+ * @param {string} sinceIso
+ * @returns {Promise<import('./types').TodoTask[]>}
+ */
+export async function getTodoTasksChangedSince(listId, sinceIso) {
+  return callPagedValues(
+    `/me/todo/lists/${listId}/tasks?$filter=lastModifiedDateTime gt ${sinceIso}&$top=50`
+  );
 }
 
 // Task di una lista indipendentemente dallo stato (anche completati), solo
@@ -426,15 +550,13 @@ function escapeHtml(s) {
  * @returns {Promise<any>}
  */
 export async function createNotePage(sectionId, title, contentText) {
-  const token = await getTokenCached();
   const html = `<!DOCTYPE html><html><head><title>${escapeHtml(title)}</title></head>` +
     `<body><p>${escapeHtml(contentText).replace(/\n/g, '<br/>')}</p></body></html>`;
-  const r = await fetch(`${GRAPH}/me/onenote/sections/${sectionId}/pages`, {
+  const r = await callRaw(`/me/onenote/sections/${sectionId}/pages`, {
     method: 'POST',
-    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/xhtml+xml' },
+    headers: { 'Content-Type': 'application/xhtml+xml' },
     body: html,
   });
-  if (!r.ok) throw new Error(`Create page error ${r.status}`);
   return r.json();
 }
 
@@ -446,15 +568,13 @@ export async function createNotePage(sectionId, title, contentText) {
  * @returns {Promise<void>}
  */
 export async function patchPageContent(pageId, commands) {
-  const token = await getTokenCached();
   const form = new FormData();
   form.append('Commands', new Blob([JSON.stringify(commands)], { type: 'application/json' }));
-  const r = await fetch(`${GRAPH}/me/onenote/pages/${pageId}/content`, {
+  await callRaw(`/me/onenote/pages/${pageId}/content`, {
     method: 'PATCH',
-    headers: { Authorization: `Bearer ${token}` },
+    headers: MULTIPART,
     body: form,
   });
-  if (!r.ok) throw new Error(`Patch page content error ${r.status}`);
 }
 
 // Spunta come completata la riga "Da fare" (data-tag="to-do") di una pagina
@@ -743,16 +863,32 @@ export async function moveCalendarEvent(calendarId, eventId, destinationCalendar
  */
 async function getDriveJson(filename, notFoundValue) {
   try {
-    return await call(`${drivePath(filename)}:/content`);
+    return await readDriveJson(filename);
   } catch (e) {
     if (/** @type {any} */ (e)?.status === 404) {
       if (await migrateLegacyFile(filename)) {
-        return call(`${drivePath(filename)}:/content`);
+        return readDriveJson(filename);
       }
+      // Un file che non esiste non ha eTag: la prima scrittura andrà senza
+      // condizioni, e da lì in poi ce l'avrà.
+      _etags.delete(filename);
+      _base.set(filename, notFoundValue);
       return notFoundValue;
     }
     throw e;
   }
+}
+
+// La lettura passa da callRaw e non da call perché serve anche l'header: l'eTag
+// del contenuto letto è ciò che permette alla scrittura successiva di accorgersi
+// se qualcun altro ha scritto nel frattempo (vedi putDriveJson).
+/** @param {string} filename @returns {Promise<any>} */
+async function readDriveJson(filename) {
+  const r = await callRaw(`${drivePath(filename)}:/content`);
+  rememberEtag(filename, r);
+  const data = r.status === 204 ? null : await r.json();
+  _base.set(filename, data);
+  return data;
 }
 
 // ── OneDrive Identity Docs ────────────────────────────────────────────────────
@@ -801,6 +937,64 @@ export async function loadDailyPlans() {
 }
 
 /**
+ * Fusione a tre vie dei piani giornalieri, blocco per blocco.
+ *
+ * Le regole, e il perché di ognuna — in un'app personale la parte difficile non
+ * è fondere, è decidere chi vince, e la scelta qui è sempre «non perdere un
+ * blocco»:
+ *
+ *   · un giorno che c'è solo da una parte si tiene, chiunque l'abbia scritto;
+ *   · un blocco che ho io e che l'altro non ha più: lo tengo. Se l'ho appena
+ *     spostato è mio; se l'altro l'ha cancellato lo ritrovo in griglia e lo
+ *     ricancello in un secondo. Il contrario — sparisce un'ora di lavoro
+ *     pianificato senza dire niente — non si recupera;
+ *   · un blocco che ha solo l'altro: era nella base? allora l'ho cancellato io,
+ *     e resta cancellato. Non c'era? l'ha aggiunto lui, e si tiene;
+ *   · un blocco che abbiamo entrambi ma diverso: vince chi l'ha cambiato. Se
+ *     l'abbiamo cambiato in due, vince il completamento — spuntato batte non
+ *     spuntato, perché è un fatto già avvenuto, non un'intenzione.
+ *
+ * @param {Record<string, any>|null} base
+ * @param {Record<string, any>} mine
+ * @param {Record<string, any>} remote
+ * @returns {Record<string, any>}
+ */
+export function mergeDailyPlans(base, mine, remote) {
+  const b = base || {};
+  const r = remote || {};
+  /** @type {Record<string, any>} */
+  const out = {};
+  for (const date of new Set([...Object.keys(mine || {}), ...Object.keys(r)])) {
+    const mineDay = mine?.[date];
+    const remoteDay = r[date];
+    if (!mineDay) { out[date] = remoteDay; continue; }
+    if (!remoteDay) { out[date] = mineDay; continue; }
+
+    const baseBlocks = new Map((b[date]?.blocks || []).map((/** @type {any} */ x) => [x.id, x]));
+    const mineBlocks = new Map((mineDay.blocks || []).map((/** @type {any} */ x) => [x.id, x]));
+    const remoteBlocks = new Map((remoteDay.blocks || []).map((/** @type {any} */ x) => [x.id, x]));
+
+    /** @type {any[]} */
+    const blocks = [];
+    for (const id of new Set([...mineBlocks.keys(), ...remoteBlocks.keys()])) {
+      const bb = baseBlocks.get(id);
+      const mb = mineBlocks.get(id);
+      const rb = remoteBlocks.get(id);
+      if (mb && !rb) { blocks.push(mb); continue; }              // mio: lo tengo
+      if (!mb && rb) { if (!bb) blocks.push(rb); continue; }      // suo e nuovo: lo tengo
+      if (!mb || !rb) continue;
+      const same = (/** @type {any} */ x, /** @type {any} */ y) => JSON.stringify(x) === JSON.stringify(y);
+      if (bb && same(mb, bb) && !same(rb, bb)) { blocks.push(rb); continue; }  // l'ha cambiato lui
+      if (mb.completed || !rb.completed) blocks.push(mb);
+      else blocks.push(rb);                                      // spuntato batte non spuntato
+    }
+    blocks.sort((x, y) => String(x.startTime).localeCompare(String(y.startTime)));
+    out[date] = { ...remoteDay, ...mineDay, blocks };
+  }
+  return out;
+}
+
+/**
  * @param {Record<string, import('./types').DayPlan>} plans
  * @returns {Promise<any>}
  */
@@ -813,7 +1007,7 @@ export async function saveDailyPlans(plans) {
   for (const [date, plan] of Object.entries(plans)) {
     if (new Date(date) >= cutoff) pruned[date] = plan;
   }
-  return putDriveJson(OD_DAILY_PLANS_FILE, pruned);
+  return putDriveJson(OD_DAILY_PLANS_FILE, pruned, mergeDailyPlans);
 }
 
 /** @returns {Promise<import('./types').PlannerConfig|null>} */
@@ -928,6 +1122,50 @@ export async function loadDiaryIndex() {
   return { months: Array.isArray(idx?.months) ? idx.months : [] };
 }
 
+/**
+ * Fusione a tre vie di un mese di diario, voce per voce.
+ *
+ * Il diario rilegge già il mese prima di scrivere, quindi la finestra è stretta:
+ * resta aperta quando si scrive dal telefono e dal portatile nello stesso
+ * momento, o quando un'importazione da centinaia di voci gira mentre si sta
+ * scrivendo la voce della sera. Qui una voce non si perde mai — e fra due
+ * versioni della stessa voce vince quella scritta dopo (`ts`), che è l'unico
+ * ordine che il diario conosca.
+ *
+ * @param {any[]|null} base
+ * @param {any[]} mine
+ * @param {any[]} remote
+ * @returns {any[]}
+ */
+export function mergeDiaryMonth(base, mine, remote) {
+  const baseIds = new Set((base || []).map(e => e.id));
+  /** @type {Map<string, any>} */
+  const out = new Map((Array.isArray(mine) ? mine : []).map(e => [e.id, e]));
+  for (const e of Array.isArray(remote) ? remote : []) {
+    const ours = out.get(e.id);
+    if (!ours) {
+      // Non è nostra: se non era nemmeno nella base l'ha scritta l'altro
+      // dispositivo e va tenuta. Se c'era, l'abbiamo cancellata noi.
+      if (!baseIds.has(e.id)) out.set(e.id, e);
+      continue;
+    }
+    if (String(e.ts || '') > String(ours.ts || '')) out.set(e.id, e);
+  }
+  return [...out.values()].sort((a, b) => (String(a.ts) < String(b.ts) ? -1 : 1));
+}
+
+/**
+ * L'indice dei mesi è un insieme: l'unione non perde mai un mese.
+ * @param {any} _base
+ * @param {any} mine
+ * @param {any} remote
+ * @returns {{ months: string[] }}
+ */
+export function mergeDiaryIndex(_base, mine, remote) {
+  const months = [...new Set([...(mine?.months || []), ...(remote?.months || [])])].sort();
+  return { months };
+}
+
 /** @param {string} ym @returns {Promise<import('./types').DiaryEntry[]>} */
 export async function loadDiaryMonth(ym) {
   const data = await getDriveJson(diaryMonthFile(ym), []);
@@ -948,13 +1186,15 @@ export async function saveDiaryEntry(entry) {
   const updated = i >= 0
     ? existing.map(e => (e.id === entry.id ? entry : e))
     : [...existing, entry];
-  await putDriveJson(diaryMonthFile(ym), updated);
+  const res = await putDriveJson(diaryMonthFile(ym), updated, mergeDiaryMonth);
 
   const idx = await loadDiaryIndex();
   if (!idx.months.includes(ym)) {
-    await putDriveJson(OD_DIARY_INDEX_FILE, { months: [...idx.months, ym].sort() });
+    await putDriveJson(OD_DIARY_INDEX_FILE, { months: [...idx.months, ym].sort() }, mergeDiaryIndex);
   }
-  return updated;
+  // Se il file era cambiato sotto di noi, quello che sta su OneDrive è la
+  // fusione: è quella che il Diario deve mostrare, non la nostra copia.
+  return res?._merged ?? updated;
 }
 
 /**
@@ -979,13 +1219,13 @@ export async function saveDiaryEntries(entries) {
     const esistenti = await loadDiaryMonth(ym);
     const mappa = new Map(esistenti.map(e => [e.id, e]));
     for (const e of perMese[ym]) mappa.set(e.id, e);
-    await putDriveJson(diaryMonthFile(ym), [...mappa.values()].sort((a, b) => (a.ts < b.ts ? -1 : 1)));
+    await putDriveJson(diaryMonthFile(ym), [...mappa.values()].sort((a, b) => (a.ts < b.ts ? -1 : 1)), mergeDiaryMonth);
   }
 
   const idx = await loadDiaryIndex();
   const tutti = [...new Set([...idx.months, ...mesi])].sort();
   if (tutti.length !== idx.months.length) {
-    await putDriveJson(OD_DIARY_INDEX_FILE, { months: tutti });
+    await putDriveJson(OD_DIARY_INDEX_FILE, { months: tutti }, mergeDiaryIndex);
   }
   return mesi;
 }
@@ -998,8 +1238,10 @@ export async function deleteDiaryEntry(entry) {
   const ym = entry.date.slice(0, 7);
   const existing = await loadDiaryMonth(ym);
   const updated = existing.filter(e => e.id !== entry.id);
-  await putDriveJson(diaryMonthFile(ym), updated);
-  return updated;
+  // Senza fusione: qui la cancellazione è l'intenzione, e mergeDiaryMonth
+  // rimetterebbe dentro la voce che l'altro dispositivo ha ancora.
+  const res = await putDriveJson(diaryMonthFile(ym), updated);
+  return res?._merged ?? updated;
 }
 
 // ── Foto del diario ────────────────────────────────────────────────────────
@@ -1044,13 +1286,11 @@ function photoPath(name) {
  */
 export async function uploadDiaryPhoto(blob, name) {
   await ensurePhotoFolder();
-  const token = await getTokenCached();
-  const r = await fetch(`${GRAPH}${photoPath(name)}:/content`, {
+  await callRaw(`${photoPath(name)}:/content`, {
     method: 'PUT',
-    headers: { Authorization: `Bearer ${token}`, 'Content-Type': blob.type || 'application/octet-stream' },
+    headers: { 'Content-Type': blob.type || 'application/octet-stream' },
     body: blob,
   });
-  if (!r.ok) throw new Error(`Upload foto ${name} error ${r.status}`);
   return name;
 }
 
@@ -1221,6 +1461,24 @@ export async function reorderChecklistItems(listId, taskId, orderedItems) {
  */
 export async function getReminders(startISO, endISO) {
   const d = await call(`/me/reminderView(startDateTime='${startISO}',endDateTime='${endISO}')`);
+  return d?.value || [];
+}
+
+// Ricerca nella posta. `$search` di Graph (non un `$filter` con `contains`, che
+// su messages non è supportato) e nessun `$orderby`: le due cose insieme Graph le
+// rifiuta, e con la ricerca l'ordine per pertinenza è quello che serve.
+/**
+ * @param {string} query
+ * @param {number} [top]
+ * @returns {Promise<import('./types').EmailMessage[]>}
+ */
+export async function searchMessages(query, top = 5) {
+  const params = [
+    `$search="${encodeURIComponent(query).replace(/"/g, '')}"`,
+    '$select=id,subject,from,bodyPreview,receivedDateTime,webLink',
+    `$top=${top}`,
+  ].join('&');
+  const d = await call(`/me/messages?${params}`);
   return d?.value || [];
 }
 

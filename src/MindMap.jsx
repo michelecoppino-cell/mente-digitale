@@ -73,7 +73,9 @@ export default function MindMap({
   useEffect(() => {
     if (!notebooks.length) return;
     notebooks.forEach(nb => onExpandNotebook(nb));
-  }, [notebooks]);
+    // `onExpandNotebook` arriva da App.jsx e cambia identità a ogni render:
+    // fra le dipendenze farebbe ripartire il caricamento all'infinito.
+  }, [notebooks]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Costruisce il grafo la prima volta che tutte le sezioni sono caricate
   useEffect(() => {
@@ -81,7 +83,9 @@ export default function MindMap({
     const allLoaded = notebooks.every(nb => sectionsMap[nb.id]);
     if (!allLoaded) return;
     buildGraph();
-  }, [notebooks, sectionsMap, viewMode]);
+    // buildGraph legge lo stato corrente quando viene chiamata: dipende da
+    // tutto, e metterla qui vorrebbe dire ricostruire il grafo a ogni render.
+  }, [notebooks, sectionsMap, viewMode]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Zoom esterno (solo da pulsanti, non da wheel D3)
   useEffect(() => {
@@ -110,7 +114,8 @@ export default function MindMap({
     };
     window.addEventListener('resize', onResize);
     return () => { clearTimeout(timer); window.removeEventListener('resize', onResize); };
-  }, [notebooks, sectionsMap, viewMode]);
+    // Come sopra: buildGraph non va fra le dipendenze.
+  }, [notebooks, sectionsMap, viewMode]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function buildGraph() {
     const container = svgRef.current?.parentElement;

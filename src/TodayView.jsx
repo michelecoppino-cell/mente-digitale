@@ -12,8 +12,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { loadDiaryIndex, loadDiaryMonth } from './api';
+import { queryClient, qk, STALE } from './queryClient';
 import { monthKey, shiftMonth } from './diary';
 import { taskContext, contextColor } from './taskModel';
+import Skeleton from './Skeleton';
 import './TodayView.css';
 
 /** 'YYYY-MM-DD' locale. */
@@ -67,6 +69,11 @@ function initials(/** @type {string} */ name) {
 
 const RECURRENCE_RE = /complean|ricorrenz|anniversar|onomastic/i;
 
+/** Da quest'ora in poi «Oggi» racconta la giornata che finisce invece di quella
+ *  che comincia. Le 18 e non le 20: la chiusura serve mentre si può ancora
+ *  spostare qualcosa a domani, non a cose fatte. */
+const EVENING_FROM_HOUR = 18;
+
 /**
  * Giorni consecutivi di diario che finiscono oggi (o ieri: la giornata non è
  * ancora finita, e azzerare la striscia alle 00:01 sarebbe una punizione per
@@ -90,32 +97,41 @@ function diaryStreak(dates) {
   return n;
 }
 
-/** Carica quel tanto di diario che serve alla striscia: mese corrente e
+/** Legge dal diario quel tanto che serve alla striscia: mese corrente e
  *  precedente. Oltre non serve — una striscia più lunga di due mesi si
  *  racconta lo stesso come «60 giorni di fila». */
-function useDiaryStreak(enabled = true) {
+async function fetchDiaryStreak() {
+  const index = await loadDiaryIndex();
+  const wanted = [monthKey(), shiftMonth(monthKey(), -1)];
+  const months = wanted.filter(m => !index?.months || index.months.includes(m));
+  const dates = [];
+  for (const m of months) {
+    const entries = await loadDiaryMonth(m);
+    for (const e of entries || []) if (e?.date) dates.push(e.date);
+  }
+  return diaryStreak(dates);
+}
+
+/** La striscia passa dal query client come ogni altra lettura: prima erano tre
+ *  file su OneDrive riletti a ogni ritorno su Oggi — e su Oggi si torna dieci
+ *  volte al giorno. */
+function useDiaryStreak() {
   const [streak, setStreak] = useState(/** @type {number|null} */ (null));
   useEffect(() => {
-    if (!enabled) return;
     let cancelled = false;
-    (async () => {
-      try {
-        const index = await loadDiaryIndex();
-        const wanted = [monthKey(), shiftMonth(monthKey(), -1)];
-        const months = wanted.filter(m => !index?.months || index.months.includes(m));
-        const dates = [];
-        for (const m of months) {
-          const entries = await loadDiaryMonth(m);
-          for (const e of entries || []) if (e?.date) dates.push(e.date);
-        }
-        if (!cancelled) setStreak(diaryStreak(dates));
-      } catch (e) {
+    queryClient
+      .fetchQuery({
+        queryKey: qk.diaryStreak(monthKey()),
+        queryFn: fetchDiaryStreak,
+        staleTime: STALE.diaryStreak,
+      })
+      .then(n => { if (!cancelled) setStreak(n); })
+      .catch(e => {
         console.error('striscia diario', e);
         if (!cancelled) setStreak(0);
-      }
-    })();
+      });
     return () => { cancelled = true; };
-  }, [enabled]);
+  }, []);
   return streak;
 }
 
@@ -124,9 +140,13 @@ function useDiaryStreak(enabled = true) {
  * @param {Record<string, import('./types').DayPlan>} props.plans
  * @param {import('./types').TodoTask[]} props.tasks
  * @param {import('./types').CalendarEvent[]} props.calendarEvents
+ * @param {boolean} [props.loading]          il primo caricamento non è ancora arrivato
+ * @param {boolean} [props.calendarLoading]  gli eventi del calendario arrivano in coda, dopo
  * @param {(block: any) => void} props.onCompleteBlock
  */
-export default function TodayView({ plans, tasks, calendarEvents, onCompleteBlock }) {
+export default function TodayView({
+  plans, tasks, calendarEvents, loading = false, calendarLoading = false, onCompleteBlock,
+}) {
   const navigate = useNavigate();
   // Un tick al minuto: basta a far avanzare "restano 1h40" e a far passare la
   // card da ADESSO a PROSSIMO senza ricaricare.
@@ -157,24 +177,55 @@ export default function TodayView({ plans, tasks, calendarEvents, onCompleteBloc
     .sort((a, b) => (a.start?.dateTime || '').localeCompare(b.start?.dateTime || '')),
     [calendarEvents, today]);
 
+  // Dipende dal *giorno*, non dall'istante: con `now` fra le dipendenze l'intero
+  // elenco eventi veniva rifiltrato e riordinato a ogni tick del minuto, per
+  // dare sempre lo stesso risultato.
   const recurrences = useMemo(() => {
-    const limit = new Date(now); limit.setDate(limit.getDate() + 30);
+    const limit = new Date(today + 'T00:00:00'); limit.setDate(limit.getDate() + 30);
     const limitStr = todayStr(limit);
     return (calendarEvents || [])
       .filter(e => RECURRENCE_RE.test(e._calName || '') || RECURRENCE_RE.test(e.subject || ''))
       .filter(e => { const d = evDate(e.start?.dateTime); return d >= today && d <= limitStr; })
       .sort((a, b) => (a.start?.dateTime || '').localeCompare(b.start?.dateTime || ''))
       .slice(0, 6);
-  }, [calendarEvents, today, now]);
+  }, [calendarEvents, today]);
+
+  // ── Il bilancio della giornata ───────────────────────────────────────────
+  // Prima «Oggi» raccontava solo la giornata che comincia: del diario mostrava
+  // la striscia dei giorni di fila e nulla più, e il rituale della sera esisteva
+  // senza che niente lo chiamasse. Dalle 18 la pagina si gira: cosa è stato
+  // fatto, cosa è rimasto indietro, e il rituale a un tocco.
+  const evening = now.getHours() >= EVENING_FROM_HOUR;
+  const done = blocks.filter(b => b.completed);
+  const leftBehind = blocks.filter(b => !b.completed && t2m(b.endTime) <= nowMin);
+  const doneMin = done.reduce((sum, b) => sum + Math.max(0, t2m(b.endTime) - t2m(b.startTime)), 0);
 
   const plannedMin = blocks.reduce((sum, b) => sum + Math.max(0, t2m(b.endTime) - t2m(b.startTime)), 0);
   const dateLabel = now.toLocaleDateString('it-IT', { weekday: 'long', day: 'numeric', month: 'long' });
+  // Il confine fra «domani» e «più avanti» per le ricorrenze: una volta, non
+  // una per riga dentro il map.
+  const tomorrowStr = todayStr(new Date(now.getTime() + 86_400_000));
 
-  const summary = [
-    `${events.length} ${events.length === 1 ? 'evento' : 'eventi'}`,
-    `${blocks.length} ${blocks.length === 1 ? 'azione programmata' : 'azioni programmate'}`,
-    plannedMin ? `${fmtHours(plannedMin)} pianificate` : null,
-  ].filter(Boolean).join(' · ');
+  // Finché il primo caricamento non è tornato non si può dire *niente* sulla
+  // giornata: prima Oggi mostrava «Niente in programma per il resto della
+  // giornata» e «Nessun appuntamento oggi» durante l'attesa — cioè una risposta
+  // falsa, e proprio quella che scoraggia dall'aprire l'app. Lo stato vuoto ora
+  // è solo il vuoto vero.
+  const waiting = loading && blocks.length === 0;
+
+  const summary = loading
+    ? 'Caricamento della giornata…'
+    : evening && blocks.length
+      ? [
+        `${done.length} di ${blocks.length} ${blocks.length === 1 ? 'azione' : 'azioni'} fatte`,
+        doneMin ? `${fmtHours(doneMin)} di lavoro` : null,
+        leftBehind.length ? `${leftBehind.length} ${leftBehind.length === 1 ? 'rimasta' : 'rimaste'} indietro` : null,
+      ].filter(Boolean).join(' · ')
+      : [
+        `${events.length} ${events.length === 1 ? 'evento' : 'eventi'}`,
+        `${blocks.length} ${blocks.length === 1 ? 'azione programmata' : 'azioni programmate'}`,
+        plannedMin ? `${fmtHours(plannedMin)} pianificate` : null,
+      ].filter(Boolean).join(' · ');
 
   return (
     <div className="today">
@@ -209,6 +260,37 @@ export default function TodayView({ plans, tasks, calendarEvents, onCompleteBloc
                 <button className="today-btn" onClick={() => navigate('/piano')}>Sposta</button>
               </div>
             </section>
+          ) : waiting ? (
+            <section className="today-now empty" aria-busy="true">
+              <span className="eyebrow">Adesso</span>
+              <Skeleton rows={2} height={16} />
+            </section>
+          ) : evening ? (
+            /* Niente più in programma e la sera è arrivata: la card non dice il
+               vuoto, tira le somme. */
+            <section className="today-now today-evening">
+              <span className="eyebrow eyebrow-accent">Com'è andata</span>
+              <h2 className="today-now-title">
+                {blocks.length === 0
+                  ? 'Giornata senza un piano'
+                  : done.length === blocks.length
+                    ? 'Tutto quello che avevi previsto'
+                    : `${done.length} di ${blocks.length} fatte`}
+              </h2>
+              <p className="today-now-meta">
+                {blocks.length === 0
+                  ? 'Nessuna azione era programmata per oggi.'
+                  : leftBehind.length
+                    ? `${leftBehind.length} ${leftBehind.length === 1 ? 'azione è rimasta' : 'azioni sono rimaste'} indietro: dal Piano ${leftBehind.length === 1 ? 'la sposti' : 'le sposti'} a domani.`
+                    : 'Niente è rimasto indietro.'}
+              </p>
+              <div className="today-now-actions">
+                <Link className="today-btn accent" to="/diario">Rituale della sera</Link>
+                {leftBehind.length > 0 && (
+                  <button className="today-btn" onClick={() => navigate('/piano')}>Sposta a domani</button>
+                )}
+              </div>
+            </section>
           ) : (
             <section className="today-now empty">
               <span className="eyebrow">Adesso</span>
@@ -222,7 +304,11 @@ export default function TodayView({ plans, tasks, calendarEvents, onCompleteBloc
           {/* ── Agenda ─────────────────────────────────────────────────── */}
           <section className="today-block">
             <span className="eyebrow">Agenda</span>
-            {events.length === 0 && <p className="today-empty">Nessun appuntamento oggi</p>}
+            {events.length === 0 && (
+              calendarLoading
+                ? <Skeleton rows={3} />
+                : <p className="today-empty">Nessun appuntamento oggi</p>
+            )}
             {events.map(e => (
               <div className="today-event" key={e.id}>
                 <span className="today-event-time">{e.isAllDay ? 'tutto il giorno' : evTime(e.start?.dateTime)}</span>
@@ -236,9 +322,13 @@ export default function TodayView({ plans, tasks, calendarEvents, onCompleteBloc
           <section className="today-block">
             <span className="eyebrow">Azioni di oggi</span>
             {blocks.length === 0 && (
-              <p className="today-empty">
-                Nessuna azione programmata. <Link to="/attivita">Guarda le prossime azioni</Link>
-              </p>
+              waiting
+                ? <Skeleton rows={3} />
+                : (
+                  <p className="today-empty">
+                    Nessuna azione programmata. <Link to="/attivita">Guarda le prossime azioni</Link>
+                  </p>
+                )
             )}
             {blocks.map(b => {
               const ctx = taskContext(taskById.get(b.taskId) || /** @type {any} */ ({}));
@@ -274,10 +364,14 @@ export default function TodayView({ plans, tasks, calendarEvents, onCompleteBloc
         <aside className="today-aside">
           <section className="today-card">
             <span className="eyebrow">Ricorrenze</span>
-            {recurrences.length === 0 && <p className="today-empty">Niente nei prossimi 30 giorni</p>}
+            {recurrences.length === 0 && (
+              calendarLoading
+                ? <Skeleton rows={2} />
+                : <p className="today-empty">Niente nei prossimi 30 giorni</p>
+            )}
             {recurrences.map(e => {
               const d = evDate(e.start?.dateTime);
-              const soon = d <= todayStr(new Date(now.getTime() + 86_400_000));
+              const soon = d <= tomorrowStr;
               return (
                 <div className="today-rec" key={e.id}>
                   <span className="today-rec-badge">{initials(e.subject || '')}</span>
@@ -311,9 +405,11 @@ export default function TodayView({ plans, tasks, calendarEvents, onCompleteBloc
             <span className="today-finanze-link">Apri Finanze →</span>
           </Link>
 
-          <Link className="today-diary" to="/diario">
-            <span className="eyebrow">Diario</span>
-            <p className="today-diary-prompt">Due righe su com'è andata…</p>
+          <Link className={`today-diary${evening ? ' evening' : ''}`} to="/diario">
+            <span className="eyebrow">{evening ? 'Diario · stasera' : 'Diario'}</span>
+            <p className="today-diary-prompt">
+              {evening ? 'Il rituale della sera: tre domande, due minuti.' : "Due righe su com'è andata…"}
+            </p>
             <span className="today-diary-streak">
               {streak === null ? '…' : streak > 0 ? `${streak} ${streak === 1 ? 'giorno' : 'giorni'} di fila` : 'Ricomincia la striscia'}
             </span>

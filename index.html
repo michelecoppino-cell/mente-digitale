@@ -18,7 +18,24 @@
     <!-- Theme color -->
     <meta name="theme-color" content="#0e1013" />
 
-    <link rel="icon" type="image/svg+xml" href="/icons.svg" />
+    <!-- L'icona della scheda era `/icons.svg`, che non è l'icona dell'app: è un
+         foglio di <symbol> (icone social) rimasto dal modello di partenza, senza
+         un viewBox alla radice, quindi non disegnabile — la scheda mostrava il
+         segnaposto vuoto del browser. Questa è l'icona vera, la stessa della
+         schermata Home. -->
+    <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png" />
+
+    <!-- I caratteri stanno qui e non in un @import dentro index.css: dentro il
+         CSS il browser li scopre solo dopo aver scaricato e analizzato l'intero
+         foglio dell'app (oltre cento kilobyte), cioè una richiesta in fila
+         invece che in parallelo, e il titolo restava in Georgia per il primo
+         mezzo secondo. Con il preconnect la connessione a Google Fonts è già
+         aperta quando serve. -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;500&family=Inter:wght@400;500;600&display=swap" />
   </head>
   <body>
     <div id="root"></div>

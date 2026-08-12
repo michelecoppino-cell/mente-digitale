@@ -21,6 +21,18 @@ import { createContext, useContext } from 'react';
 export const PomodoroContext = createContext(/** @type {any} */ (null));
 
 /**
+ * Il tempo trascorso, che avanza ogni secondo, sta in un contesto a parte.
+ *
+ * Prima era dentro lo stesso oggetto della sessione e dei comandi: quel valore
+ * cambia una volta al secondo, e ogni componente che leggeva il contesto — App
+ * compreso, che di suo usa solo `start` e `stop` — si ridisegnava con lui. Con
+ * un Pomodoro avviato l'intera app veniva ricostruita sessanta volte al minuto,
+ * griglia del Piano inclusa. Qui il tick ce l'ha solo chi deve mostrare i
+ * minuti che passano.
+ */
+export const PomodoroTickContext = createContext(0);
+
+/**
  * Millisecondi trascorsi da inizio sessione, contando solo il tempo in cui il
  * timer girava davvero.
  * @param {PomodoroSessionState|null} s
@@ -36,4 +48,11 @@ export function usePomodoro() {
   const ctx = useContext(PomodoroContext);
   if (!ctx) throw new Error('usePomodoro va usato dentro <PomodoroProvider>');
   return ctx;
+}
+
+/** I millisecondi trascorsi, aggiornati al secondo. Da usare *solo* dove i
+ *  minuti che passano si vedono a schermo: chiunque lo legga si ridisegna ogni
+ *  secondo finché il timer gira. */
+export function usePomodoroElapsed() {
+  return useContext(PomodoroTickContext);
 }

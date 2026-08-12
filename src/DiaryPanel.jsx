@@ -8,6 +8,7 @@ import {
   monthKey, shiftMonth, humanDate, buildAiExport, dateKey, SEEDS, SVUOTA_TESTA_METHOD,
 } from './diary';
 import { addPhotos, removePhotos, getDiaryPhotoUrl, MAX_PHOTOS_PER_ENTRY } from './diaryPhotos';
+import { disponibile as aiDisponibile, rispondiAlDiario } from './ai';
 import DiaryImport from './DiaryImport';
 import './DiaryPanel.css';
 
@@ -189,7 +190,7 @@ function DiaryHome({
       <div className="diary-header">
         <span className="diary-title">Diario</span>
         <div className="diary-header-actions">
-          <button className="diary-ghost-btn" onClick={onOpenAi} title="Prepara il testo da incollare in una chat AI">
+          <button className="diary-ghost-btn" onClick={onOpenAi} title="Chiedi una risposta qui dentro, o prepara il testo da incollare altrove">
             Copia per l'AI
           </button>
         </div>
@@ -239,7 +240,9 @@ function DiaryHome({
         <div className="diary-filters">
           <input
             className="diary-search"
+            type="search"
             placeholder="Cerca nel diario…"
+            aria-label="Cerca nel diario"
             value={query}
             onChange={e => setQuery(e.target.value)}
           />
@@ -405,7 +408,7 @@ function PhotoLightbox({ photos, index, onIndex, onClose }) {
 
   return (
     <div className="diary-lightbox" onClick={onClose}>
-      <button className="diary-lightbox-close" onClick={onClose}>✕</button>
+      <button className="diary-lightbox-close" onClick={onClose} aria-label="Chiudi la foto" title="Chiudi">✕</button>
       {index > 0 && (
         <button
           className="diary-lightbox-nav prev"
@@ -470,7 +473,7 @@ function PhotoPicker({ photos, onChange, disabled }) {
         {photos.map((p, i) => (
           <div key={p.name} className="diary-photo-edit">
             <DiaryPhotoImg photo={p} className="diary-photo-thumb" />
-            <button className="diary-photo-remove" onClick={() => removeAt(i)} title="Togli questa foto">✕</button>
+            <button className="diary-photo-remove" onClick={() => removeAt(i)} title="Togli questa foto" aria-label="Togli questa foto">✕</button>
             <input
               className="diary-photo-caption"
               placeholder="didascalia"
@@ -666,7 +669,7 @@ function DiaryWriter({ type, initial, onSave, onCancel }) {
           >
             {seed} <span className="diary-seed-caret">▾</span>
           </button>
-          <button className="diary-seed-btn" onClick={() => setSeed(null)} title="Scrivi senza domanda">✕</button>
+          <button className="diary-seed-btn" onClick={() => setSeed(null)} title="Scrivi senza domanda" aria-label="Scrivi senza domanda">✕</button>
         </div>
       )}
       {isRitual && !seed && !seedListOpen && (
@@ -743,7 +746,7 @@ function MethodHelp({ onClose }) {
     <div className="diary-help">
       <div className="diary-help-head">
         <span className="diary-help-title">Come funziona questa pagina</span>
-        <button className="diary-seed-btn" onClick={onClose}>✕</button>
+        <button className="diary-seed-btn" onClick={onClose} aria-label="Chiudi" title="Chiudi">✕</button>
       </div>
       <ul className="diary-help-list">
         {SVUOTA_TESTA_METHOD.howTo.map((line, i) => <li key={i}>{line}</li>)}
@@ -803,7 +806,7 @@ function EveningRitual({ onSave, onCancel }) {
     <div className="diary-panel diary-evening">
       <div className="diary-header">
         <span className="diary-title">🕯️ Rituale della sera</span>
-        <button className="diary-close" onClick={cancel}>✕</button>
+        <button className="diary-close" onClick={cancel} aria-label="Chiudi senza salvare" title="Chiudi senza salvare">✕</button>
       </div>
       <div className="diary-body">
         {EVENING_QUESTIONS.map(q => (
@@ -873,6 +876,15 @@ const PERIODS = [
   { id: 'all',   label: 'Tutto il caricato', days: null },
 ];
 
+// Il markdown che questo pannello compone è nato per essere incollato altrove.
+// Restava una cosa a metà: si preparava tutto — il contesto, la richiesta, la
+// Bussola, le voci — e poi si cambiava applicazione, si perdeva il filo, e la
+// risposta viveva in una chat che il diario non vedrà mai.
+//
+// Se il deploy ha una funzione AI configurata, la stessa cosa si può chiedere qui:
+// stesso testo, stesso preset, risposta dentro l'app. «Copia negli appunti» resta,
+// perché non tutte le conversazioni vanno fatte con questo modello e perché senza
+// chiave configurata è l'unica strada.
 function AiExport({ entries, onBack }) {
   const [periodId, setPeriodId] = useState('7');
   const [presetId, setPresetId] = useState(AI_PRESETS[0].id);
@@ -881,10 +893,24 @@ function AiExport({ entries, onBack }) {
   const [copied, setCopied] = useState(false);
   const previewRef = useRef(null);
 
+  const [aiOn, setAiOn] = useState(false);
+  const [domanda, setDomanda] = useState('');
+  const [risposta, setRisposta] = useState('');
+  const [troncata, setTroncata] = useState(false);
+  const [chiedendo, setChiedendo] = useState(false);
+  const [erroreAi, setErroreAi] = useState('');
+  const rispostaRef = useRef(/** @type {any} */ (null));
+
   useEffect(() => {
     if (!withBussola || bussola) return;
     loadIdentityDoc('bussola').then(setBussola).catch(() => setBussola(null));
   }, [withBussola, bussola]);
+
+  useEffect(() => {
+    let vivo = true;
+    aiDisponibile().then(v => { if (vivo) setAiOn(v); });
+    return () => { vivo = false; };
+  }, []);
 
   const period = PERIODS.find(p => p.id === periodId);
   const preset = AI_PRESETS.find(p => p.id === presetId);
@@ -912,6 +938,38 @@ function AiExport({ entries, onBack }) {
     }
   }
 
+  async function chiedi() {
+    setChiedendo(true);
+    setErroreAi('');
+    setRisposta('');
+    try {
+      const esito = await rispondiAlDiario(markdown, domanda.trim());
+      setRisposta(esito.risposta || '');
+      setTroncata(Boolean(esito.troncata));
+      // L'estratto è lungo: senza questo la risposta arriva sotto il bordo dello
+      // schermo e sembra che il pulsante non abbia fatto niente.
+      requestAnimationFrame(() => {
+        rispostaRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
+    } catch (e) {
+      setErroreAi(e?.message || 'Non è arrivata nessuna risposta.');
+    }
+    setChiedendo(false);
+  }
+
+  // Una risposta che vale la pena rileggere deve poter finire da qualche parte: il
+  // Diario non ha un posto per la parola di qualcun altro, e inventarne uno adesso
+  // sarebbe una decisione grossa presa di sfuggita. Intanto si copia.
+  async function copiaRisposta() {
+    try {
+      await navigator.clipboard.writeText(risposta);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      setErroreAi('Gli appunti non sono disponibili qui: seleziona la risposta e copiala a mano.');
+    }
+  }
+
   function download() {
     const blob = new Blob([markdown], { type: 'text/markdown' });
     const url = URL.createObjectURL(blob);
@@ -925,8 +983,8 @@ function AiExport({ entries, onBack }) {
   return (
     <div className="diary-panel">
       <div className="diary-header">
-        <span className="diary-title">Copia per l'AI</span>
-        <button className="diary-close" onClick={onBack}>✕</button>
+        <span className="diary-title">{aiOn ? "Chiedi all'AI" : "Copia per l'AI"}</span>
+        <button className="diary-close" onClick={onBack} aria-label="Torna indietro" title="Indietro">✕</button>
       </div>
       <div className="diary-body">
         <div className="diary-field">
@@ -961,15 +1019,59 @@ function AiExport({ entries, onBack }) {
           {selected.length} {selected.length === 1 ? 'voce' : 'voci'} · {markdown.length.toLocaleString('it-IT')} caratteri
         </div>
 
+        {aiOn && (
+          <div className="diary-field">
+            <label className="diary-label" htmlFor="diary-ai-domanda">Qualcosa da aggiungere (facoltativo)</label>
+            <input
+              id="diary-ai-domanda"
+              className="diary-input"
+              type="text"
+              value={domanda}
+              onChange={e => setDomanda(e.target.value)}
+              placeholder="es. concentrati su questa settimana al lavoro"
+            />
+          </div>
+        )}
+
         <textarea ref={previewRef} className="diary-preview" value={markdown} readOnly spellCheck={false} />
 
         <div className="diary-writer-actions">
           <button className="diary-link-btn" onClick={onBack}>Indietro</button>
           <button className="diary-ghost-btn" onClick={download}>Scarica .md</button>
-          <button className="diary-primary-btn" onClick={copy}>{copied ? 'Copiato ✓' : 'Copia negli appunti'}</button>
+          <button className={aiOn ? 'diary-ghost-btn' : 'diary-primary-btn'} onClick={copy}>
+            {copied ? 'Copiato ✓' : 'Copia negli appunti'}
+          </button>
+          {aiOn && (
+            <button className="diary-primary-btn" onClick={chiedi} disabled={chiedendo || !selected.length}>
+              {chiedendo ? 'Sto leggendo…' : 'Chiedi qui'}
+            </button>
+          )}
         </div>
+
+        {erroreAi && <div className="diary-ai-error">{erroreAi}</div>}
+
+        {risposta && (
+          <div className="diary-ai-answer" ref={rispostaRef}>
+            <div className="diary-ai-answer-head">
+              <span className="eyebrow">Risposta · {preset.label.toLowerCase()}</span>
+              <button className="diary-link-btn" onClick={copiaRisposta}>copia</button>
+            </div>
+            {/* Testo così com'è: il markdown del modello è quasi sempre prosa con
+                qualche grassetto, e un renderer intero per due asterischi sarebbe
+                una dipendenza in più per niente. */}
+            <div className="diary-ai-answer-text">{risposta}</div>
+            {troncata && (
+              <div className="diary-ai-answer-note">
+                La risposta si è interrotta per lunghezza. Prova con un periodo più corto.
+              </div>
+            )}
+          </div>
+        )}
+
         <div className="diary-privacy">
-          Il diario resta sul tuo OneDrive: esce dal dispositivo solo quando sei tu a incollarlo.
+          {aiOn
+            ? 'Il diario resta sul tuo OneDrive. Esce dal dispositivo solo quando sei tu a incollarlo, o quando premi «Chiedi qui»: in quel caso il testo qui sopra viene inviato al modello di Anthropic, e nient\'altro lo legge.'
+            : 'Il diario resta sul tuo OneDrive: esce dal dispositivo solo quando sei tu a incollarlo.'}
         </div>
       </div>
     </div>

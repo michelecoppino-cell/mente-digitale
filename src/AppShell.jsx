@@ -8,29 +8,16 @@
 // destinazioni sono sei rotte vere.
 import { useEffect, useState } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
-import { usePomodoro } from './pomodoroContext';
+import { usePomodoro, usePomodoroElapsed } from './pomodoroContext';
 import { useMediaQuery } from './useMediaQuery';
+import { DESTINATIONS } from './destinations';
 import './AppShell.css';
 
-/**
- * Le destinazioni del menù, nell'ordine in cui compaiono nel rail.
- *
- * Finanze sta in fondo e vale per una voce sola: dentro ha sette schede
- * (saldo, spese, tasse, fatture…) che vivono in una barra propria, non qui —
- * portarle nel rail avrebbe raddoppiato il menù principale per una parte sola
- * dell'app. Vedi finanze/FinanzeSection.tsx.
- */
-const DESTINATIONS = [
-  { to: '/oggi',     label: 'Oggi',     icon: 'sun' },
-  { to: '/piano',    label: 'Piano',    icon: 'calendar' },
-  { to: '/attivita', label: 'Attività', icon: 'check' },
-  { to: '/sezioni',  label: 'Sezioni',  icon: 'book' },
-  { to: '/diario',   label: 'Diario',   icon: 'candle' },
-  { to: '/mappa',    label: 'Mappa',    icon: 'map' },
-  { to: '/finanze',  label: 'Finanze',  icon: 'euro' },
-];
-
 const RAIL_COLLAPSED_KEY = 'md_rail_collapsed_v1';
+
+function readCollapsed() {
+  try { return localStorage.getItem(RAIL_COLLAPSED_KEY) === '1'; } catch { return false; }
+}
 
 /**
  * Icone di linea, disegnate a mano: il riferimento di design chiede forme
@@ -104,7 +91,8 @@ function fmtElapsed(/** @type {number} */ ms) {
  * vivere dentro la topbar (vedi PomodoroInline).
  */
 function PomodoroBar() {
-  const { session, elapsedMs, pause, resume, stop } = usePomodoro();
+  const { session, pause, resume, stop } = usePomodoro();
+  const elapsedMs = usePomodoroElapsed();
   const navigate = useNavigate();
   if (!session) return null;
 
@@ -147,7 +135,8 @@ function PomodoroBar() {
  * workbook della sezione — ma senza rubare una seconda riga allo schermo.
  */
 function PomodoroInline() {
-  const { session, elapsedMs } = usePomodoro();
+  const { session } = usePomodoro();
+  const elapsedMs = usePomodoroElapsed();
   const navigate = useNavigate();
   if (!session) return null;
 
@@ -198,7 +187,11 @@ function PomodoroMenuActions({ onDone }) {
  * @param {() => void} [props.onOpenSettings]
  */
 export default function AppShell({ children, topbar, onCapture, onOpenSettings }) {
-  const [collapsed, setCollapsed] = useState(() => localStorage.getItem(RAIL_COLLAPSED_KEY) === '1');
+  // Lettura e scrittura protette come nel resto dell'app: in una finestra con
+  // lo storage negato (certe modalità private, certi criteri aziendali) un
+  // `localStorage.getItem` non protetto solleva un'eccezione durante il render,
+  // e quello che si vede è la pagina bianca.
+  const [collapsed, setCollapsed] = useState(readCollapsed);
   // Su schermo stretto il rail è un drawer sopra il contenuto, non una colonna
   // che gli ruba larghezza.
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -209,7 +202,9 @@ export default function AppShell({ children, topbar, onCapture, onOpenSettings }
   // stretto e la sessione gira.
   const fused = narrow && !!session;
 
-  useEffect(() => { localStorage.setItem(RAIL_COLLAPSED_KEY, collapsed ? '1' : '0'); }, [collapsed]);
+  useEffect(() => {
+    try { localStorage.setItem(RAIL_COLLAPSED_KEY, collapsed ? '1' : '0'); } catch { /* storage negato */ }
+  }, [collapsed]);
 
   // Il menù «altro» esiste solo dentro la topbar fusa: quando la sessione
   // finisce o lo schermo si allarga sparisce da sé, senza un effetto che
@@ -232,10 +227,21 @@ export default function AppShell({ children, topbar, onCapture, onOpenSettings }
 
   return (
     <div className={`shell${collapsed ? ' rail-collapsed' : ''}${drawerOpen ? ' drawer-open' : ''}`}>
+      {/* Con la tastiera, prima, si attraversavano il panino, la cattura, sette
+          voci di menù e le impostazioni prima di arrivare al contenuto — a ogni
+          cambio di vista. È invisibile finché non riceve il fuoco.
+          Un <button> e non un <a href="#contenuto">: le rotte dell'app *sono*
+          l'hash, e un collegamento a un'ancora lo sovrascriverebbe portando
+          fuori dalla vista corrente. */}
+      <button
+        className="shell-skip"
+        onClick={() => document.getElementById('contenuto')?.focus()}>
+        Salta al contenuto
+      </button>
       <div className="shell-scrim" onClick={() => setDrawerOpen(false)} />
 
       <nav className="rail" aria-label="Navigazione principale">
-        <button className="rail-menu tap-44" onClick={toggleMenu} title={menuBtnTitle}>
+        <button className="rail-menu tap-44" onClick={toggleMenu} title={menuBtnTitle} aria-label={menuBtnTitle}>
           <Icon name="menu" />
           <span className="rail-label">Menù</span>
         </button>
@@ -277,7 +283,7 @@ export default function AppShell({ children, topbar, onCapture, onOpenSettings }
       <div className="shell-main">
         {!fused && <PomodoroBar />}
         <header className={`shell-topbar${fused ? ' fused' : ''}`}>
-          <button className="shell-drawer-btn tap-44" onClick={toggleMenu} title={menuBtnTitle}>
+          <button className="shell-drawer-btn tap-44" onClick={toggleMenu} title={menuBtnTitle} aria-label={menuBtnTitle}>
             <Icon name="menu" />
           </button>
 
@@ -287,6 +293,8 @@ export default function AppShell({ children, topbar, onCapture, onOpenSettings }
               <button
                 className={`shell-more-btn tap-44${menuVisible ? ' active' : ''}`}
                 onClick={() => setMenuOpen(o => !o)}
+                aria-expanded={menuVisible}
+                aria-label="Altre azioni"
                 title="Altre azioni">
                 <Icon name="more" />
               </button>
@@ -308,7 +316,10 @@ export default function AppShell({ children, topbar, onCapture, onOpenSettings }
             <div className="shell-topbar-actions">{topbar}</div>
           )}
         </header>
-        <div className="shell-content">{children}</div>
+        {/* Un <main> vero e un bersaglio per «Salta al contenuto»: prima era un
+            div, e la pagina non aveva un punto d'arrivo dichiarato. tabIndex -1
+            perché il fuoco possa atterrarci davvero seguendo il collegamento. */}
+        <main className="shell-content" id="contenuto" tabIndex={-1}>{children}</main>
       </div>
     </div>
   );

@@ -447,3 +447,98 @@ input[type="date"].gtd-select::-webkit-calendar-picker-indicator {
   .gtd-flow-node { font-size: 12px; padding: 7px 12px; }
   .gtd-flow-node.small { font-size: 11px; padding: 5px 9px; }
 }
+
+/* ── Proposta dell'AI ────────────────────────────────────────────────────────
+   Fra Inbox e «Che cos'è?»: è dove uno si sarebbe fermato a pensare. L'accento
+   è una linea e un velo, non un riempimento — il blocco è un suggerimento, non
+   il protagonista del diagramma. */
+.gtd-ai {
+  width: min(420px, 100%);
+  margin: 0 auto var(--sp-4);
+  padding: var(--sp-4);
+  border: 1px solid var(--line);
+  border-left: 2px solid var(--accent-line);
+  border-radius: var(--r);
+  background: var(--surface);
+  text-align: left;
+}
+.gtd-ai.has-proposta { background: var(--accent-tint); }
+
+.gtd-ai-ask {
+  width: 100%;
+  background: none;
+  border: 1px solid var(--accent-line);
+  color: var(--accent);
+  padding: 8px 10px;
+  border-radius: var(--r-sm);
+  font-size: var(--fs-chip);
+  font-family: var(--font-ui);
+  cursor: pointer;
+  transition: background var(--t);
+}
+@media (hover: hover) {
+  .gtd-ai-ask:hover:not(:disabled) { background: var(--accent-tint); }
+}
+.gtd-ai-ask:disabled { opacity: 0.5; cursor: default; }
+
+.gtd-ai-note {
+  margin-top: var(--sp-2);
+  font-size: var(--fs-micro);
+  line-height: 1.45;
+  color: var(--muted);
+}
+.gtd-ai-error {
+  margin-top: var(--sp-2);
+  font-size: var(--fs-micro);
+  line-height: 1.45;
+  color: var(--danger);
+}
+
+.gtd-ai-head {
+  font-size: var(--fs-micro);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin-bottom: var(--sp-2);
+}
+.gtd-ai-titolo {
+  font-size: var(--fs-card);
+  color: var(--text);
+  line-height: 1.35;
+}
+.gtd-ai-dove {
+  margin-top: var(--sp-1);
+  font-size: var(--fs-meta);
+  color: var(--text-3);
+}
+.gtd-ai-perche {
+  margin-top: var(--sp-3);
+  font-size: var(--fs-meta);
+  line-height: 1.5;
+  color: var(--muted);
+}
+.gtd-ai-actions {
+  display: flex;
+  gap: var(--sp-3);
+  margin-top: var(--sp-4);
+}
+.gtd-ai-ghost, .gtd-ai-use {
+  flex: 1;
+  padding: 7px 0;
+  border-radius: var(--r-sm);
+  font-size: var(--fs-chip);
+  font-family: var(--font-ui);
+  cursor: pointer;
+  background: none;
+  transition: background var(--t);
+}
+.gtd-ai-ghost { border: 1px solid var(--line); color: var(--text-3); }
+.gtd-ai-use { border: 1px solid var(--accent); color: var(--accent); }
+@media (hover: hover) {
+  .gtd-ai-ghost:hover { color: var(--text-2); }
+  .gtd-ai-use:hover { background: rgba(212, 164, 74, 0.14); }
+}
+
+@media (max-width: 640px) {
+  .gtd-ai { width: 100%; }
+}

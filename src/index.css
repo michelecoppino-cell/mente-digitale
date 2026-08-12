@@ -1,4 +1,7 @@
-@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;500&family=Inter:wght@400;500;600&display=swap');
+/* I caratteri (Playfair Display, Inter) sono caricati da index.html con un
+   <link> e non da un @import qui: dentro il CSS dell'app sarebbero una
+   richiesta in fila dopo il download dell'intero foglio, invece che in
+   parallelo con esso. Vedi index.html. */
 @import './tokens.css';
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -22,6 +25,45 @@ h1, h2, h3, .title { font-family: var(--font-title); font-weight: 400; }
 :focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
+}
+
+/* Testo per i soli lettori di schermo: resta nel flusso del documento (quindi
+   viene letto) ma non occupa spazio visibile. Serve dove l'informazione è
+   affidata al colore o a un'icona — il pallino della sincronizzazione, per
+   dire, che da telefono è l'unica cosa che resta a schermo. */
+.sr-only {
+  position: absolute;
+  width: 1px; height: 1px;
+  padding: 0; margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Attesa fra un pezzo di vista e l'altro (le rotte sono caricate a richiesta,
+   vedi App.jsx): occupa l'area del contenuto senza far saltare la shell. */
+.view-loading {
+  display: grid;
+  place-items: center;
+  height: 100%;
+  min-height: 180px;
+  color: var(--muted);
+  font-size: var(--fs-meta);
+}
+
+/* Chi ha chiesto al sistema operativo meno animazioni lo ha chiesto per un
+   motivo — di solito le vertigini o la nausea da movimento. L'app è piena di
+   transizioni (pannelli che scorrono, colonne che si aprono, lo shimmer degli
+   scheletri di caricamento): qui si spengono tutte in un colpo, senza dover
+   ricordarsi di gestire la preferenza in ognuno dei quindici CSS. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
 
 ::-webkit-scrollbar { width: 4px; }

@@ -13,18 +13,21 @@
 // destra; le colonne che non servono — «Un giorno» sempre, «Inbox» quando è
 // vuota — si riducono a una striscia, e lo spazio che liberano va al dettaglio
 // dell'attività, che sta sempre lì a destra invece di aprirsi sopra la board.
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
   taskStatus, inboxListId, indexScheduled, taskContext, taskEstimateMin,
-  parseWaitingFor, waitingDays, CONTEXTS, isSlipped,
+  parseWaitingFor, waitingDays, CONTEXTS, isSlipped, stalledProjects,
+  WAITING_NUDGE_DAYS,
 } from './taskModel';
 import {
   DEFAULT_CONFIG, findProject, buildListColorMap, formatDueDate, dueDateSortValue, isTaskOverdue,
 } from './plannerShared';
-import { paraSectionLabel } from './paraConfig';
+import { paraSectionLabel, sectionRole } from './paraConfig';
 import { completeTask, updateTaskStatus } from './api';
 import { pushUndo } from './undo';
+import { notifyError } from './notify';
+import { subscribePending, pendingOps } from './writeQueue';
 import { useMediaQuery } from './useMediaQuery';
 import Skeleton from './Skeleton';
 import TaskDetailPanel from './TaskDetailPanel';
@@ -128,6 +131,9 @@ function CheckMark() {
 function TaskRow({ task, status, color, placement, dragging, selected, onClick, onComplete, onDragStart, onDragEnd }) {
   const waiting = status === 'waiting' ? parseWaitingFor(task) : null;
   const days = waiting ? waitingDays(waiting.since) : null;
+  // Oltre la soglia l'attesa non è più un'informazione, è una cosa da fare: la
+  // pastiglia cambia colore invece di limitarsi a incrementare il contatore.
+  const stale = days !== null && days >= WAITING_NUDGE_DAYS;
   const due = formatDueDate(task.dueDateTime);
   const slipped = placement ? isSlipped(placement, todayStr()) : false;
 
@@ -160,7 +166,11 @@ function TaskRow({ task, status, color, placement, dragging, selected, onClick, 
 
       <span className="ab-row-meta">
         {waiting && (
-          <span className="ab-waiting" title={`In attesa da ${waiting.who}`}>
+          <span
+            className={`ab-waiting${stale ? ' stale' : ''}`}
+            title={stale
+              ? `In attesa da ${waiting.who} da ${days} giorni — da sollecitare`
+              : `In attesa da ${waiting.who}`}>
             {waiting.who}{days !== null ? ` · ${days === 0 ? 'oggi' : `${days}g`}` : ''}
           </span>
         )}
@@ -210,6 +220,11 @@ export default function ActivityBoard({
   const ctxFilter = params.get('ctx') || '';
   const listFilter = params.get('lista') || '';
   const [query, setQuery] = useState('');
+  // Il filtro applicato è quello "in ritardo": la scrittura nel campo resta
+  // fluida anche quando il ricalcolo delle cinque colonne (smistamento,
+  // raggruppamento per sezione, ordinamenti) è lungo, perché React può
+  // interromperlo e ridisegnare prima il carattere appena battuto.
+  const deferredQuery = useDeferredValue(query);
   const [dragTask, setDragTask] = useState(/** @type {import('./types').TodoTask|null} */ (null));
   const [dragOver, setDragOver] = useState(/** @type {string|null} */ (null));
   // L'attività aperta nel dettaglio. È stato di vista, non del pool: chiuderla
@@ -225,6 +240,14 @@ export default function ActivityBoard({
   const columnsRef = useRef(/** @type {HTMLDivElement|null} */ (null));
   const [visibleCol, setVisibleCol] = useState(0);
   const wide = useMediaQuery(WIDE);
+  // Le catture fatte senza rete: non sono ancora attività su To-Do, ma stanno in
+  // coda e vanno mostrate — «l'ho scritta e non c'è» è la sensazione che fa
+  // smettere di catturare. Compaiono in Inbox come righe spente, non
+  // trascinabili, perché non c'è ancora niente da spostare.
+  const [queued, setQueued] = useState(/** @type {any[]} */ ([]));
+  useEffect(() => subscribePending(() => {
+    pendingOps().then(ops => setQueued(ops.filter(o => o.kind === 'crea-attività')));
+  }), []);
 
   // Più chiavi in un colpo solo: due `setParam` di fila partirebbero entrambe
   // dagli stessi `params`, e la seconda cancellerebbe la prima.
@@ -243,6 +266,11 @@ export default function ActivityBoard({
 
   const scheduled = useMemo(() => indexScheduled(plans), [plans]);
   const inboxId = useMemo(() => inboxListId(todoLists), [todoLists]);
+  // L'insieme degli id programmati, costruito una volta per piano. Prima
+  // `new Set(scheduled.keys())` stava dentro il ciclo che smista le attività
+  // per colonna: con trecento attività e cento blocchi voleva dire trecento
+  // Set nuovi a ogni battuta nel campo di ricerca.
+  const scheduledIds = useMemo(() => new Set(scheduled.keys()), [scheduled]);
 
   // Il colore di ogni sezione, lo stesso che il Piano dà ai blocchi: qui tinge
   // il bordo della riga e il pallino del gruppo.
@@ -258,9 +286,9 @@ export default function ActivityBoard({
   // conosce i blocchi nel piano e la lista Inbox — e il pannello no.
   const detailStatus = useMemo(
     () => (detailTask
-      ? taskStatus(detailTask, { scheduledIds: new Set(scheduled.keys()), inboxListId: inboxId })
+      ? taskStatus(detailTask, { scheduledIds, inboxListId: inboxId })
       : undefined),
-    [detailTask, scheduled, inboxId],
+    [detailTask, scheduledIds, inboxId],
   );
 
   // Le liste di To-Do in cui ci sono davvero attività, col loro conteggio: è
@@ -274,21 +302,34 @@ export default function ActivityBoard({
   // se almeno un'attività porta una categoria.
   const hasContexts = useMemo(() => tasks.some(t => taskContext(t)), [tasks]);
 
+  // I progetti fermi: hanno attività, ma nessuna che si possa fare adesso. Il
+  // conto si fa sull'insieme completo e non su quello filtrato — un progetto non
+  // diventa fermo perché hai scritto due lettere nel campo di ricerca.
+  const stalled = useMemo(
+    () => stalledProjects(tasks, sectionRole, { scheduledIds, inboxListId: inboxId }),
+    [tasks, scheduledIds, inboxId],
+  );
+  const stalledIds = useMemo(() => new Set(stalled.map(p => p.listId)), [stalled]);
+  // Il filtro «fermi» sta nell'URL come gli altri: la vista è condivisibile e
+  // sopravvive a un ricaricamento.
+  const onlyStalled = params.get('fermi') === '1';
+
   const visible = useMemo(() => {
-    const q = query.trim().toLowerCase();
+    const q = deferredQuery.trim().toLowerCase();
     return tasks.filter(t => {
       if (q && !(t.title || '').toLowerCase().includes(q)) return false;
       if (listFilter && t._listId !== listFilter) return false;
       if (ctxFilter && taskContext(t) !== ctxFilter) return false;
+      if (onlyStalled && !stalledIds.has(t._listId || '')) return false;
       return true;
     });
-  }, [tasks, query, ctxFilter, listFilter]);
+  }, [tasks, deferredQuery, ctxFilter, listFilter, onlyStalled, stalledIds]);
 
   const byStatus = useMemo(() => {
     /** @type {Record<string, import('./types').TodoTask[]>} */
     const out = { inbox: [], next: [], waiting: [], scheduled: [], someday: [] };
     for (const t of visible) {
-      const s = taskStatus(t, { scheduledIds: new Set(scheduled.keys()), inboxListId: inboxId });
+      const s = taskStatus(t, { scheduledIds, inboxListId: inboxId });
       if (out[s]) out[s].push(t);
     }
     // Le programmate in ordine di quando toccano; le altre per scadenza, che è
@@ -301,7 +342,7 @@ export default function ActivityBoard({
       out[k].sort((a, b) => dueDateSortValue(a.dueDateTime) - dueDateSortValue(b.dueDateTime));
     }
     return out;
-  }, [visible, scheduled, inboxId]);
+  }, [visible, scheduled, scheduledIds, inboxId]);
 
   // Dentro la colonna, i task per sezione: lo stesso raggruppamento del Piano,
   // con lo stesso colore. L'ordine dei gruppi è alfabetico — l'ordine interno
@@ -332,34 +373,81 @@ export default function ActivityBoard({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [byStatus, config, listColorMap]);
 
+  /** Quante cose mostra una colonna. Per Inbox comprende le catture in coda:
+   *  due righe a schermo e uno zero nell'intestazione è una contraddizione.
+   *  @param {string} status */
+  function countFor(status) {
+    return byStatus[status].length + (status === 'inbox' ? queued.length : 0);
+  }
+
   /** Una colonna è ridotta a striscia se il suo default lo dice e l'utente non
    *  l'ha aperta a mano. @param {{status: string, collapse?: string}} col */
   function isCollapsed(col) {
     if (!col.collapse) return false;
     if (col.status in expandedCols) return !expandedCols[col.status];
     if (col.collapse === 'always') return true;
+    // Inbox non si chiude se ha qualcosa in coda: sarebbe l'unica traccia di una
+    // cattura appena fatta, nascosta dietro una striscia.
+    if (col.status === 'inbox' && queued.length) return false;
     return byStatus[col.status].length === 0;
   }
 
   // La pastiglia attiva segue lo scorrimento: si ricava dalla posizione, non
   // da uno stato a parte, così resta giusta anche scorrendo col dito.
+  //
+  // Si misurano le colonne vere e non `scrollWidth / 5`: le colonne non hanno
+  // tutte la stessa larghezza — una ridotta a striscia ne occupa una frazione —
+  // quindi la divisione indicava la pastiglia sbagliata ogni volta che «Inbox»
+  // o «Un giorno» erano chiuse, cioè quasi sempre.
   useEffect(() => {
     const el = columnsRef.current;
     if (!el) return undefined;
     const onScroll = () => {
-      const width = el.scrollWidth / COLUMNS.length;
-      if (!width) return;
-      setVisibleCol(Math.min(COLUMNS.length - 1, Math.round(el.scrollLeft / width)));
+      // Rettangoli rispetto al viewport e non `offsetLeft`: il contenitore delle
+      // colonne non è posizionato, quindi l'offset dei figli è calcolato su un
+      // antenato più in alto e la colonna "più visibile" risultava sempre
+      // l'ultima. Con getBoundingClientRect il confronto è fra le stesse
+      // coordinate, sempre.
+      const box = el.getBoundingClientRect();
+      let best = 0;
+      let bestOverlap = -Infinity;
+      Array.from(el.children).forEach((child, i) => {
+        const r = /** @type {HTMLElement} */ (child).getBoundingClientRect();
+        const overlap = Math.min(box.right, r.right) - Math.max(box.left, r.left);
+        if (overlap > bestOverlap) { bestOverlap = overlap; best = i; }
+      });
+      setVisibleCol(best);
     };
     onScroll();
     el.addEventListener('scroll', onScroll, { passive: true });
-    return () => el.removeEventListener('scroll', onScroll);
-  }, [view]);
+    window.addEventListener('resize', onScroll);
+    return () => {
+      el.removeEventListener('scroll', onScroll);
+      window.removeEventListener('resize', onScroll);
+    };
+  }, [view, expandedCols]);
 
   function scrollToColumn(/** @type {number} */ index) {
     const el = columnsRef.current;
-    if (!el) return;
-    el.scrollTo({ left: (el.scrollWidth / COLUMNS.length) * index, behavior: 'smooth' });
+    const target = /** @type {HTMLElement|undefined} */ (el?.children[index]);
+    if (!el || !target) return;
+    const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    const left = el.scrollLeft + (target.getBoundingClientRect().left - el.getBoundingClientRect().left);
+    el.scrollTo({ left, behavior: reduce ? 'auto' : 'smooth' });
+  }
+
+  /** La pastiglia di una colonna ridotta la riapre prima di portarci: portare a
+   *  una striscia chiusa era un comando che sembrava non fare niente. */
+  function handlePillClick(/** @type {{status: string, collapse?: string}} */ col, /** @type {number} */ index) {
+    if (isCollapsed(col)) {
+      setExpandedCols(s => ({ ...s, [col.status]: true }));
+      // Le colonne cambiano larghezza con una transizione (flex-basis, var(--t)
+      // = 140ms): scorrere prima che sia finita punterebbe alla posizione che la
+      // colonna aveva da chiusa.
+      setTimeout(() => scrollToColumn(index), 180);
+      return;
+    }
+    scrollToColumn(index);
   }
 
   function handleDrop(/** @type {string} */ target) {
@@ -368,7 +456,7 @@ export default function ActivityBoard({
     setDragTask(null);
     if (!task) return;
 
-    const from = taskStatus(task, { scheduledIds: new Set(scheduled.keys()), inboxListId: inboxId });
+    const from = taskStatus(task, { scheduledIds, inboxListId: inboxId });
     if (from === target) return;
 
     // Uscire da Inbox non è uno spostamento ma il passo di chiarimento: un
@@ -408,8 +496,10 @@ export default function ActivityBoard({
         },
       });
     } catch (e) {
-      console.error('completamento attività', e);
+      // La riga torna al suo posto: senza un avviso sembrerebbe che la spunta
+      // non sia stata registrata dal tocco, e si riprova all'infinito.
       onTaskRestored?.(listId, snapshot);
+      notifyError(`Non ho potuto spuntare "${task.title}". Controlla la connessione e riprova.`, e);
     }
   }
 
@@ -419,13 +509,14 @@ export default function ActivityBoard({
         className="ab-search"
         type="search"
         placeholder="Filtra le attività…"
+        aria-label="Filtra le attività per titolo"
         value={query}
         onChange={e => setQuery(e.target.value)}
       />
       <div className="ab-chips">
         <button
-          className={`ab-filter${!listFilter && !ctxFilter ? ' active' : ''}`}
-          onClick={() => setParam({ lista: '', ctx: '' })}>
+          className={`ab-filter${!listFilter && !ctxFilter && !onlyStalled ? ' active' : ''}`}
+          onClick={() => setParam({ lista: '', ctx: '', fermi: '' })}>
           Tutte
         </button>
         {lists.map(l => (
@@ -449,6 +540,25 @@ export default function ActivityBoard({
           </button>
         ))}
       </div>
+      {/* Un progetto con dieci attività tutte «in attesa» sembra in corso: ha un
+          colore, un conteggio, occupa spazio. Questa riga è l'unico posto in cui
+          l'app dice che invece è fermo — e portarci dentro è il gesto naturale
+          subito dopo averlo letto. */}
+      {stalled.length > 0 && (
+        <button
+          className={`ab-stalled${onlyStalled ? ' active' : ''}`}
+          aria-pressed={onlyStalled}
+          title={stalled.map(p => paraSectionLabel(p.listName)).join(' · ')}
+          onClick={() => setParam({ fermi: onlyStalled ? '' : '1', lista: '', ctx: '' })}>
+          <span className="ab-stalled-dot" aria-hidden="true" />
+          <span className="ab-stalled-text">
+            {stalled.length === 1
+              ? '1 progetto senza prossima azione'
+              : `${stalled.length} progetti senza prossima azione`}
+          </span>
+          <span className="ab-stalled-cta">{onlyStalled ? 'mostra tutto' : 'guarda quali'}</span>
+        </button>
+      )}
       <div className="ab-views">
         {VIEWS.map(v => (
           <button
@@ -570,7 +680,8 @@ export default function ActivityBoard({
           <button
             key={col.status}
             className={`ab-pill${visibleCol === i ? ' active' : ''}`}
-            onClick={() => scrollToColumn(i)}>
+            aria-current={visibleCol === i ? 'true' : undefined}
+            onClick={() => handlePillClick(col, i)}>
             {col.label}
             <span className="ab-pill-count">{byStatus[col.status].length}</span>
           </button>
@@ -580,7 +691,7 @@ export default function ActivityBoard({
         <div className="ab-columns" ref={columnsRef}>
           {COLUMNS.map(col => {
             const collapsed = isCollapsed(col);
-            const count = byStatus[col.status].length;
+            const count = countFor(col.status);
             return (
               <div
                 key={col.status}
@@ -617,7 +728,15 @@ export default function ActivityBoard({
                       )}
                     </div>
                     <div className="ab-col-body">
-                      {count === 0 && <div className="ab-empty">{col.empty}</div>}
+                      {col.status === 'inbox' && queued.map(op => (
+                        <div className="ab-row ab-row-queued" key={`coda-${op.id}`} title="In coda: la salvo appena torna la rete">
+                          <span className="ab-row-title">{op.args?.title}</span>
+                          <span className="ab-row-meta">
+                            <span className="ab-queued-chip">in attesa di rete</span>
+                          </span>
+                        </div>
+                      ))}
+                      {count === 0 && queued.length === 0 && <div className="ab-empty">{col.empty}</div>}
                       {groupedByStatus[col.status].map(group => (
                         <div className="ab-group" key={group.key}>
                           <div className="ab-group-head" style={{ color: group.color }}>

@@ -144,6 +144,7 @@ export default function SectionsView({
         className="sv-search"
         type="search"
         placeholder="Cerca una sezione…"
+        aria-label="Cerca una sezione per nome"
         value={query}
         onChange={e => setQuery(e.target.value)}
       />

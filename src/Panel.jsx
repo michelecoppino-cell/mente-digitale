@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { getPages, getTodoTasks, createTask, completeTask } from './api';
 import { filterEventsBySectionPrefix, parseReminderSubject } from './deadlineReminders';
 import Skeleton from './Skeleton';
@@ -19,19 +19,17 @@ export default function Panel({ selected, pagesCache, tasksCache, calendarEvents
   const [newTask, setNewTask] = useState('');
   const [adding, setAdding] = useState(false);
 
-  useEffect(() => {
-    setPages([]);
-    setTasks([]);
-    setNoDeadlineTasks([]);
-    setNewTask('');
-    if (!selected) return;
-    setTimeout(() => {
-      loadPages(selected.data.id);
-      if (selected.listId) loadTasks(selected.listId);
-    }, 0);
-  }, [selected]);
+  const splitTasks = useCallback(all => {
+    const withDue = all.filter(t => t.dueDateTime?.dateTime);
+    const noDue = [
+      ...all.filter(t => !t.dueDateTime?.dateTime && t.importance === 'high'),
+      ...all.filter(t => !t.dueDateTime?.dateTime && t.importance !== 'high'),
+    ];
+    setTasks(withDue);
+    setNoDeadlineTasks(noDue);
+  }, []);
 
-  async function loadPages(sectionId) {
+  const loadPages = useCallback(async sectionId => {
     // Usa sempre la cache se disponibile — ricarica solo con il pulsante refresh
     if (pagesCache?.current?.[sectionId]) {
       setPages(pagesCache.current[sectionId]);
@@ -44,9 +42,9 @@ export default function Panel({ selected, pagesCache, tasksCache, calendarEvents
       setPages(p);
     } catch(e) { console.error(e); }
     setLoadingPages(false);
-  }
+  }, [pagesCache]);
 
-  async function loadTasks(listId) {
+  const loadTasks = useCallback(async listId => {
     if (tasksCache?.current?.[listId]) {
       splitTasks(tasksCache.current[listId]);
       return;
@@ -58,17 +56,21 @@ export default function Panel({ selected, pagesCache, tasksCache, calendarEvents
       splitTasks(all);
     } catch(e) { console.error(e); }
     setLoadingTasks(false);
-  }
+  }, [tasksCache, splitTasks]);
 
-  function splitTasks(all) {
-    const withDue = all.filter(t => t.dueDateTime?.dateTime);
-    const noDue = [
-      ...all.filter(t => !t.dueDateTime?.dateTime && t.importance === 'high'),
-      ...all.filter(t => !t.dueDateTime?.dateTime && t.importance !== 'high'),
-    ];
-    setTasks(withDue);
-    setNoDeadlineTasks(noDue);
-  }
+  // Il `setTimeout(…, 0)` che c'era qui non serviva a niente se non a rimandare
+  // il caricamento di un giro di event loop: le due funzioni sono già
+  // asincrone, e adesso sono dichiarate sopra invece di essere raggiunte per
+  // hoisting da dentro l'effetto.
+  useEffect(() => {
+    setPages([]);
+    setTasks([]);
+    setNoDeadlineTasks([]);
+    setNewTask('');
+    if (!selected) return;
+    loadPages(selected.data.id);
+    if (selected.listId) loadTasks(selected.listId);
+  }, [selected, loadPages, loadTasks]);
 
   async function handleAddTask() {
     if (!newTask.trim() || !selected?.listId) return;

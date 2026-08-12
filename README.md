@@ -2,7 +2,8 @@
 
 Dashboard personale (PWA) che unifica l'ecosistema Microsoft 365 in un'unica "mente digitale":
 una mappa mentale interattiva dei taccuini OneNote, un pianificatore giornaliero collegato a
-Microsoft To-Do e al calendario Outlook, e un briefing di notizie generato con l'AI.
+Microsoft To-Do e al calendario Outlook, il flusso GTD delle attività, un diario e la
+contabilità personale.
 
 ## Funzionalità
 
@@ -13,8 +14,7 @@ Microsoft To-Do e al calendario Outlook, e un briefing di notizie generato con l
   per la sezione selezionata.
 - **Pianificatore giornaliero** — drag & drop dei task su una timeline a slot di 30 minuti,
   vista giorno/settimana, eventi del calendario in sola lettura, sottostep ridimensionabili,
-  piani salvati su OneDrive. Piano AI generato via Claude (`/api/daily-plan`) ed estrazione
-  di action item dalle email.
+  piani salvati su OneDrive.
 - **Oggi** — la home. Cosa c'è adesso (o subito dopo), l'agenda del calendario in sola lettura, le
   azioni programmate per il giorno, e a lato ricorrenze, diario e due riquadri ancora bloccati.
   Non ha una lista propria: è tutto una query sul giorno corrente.
@@ -23,7 +23,10 @@ Microsoft To-Do e al calendario Outlook, e un briefing di notizie generato con l
 - **Attività** — le cinque colonne del flusso GTD (Inbox · Prossime azioni · In attesa · Programmate · Un giorno):
   la colonna *è* lo stato, e trascinare una card fra colonne lo cambia su Microsoft To-Do. Un clic su una
   card apre il pannello di dettaglio — note, sottoattività, stima, scadenza, stato.
-- **Briefing notizie** — riassunti AI dei feed ANSA (mondo, Italia, Friuli) via `/api/briefing`.
+  Il diagramma di *Chiarire* (dalla cattura o da una card di Inbox) può chiedere un
+  parere: «Dove la metterei io» propone ramo, destinazione, titolo azionabile e stima,
+  e apre la foglia già compilata — la conferma resta tua. Compare solo con la chiave
+  configurata (vedi *Variabili d'ambiente*).
 - **Diario** (voce *Diario* nel menù, `⌘J`) — tre modalità distinte: *svuota testa* a schermo
   intero (timer 5/10 min, domanda selezionabile dall'elenco o rimovibile, righe che sbiadiscono
   mentre scrivi, pannello "come funziona" con il metodo e le fonti), *rituale della sera* (tre
@@ -34,8 +37,10 @@ Microsoft To-Do e al calendario Outlook, e un briefing di notizie generato con l
   dispositivo e salvata come file in `mente-digitale/diario-foto/` su OneDrive — nel JSON del mese
   finisce solo il nome. Timeline con ricerca e tag. Il bottone
   **Copia per l'AI** compone il markdown di un periodo (con la Bussola come contesto) da
-  incollare in una chat AI per chiedere supporto. Voci salvate su OneDrive in file mensili;
-  il diario non passa da alcuna funzione server. Diario e cattura sono sempre
+  incollare in una chat AI per chiedere supporto — e, se il deploy ha una chiave configurata,
+  la stessa richiesta si può fare da lì con **Chiedi qui**, leggendo la risposta nell'app.
+  Voci salvate su OneDrive in file mensili: il diario esce dal dispositivo solo quando sei tu
+  a incollarlo o a premere quel pulsante. Diario e cattura sono sempre
   raggiungibili dal menù, da qualunque vista.
 
 - **Finanze** — contabilità personale, saldo reale e proiezione futura, assorbita dall'app
@@ -186,19 +191,103 @@ Colori, tipografia, spazi, raggi e target di tocco stanno una volta sola in
 `src/tokens.css`. I CSS per componente li leggono da lì: cambiare l'accento è
 una riga, non una ricerca-e-sostituzione in dieci file.
 
+Un tema solo, scuro, sempre — anche in **Finanze**, che arrivando da un'app a sé
+seguiva la modalità del sistema operativo: con il Mac in chiaro si passava da
+«Oggi» nero a «Finanze» bianca toccando una voce di menù. Ora la sua palette
+(`src/finanze/finanze.css`) porta gli stessi valori dei token, accento ocra e
+carattere Inter compresi.
+
+I caratteri (Playfair Display, Inter) sono caricati con un `<link>` in
+`index.html`, non con un `@import` dentro il CSS: dentro il foglio dell'app
+sarebbero una richiesta in fila dopo il suo download, invece che in parallelo.
+
+## Prestazioni
+
+**Una vista, un pezzo.** Ogni destinazione è un chunk a sé, caricato alla prima
+visita (`lazy` in `App.jsx`): l'app si apre su «Oggi», che è una lettura di dati
+già in memoria, e non ha motivo di far scaricare prima la mappa mentale con d3,
+la griglia del Piano, il Diario e la board delle Attività. Il primo caricamento
+è passato da 272 kB di JS + 128 kB di CSS a 107 kB + 49 kB; d3 (115 kB) e
+recharts (358 kB) non stanno più sul percorso critico. Piano e Attività vengono
+poi precaricate in sottofondo, così il primo click resta immediato.
+
+**Il sottofondo aspetta il suo turno.** Le letture d'avvio (taccuini, liste,
+colori) partono insieme invece che una dopo l'altra. Tutto ciò che non serve al
+primo schermo — pagine OneNote, eventi del calendario, Daily Review, scadenze —
+è appeso a `requestIdleCallback` (`src/idle.js`) e non a `setTimeout` con numeri
+scelti a mano: parte quando il browser è fermo, non mentre sta ancora
+disegnando. Anche la serializzazione della cache su localStorage passa da lì.
+
+**Il tempo del Pomodoro sta in un contesto suo** (`PomodoroTickContext`): prima
+era nello stesso oggetto della sessione, quindi ogni componente che leggeva il
+contesto — App compreso, che di suo usa solo `start` e `stop` — si ridisegnava
+una volta al secondo, griglia del Piano inclusa.
+
+## Accessibilità
+
+- **`useDialog`** (`src/useDialog.js`) dà a ogni modale le tre cose che le
+  servono: Escape che chiude da qualunque punto, Tab che resta dentro, e il
+  fuoco che torna al comando che l'ha aperta.
+- **«Salta al contenuto»**, primo elemento nella sequenza di tabulazione:
+  prima si attraversavano panino, cattura, sette voci di menù e impostazioni
+  prima di arrivare al contenuto, a ogni cambio di vista.
+- I bottoni di sola icona hanno un `aria-label` — un `title` su una `✕` non
+  basta, il lettore di schermo legge il glifo.
+- `prefers-reduced-motion` spegne transizioni e animazioni in un blocco solo
+  (`index.css`), scorrimenti compresi.
+
+## Quando qualcosa non riesce
+
+Le scritture verso Graph fallivano in silenzio: `catch (e) { console.error(...) }`
+e la card che tornava al suo posto senza dire niente — in un'app che si usa in
+mobilità, credere di aver spostato un'attività senza averlo fatto. Ora c'è un
+canale di avvisi (`src/notify.js`, banner in `Toaster.jsx`, accanto a quello
+dell'undo): un errore resta a schermo finché non lo si chiude, e dice cosa non è
+riuscito. Sul lato rete, ogni chiamata — anche il PUT di un file su OneDrive o
+il caricamento di una foto, che prima usavano `fetch` a mano — passa da
+`callRaw` in `api.js`, quindi dagli stessi tentativi e dallo stesso giro extra
+con un token fresco sul 401.
+
 ## Architettura
 
 | Componente | Tecnologia |
 |---|---|
-| Frontend | React 19 + Vite, react-router (hash), D3 per la mappa |
+| Frontend | React 19 + Vite, react-router (hash), D3 per la mappa. Una vista per chunk, caricata a richiesta |
 | Autenticazione | MSAL Browser (account Microsoft personale, scope Graph in sola lettura + To-Do/Files in scrittura) |
 | Dati | Microsoft Graph (OneNote, To-Do, Calendar, OneDrive, Mail) con cache localStorage a TTL. I file JSON dell'app stanno nella cartella `mente-digitale/` di OneDrive (quelli rimasti in root vengono spostati automaticamente al primo avvio) |
-| Backend | Cloudflare Pages Functions (`functions/api/*`) |
-| AI | Claude Haiku (`daily-plan`), Mistral (`briefing`) |
-| Automazioni | GitHub Actions (`generate-news`, `sync-calendar`) |
+| Backend | hosting statico su Cloudflare Pages, più **una** funzione: `/api/claude` |
+| Automazioni | GitHub Actions (`sync-calendar`) |
 
-I dati utente non transitano da alcun backend proprio: il browser parla direttamente con
-Microsoft Graph; le funzioni Cloudflare ricevono solo i payload minimi necessari all'AI.
+Il browser parla direttamente con Microsoft Graph: OneNote, To-Do, calendario,
+OneDrive, il diario e Finanze non passano da nessun server nostro, e Cloudflare
+per loro serve solo i file.
+
+L'unica eccezione è `functions/api/claude.js`, e c'è per un motivo preciso: una
+chiave API non può stare nel codice del browser, dove chiunque apra gli strumenti
+di sviluppo la vedrebbe. La funzione fa due cose, entrambe avviate da un pulsante
+e mai da sole:
+
+- **Chiarire assistito** — il pensiero appena catturato viene inviato al modello,
+  che percorre il diagramma di *Chiarire* e propone ramo, destinazione PARA,
+  titolo azionabile e stima. La proposta apre la foglia già compilata: crea
+  qualcosa solo se la si conferma. Sta fra «Inbox» e «Che cos'è?», che è dove uno
+  si fermerebbe a pensare.
+- **Diario che risponde** — l'estratto che *Copia per l'AI* componeva per essere
+  incollato altrove si può leggere qui: stesso testo, stesso preset, risposta
+  dentro l'app. «Copia negli appunti» resta, e senza chiave configurata è
+  l'unica strada.
+
+La funzione si difende da sola: richiede il token Microsoft che l'app ha già in
+mano, lo verifica contro Graph e accetta solo l'account elencato in
+`UTENTE_AUTORIZZATO`. Senza quella variabile — o senza `ANTHROPIC_API_KEY` — si
+dichiara spenta su `GET /api/claude` e l'app non mostra affatto i due pulsanti:
+un pulsante che c'è e non funziona è peggio di un pulsante che non c'è. Vale
+anche in sviluppo con `npm run dev`, dove le funzioni Cloudflare non girano.
+
+Ci sono state, in passato, altre due funzioni — un piano generato con Claude
+Haiku e un riassunto AI dei feed ANSA — e il README le ha descritte più a lungo
+di quanto siano esistite. Quelle non sono tornate: non c'è nessuna vista del
+briefing e nessuna generazione automatica del piano.
 
 ## Sviluppo
 
@@ -211,10 +300,20 @@ npm run build     # build di produzione in dist/
 
 ### Variabili d'ambiente (Cloudflare Pages)
 
-| Nome | Uso |
+Due, e servono solo alle funzioni AI. Senza di esse tutto il resto dell'app
+funziona identico e i due pulsanti non compaiono.
+
+| Variabile | Cosa contiene |
 |---|---|
-| `ANTHROPIC_API_KEY` | `/api/daily-plan` (piano AI, email, breakdown task) |
-| `MISTRAL_API_KEY` | `/api/briefing` (riassunto notizie) |
+| `ANTHROPIC_API_KEY` | la chiave dell'API di Anthropic |
+| `UTENTE_AUTORIZZATO` | il tuo indirizzo Microsoft (o l'id dell'account). Più di uno: separati da virgola |
+
+`UTENTE_AUTORIZZATO` non è burocrazia: `/api/claude` spende soldi a ogni
+chiamata, e senza quel controllo chiunque trovasse l'indirizzo potrebbe
+spenderli. Vanno impostate entrambe — la funzione con una sola delle due si
+considera spenta.
+
+(Il workflow `sync-calendar` ha i propri segreti fra quelli di GitHub Actions.)
 
 ### Configurazione MSAL
 

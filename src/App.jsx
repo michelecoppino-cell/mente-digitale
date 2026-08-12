@@ -1,33 +1,67 @@
-import { useState, useEffect, useRef, lazy, Suspense } from 'react';
+import { useState, useEffect, useMemo, useRef, lazy, Suspense } from 'react';
 import { Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { initAuth, getAccount, login, trySsoSilent } from './auth';
-import { getNotebooks, getSections, getTodoLists, getTodoTasks, getPages, getRecentEmails, getPageContentHtml, markOneNoteTagDone, getReminders, createTask, getCalendarEvents, getTasksForDeadlineDedup, invalidateCalendarsCache, loadColorSettings, saveColorSettings, migrateLegacyDriveFiles, loadPlannerConfig, loadDailyPlans, saveDailyPlans, updateTaskStatus, completeTask } from './api';
+import { getNotebooks, getSections, getTodoLists, getPages, getRecentEmails, getPageContentHtml, markOneNoteTagDone, getReminders, createTask, getCalendarEvents, getTasksForDeadlineDedup, invalidateCalendarsCache, loadColorSettings, saveColorSettings, migrateLegacyDriveFiles, loadPlannerConfig, loadDailyPlans, saveDailyPlans, updateTaskStatus, completeTask } from './api';
 import { getMarker, setMarker, clearMarkers } from './markers';
 import { queryClient, qk, STALE } from './queryClient';
+import { syncTasksForList } from './taskSync';
 import { extractEmailCandidates, extractOneNoteCandidates } from './dailyReview';
 import { parseReminderSubject, reminderMarker, hasReminderMarker } from './deadlineReminders';
 import { shadeColor, DEFAULT_CONFIG } from './plannerShared';
-import MindMap from './MindMap';
 import IdentityPanel from './IdentityPanel';
 import SearchOverlay from './SearchOverlay';
 import Panel from './Panel';
-import PlannerView from './PlannerView';
 import GtdClarifyModal from './GtdClarifyModal';
-import ColorSettingsModal from './ColorSettingsModal';
-import DiaryPanel from './DiaryPanel';
-import ActivityBoard from './ActivityBoard';
 import QuickCapture from './QuickCapture';
 import AppShell from './AppShell';
+import { DESTINATIONS } from './destinations';
 import { usePomodoro } from './pomodoroContext';
 import TodayView from './TodayView';
-import SectionsView from './SectionsView';
 import { graphStatusFor, STATUS_LABELS } from './taskModel';
 import { pushUndo } from './undo';
 import { COLORS } from './config';
+import { whenIdle } from './idle';
+import { useGlobalShortcuts, CMD } from './shortcuts';
+import ShortcutsHelp from './ShortcutsHelp';
+import { notifyError, notifyInfo } from './notify';
+import { watchNetwork, subscribePending, tryOrQueue } from './writeQueue';
 import UndoToast from './UndoToast';
+import Toaster from './Toaster';
 import './App.css';
 
+// ── Viste caricate alla prima visita ────────────────────────────────────────
+// L'app si apre su «Oggi», che è una lettura di dati già in memoria: non ha
+// motivo di far scaricare prima la mappa mentale (d3, 115 kB), le duemila righe
+// di griglia del Piano, il Diario e la board delle Attività — cioè, prima di
+// questa divisione, l'intera app in un unico file da 272 kB più 128 kB di CSS.
+// Ogni vista diventa un pezzo a sé, scaricato quando la si apre e poi tenuto in
+// cache come ogni altro asset con hash nel nome.
+//
+// Il Piano è l'eccezione che vale un precarico: è la destinazione dove si va
+// più spesso dopo Oggi, e lo si prende in sottofondo appena il browser è fermo
+// (vedi prefetchViews), così il primo click resta immediato.
+const MindMap = lazy(() => import('./MindMap'));
+const PlannerView = lazy(() => import('./PlannerView'));
+const ActivityBoard = lazy(() => import('./ActivityBoard'));
+const SectionsView = lazy(() => import('./SectionsView'));
+const DiaryPanel = lazy(() => import('./DiaryPanel'));
 const FinanzeSection = lazy(() => import('./finanze/FinanzeSection'));
+// Le impostazioni colore si aprono dall'ingranaggio, qualche volta l'anno:
+// non devono stare nel primo caricamento di nessuno.
+const ColorSettingsModal = lazy(() => import('./ColorSettingsModal'));
+
+/** Il velo di attesa fra un chunk di vista e l'altro. */
+function ViewFallback() {
+  return <div className="view-loading" role="status" aria-live="polite">Caricamento…</div>;
+}
+
+// Precarico in sottofondo delle viste più probabili, quando il browser non ha
+// niente di meglio da fare: il costo della divisione in chunk si paga una volta
+// sola e fuori dal percorso critico, invece che al primo click.
+function prefetchViews() {
+  whenIdle(() => { import('./PlannerView'); }, 4000);
+  whenIdle(() => { import('./ActivityBoard'); }, 8000);
+}
 
 const DEFAULT_COLOR_SETTINGS = { notebooks: {}, sections: {} };
 
@@ -185,6 +219,7 @@ export default function App() {
   const [mapViewMode, setMapViewMode] = useState(readMapViewMode);
   const [identityOpen, setIdentityOpen] = useState(null);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
   // La cattura chiesta dalla scorciatoia è aperta già al primo render, non in
   // un effetto: così non si vede prima la vista sotto e poi il modale coprirla.
   const [gtdOpen, setGtdOpen] = useState(false);
@@ -217,6 +252,14 @@ export default function App() {
   // un task già catturato invece che da una riga di testo.
   const [clarifyTask, setClarifyTask] = useState(null);
   const [sectionCalendarEvents, setSectionCalendarEvents] = useState([]);
+  // Gli eventi del calendario arrivano in coda, qualche secondo dopo il resto:
+  // finché il tentativo non è stato fatto, «nessun appuntamento oggi» sarebbe
+  // una risposta inventata (vedi TodayView).
+  const [calendarLoaded, setCalendarLoaded] = useState(false);
+  // Le scritture in attesa di rete (vedi writeQueue.js): il numero sta nella
+  // barra di stato, perché una cosa catturata e non ancora salvata deve essere
+  // visibile — altrimenti «l'ho scritta e non c'è» è indistinguibile da un bug.
+  const [pendingWrites, setPendingWrites] = useState(0);
   // Incrementato ogni volta che un evento calendario viene creato fuori dal
   // Piano (es. dal popup GTD), per far invalidare a PlannerView la sua cache
   // bulk altrimenti stale fino al TTL.
@@ -236,6 +279,7 @@ export default function App() {
       setReady(true);
       if (acc) {
         load(false);
+        prefetchViews();
       } else {
         // Tentativo di SSO silenzioso in background, senza bloccare il primo
         // render: se la sessione Microsoft è ancora attiva si passa dallo
@@ -248,11 +292,21 @@ export default function App() {
         });
       }
     });
-  }, []);
+    // Solo al montaggio, di proposito: `load` si ricrea a ogni render e
+    // metterlo fra le dipendenze rifarebbe l'autenticazione in continuazione.
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     try { localStorage.setItem(MAP_VIEW_MODE_KEY, mapViewMode); } catch { /* storage non disponibile */ }
   }, [mapViewMode]);
+
+  // La coda si svuota quando la rete torna, e all'avvio: l'app può essere stata
+  // chiusa mentre era offline. Al recupero si rileggono le liste, così le cose
+  // salvate in ritardo compaiono dove devono.
+  useEffect(() => subscribePending(setPendingWrites), []);
+  useEffect(() => watchNetwork(() => {
+    if (todoListsRef.current.length) preloadAllTasks(todoListsRef.current, true);
+  }), []);
 
   // Il parametro `apri` ha fatto il suo lavoro al primo render: si toglie
   // dall'URL, così chiudere il pannello e ricaricare la pagina non lo riapre.
@@ -263,27 +317,15 @@ export default function App() {
     window.history.replaceState(null, '', window.location.pathname + window.location.hash);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Scorciatoie: ⌘K ricerca globale, ⌘J diario, ⌘N cattura da qualunque vista
-  useEffect(() => {
-    function onKeyDown(e) {
-      if (!(e.ctrlKey || e.metaKey)) return;
-      const key = e.key.toLowerCase();
-      if (key === 'k') {
-        e.preventDefault();
-        setSearchOpen(o => !o);
-      }
-      if (key === 'j') {
-        e.preventDefault();
-        navigate('/diario');
-      }
-      if (key === 'n') {
-        e.preventDefault();
-        setCaptureOpen(true);
-      }
-    }
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [navigate]);
+  // Le scorciatoie globali sono dichiarate in shortcuts.js, che è anche l'elenco
+  // mostrato da «?»: prima erano un onKeyDown qui dentro, e non esisteva un posto
+  // da cui raccontarle.
+  useGlobalShortcuts({
+    search: () => setSearchOpen(o => !o),
+    diary: () => navigate('/diario'),
+    capture: () => setCaptureOpen(true),
+    help: () => setHelpOpen(o => !o),
+  });
 
   async function handleLogin() {
     try { await login(); setAccount(getAccount()); load(false); }
@@ -307,15 +349,15 @@ export default function App() {
     }
 
     try {
-      // Colori personalizzati (taccuini/sezioni) scelti dall'utente
-      // nell'ingranaggio impostazioni — vanno applicati subito dopo aver
-      // ricevuto taccuini e sezioni, prima di renderli nello stato.
-      const colorCfg = await fetchCached(qk.colorSettings(), loadColorSettings, STALE.colorSettings, forceRefresh)
+      // Le tre letture d'avvio partono insieme e non una dopo l'altra: sono
+      // indipendenti (due endpoint Graph diversi e un file su OneDrive), e in
+      // fila costavano tre viaggi di rete sommati prima che comparisse
+      // qualunque cosa. I colori vanno comunque applicati ai taccuini *dopo*
+      // che sono arrivati entrambi, ed è quello che fa l'await unico qui sotto.
+      const colorPromise = fetchCached(qk.colorSettings(), loadColorSettings, STALE.colorSettings, forceRefresh)
         .catch(e => { console.error('color settings load', e); return queryClient.getQueryData(qk.colorSettings()) || null; });
-      const overrides = colorCfg || DEFAULT_COLOR_SETTINGS;
-      colorSettingsRef.current = overrides;
-      colorSettingsLoadedRef.current = true;
-      setColorSettings(overrides);
+      const notebooksPromise = fetchCached(qk.notebooks(), getNotebooks, STALE.notebooks, forceRefresh);
+      const listsPromise = fetchCached(qk.todolists(), getTodoLists, STALE.todolists, forceRefresh);
 
       // Config del Piano: serve alla vista Attività per i colori di progetto.
       // Non è bloccante — se non arriva si resta sul default e i task si
@@ -324,14 +366,22 @@ export default function App() {
         .then(cfg => { if (cfg) setPlannerConfig(cfg); })
         .catch(e => console.error('planner config load', e));
 
+      const [colorCfg, nbs, lists] = await Promise.all([colorPromise, notebooksPromise, listsPromise]);
+
+      // Colori personalizzati (taccuini/sezioni) scelti dall'utente
+      // nell'ingranaggio impostazioni — vanno applicati subito dopo aver
+      // ricevuto taccuini e sezioni, prima di renderli nello stato.
+      const overrides = colorCfg || DEFAULT_COLOR_SETTINGS;
+      colorSettingsRef.current = overrides;
+      colorSettingsLoadedRef.current = true;
+      setColorSettings(overrides);
+
       // Taccuini
-      const nbs = await fetchCached(qk.notebooks(), getNotebooks, STALE.notebooks, forceRefresh);
       nbs.forEach((nb, i) => applyNotebookColor(nb, i, overrides));
       notebooksRef.current = nbs;
       setNotebooks(nbs);
 
       // Liste ToDo
-      const lists = await fetchCached(qk.todolists(), getTodoLists, STALE.todolists, forceRefresh);
       todoListsRef.current = lists;
       setTodoLists(lists);
       const map = {};
@@ -345,12 +395,13 @@ export default function App() {
         .then(plans => setDailyPlans(plans || {}))
         .catch(e => console.error('daily plans load', e));
 
-      // Sezioni — mostra subito quelle già in cache (senza rifetch), poi si
-      // espandono lazy al click. Su forceRefresh si parte vuoti e si ricarica
-      // ad ogni espansione.
+      // Sezioni — mostra subito quelle già in cache, poi si espandono lazy al
+      // click. Anche su forceRefresh si parte da quelle in cache: sparire per
+      // qualche secondo e ricomparire identiche è peggio che mostrarle e
+      // aggiornarle sotto (il rifetch vero è in coda qui sotto).
       const sectMap = {};
       for (const nb of nbs) {
-        const cached = forceRefresh ? null : queryClient.getQueryData(qk.sections(nb.id));
+        const cached = queryClient.getQueryData(qk.sections(nb.id));
         if (cached) {
           applySectionColors(nb, cached, overrides);
           sectMap[nb.id] = cached;
@@ -360,28 +411,43 @@ export default function App() {
 
       setSync({ state: 'ok', label: `${nbs.length} taccuini` });
 
-      // Precarica task in background
-      setTimeout(() => preloadAllTasks(lists, forceRefresh), 1000);
+      // ── Il resto è sottofondo, in ordine di quanto serve allo schermo ─────
+      // I task riempiono Oggi e Attività: partono subito, senza aspettare un
+      // momento libero. Tutto il resto — pagine OneNote, eventi del calendario,
+      // Daily Review, scadenze — non è visibile al primo schermo e va in coda
+      // ai momenti in cui il browser è fermo, invece che a `setTimeout` con
+      // numeri scelti a mano che partono comunque mentre si sta ancora
+      // disegnando (o mentre l'utente scorre).
+      preloadAllTasks(lists, forceRefresh);
 
-      // Precarica pagine in background
-      setTimeout(() => {
-        Object.entries(sectMap).forEach(([, sects]) =>
+      // «Aggiorna tutto» finora non toccava l'elenco delle sezioni: azzerava la
+      // cache e aspettava che si riespandesse un taccuino a mano. Una sezione
+      // creata o rinominata su OneNote non compariva finché non si ricaricava la
+      // pagina. Qui il rifetch è esplicito, in coda e taccuino per taccuino.
+      whenIdle(async () => {
+        const fresh = forceRefresh ? await refreshAllSections(nbs, overrides) : sectMap;
+        Object.values(fresh).forEach(sects =>
           sects.forEach(s => enqueuePagePreload(s.id, forceRefresh))
         );
-      }, 2000);
+      }, 2500);
 
-      refreshDailyReview();
-      refreshDeadlineReminders(lists);
+      // Eventi Calendario dei prossimi mesi in un'unica chiamata: il Pannello
+      // sezione li filtra poi localmente per prefisso "[NomeSezione]", senza
+      // dover interrogare Graph a ogni apertura (era il collo di bottiglia
+      // lento lamentato).
+      whenIdle(() => preloadSectionCalendarEvents(), 3500);
 
-      // Precarica in coda (dopo task/pagine) tutti gli eventi Calendario dei
-      // prossimi mesi in un'unica chiamata: il Pannello sezione li filtra poi
-      // localmente per prefisso "[NomeSezione]", senza dover interrogare
-      // Graph a ogni apertura (era il collo di bottiglia lento lamentato).
-      setTimeout(() => preloadSectionCalendarEvents(), 3000);
+      // La Daily Review scarica il contenuto di decine di pagine OneNote: è la
+      // cosa più costosa dell'avvio e la meno urgente — la campanella può
+      // riempirsi qualche secondo dopo che la giornata è già a schermo.
+      whenIdle(() => {
+        refreshDailyReview();
+        refreshDeadlineReminders(lists);
+      }, 6000);
 
     } catch (e) {
-      console.error('load', e);
       setSync({ state: 'error', label: 'Errore caricamento' });
+      notifyError('Non sono riuscito a leggere taccuini e liste da Microsoft. Quello che vedi potrebbe essere la copia di prima.', e);
     }
   }
 
@@ -492,6 +558,9 @@ export default function App() {
       const events = await getCalendarEvents(start, end, 250);
       setSectionCalendarEvents(events);
     } catch (e) { console.error('section calendar events preload', e); }
+    // Riuscito o fallito, il tentativo è stato fatto: da qui in poi un'agenda
+    // vuota è un'agenda vuota, e Oggi può dirlo invece di mostrare l'attesa.
+    setCalendarLoaded(true);
   }
 
   // Se il candidato viene da OneNote, spunta subito la riga "Da fare" nella
@@ -522,17 +591,29 @@ export default function App() {
     setReviewSuggestions(prev => prev.filter(s => s.id !== suggestion.id));
   }
 
+  // Le attività di tutte le liste. Ogni lista si aggiorna in modo incrementale —
+  // «cosa è cambiato da quando ho guardato» invece di «dammi tutto» — con un
+  // riallineamento completo una volta al giorno e sempre su «Aggiorna tutto»
+  // (vedi taskSync.js, che spiega perché non i delta token).
   async function preloadAllTasks(lists, forceRefresh = false) {
     const allTasks = [];
     const counts = {};
     let anyError = false;
+    let letti = 0;
     for (const l of lists) {
       try {
-        const tasks = await fetchCached(qk.tasks(l.id), () => getTodoTasks(l.id), STALE.tasks, forceRefresh);
+        const { tasks, mode, changed } = await syncTasksForList(l, { forceFull: forceRefresh });
         tasksCache.current[l.id] = tasks;
         tasks.forEach(t => allTasks.push({ ...t, _listName: l.displayName, _listId: l.id }));
         if (tasks.length > 0) counts[l.displayName.toLowerCase()] = tasks.length;
-        await new Promise(r => setTimeout(r, 200));
+        // Il respiro fra le richieste serviva a non far arrabbiare Graph con
+        // dodici letture complete di fila. Una lettura incrementale che torna
+        // vuota non ha bisogno di essere distanziata: la maggior parte dei
+        // risvegli ora non aspetta più nulla.
+        if (mode === 'completo' || changed > 0) {
+          letti++;
+          await new Promise(r => setTimeout(r, 200));
+        }
       } catch (e) {
         console.error('preload tasks', l.displayName, e);
         anyError = true;
@@ -551,6 +632,10 @@ export default function App() {
     setTodoCountMap(counts);
     if (anyError) {
       setSync({ state: 'error', label: 'Errore aggiornamento task — dati non aggiornati' });
+    } else if (letti === 0) {
+      // Nessuna lista ha avuto bisogno di essere riletta: vale la pena dirlo,
+      // perché è il caso normale e spiega perché è stato istantaneo.
+      setSync({ state: 'ok', label: `${notebooksRef.current.length} taccuini · attività aggiornate` });
     }
   }
 
@@ -581,11 +666,34 @@ export default function App() {
       const sects = await fetchCached(qk.sections(nb.id), () => getSections(nb.id), STALE.sections);
       applySectionColors(nb, sects, colorSettingsRef.current);
       setSectionsMap(prev => ({ ...prev, [nb.id]: sects }));
-      setTimeout(() => sects.forEach(s => enqueuePagePreload(s.id)), 1500);
+      whenIdle(() => sects.forEach(s => enqueuePagePreload(s.id)), 1500);
     } catch (e) {
       console.error('Errore sezioni', nb.displayName, e);
       setSectionsMap(prev => ({ ...prev, [nb.id]: [] }));
     }
+  }
+
+  // Rilettura da Graph dell'elenco sezioni di ogni taccuino, una alla volta e
+  // con un respiro fra le richieste (come il resto dei precarichi). Ogni
+  // taccuino aggiorna lo stato appena arriva: l'elenco si rinfresca a pezzi
+  // invece di cambiare tutto insieme dopo l'ultima risposta.
+  async function refreshAllSections(nbs, overrides) {
+    /** @type {Record<string, any[]>} */
+    const out = {};
+    for (const nb of nbs) {
+      try {
+        const sects = await fetchCached(qk.sections(nb.id), () => getSections(nb.id), STALE.sections, true);
+        applySectionColors(nb, sects, overrides);
+        out[nb.id] = sects;
+        setSectionsMap(prev => ({ ...prev, [nb.id]: sects }));
+        await new Promise(r => setTimeout(r, 150));
+      } catch (e) {
+        console.error('refresh sezioni', nb.displayName, e);
+        const stale = queryClient.getQueryData(qk.sections(nb.id));
+        if (stale) out[nb.id] = /** @type {any[]} */ (stale);
+      }
+    }
+    return out;
   }
 
   // Salva i nuovi override colore (localStorage + OneDrive, come workbooks/
@@ -694,8 +802,18 @@ export default function App() {
     const listId = task._listId;
     const before = task.status;
     try {
-      await updateTaskStatus(listId, task.id, graphStatusFor(status));
+      // Senza rete lo spostamento va in coda: la colonna cambia a schermo e la
+      // scrittura su To-Do arriva dopo.
+      const res = await tryOrQueue(
+        'stato-attività',
+        { listId, taskId: task.id, status: graphStatusFor(status) },
+        `${task.title} → ${STATUS_LABELS[status]}`,
+      );
       handleTaskPatched(listId, task.id, { status: graphStatusFor(status) });
+      if (res.queued) {
+        notifyInfo(`Senza rete: lo spostamento di «${task.title}» è in coda.`);
+        return;
+      }
       pushUndo({
         label: `Spostata in ${STATUS_LABELS[status]}`,
         undo: async () => {
@@ -704,7 +822,7 @@ export default function App() {
         },
       });
     } catch (e) {
-      console.error('cambio stato attività', e);
+      notifyError(`Non ho potuto spostare "${task.title}" in ${STATUS_LABELS[status]}. Controlla la connessione e riprova.`, e);
     }
   }
 
@@ -714,6 +832,25 @@ export default function App() {
   function handleScheduleTask(task) {
     setPendingPlannerTask(task);
     navigate('/piano');
+  }
+
+  // Salva il piano e adotta quello che è davvero finito su OneDrive.
+  //
+  // Da quando la scrittura è condizionata all'eTag (vedi putDriveJson), un
+  // salvataggio che trova il file cambiato non si perde e non sovrascrive: fonde
+  // le due versioni e restituisce la fusione in `_merged`. Se non la si adotta,
+  // lo schermo continua a mostrare la propria copia mentre su OneDrive c'è
+  // un'altra cosa — cioè il problema di prima, spostato di un passo.
+  async function persistPlans(next) {
+    const res = await saveDailyPlans(next);
+    const merged = res?._merged;
+    const effective = merged || next;
+    setDailyPlans(effective);
+    queryClient.setQueryData(qk.dailyPlans(), effective);
+    if (merged) {
+      notifyInfo('Il piano era cambiato su un altro dispositivo: ho unito le due versioni.');
+    }
+    return effective;
   }
 
   // Toglie il blocco dal piano di ogni giorno in cui compare: senza blocco il
@@ -727,19 +864,19 @@ export default function App() {
     }
     setDailyPlans(next);
     try {
-      await saveDailyPlans(next);
-      queryClient.setQueryData(qk.dailyPlans(), next);
+      await persistPlans(next);
       pushUndo({
         label: 'Rimandata',
         undo: async () => {
           setDailyPlans(previous);
-          await saveDailyPlans(previous);
-          queryClient.setQueryData(qk.dailyPlans(), previous);
+          await persistPlans(previous);
         },
       });
     } catch (e) {
-      console.error('rimozione dal piano', e);
+      // Lo stato locale torna indietro: senza avviso la card sarebbe rimasta
+      // fuori dalle programmate a schermo, e programmata su OneDrive.
       setDailyPlans(previous);
+      notifyError(`Non ho potuto rimandare "${task.title}": il piano non è stato salvato.`, e);
     }
   }
 
@@ -771,25 +908,54 @@ export default function App() {
         handleTaskRemoved(block.listId, block.taskId);
       }
     } catch (e) {
-      console.error('completamento task da Oggi', e);
+      // Il blocco resta segnato — è lo storico della giornata — ma l'attività su
+      // To-Do no, e va detto: altrimenti resta aperta sul telefono senza motivo
+      // apparente.
+      notifyError(`"${block.taskTitle}" è segnata nel piano di oggi, ma non sono riuscito a spuntarla su To-Do.`, e);
     }
 
     try {
-      await saveDailyPlans(next);
-      queryClient.setQueryData(qk.dailyPlans(), next);
+      await persistPlans(next);
     } catch (e) {
-      console.error('salvataggio piano da Oggi', e);
       setDailyPlans(previous);
+      notifyError('Non ho potuto salvare il piano di oggi: la spunta non è stata registrata.', e);
     }
   }
 
+  // I comandi raggiungibili da ⌘K. Non sono un elenco a parte di funzioni: sono
+  // gli stessi gesti che si fanno col mouse dal rail e dalla topbar, con un nome
+  // che si possa scrivere. Le destinazioni vengono da AppShell (DESTINATIONS),
+  // così una voce di menù nuova compare qui senza doversi ricordare di aggiungerla.
+  const commands = useMemo(() => {
+    /** @type {{ id: string, label: string, hint?: string, keys?: string[], run: () => void }[]} */
+    const out = DESTINATIONS.map(d => ({
+      id: `vai:${d.to}`,
+      label: `Vai a ${d.label}`,
+      hint: 'Navigazione',
+      run: () => navigate(d.to),
+    }));
+    out.push(
+      { id: 'cattura', label: 'Cattura un pensiero', hint: 'Finisce in Inbox', keys: [CMD, 'N'], run: () => setCaptureOpen(true) },
+      { id: 'chiarisci', label: 'Chiarire un pensiero', hint: 'Il diagramma GTD', run: () => { setGtdSeedText(''); setGtdOpen(true); } },
+      { id: 'aggiorna', label: 'Aggiorna tutto', hint: 'Rilegge taccuini, liste e attività', run: () => { handleRefresh(); } },
+      { id: 'colori', label: 'Colori di taccuini e sezioni', hint: 'Impostazioni', run: () => setColorSettingsOpen(true) },
+      { id: 'scorciatoie', label: 'Scorciatoie da tastiera', hint: 'Elenco', keys: ['?'], run: () => setHelpOpen(true) },
+      { id: 'proposte', label: 'Proposte della Daily Review', hint: 'Email e OneNote', run: () => setReviewOpen(true) },
+      { id: 'oggi-domani', label: 'Programma la giornata', hint: 'Apre il Piano', run: () => navigate('/piano') },
+    );
+    return out;
+    // handleRefresh è ricreata a ogni render ma fa sempre la stessa cosa: tenerla
+    // fra le dipendenze rifarebbe l'elenco a ogni giro senza alcun guadagno.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [navigate]);
+
+  // «Aggiorna tutto» non svuota più lo schermo prima di ricaricare: azzerare
+  // taccuini, sezioni e attività faceva sparire tutta l'interfaccia per i
+  // secondi del ricaricamento, per poi rimettere quasi sempre le stesse cose.
+  // I dati vecchi restano visibili e vengono sostituiti man mano che arrivano —
+  // il pallino della sincronizzazione dice già che si sta aggiornando.
   async function handleRefresh() {
     setSelected(null);
-    setNotebooks([]);
-    notebooksRef.current = [];
-    setSectionsMap({});
-    setScheduledTasks(null);
-    setTodoCountMap({});
     await load(true);
   }
 
@@ -810,7 +976,16 @@ export default function App() {
             </svg>
             Accedi con Microsoft
           </button>
-          <div className="login-note">Solo permessi di lettura · nessun dato salvato</div>
+          {/* Diceva «Solo permessi di lettura · nessun dato salvato», che non è
+              vero da parecchie versioni: l'app scrive attività su To-Do e i suoi
+              file (piani, diario, impostazioni) nella cartella
+              `mente-digitale/` del tuo OneDrive. Vero è invece che non esiste
+              nessun server nostro in mezzo — il browser parla direttamente con
+              Microsoft. Meglio dirlo giusto: è l'unica frase che si legge prima
+              di dare il consenso. */}
+          <div className="login-note">
+            I dati restano sul tuo account Microsoft · nessun server nostro in mezzo
+          </div>
         </div>
       </div>
     );
@@ -821,11 +996,21 @@ export default function App() {
   // fa niente di visibile.
   const onMap = location.pathname.startsWith('/mappa');
 
+  // Quello che c'è in coda conta più di quanto sia fresca la cache: se qualcosa
+  // aspetta la rete, è quello che la barra deve dire.
+  const syncLabel = pendingWrites
+    ? `${pendingWrites} in attesa di rete`
+    : sync.label;
+
   const topbar = (
     <>
-      <div className="sync-status" title={sync.label}>
-        <span className={`sync-dot ${sync.state}`} />
-        <span className="sync-label-text">{sync.label}</span>
+      {/* Lo stato della sincronizzazione va anche detto, non solo colorato: da
+          telefono l'etichetta è nascosta dal CSS e resta il solo pallino, che
+          un lettore di schermo non sa leggere. */}
+      <div className="sync-status" title={syncLabel} role="status" aria-live="polite">
+        <span className={`sync-dot ${pendingWrites ? 'waiting' : sync.state}`} aria-hidden="true" />
+        <span className="sync-label-text">{syncLabel}</span>
+        <span className="sr-only">Sincronizzazione: {syncLabel}</span>
       </div>
       {onMap && (
         <div className="map-view-toggle">
@@ -837,6 +1022,10 @@ export default function App() {
         <button
           className={`search-btn tap-44${reviewOpen ? ' active' : ''}${reviewSuggestions.length ? ' has-badge' : ''}`}
           onClick={() => setReviewOpen(o => !o)}
+          aria-expanded={reviewOpen}
+          aria-label={reviewSuggestions.length
+            ? `Proposte Daily Review: ${reviewSuggestions.length}`
+            : 'Proposte Daily Review'}
           title="Proposte Daily Review">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
             <path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" />
@@ -848,7 +1037,7 @@ export default function App() {
           <div className="bell-dropdown">
             <div className="bell-dropdown-header">
               <span>Daily Review</span>
-              <button onClick={() => setReviewOpen(false)}>✕</button>
+              <button onClick={() => setReviewOpen(false)} aria-label="Chiudi le proposte">✕</button>
             </div>
             {reviewLoading && <div className="bell-empty">Analisi email e OneNote in corso…</div>}
             {!reviewLoading && reviewSuggestions.length === 0 && (
@@ -865,13 +1054,18 @@ export default function App() {
           </div>
         )}
       </div>
-      <button className="search-btn tap-44" onClick={() => setSearchOpen(true)} title="Cerca (⌘K)">
+      <button className="search-btn tap-44" onClick={() => setSearchOpen(true)} title="Cerca (⌘K)" aria-label="Cerca (⌘K)">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round">
           <circle cx="11" cy="11" r="7" />
           <line x1="21" y1="21" x2="16.5" y2="16.5" />
         </svg>
       </button>
-      <button className="search-btn tap-44" onClick={handleRefresh} title="Aggiorna tutto">
+      <button
+        className={`search-btn tap-44${sync.state === 'loading' ? ' spinning' : ''}`}
+        onClick={handleRefresh}
+        disabled={sync.state === 'loading'}
+        title="Aggiorna tutto"
+        aria-label="Aggiorna tutto">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
           <path d="M20.5 12a8.5 8.5 0 1 1-2.6-6.1" />
           <polyline points="20.5 4 20.5 9 15.5 9" />
@@ -886,12 +1080,18 @@ export default function App() {
         topbar={topbar}
         onCapture={() => setCaptureOpen(true)}
         onOpenSettings={() => setColorSettingsOpen(true)}>
+        {/* Un solo confine di attesa per tutte le rotte caricate a pezzi: il
+            velo compare al posto del contenuto, la shell (menù, topbar, barra
+            Pomodoro) non si smonta mai. */}
+        <Suspense fallback={<ViewFallback />}>
         <Routes>
           <Route path="/oggi" element={
             <TodayView
               plans={dailyPlans}
               tasks={scheduledTasks || []}
               calendarEvents={sectionCalendarEvents}
+              loading={scheduledTasks === null}
+              calendarLoading={!calendarLoaded}
               onCompleteBlock={handleCompleteBlock}
             />
           } />
@@ -957,11 +1157,7 @@ export default function App() {
               megabyte che non deve pesare sull'avvio di «Oggi», visto che è la
               sezione in cui si entra qualche volta al mese. Caricata alla prima
               visita e poi in cache come ogni chunk. */}
-          <Route path="/finanze/:sezione?" element={
-            <Suspense fallback={<div className="finanze-attesa muted">Caricamento…</div>}>
-              <FinanzeSection />
-            </Suspense>
-          } />
+          <Route path="/finanze/:sezione?" element={<FinanzeSection />} />
 
           <Route path="/mappa" element={
             <div className="canvas-area">
@@ -983,6 +1179,7 @@ export default function App() {
 
           <Route path="*" element={<Navigate to="/oggi" replace />} />
         </Routes>
+        </Suspense>
       </AppShell>
 
       {/* Pannello sezione (ToDo/OneNote/OneDrive) — fisso rispetto al
@@ -1000,6 +1197,7 @@ export default function App() {
         todoLists={todoLists}
         onClose={() => setCaptureOpen(false)}
         onCaptured={task => setScheduledTasks(prev => [...(prev || []), task])}
+        onQueued={text => notifyInfo(`«${text}» è in coda: la salvo in Inbox appena torna la rete.`)}
         onDecideNow={text => { setGtdSeedText(text); setGtdOpen(true); }}
       />
       <GtdClarifyModal
@@ -1024,6 +1222,9 @@ export default function App() {
           setCalendarDirtyToken(t => t + 1);
         }}
       />
+      {/* onWarmPages: cercare completa l'indice locale — le sezioni di cui non si
+          è mai caricato l'elenco pagine entrano nella coda di precarico che già
+          esiste, e i risultati compaiono man mano che arrivano. */}
       <SearchOverlay
         open={searchOpen}
         onClose={() => setSearchOpen(false)}
@@ -1031,21 +1232,33 @@ export default function App() {
         sectionsMap={sectionsMap}
         pagesCache={pagesCache}
         tasks={scheduledTasks || []}
+        commands={commands}
         onSelectSection={(sec, nb, app) => { navigate('/mappa'); handleSelectSection(sec, nb, app); }}
+        onWarmPages={ids => ids.forEach(id => enqueuePagePreload(id))}
+        onOpenDiaryEntry={() => navigate('/diario')}
       />
-      <ColorSettingsModal
-        open={colorSettingsOpen}
-        onClose={() => setColorSettingsOpen(false)}
-        notebooks={notebooks}
-        sectionsMap={sectionsMap}
-        overrides={colorSettings}
-        onExpandNotebook={handleExpandNotebook}
-        onSetNotebookColor={setNotebookColor}
-        onSetSectionColor={setSectionColor}
-        onResetNotebookColor={resetNotebookColor}
-        onResetSectionColor={resetSectionColor}
-      />
+      {/* Montata solo quando serve: è l'unica modale a stare in un chunk a
+          parte, e senza il montaggio condizionato il chunk verrebbe scaricato
+          all'avvio come prima. */}
+      {colorSettingsOpen && (
+        <Suspense fallback={null}>
+          <ColorSettingsModal
+            open
+            onClose={() => setColorSettingsOpen(false)}
+            notebooks={notebooks}
+            sectionsMap={sectionsMap}
+            overrides={colorSettings}
+            onExpandNotebook={handleExpandNotebook}
+            onSetNotebookColor={setNotebookColor}
+            onSetSectionColor={setSectionColor}
+            onResetNotebookColor={resetNotebookColor}
+            onResetSectionColor={resetSectionColor}
+          />
+        </Suspense>
+      )}
+      <ShortcutsHelp open={helpOpen} onClose={() => setHelpOpen(false)} />
       <UndoToast />
+      <Toaster />
     </>
   );
 }
@@ -1068,7 +1281,7 @@ function BellSuggestionItem({ suggestion, onAccept, onDismiss }) {
       </div>
       <div className="bell-item-actions">
         <button className="bell-accept-btn" onClick={() => onAccept(suggestion, text)}>✓ Crea task</button>
-        <button className="bell-dismiss-btn" onClick={() => onDismiss(suggestion)}>✕</button>
+        <button className="bell-dismiss-btn" onClick={() => onDismiss(suggestion)} aria-label="Scarta questa proposta" title="Scarta">✕</button>
       </div>
     </div>
   );

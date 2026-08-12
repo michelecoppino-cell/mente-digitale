@@ -161,11 +161,13 @@ export {};
 /**
  * Messaggio Outlook (solo i campi letti dalla Daily Review).
  * @typedef {Object} EmailMessage
+ * @property {string} [id]
  * @property {string} [subject]
  * @property {any} [from]   di norma `{ emailAddress: EmailAddress }`, ma gestito difensivamente anche come stringa
  * @property {string} [bodyPreview]
  * @property {string} [receivedDateTime]
  * @property {boolean} [isRead]
+ * @property {string} [webLink]   per aprire il messaggio in Outlook (ricerca ⌘K)
  */
 
 // ─────────────────────────────────────────────────────────────────────────────
