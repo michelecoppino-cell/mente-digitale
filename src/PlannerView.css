@@ -2137,15 +2137,11 @@ input[type="time"].planner-modal-select::-webkit-calendar-picker-indicator {
   background: rgba(212,164,74,0.08);
 }
 
-/* ── Tab colonne mobile ── */
-.planner-mobile-tabs { display: none; }
-
-/* Da mobile il Piano mostra solo il calendario (Giornata/Settimana): niente
-   pannelli laterali Task/Dettagli, pensati per l'uso desktop (drag & drop,
-   editing) — da mobile l'unico punto di inserimento resta il "+" GTD
-   flottante. .planner-timeline e .planner-week-wrap sono già flex:1 di base,
-   quindi occupano da soli tutta la larghezza una volta tolti pool/dettagli
-   dal flusso. */
+/* Da telefono il Piano mostra il calendario (Giornata/Settimana) e basta: il
+   serbatoio resta fuori — comporre una giornata è un lavoro da mouse — mentre
+   i dettagli del task tornano come foglio dal basso al tocco di un blocco.
+   .planner-timeline e .planner-week-wrap sono già flex:1 di base, quindi
+   occupano da soli tutta la larghezza una volta tolto il pool dal flusso. */
 /* ── Telefono: il testo denso del Piano ───────────────────────────────────
    Titoli dei blocchi, orari degli eventi ed etichette del mese stanno a 11px,
    che è il minimo assoluto dei token: giusto in una griglia settimanale larga
@@ -2194,7 +2190,7 @@ input[type="time"].planner-modal-select::-webkit-calendar-picker-indicator {
   min-height: 32px;
   padding: 0 var(--sp-4);
   background: none;
-  border: 1px solid var(--border2);
+  border: 1px solid var(--line);
   border-radius: var(--r-sm);
   color: var(--muted);
   font-family: var(--font-ui);
@@ -2213,7 +2209,6 @@ input[type="time"].planner-modal-select::-webkit-calendar-picker-indicator {
 
 
 @media (max-width: 768px) {
-  .planner-mobile-tabs { display: none; }
   .planner-col-resize { display: none; }
   .planner-pool { display: none !important; }
 

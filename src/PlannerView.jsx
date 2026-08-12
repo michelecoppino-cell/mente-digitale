@@ -296,7 +296,6 @@ export default function PlannerView({
   const [weekPoolWidth, setWeekPoolWidth]   = useState(280); // metà della larghezza di default del pool in vista Giorno
   const [aiWidth, setAiWidth]               = useState(560);
   const [calOutOfRange, setCalOutOfRange]   = useState(false);
-  const [mobileTab, setMobileTab]           = useState('timeline'); // colonna visibile su schermi stretti
   // Stessa soglia della media query del Piano: sotto, la terza colonna non
   // esiste e il dettaglio è un foglio dal basso.
   const narrow = useMediaQuery('(max-width: 768px)');
@@ -961,14 +960,10 @@ export default function PlannerView({
   function openBlockDetail(block) {
     if (!block?.taskId || !block?.listId) return;
     setSelectedTask({ id: block.taskId, title: block.taskTitle, _listId: block.listId, _listName: block.listName });
-    setMobileTab('panel');
   }
 
-  // Chiude il dettaglio e, da telefono, riporta il foglio giù: senza il
-  // ritorno a 'timeline' il foglio resterebbe montato vuoto sopra la griglia.
   function closeDetail() {
     setSelectedTask(null);
-    setMobileTab('timeline');
   }
 
   // Mutazione su più giorni (vista settimana): aggiorna tutti i piani e salva
@@ -2012,15 +2007,6 @@ export default function PlannerView({
         </div>
       </div>
 
-      {/* Tab colonne — visibili solo su mobile (CSS) */}
-      {viewMode === 'day' && (
-        <div className="planner-mobile-tabs">
-          <button className={mobileTab === 'pool' ? 'active' : ''} onClick={() => setMobileTab('pool')}>Task</button>
-          <button className={mobileTab === 'timeline' ? 'active' : ''} onClick={() => setMobileTab('timeline')}>Giornata</button>
-          <button className={mobileTab === 'panel' ? 'active' : ''} onClick={() => setMobileTab('panel')}>Dettagli</button>
-        </div>
-      )}
-
       {/* Body */}
       <div className="planner-body">
 
@@ -2101,7 +2087,7 @@ export default function PlannerView({
             Durante il blocco Pomodoro resta visibile ma del tutto non
             interagibile: solo il task già aperto nel pannello Dettagli
             si può modificare. */}
-        <div className={`planner-pool${mobileTab === 'pool' ? ' mobile-active' : ''}${locked ? ' locked' : ''}`} style={{ width: poolWidth }}>
+        <div className={`planner-pool${locked ? ' locked' : ''}`} style={{ width: poolWidth }}>
           <div className="planner-col-header">
             <span>Pannello</span>
             <div className="planner-view-toggle">
@@ -2119,7 +2105,7 @@ export default function PlannerView({
               scheduledIds={scheduledIds}
               selectedTaskId={selectedTask?.id ?? null}
               draggable={!locked}
-              onTaskClick={locked ? undefined : task => { setSelectedTask(task); setMobileTab('panel'); }}
+              onTaskClick={locked ? undefined : setSelectedTask}
             />
           ) : (
             <WorkbookPool workbooks={workbooks} onChange={persistWorkbooks} draggable={!locked} notebooks={notebooks} stats={workbookMinuteStats} />
@@ -2128,7 +2114,7 @@ export default function PlannerView({
 
         <div className="planner-col-resize" onMouseDown={handlePoolResizeStart} title="Ridimensiona" />
         {/* ── Column 2: Timeline ── */}
-        <div className={`planner-timeline${mobileTab === 'timeline' ? ' mobile-active' : ''}`}>
+        <div className="planner-timeline">
           <div className="planner-col-header">
             <span>
               {new Date(currentDate + 'T12:00:00').toLocaleDateString('it-IT', {
