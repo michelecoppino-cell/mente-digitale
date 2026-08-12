@@ -16,7 +16,6 @@ import GtdClarifyModal from './GtdClarifyModal';
 import ColorSettingsModal from './ColorSettingsModal';
 import DiaryPanel from './DiaryPanel';
 import ActivityBoard from './ActivityBoard';
-import ClarifyTaskModal from './ClarifyTaskModal';
 import QuickCapture from './QuickCapture';
 import AppShell from './AppShell';
 import { usePomodoro } from './pomodoroContext';
@@ -213,6 +212,9 @@ export default function App() {
   // I piani giornalieri decidono quali task sono `scheduled`: lo stato non è
   // sul task ma nell'esistenza di un blocco nel piano.
   const [dailyPlans, setDailyPlans] = useState({});
+  // L'attività di Inbox che si sta chiarendo: il chiarimento è il diagramma
+  // GTD di sempre — quello che si apre da «Decidi ora» — solo che qui parte da
+  // un task già catturato invece che da una riga di testo.
   const [clarifyTask, setClarifyTask] = useState(null);
   const [sectionCalendarEvents, setSectionCalendarEvents] = useState([]);
   // Incrementato ogni volta che un evento calendario viene creato fuori dal
@@ -781,19 +783,6 @@ export default function App() {
     }
   }
 
-  // Il chiarimento può aver spostato il task in un'altra lista: in quel caso
-  // Graph gli ha dato un id nuovo, quindi il vecchio va tolto dal pool e il
-  // nuovo aggiunto, non "aggiornato".
-  function handleTaskClarified(oldTask, newTask) {
-    if (!newTask) { handleTaskRemoved(oldTask._listId, oldTask.id); return; }
-    if (newTask.id === oldTask.id && newTask._listId === oldTask._listId) {
-      handleTaskPatched(oldTask._listId, oldTask.id, newTask);
-      return;
-    }
-    handleTaskRemoved(oldTask._listId, oldTask.id);
-    handleTaskRestored(newTask._listId, newTask);
-  }
-
   async function handleRefresh() {
     setSelected(null);
     setNotebooks([]);
@@ -939,7 +928,7 @@ export default function App() {
               notebooks={notebooks}
               sectionsMap={sectionsMap}
               pagesCache={pagesCache}
-              onClarify={setClarifyTask}
+              onClarify={task => { setClarifyTask(task); setGtdSeedText(task.title || ''); setGtdOpen(true); }}
               onChangeStatus={handleChangeTaskStatus}
               onSchedule={handleScheduleTask}
               onUnschedule={handleUnscheduleTask}
@@ -1013,18 +1002,12 @@ export default function App() {
         onCaptured={task => setScheduledTasks(prev => [...(prev || []), task])}
         onDecideNow={text => { setGtdSeedText(text); setGtdOpen(true); }}
       />
-      <ClarifyTaskModal
-        task={clarifyTask}
-        todoLists={todoLists}
-        onClose={() => setClarifyTask(null)}
-        onSaved={handleTaskClarified}
-        onRemoved={t => handleTaskRemoved(t._listId, t.id)}
-      />
       <GtdClarifyModal
         open={gtdOpen}
-        onClose={() => { setGtdOpen(false); setGtdSeedText(''); }}
+        onClose={() => { setGtdOpen(false); setGtdSeedText(''); setClarifyTask(null); }}
         seedText={gtdSeedText}
-        todoLists={todoListsRef.current}
+        sourceTask={clarifyTask}
+        todoLists={todoLists}
         notebooks={notebooks}
         sectionsMap={sectionsMap}
         onTaskCreated={(task, { addToday }) => {

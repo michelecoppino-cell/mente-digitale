@@ -26,6 +26,14 @@ export default function QuickCapture({ open, todoLists, onClose, onCaptured, onD
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  // Il componente resta montato anche a finestra chiusa (`open` falso ⇒ render
+  // nullo), quindi lo stato sopravvive fra un'apertura e l'altra: senza questo
+  // azzeramento la seconda cattura partiva con `busy` o l'errore della prima.
+  const [wasOpen, setWasOpen] = useState(open);
+  if (open !== wasOpen) {
+    setWasOpen(open);
+    if (open) { setText(''); setBusy(false); setError(''); }
+  }
 
   if (!open) return null;
 
@@ -45,6 +53,7 @@ export default function QuickCapture({ open, todoLists, onClose, onCaptured, onD
       const task = await createTask(inboxId, title);
       onCaptured({ ...task, _listId: inboxId, _listName: list?.displayName });
       setText('');
+      setBusy(false);
       onClose();
     } catch (e) {
       console.error('cattura', e);

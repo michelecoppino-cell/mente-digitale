@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import Skeleton from './Skeleton';
-import { DEFAULT_CONFIG, findProject, shadeColor, formatDueDate, dueDateSortValue, isTaskOverdue } from './plannerShared';
+import { DEFAULT_CONFIG, findProject, buildListColorMap, formatDueDate, dueDateSortValue, isTaskOverdue } from './plannerShared';
 import { sectionRole } from './paraConfig';
 import { taskEstimateMin } from './taskModel';
 
@@ -82,15 +82,7 @@ export default function TaskPool({
     setSectionFilter(null);
   }
 
-  const listColorMap = useMemo(() => {
-    const map = {};
-    for (const nb of notebooks) {
-      (sectionsMap[nb.id] || []).forEach((s, i) => {
-        map[s.displayName.toLowerCase()] = s._color || shadeColor(nb._color || '#888', i);
-      });
-    }
-    return map;
-  }, [notebooks, sectionsMap]);
+  const listColorMap = useMemo(() => buildListColorMap(notebooks, sectionsMap), [notebooks, sectionsMap]);
 
   // Sezione OneNote (PARA + taccuino) associata a ogni lista To-Do, per nome
   // (case-insensitive) — permette di risalire da un task alla sua collocazione

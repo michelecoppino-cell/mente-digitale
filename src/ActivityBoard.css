@@ -103,24 +103,92 @@
 }
 .ab-views button.active { background: var(--accent-tint); color: var(--accent); }
 
+/* ── Corpo: colonne + dettaglio ───────────────────────────────────────────
+   Il dettaglio dell'attività non è più un cassetto che copre la board ma la
+   sua ultima colonna, sempre presente: lo spazio glielo lasciano Inbox e
+   «Un giorno», che stanno ridotte a striscia quasi sempre. */
+
+.ab-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: stretch;
+}
+
+.ab-detail {
+  flex: 0 0 clamp(300px, 26vw, 400px);
+  min-width: 0;
+  overflow-y: auto;
+  border-left: 1px solid var(--line);
+  background: var(--surface);
+}
+
+.ab-detail-empty {
+  padding: var(--sp-6) var(--sp-5);
+  font-size: var(--fs-chip);
+  line-height: 1.7;
+  color: var(--disabled);
+}
+
 /* ── Colonne ──────────────────────────────────────────────────────────── */
 
 .ab-columns {
   flex: 1;
+  min-width: 0;
   min-height: 0;
-  display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  display: flex;
 }
 
 .ab-col {
+  flex: 1 1 0;
   min-width: 0;
   display: flex;
   flex-direction: column;
   border-right: 1px solid var(--line);
-  transition: background var(--t);
+  transition: background var(--t), flex-basis var(--t);
 }
 .ab-col:last-child { border-right: none; }
 .ab-col.drag-over { background: rgba(212, 164, 74, .05); }
+
+/* Ridotta: resta il bersaglio del trascinamento, ma occupa una striscia. */
+.ab-col.collapsed {
+  flex: 0 0 40px;
+  background: var(--surface-2);
+}
+
+.ab-strip {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--sp-3);
+  width: 100%;
+  padding: var(--sp-4) 0;
+  background: none;
+  border: none;
+  color: var(--muted);
+  font-family: var(--font-ui);
+  cursor: pointer;
+  transition: color var(--t), background var(--t);
+}
+@media (hover: hover) {
+  .ab-strip:hover { color: var(--accent); background: var(--accent-tint); }
+}
+
+.ab-strip-chevron { font-size: 13px; line-height: 1; }
+
+.ab-strip-label {
+  writing-mode: vertical-rl;
+  font-size: var(--fs-chip);
+  letter-spacing: .06em;
+  white-space: nowrap;
+}
+
+.ab-strip-count {
+  font-size: var(--fs-micro);
+  font-variant-numeric: tabular-nums;
+  color: var(--disabled);
+}
 
 .ab-col-head {
   flex: 0 0 auto;
@@ -128,7 +196,7 @@
   align-items: center;
   gap: var(--sp-3);
   height: 44px;
-  padding: 0 var(--sp-5);
+  padding: 0 var(--sp-4);
   border-bottom: 1px solid var(--line-soft);
 }
 
@@ -139,64 +207,129 @@
   font-variant-numeric: tabular-nums;
 }
 
+.ab-col-fold {
+  flex: 0 0 auto;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  background: none;
+  border: none;
+  border-radius: var(--r-sm);
+  color: var(--disabled);
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+  transition: color var(--t), background var(--t);
+}
+@media (hover: hover) {
+  .ab-col-fold:hover { color: var(--accent); background: var(--accent-tint); }
+}
+
 .ab-col-body {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: var(--sp-4);
+  padding: var(--sp-3) var(--sp-2) var(--sp-5);
   display: flex;
   flex-direction: column;
-  gap: var(--sp-3);
+  gap: var(--sp-4);
 }
 
-/* ── Card ─────────────────────────────────────────────────────────────── */
+/* ── Gruppi per sezione ───────────────────────────────────────────────────
+   Dentro la colonna i task si raccolgono per sezione e ne prendono il colore,
+   come nel Piano: lo stato è la colonna, la sezione è il gruppo. */
 
-.ab-card {
+.ab-group {
   display: flex;
   flex-direction: column;
+  gap: 1px;
+}
+
+.ab-group-head {
+  display: flex;
+  align-items: center;
   gap: var(--sp-2);
+  padding: 0 var(--sp-3) var(--sp-2);
+  font-size: var(--fs-micro);
+  letter-spacing: .05em;
+  text-transform: uppercase;
+}
+
+.ab-group-dot {
+  flex: 0 0 auto;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+
+.ab-group-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ab-group-count {
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+  color: var(--disabled);
+}
+
+/* ── Riga attività ────────────────────────────────────────────────────────
+   Una riga sola, sempre: titolo che si tronca e, allineato a destra, il solo
+   dato che conta nella colonna. Prima ogni attività era una card da tre
+   righe, e in una colonna ce ne stavano sei. */
+
+.ab-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
   width: 100%;
-  min-height: var(--tap);
-  padding: var(--sp-4);
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: var(--r);
+  height: 30px;
+  padding: 0 var(--sp-3);
+  border-left: 2px solid var(--task-color, transparent);
+  border-radius: var(--r-sm);
   color: var(--text-2);
   font-family: var(--font-ui);
   text-align: left;
   cursor: grab;
-  transition: border-color var(--t), background var(--t), opacity var(--t);
+  transition: background var(--t), opacity var(--t);
 }
 @media (hover: hover) {
-  .ab-card:hover { border-color: var(--accent-line); }
+  .ab-row:hover { background: color-mix(in srgb, var(--task-color, var(--accent)) 12%, transparent); }
 }
-.ab-card:active { cursor: grabbing; }
-.ab-card.dragging { opacity: .4; }
+.ab-row:active { cursor: grabbing; }
+.ab-row.dragging { opacity: .4; }
+.ab-row.selected { background: color-mix(in srgb, var(--task-color, var(--accent)) 18%, transparent); }
+.ab-row:focus-visible { outline: 1px solid var(--accent); outline-offset: -1px; }
 
-.ab-card-top {
-  display: flex;
-  align-items: flex-start;
-  gap: var(--sp-3);
-}
-
-.ab-card-title {
+.ab-row-title {
   flex: 1;
   min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-size: var(--fs-card);
-  line-height: 1.45;
   color: var(--text);
 }
 
+.ab-row-meta {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  font-variant-numeric: tabular-nums;
+}
+
 /* La spunta: un cerchietto vuoto che si accende solo quando lo si punta, per
-   non trasformare ogni card in un invito a chiudere l'attività. */
-.ab-card-check {
+   non trasformare ogni riga in un invito a chiudere l'attività. */
+.ab-row-check {
   flex: 0 0 auto;
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 18px;
-  height: 18px;
-  margin-top: 1px;
+  width: 16px;
+  height: 16px;
   padding: 0;
   background: none;
   border: 1px solid var(--line);
@@ -206,53 +339,28 @@
   transition: border-color var(--t), color var(--t), background var(--t);
 }
 @media (hover: hover) {
-  .ab-card-check:hover {
+  .ab-row-check:hover {
     border-color: var(--accent);
     color: var(--accent);
     background: var(--accent-tint);
   }
 }
-.ab-card-check:focus-visible { border-color: var(--accent); color: var(--accent); }
-
-/* Meta e attesa rientrano quanto la spunta: la colonna del testo è una sola. */
-.ab-card-meta {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--sp-2);
-  padding-left: calc(18px + var(--sp-3));
-}
-
-.ab-card-waiting {
-  padding-left: calc(18px + var(--sp-3));
-  font-size: var(--fs-chip);
-  color: var(--text-3);
-}
-
-/* Inbox: da chiarire, e si vede. */
-.ab-card-inbox { border-left: 2px solid var(--accent); }
-
-/* Programmate: hanno già un posto nella giornata, l'accento è più quieto. */
-.ab-card-scheduled { border-left: 2px solid rgba(212, 164, 74, .5); }
+.ab-row-check:focus-visible { border-color: var(--accent); color: var(--accent); }
 
 /* Un giorno: spente, ma leggibili. */
-.ab-card-someday { background: var(--surface-2); }
-.ab-card-someday .ab-card-title { color: var(--text-3); }
+.ab-row-someday .ab-row-title { color: var(--text-3); }
 
-/* ── Chip e meta ──────────────────────────────────────────────────────── */
+/* ── Meta ─────────────────────────────────────────────────────────────── */
 
-.ab-chip {
-  padding: 2px var(--sp-2);
-  border: 1px solid var(--line);
-  border-radius: var(--r-sm);
-  font-size: var(--fs-micro);
-  color: var(--muted);
+.ab-est { font-size: var(--fs-micro); color: var(--disabled); white-space: nowrap; }
+
+.ab-waiting {
+  max-width: 90px;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.ab-chip-project {
-  border-color: color-mix(in srgb, var(--chip, var(--muted)) 40%, transparent);
-  color: var(--chip, var(--muted));
+  font-size: var(--fs-micro);
+  color: var(--text-3);
 }
 
 .ab-when { font-size: var(--fs-micro); color: var(--accent); white-space: nowrap; }
@@ -273,6 +381,7 @@
 
 .ab-deadlines {
   flex: 1;
+  min-width: 0;
   min-height: 0;
   overflow-y: auto;
   padding: var(--sp-5) var(--sp-7);
@@ -283,10 +392,11 @@
   align-items: center;
   gap: var(--sp-4);
   width: 100%;
-  min-height: 46px;
+  min-height: 34px;
   padding: 0 var(--sp-3);
   background: none;
   border: none;
+  border-left: 2px solid var(--task-color, transparent);
   border-bottom: 1px solid var(--line-soft);
   color: var(--text-2);
   font-family: var(--font-ui);
@@ -297,6 +407,7 @@
 @media (hover: hover) {
   .ab-deadline-row:hover { background: rgba(255, 255, 255, .03); }
 }
+.ab-deadline-row.selected { background: color-mix(in srgb, var(--task-color, var(--accent)) 18%, transparent); }
 
 .ab-deadline-row .ab-due { flex: 0 0 52px; font-size: var(--fs-chip); }
 .ab-deadline-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -356,6 +467,9 @@
     flex: 0 0 min(280px, 88%);
     scroll-snap-align: start;
   }
+  /* Anche qui la striscia resta una striscia: è la colonna che si è chiusa,
+     non lo spazio che manca. */
+  .ab-col.collapsed { flex: 0 0 40px; }
 
   .ab-pills {
     flex: 0 0 auto;

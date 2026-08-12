@@ -34,8 +34,74 @@
 .sv-search::placeholder { color: var(--disabled); }
 .sv-search:focus { border-color: var(--accent-line); }
 
-.sv-group { display: flex; flex-direction: column; gap: 1px; }
-.sv-group > .eyebrow { margin-bottom: var(--sp-2); padding-left: var(--sp-3); }
+/* ── Famiglie PARA ────────────────────────────────────────────────────────
+   Progetti, Aree, Risorse, Archivio: quattro blocchi con una testata che si
+   apre e si chiude, non quattro etichettine in mezzo all'elenco. */
+
+.sv-group {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding-bottom: var(--sp-3);
+  border-bottom: 1px solid var(--line-soft);
+}
+.sv-group:last-child { border-bottom: none; }
+.sv-group.folded { padding-bottom: 0; }
+
+.sv-group-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-height: 32px;
+  padding: 0 var(--sp-2);
+  background: none;
+  border: none;
+  border-radius: var(--r-sm);
+  color: var(--text-2);
+  font-family: var(--font-ui);
+  font-size: var(--fs-meta);
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--t), color var(--t);
+}
+@media (hover: hover) {
+  .sv-group-head:hover { background: rgba(255, 255, 255, .04); color: var(--text); }
+}
+
+.sv-group-caret { flex: 0 0 10px; font-size: 9px; color: var(--disabled); }
+.sv-group-icon { flex: 0 0 auto; font-size: 13px; }
+.sv-group-label { flex: 1; min-width: 0; letter-spacing: .03em; }
+.sv-group-count {
+  flex: 0 0 auto;
+  font-size: var(--fs-micro);
+  color: var(--disabled);
+  font-variant-numeric: tabular-nums;
+}
+
+.sv-group-hint {
+  margin: 0 0 var(--sp-2);
+  padding: 0 var(--sp-2) 0 calc(10px + var(--sp-2) + 13px + var(--sp-2));
+  font-size: var(--fs-micro);
+  line-height: 1.5;
+  color: var(--disabled);
+}
+
+.sv-group-empty {
+  padding: 0 var(--sp-3) var(--sp-2);
+  font-size: var(--fs-micro);
+  color: var(--disabled);
+}
+
+/* Le sezioni rientrano sotto la testata della loro famiglia: l'elenco si
+   legge come un albero, non come una fila unica con dei titoli in mezzo. */
+.sv-group .sv-list-item { padding-left: calc(10px + var(--sp-2) + var(--sp-2)); }
+
+.sv-list-dot {
+  flex: 0 0 auto;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
 
 .sv-list-item {
   display: flex;

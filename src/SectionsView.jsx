@@ -13,6 +13,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { getPages } from './api';
 import { paraSectionLabel, sectionRole } from './paraConfig';
+import { buildListColorMap } from './plannerShared';
 import { usePomodoro } from './pomodoroContext';
 import { taskContext, contextColor } from './taskModel';
 import OneDriveBox from './OneDriveBox';
@@ -22,9 +23,23 @@ import { PageTree } from './Panel';
 import { openProtocol } from './protocolLink';
 import './SectionsView.css';
 
+/** Le quattro famiglie PARA, nell'ordine in cui si guardano: prima quello che
+ *  ha una fine, poi quello che va mantenuto, poi il materiale, infine quel che
+ *  è chiuso. Icona e frase sono le stesse del diagramma di chiarimento — un
+ *  progetto è la stessa cosa in tutte e due le schermate. */
+const ROLES = [
+  { key: 'project',   label: 'Progetti', icon: '🗂', hint: 'Hanno un esito e una fine' },
+  { key: 'area',      label: 'Aree',     icon: '🔁', hint: 'Da mantenere, senza fine' },
+  { key: 'resources', label: 'Risorse',  icon: '💡', hint: 'Materiale di riferimento' },
+  { key: 'archive',   label: 'Archivio', icon: '📦', hint: 'Chiuse, ma non buttate' },
+];
+
 /** @type {Record<string, string>} */
-const ROLE_LABELS = { project: 'Progetti', area: 'Aree', resources: 'Risorse', archive: 'Archivio' };
-const ROLE_ORDER = ['project', 'area', 'resources', 'archive'];
+const ROLE_LABELS = Object.fromEntries(ROLES.map(r => [r.key, r.label]));
+
+/** L'archivio parte chiuso: c'è per essere ritrovato, non per stare fra i
+ *  piedi ogni volta che si cerca una sezione viva. */
+const DEFAULT_FOLDED = { archive: true };
 
 /**
  * Tutte le sezioni di tutti i taccuini, in piatto, con il taccuino di
@@ -62,19 +77,28 @@ export default function SectionsView({
   const navigate = useNavigate();
   const { session } = usePomodoro();
   const [query, setQuery] = useState('');
+  // Le famiglie PARA chiuse: solo l'archivio, di partenza.
+  const [folds, setFolds] = useState(/** @type {Record<string, boolean>} */ (DEFAULT_FOLDED));
   // L'attività aperta nel cassetto di dettaglio — lo stesso pannello del Piano.
   const [openTask, setOpenTask] = useState(/** @type {import('./types').TodoTask|null} */ (null));
 
   const sections = useMemo(() => flattenSections(notebooks, sectionsMap), [notebooks, sectionsMap]);
   const active = sections.find(s => s.id === sectionId) || null;
 
+  // Le famiglie sono sempre tutte e quattro, anche vuote: l'elenco dice come è
+  // organizzato il lavoro, e una famiglia che sparisce quando è vuota lo
+  // nasconde. Fuori dalla ricerca, dove invece contano solo i risultati.
   const grouped = useMemo(() => {
     const q = query.trim().toLowerCase();
     const visible = q ? sections.filter(s => s.displayName.toLowerCase().includes(q)) : sections;
-    return ROLE_ORDER
-      .map(role => ({ role, items: visible.filter(s => s._role === role) }))
-      .filter(g => g.items.length > 0);
+    return ROLES
+      .map(role => ({ ...role, items: visible.filter(s => s._role === role.key) }))
+      .filter(g => !q || g.items.length > 0);
   }, [sections, query]);
+
+  // I colori delle sezioni sono gli stessi del Piano e della vista Attività:
+  // una sezione ha un colore solo, ovunque la si incontri.
+  const colorMap = useMemo(() => buildListColorMap(notebooks, sectionsMap), [notebooks, sectionsMap]);
 
   // Le pagine della sezione aperta: prima dalla cache già popolata dal
   // preload, poi da Graph se non c'è.
@@ -124,24 +148,49 @@ export default function SectionsView({
         onChange={e => setQuery(e.target.value)}
       />
       {grouped.length === 0 && <p className="sv-empty">Nessuna sezione trovata</p>}
-      {grouped.map(g => (
-        <div className="sv-group" key={g.role}>
-          <span className="eyebrow">{ROLE_LABELS[g.role] || g.role}</span>
-          {g.items.map(s => {
-            const l = todoListsMap?.[s.displayName.toLowerCase()];
-            const open = (tasks || []).filter(t => l && t._listId === l.id).length;
-            return (
-              <button
-                key={s.id}
-                className={`sv-list-item${s.id === sectionId ? ' active' : ''}`}
-                onClick={() => navigate(`/sezioni/${s.id}`)}>
-                <span className="sv-list-name">{paraSectionLabel(s.displayName)}</span>
-                {open > 0 && <span className="sv-list-count">{open}</span>}
-              </button>
-            );
-          })}
-        </div>
-      ))}
+      {grouped.map(g => {
+        // Cercando si apre tutto: un risultato dentro una famiglia chiusa
+        // sarebbe un risultato che non si vede.
+        const folded = !query.trim() && !!folds[g.key];
+        return (
+          <div className={`sv-group${folded ? ' folded' : ''}`} key={g.key}>
+            <button
+              className="sv-group-head"
+              aria-expanded={!folded}
+              title={g.hint}
+              onClick={() => setFolds(f => ({ ...f, [g.key]: !folded }))}>
+              <span className="sv-group-caret" aria-hidden="true">{folded ? '▸' : '▾'}</span>
+              <span className="sv-group-icon" aria-hidden="true">{g.icon}</span>
+              <span className="sv-group-label">{g.label}</span>
+              <span className="sv-group-count">{g.items.length}</span>
+            </button>
+            {!folded && (
+              <>
+                <p className="sv-group-hint">{g.hint}</p>
+                {g.items.length === 0 && <p className="sv-group-empty">Nessuna sezione</p>}
+                {g.items.map(s => {
+                  const l = todoListsMap?.[s.displayName.toLowerCase()];
+                  const open = (tasks || []).filter(t => l && t._listId === l.id).length;
+                  return (
+                    <button
+                      key={s.id}
+                      className={`sv-list-item${s.id === sectionId ? ' active' : ''}`}
+                      title={`${paraSectionLabel(s.displayName)} · ${s._nbName}`}
+                      onClick={() => navigate(`/sezioni/${s.id}`)}>
+                      <span
+                        className="sv-list-dot"
+                        style={{ background: colorMap[s.displayName.toLowerCase()] || 'var(--line)' }}
+                      />
+                      <span className="sv-list-name">{paraSectionLabel(s.displayName)}</span>
+                      {open > 0 && <span className="sv-list-count">{open}</span>}
+                    </button>
+                  );
+                })}
+              </>
+            )}
+          </div>
+        );
+      })}
     </nav>
   );
 
