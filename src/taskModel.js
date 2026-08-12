@@ -162,6 +162,54 @@ export function waitingDays(sinceIso) {
   return Math.max(0, Math.floor((Date.now() - t) / 86_400_000));
 }
 
+// Dopo quanti giorni un'attesa va sollecitata. Sette: una settimana è il tempo
+// oltre il quale «te lo ricordi?» smette di essere insistenza e diventa il tuo
+// lavoro. Prima questo numero non esisteva — i giorni si contavano e nessuno
+// interveniva, quindi a quaranta giorni la riga era identica a quella di ieri,
+// solo con un numero più alto.
+export const WAITING_NUDGE_DAYS = 7;
+
+/**
+ * Un'attesa da sollecitare.
+ * @param {import('./types').TodoTask} task
+ * @returns {boolean}
+ */
+export function isWaitingStale(task) {
+  const w = parseWaitingFor(task);
+  if (!w) return false;
+  const days = waitingDays(w.since);
+  return days !== null && days >= WAITING_NUDGE_DAYS;
+}
+
+/**
+ * Il link per sollecitare: una mail già scritta, da completare col destinatario.
+ *
+ * Il nome della persona sta nelle note come testo libero («In attesa da: Marco»),
+ * non è un indirizzo — quindi il destinatario resta a chi manda, e qui si
+ * risparmia solo la parte noiosa: l'oggetto e le prime righe.
+ *
+ * @param {import('./types').TodoTask} task
+ * @returns {string|null}
+ */
+export function nudgeMailtoUrl(task) {
+  const w = parseWaitingFor(task);
+  if (!w) return null;
+  const days = waitingDays(w.since);
+  const title = task.title || '';
+  const subject = `Aggiornamento su: ${title}`;
+  const body = [
+    `Ciao ${w.who},`,
+    '',
+    days
+      ? `ti scrivo per «${title}»: sono in attesa da ${days} ${days === 1 ? 'giorno' : 'giorni'}.`
+      : `ti scrivo per «${title}».`,
+    '',
+    'Fammi sapere come procede.',
+    '',
+  ].join('\n');
+  return `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Note ripulite
 // ─────────────────────────────────────────────────────────────────────────────
@@ -257,6 +305,48 @@ export function inboxListId(lists) {
  */
 export function isSlipped(placement, todayDateStr) {
   return !!placement && !placement.completed && placement.date < todayDateStr;
+}
+
+/**
+ * I progetti fermi: hanno attività, ma nessuna che si possa fare adesso.
+ *
+ * È l'indicatore più utile del metodo, e l'app aveva tutti i dati per calcolarlo
+ * senza calcolarlo. Un progetto con dieci attività tutte «in attesa» o tutte «un
+ * giorno» sembra in corso — nella board occupa spazio, ha un colore, ha un
+ * conteggio — ma non c'è niente da fare: è fermo, e nessuno lo dice.
+ *
+ * Le regole:
+ *   · si guardano solo le liste che sono progetti, cioè quelle senza prefisso
+ *     PARA (le Aree per definizione non finiscono, le Risorse non sono azioni,
+ *     l'Archivio è chiuso — vedi paraConfig.js);
+ *   · una lista senza nessuna attività non è ferma: è vuota, o finita;
+ *   · basta una prossima azione o una programmata perché il progetto cammini.
+ *
+ * @param {import('./types').TodoTask[]} tasks
+ * @param {(name: string|null|undefined) => string|null} roleOf   sectionRole, iniettato per non incrociare i moduli
+ * @param {{ scheduledIds?: Set<string>, inboxListId?: string|null }} [ctx]
+ * @returns {{ listId: string, listName: string, total: number }[]}
+ */
+export function stalledProjects(tasks, roleOf, ctx = {}) {
+  /** @type {Map<string, { listId: string, listName: string, total: number, actionable: number }>} */
+  const byList = new Map();
+  for (const t of tasks || []) {
+    const listId = t._listId || '';
+    const listName = t._listName || '';
+    if (!listId) continue;
+    // Inbox non è un progetto: è la porta d'ingresso.
+    if (ctx.inboxListId && listId === ctx.inboxListId) continue;
+    if (roleOf(listName)) continue;
+    if (!byList.has(listId)) byList.set(listId, { listId, listName, total: 0, actionable: 0 });
+    const row = /** @type {any} */ (byList.get(listId));
+    row.total += 1;
+    const st = taskStatus(t, ctx);
+    if (st === 'next' || st === 'scheduled') row.actionable += 1;
+  }
+  return [...byList.values()]
+    .filter(r => r.total > 0 && r.actionable === 0)
+    .map(({ listId, listName, total }) => ({ listId, listName, total }))
+    .sort((a, b) => a.listName.localeCompare(b.listName, 'it'));
 }
 
 /**

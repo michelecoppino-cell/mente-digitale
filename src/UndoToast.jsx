@@ -1,13 +1,9 @@
 import { useCallback, useEffect, useState, useRef } from 'react';
 import { subscribeUndo, undoLast } from './undo';
+import { isTypingTarget } from './shortcuts';
 import './UndoToast.css';
 
 const VISIBLE_MS = 8000;
-
-function isEditableTarget(el) {
-  if (!el) return false;
-  return el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable;
-}
 
 // Banner "Annulla" in basso a schermo + scorciatoia globale Ctrl+Z (Cmd+Z su
 // Mac). Non intercetta Ctrl+Z quando il focus è su un campo di testo, per non
@@ -50,7 +46,7 @@ export default function UndoToast() {
   useEffect(() => {
     function onKeyDown(e) {
       const isUndo = (e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 'z';
-      if (!isUndo || isEditableTarget(document.activeElement)) return;
+      if (!isUndo || isTypingTarget(document.activeElement)) return;
       e.preventDefault();
       runUndo();
     }

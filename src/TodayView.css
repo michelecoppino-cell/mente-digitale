@@ -62,6 +62,15 @@
 }
 .today-now.empty { background: none; border-color: var(--line); }
 
+/* La sera: la stessa card, con la velatura più fredda. Non è «adesso», è il
+   bilancio — e va letta come una cosa diversa senza diventare un altro
+   componente. */
+.today-evening {
+  background: rgba(127, 166, 196, .06);
+  border-color: rgba(127, 166, 196, .22);
+}
+.today-evening .eyebrow-accent { color: var(--info); }
+
 .today-now-title {
   font-family: var(--font-title);
   font-size: 19px;
@@ -73,7 +82,14 @@
 
 .today-now-actions { display: flex; gap: var(--sp-3); margin-top: var(--sp-2); }
 
+/* Vale sia per i <button> sia per i <a> (il rituale della sera porta al Diario,
+   quindi è un collegamento vero): senza queste tre righe l'ancora si presentava
+   sottolineata e col testo appoggiato in alto invece che centrato. */
 .today-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
   height: 36px;
   min-width: 96px;
   padding: 0 var(--sp-4);
@@ -279,6 +295,10 @@
 @media (hover: hover) {
   .today-diary:hover { border-color: var(--accent-line); }
 }
+/* La sera il diario non è più un invito fra gli altri: è il passo che chiude la
+   giornata, e si vede. */
+.today-diary.evening { border-color: rgba(127, 166, 196, .3); }
+.today-diary.evening .today-diary-prompt { color: var(--text-2); }
 
 .today-diary-prompt { font-family: var(--font-title); font-size: var(--fs-row); color: var(--text-3); }
 .today-diary-streak { font-size: var(--fs-micro); color: var(--muted); }

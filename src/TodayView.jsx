@@ -69,6 +69,11 @@ function initials(/** @type {string} */ name) {
 
 const RECURRENCE_RE = /complean|ricorrenz|anniversar|onomastic/i;
 
+/** Da quest'ora in poi «Oggi» racconta la giornata che finisce invece di quella
+ *  che comincia. Le 18 e non le 20: la chiusura serve mentre si può ancora
+ *  spostare qualcosa a domani, non a cose fatte. */
+const EVENING_FROM_HOUR = 18;
+
 /**
  * Giorni consecutivi di diario che finiscono oggi (o ieri: la giornata non è
  * ancora finita, e azzerare la striscia alle 00:01 sarebbe una punizione per
@@ -185,6 +190,16 @@ export default function TodayView({
       .slice(0, 6);
   }, [calendarEvents, today]);
 
+  // ── Il bilancio della giornata ───────────────────────────────────────────
+  // Prima «Oggi» raccontava solo la giornata che comincia: del diario mostrava
+  // la striscia dei giorni di fila e nulla più, e il rituale della sera esisteva
+  // senza che niente lo chiamasse. Dalle 18 la pagina si gira: cosa è stato
+  // fatto, cosa è rimasto indietro, e il rituale a un tocco.
+  const evening = now.getHours() >= EVENING_FROM_HOUR;
+  const done = blocks.filter(b => b.completed);
+  const leftBehind = blocks.filter(b => !b.completed && t2m(b.endTime) <= nowMin);
+  const doneMin = done.reduce((sum, b) => sum + Math.max(0, t2m(b.endTime) - t2m(b.startTime)), 0);
+
   const plannedMin = blocks.reduce((sum, b) => sum + Math.max(0, t2m(b.endTime) - t2m(b.startTime)), 0);
   const dateLabel = now.toLocaleDateString('it-IT', { weekday: 'long', day: 'numeric', month: 'long' });
   // Il confine fra «domani» e «più avanti» per le ricorrenze: una volta, non
@@ -200,11 +215,17 @@ export default function TodayView({
 
   const summary = loading
     ? 'Caricamento della giornata…'
-    : [
-      `${events.length} ${events.length === 1 ? 'evento' : 'eventi'}`,
-      `${blocks.length} ${blocks.length === 1 ? 'azione programmata' : 'azioni programmate'}`,
-      plannedMin ? `${fmtHours(plannedMin)} pianificate` : null,
-    ].filter(Boolean).join(' · ');
+    : evening && blocks.length
+      ? [
+        `${done.length} di ${blocks.length} ${blocks.length === 1 ? 'azione' : 'azioni'} fatte`,
+        doneMin ? `${fmtHours(doneMin)} di lavoro` : null,
+        leftBehind.length ? `${leftBehind.length} ${leftBehind.length === 1 ? 'rimasta' : 'rimaste'} indietro` : null,
+      ].filter(Boolean).join(' · ')
+      : [
+        `${events.length} ${events.length === 1 ? 'evento' : 'eventi'}`,
+        `${blocks.length} ${blocks.length === 1 ? 'azione programmata' : 'azioni programmate'}`,
+        plannedMin ? `${fmtHours(plannedMin)} pianificate` : null,
+      ].filter(Boolean).join(' · ');
 
   return (
     <div className="today">
@@ -243,6 +264,32 @@ export default function TodayView({
             <section className="today-now empty" aria-busy="true">
               <span className="eyebrow">Adesso</span>
               <Skeleton rows={2} height={16} />
+            </section>
+          ) : evening ? (
+            /* Niente più in programma e la sera è arrivata: la card non dice il
+               vuoto, tira le somme. */
+            <section className="today-now today-evening">
+              <span className="eyebrow eyebrow-accent">Com'è andata</span>
+              <h2 className="today-now-title">
+                {blocks.length === 0
+                  ? 'Giornata senza un piano'
+                  : done.length === blocks.length
+                    ? 'Tutto quello che avevi previsto'
+                    : `${done.length} di ${blocks.length} fatte`}
+              </h2>
+              <p className="today-now-meta">
+                {blocks.length === 0
+                  ? 'Nessuna azione era programmata per oggi.'
+                  : leftBehind.length
+                    ? `${leftBehind.length} ${leftBehind.length === 1 ? 'azione è rimasta' : 'azioni sono rimaste'} indietro: dal Piano ${leftBehind.length === 1 ? 'la sposti' : 'le sposti'} a domani.`
+                    : 'Niente è rimasto indietro.'}
+              </p>
+              <div className="today-now-actions">
+                <Link className="today-btn accent" to="/diario">Rituale della sera</Link>
+                {leftBehind.length > 0 && (
+                  <button className="today-btn" onClick={() => navigate('/piano')}>Sposta a domani</button>
+                )}
+              </div>
             </section>
           ) : (
             <section className="today-now empty">
@@ -358,9 +405,11 @@ export default function TodayView({
             <span className="today-finanze-link">Apri Finanze →</span>
           </Link>
 
-          <Link className="today-diary" to="/diario">
-            <span className="eyebrow">Diario</span>
-            <p className="today-diary-prompt">Due righe su com'è andata…</p>
+          <Link className={`today-diary${evening ? ' evening' : ''}`} to="/diario">
+            <span className="eyebrow">{evening ? 'Diario · stasera' : 'Diario'}</span>
+            <p className="today-diary-prompt">
+              {evening ? 'Il rituale della sera: tre domande, due minuti.' : "Due righe su com'è andata…"}
+            </p>
             <span className="today-diary-streak">
               {streak === null ? '…' : streak > 0 ? `${streak} ${streak === 1 ? 'giorno' : 'giorni'} di fila` : 'Ricomincia la striscia'}
             </span>

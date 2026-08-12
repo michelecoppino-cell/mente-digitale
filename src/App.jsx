@@ -20,6 +20,8 @@ import { graphStatusFor, STATUS_LABELS } from './taskModel';
 import { pushUndo } from './undo';
 import { COLORS } from './config';
 import { whenIdle } from './idle';
+import { useGlobalShortcuts } from './shortcuts';
+import ShortcutsHelp from './ShortcutsHelp';
 import { notifyError, notifyInfo } from './notify';
 import UndoToast from './UndoToast';
 import Toaster from './Toaster';
@@ -215,6 +217,7 @@ export default function App() {
   const [mapViewMode, setMapViewMode] = useState(readMapViewMode);
   const [identityOpen, setIdentityOpen] = useState(null);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
   // La cattura chiesta dalla scorciatoia è aperta già al primo render, non in
   // un effetto: così non si vede prima la vista sotto e poi il modale coprirla.
   const [gtdOpen, setGtdOpen] = useState(false);
@@ -298,27 +301,15 @@ export default function App() {
     window.history.replaceState(null, '', window.location.pathname + window.location.hash);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Scorciatoie: ⌘K ricerca globale, ⌘J diario, ⌘N cattura da qualunque vista
-  useEffect(() => {
-    function onKeyDown(e) {
-      if (!(e.ctrlKey || e.metaKey)) return;
-      const key = e.key.toLowerCase();
-      if (key === 'k') {
-        e.preventDefault();
-        setSearchOpen(o => !o);
-      }
-      if (key === 'j') {
-        e.preventDefault();
-        navigate('/diario');
-      }
-      if (key === 'n') {
-        e.preventDefault();
-        setCaptureOpen(true);
-      }
-    }
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [navigate]);
+  // Le scorciatoie globali sono dichiarate in shortcuts.js, che è anche l'elenco
+  // mostrato da «?»: prima erano un onKeyDown qui dentro, e non esisteva un posto
+  // da cui raccontarle.
+  useGlobalShortcuts({
+    search: () => setSearchOpen(o => !o),
+    diary: () => navigate('/diario'),
+    capture: () => setCaptureOpen(true),
+    help: () => setHelpOpen(o => !o),
+  });
 
   async function handleLogin() {
     try { await login(); setAccount(getAccount()); load(false); }
@@ -1199,6 +1190,7 @@ export default function App() {
           />
         </Suspense>
       )}
+      <ShortcutsHelp open={helpOpen} onClose={() => setHelpOpen(false)} />
       <UndoToast />
       <Toaster />
     </>

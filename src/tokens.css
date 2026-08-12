@@ -42,6 +42,9 @@
   /* ── Semantica di stato ─────────────────────────────────────────────── */
   --danger:        #c07a7a;
   --ok:            #86c07a;
+  /* Informativo: né un guasto né una conferma. Tinge il bilancio della sera in
+     «Oggi» e gli avvisi che non segnalano un errore. */
+  --info:          #7fa6c4;
 
   /* ── Tipografia ─────────────────────────────────────────────────────── */
   --font-title: 'Playfair Display', Georgia, serif;

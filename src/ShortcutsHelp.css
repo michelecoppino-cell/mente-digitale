@@ -1,0 +1,94 @@
+/* Elenco delle scorciatoie (ShortcutsHelp.jsx). Stessa grammatica delle altre
+   finestre dell'app: velo scuro, scatola su --surface, bordo --line. */
+
+.sc-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 500;
+  background: rgba(0, 0, 0, .6);
+  backdrop-filter: blur(3px);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 10vh var(--sp-4) var(--sp-4);
+  overflow-y: auto;
+}
+
+.sc-box {
+  width: min(520px, 100%);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-xl);
+  box-shadow: 0 16px 48px rgba(0, 0, 0, .55);
+  padding: var(--sp-6) var(--sp-7) var(--sp-6);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-5);
+}
+
+.sc-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-4);
+}
+
+.sc-close {
+  background: none;
+  border: 1px solid var(--line);
+  color: var(--muted);
+  width: 26px; height: 26px;
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  font-size: 12px;
+}
+@media (hover: hover) {
+  .sc-close:hover { color: var(--text); background: rgba(255, 255, 255, .05); }
+}
+
+.sc-groups { display: flex; flex-direction: column; gap: var(--sp-5); }
+
+.sc-scope {
+  font-family: var(--font-ui);
+  font-size: var(--fs-meta);
+  font-weight: 600;
+  color: var(--text-3);
+  margin: 0 0 var(--sp-2);
+}
+
+.sc-list { margin: 0; display: flex; flex-direction: column; gap: 2px; }
+
+/* Tasti a sinistra su una colonna di larghezza fissa: l'occhio scende
+   sull'azione, non sui tasti. */
+.sc-row {
+  display: grid;
+  grid-template-columns: 92px 1fr;
+  align-items: baseline;
+  gap: var(--sp-4);
+  padding: 5px 0;
+  border-bottom: 1px solid var(--line-soft);
+}
+.sc-row:last-child { border-bottom: none; }
+
+.sc-keys { display: flex; gap: 3px; margin: 0; }
+
+.sc-keys kbd, .sc-foot kbd {
+  font-family: var(--font-ui);
+  font-size: var(--fs-micro);
+  color: var(--text-2);
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 1px 5px;
+  min-width: 20px;
+  text-align: center;
+}
+
+.sc-label { margin: 0; font-size: var(--fs-card); color: var(--text-2); }
+
+.sc-foot { margin: 0; font-size: var(--fs-meta); color: var(--muted); }
+
+@media (max-width: 560px) {
+  .sc-overlay { padding-top: var(--sp-6); }
+  .sc-box { padding: var(--sp-5) var(--sp-5); }
+}

@@ -18,6 +18,58 @@
   border-bottom: 1px solid var(--line);
 }
 
+/* ── Progetti fermi ───────────────────────────────────────────────────────
+   Un avviso che è anche un filtro. Non è una campitura piena: linea, velatura
+   e un pallino, come vuole la regola dell'accento nei token — qui in rosso
+   attenuato, perché segnala qualcosa che si è fermato. */
+.ab-stalled {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-3);
+  /* Può stringersi fino a far troncare il testo, ma non sotto la soglia in cui
+     resterebbero solo il pallino e «guarda quali»: fra gli 860 e i 1200px la
+     testata è una riga sola e la concorrenza per lo spazio è vera. */
+  flex: 0 1 auto;
+  min-width: 150px;
+  max-width: 430px;
+  padding: 5px var(--sp-4) 5px var(--sp-3);
+  background: rgba(192, 122, 122, .08);
+  border: 1px solid rgba(192, 122, 122, .35);
+  border-radius: var(--r-sm);
+  color: var(--text-2);
+  font-family: var(--font-ui);
+  font-size: var(--fs-chip);
+  cursor: pointer;
+  text-align: left;
+  transition: background var(--t), border-color var(--t);
+}
+@media (hover: hover) {
+  .ab-stalled:hover { background: rgba(192, 122, 122, .14); }
+}
+.ab-stalled.active {
+  border-color: var(--danger);
+  background: rgba(192, 122, 122, .16);
+}
+
+.ab-stalled-dot {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--danger);
+  flex-shrink: 0;
+}
+
+.ab-stalled-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ab-stalled-cta {
+  color: var(--muted);
+  white-space: nowrap;
+  border-bottom: 1px solid var(--line);
+}
+
 .ab-search {
   width: 260px;
   height: 34px;
@@ -362,6 +414,9 @@
   font-size: var(--fs-micro);
   color: var(--text-3);
 }
+/* Oltre una settimana l'attesa è una cosa da fare, non un dato: da qui si vede
+   scorrendo la colonna, senza leggere i numeri uno per uno. */
+.ab-waiting.stale { color: var(--danger); }
 
 .ab-when { font-size: var(--fs-micro); color: var(--accent); white-space: nowrap; }
 .ab-when.slipped { color: var(--danger); }

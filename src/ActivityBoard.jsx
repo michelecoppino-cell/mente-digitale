@@ -17,12 +17,13 @@ import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
   taskStatus, inboxListId, indexScheduled, taskContext, taskEstimateMin,
-  parseWaitingFor, waitingDays, CONTEXTS, isSlipped,
+  parseWaitingFor, waitingDays, CONTEXTS, isSlipped, stalledProjects,
+  WAITING_NUDGE_DAYS,
 } from './taskModel';
 import {
   DEFAULT_CONFIG, findProject, buildListColorMap, formatDueDate, dueDateSortValue, isTaskOverdue,
 } from './plannerShared';
-import { paraSectionLabel } from './paraConfig';
+import { paraSectionLabel, sectionRole } from './paraConfig';
 import { completeTask, updateTaskStatus } from './api';
 import { pushUndo } from './undo';
 import { notifyError } from './notify';
@@ -129,6 +130,9 @@ function CheckMark() {
 function TaskRow({ task, status, color, placement, dragging, selected, onClick, onComplete, onDragStart, onDragEnd }) {
   const waiting = status === 'waiting' ? parseWaitingFor(task) : null;
   const days = waiting ? waitingDays(waiting.since) : null;
+  // Oltre la soglia l'attesa non è più un'informazione, è una cosa da fare: la
+  // pastiglia cambia colore invece di limitarsi a incrementare il contatore.
+  const stale = days !== null && days >= WAITING_NUDGE_DAYS;
   const due = formatDueDate(task.dueDateTime);
   const slipped = placement ? isSlipped(placement, todayStr()) : false;
 
@@ -161,7 +165,11 @@ function TaskRow({ task, status, color, placement, dragging, selected, onClick, 
 
       <span className="ab-row-meta">
         {waiting && (
-          <span className="ab-waiting" title={`In attesa da ${waiting.who}`}>
+          <span
+            className={`ab-waiting${stale ? ' stale' : ''}`}
+            title={stale
+              ? `In attesa da ${waiting.who} da ${days} giorni — da sollecitare`
+              : `In attesa da ${waiting.who}`}>
             {waiting.who}{days !== null ? ` · ${days === 0 ? 'oggi' : `${days}g`}` : ''}
           </span>
         )}
@@ -285,15 +293,28 @@ export default function ActivityBoard({
   // se almeno un'attività porta una categoria.
   const hasContexts = useMemo(() => tasks.some(t => taskContext(t)), [tasks]);
 
+  // I progetti fermi: hanno attività, ma nessuna che si possa fare adesso. Il
+  // conto si fa sull'insieme completo e non su quello filtrato — un progetto non
+  // diventa fermo perché hai scritto due lettere nel campo di ricerca.
+  const stalled = useMemo(
+    () => stalledProjects(tasks, sectionRole, { scheduledIds, inboxListId: inboxId }),
+    [tasks, scheduledIds, inboxId],
+  );
+  const stalledIds = useMemo(() => new Set(stalled.map(p => p.listId)), [stalled]);
+  // Il filtro «fermi» sta nell'URL come gli altri: la vista è condivisibile e
+  // sopravvive a un ricaricamento.
+  const onlyStalled = params.get('fermi') === '1';
+
   const visible = useMemo(() => {
     const q = deferredQuery.trim().toLowerCase();
     return tasks.filter(t => {
       if (q && !(t.title || '').toLowerCase().includes(q)) return false;
       if (listFilter && t._listId !== listFilter) return false;
       if (ctxFilter && taskContext(t) !== ctxFilter) return false;
+      if (onlyStalled && !stalledIds.has(t._listId || '')) return false;
       return true;
     });
-  }, [tasks, deferredQuery, ctxFilter, listFilter]);
+  }, [tasks, deferredQuery, ctxFilter, listFilter, onlyStalled, stalledIds]);
 
   const byStatus = useMemo(() => {
     /** @type {Record<string, import('./types').TodoTask[]>} */
@@ -475,8 +496,8 @@ export default function ActivityBoard({
       />
       <div className="ab-chips">
         <button
-          className={`ab-filter${!listFilter && !ctxFilter ? ' active' : ''}`}
-          onClick={() => setParam({ lista: '', ctx: '' })}>
+          className={`ab-filter${!listFilter && !ctxFilter && !onlyStalled ? ' active' : ''}`}
+          onClick={() => setParam({ lista: '', ctx: '', fermi: '' })}>
           Tutte
         </button>
         {lists.map(l => (
@@ -500,6 +521,25 @@ export default function ActivityBoard({
           </button>
         ))}
       </div>
+      {/* Un progetto con dieci attività tutte «in attesa» sembra in corso: ha un
+          colore, un conteggio, occupa spazio. Questa riga è l'unico posto in cui
+          l'app dice che invece è fermo — e portarci dentro è il gesto naturale
+          subito dopo averlo letto. */}
+      {stalled.length > 0 && (
+        <button
+          className={`ab-stalled${onlyStalled ? ' active' : ''}`}
+          aria-pressed={onlyStalled}
+          title={stalled.map(p => paraSectionLabel(p.listName)).join(' · ')}
+          onClick={() => setParam({ fermi: onlyStalled ? '' : '1', lista: '', ctx: '' })}>
+          <span className="ab-stalled-dot" aria-hidden="true" />
+          <span className="ab-stalled-text">
+            {stalled.length === 1
+              ? '1 progetto senza prossima azione'
+              : `${stalled.length} progetti senza prossima azione`}
+          </span>
+          <span className="ab-stalled-cta">{onlyStalled ? 'mostra tutto' : 'guarda quali'}</span>
+        </button>
+      )}
       <div className="ab-views">
         {VIEWS.map(v => (
           <button
