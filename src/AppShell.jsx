@@ -153,7 +153,10 @@ function PomodoroInline() {
   );
 }
 
-/** Pausa/riprendi e chiusura della sessione, dentro il menù «altro». */
+/**
+ * Pausa/riprendi e chiusura della sessione, dentro il menù «altro».
+ * @param {{ onDone: () => void }} props
+ */
 function PomodoroMenuActions({ onDone }) {
   const { session, pause, resume, stop } = usePomodoro();
   if (!session) return null;
@@ -192,7 +195,11 @@ export default function AppShell({ children, topbar, onCapture, onOpenSettings }
   const fused = narrow && !!session;
 
   useEffect(() => { localStorage.setItem(RAIL_COLLAPSED_KEY, collapsed ? '1' : '0'); }, [collapsed]);
-  useEffect(() => { if (!fused) setMenuOpen(false); }, [fused]);
+
+  // Il menù «altro» esiste solo dentro la topbar fusa: quando la sessione
+  // finisce o lo schermo si allarga sparisce da sé, senza un effetto che
+  // rincorra lo stato.
+  const menuVisible = menuOpen && fused;
 
   // Un solo comando, un solo handler: da telefono apre e chiude il drawer, da
   // desktop riduce e riespande il rail. Il bottone è disegnato due volte —
@@ -263,12 +270,12 @@ export default function AppShell({ children, topbar, onCapture, onOpenSettings }
             <>
               <PomodoroInline />
               <button
-                className={`shell-more-btn tap-44${menuOpen ? ' active' : ''}`}
+                className={`shell-more-btn tap-44${menuVisible ? ' active' : ''}`}
                 onClick={() => setMenuOpen(o => !o)}
                 title="Altre azioni">
                 <Icon name="more" />
               </button>
-              {menuOpen && (
+              {menuVisible && (
                 <>
                   <div className="shell-menu-scrim" onClick={() => setMenuOpen(false)} />
                   <div className="shell-menu">

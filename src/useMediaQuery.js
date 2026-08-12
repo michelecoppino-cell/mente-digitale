@@ -6,25 +6,30 @@
 // 860px, rail ridotto sopra), e il pannello Dettagli del Piano è una colonna
 // da desktop e un foglio dal basso da telefono — e va montato una volta sola,
 // non due con una nascosta dal CSS.
-import { useEffect, useState } from 'react';
+//
+// matchMedia è una sorgente esterna a React, quindi si legge con
+// useSyncExternalStore invece che con stato + effetto: niente render in più al
+// montaggio e nessuna finestra in cui il valore è quello sbagliato.
+import { useCallback, useSyncExternalStore } from 'react';
+
+const supported = () => typeof window !== 'undefined' && !!window.matchMedia;
 
 /**
  * @param {string} query
  * @returns {boolean}
  */
 export function useMediaQuery(query) {
-  const [matches, setMatches] = useState(
-    () => typeof window !== 'undefined' && !!window.matchMedia?.(query).matches
-  );
-
-  useEffect(() => {
-    if (typeof window === 'undefined' || !window.matchMedia) return undefined;
+  const subscribe = useCallback((/** @type {() => void} */ onChange) => {
+    if (!supported()) return () => {};
     const mq = window.matchMedia(query);
-    const onChange = (/** @type {MediaQueryListEvent} */ e) => setMatches(e.matches);
-    setMatches(mq.matches);
     mq.addEventListener('change', onChange);
     return () => mq.removeEventListener('change', onChange);
   }, [query]);
 
-  return matches;
+  const getSnapshot = useCallback(
+    () => (supported() ? window.matchMedia(query).matches : false),
+    [query]
+  );
+
+  return useSyncExternalStore(subscribe, getSnapshot, () => false);
 }
