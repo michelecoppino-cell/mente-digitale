@@ -23,6 +23,10 @@ contabilità personale.
 - **Attività** — le cinque colonne del flusso GTD (Inbox · Prossime azioni · In attesa · Programmate · Un giorno):
   la colonna *è* lo stato, e trascinare una card fra colonne lo cambia su Microsoft To-Do. Un clic su una
   card apre il pannello di dettaglio — note, sottoattività, stima, scadenza, stato.
+  Il diagramma di *Chiarire* (dalla cattura o da una card di Inbox) può chiedere un
+  parere: «Dove la metterei io» propone ramo, destinazione, titolo azionabile e stima,
+  e apre la foglia già compilata — la conferma resta tua. Compare solo con la chiave
+  configurata (vedi *Variabili d'ambiente*).
 - **Diario** (voce *Diario* nel menù, `⌘J`) — tre modalità distinte: *svuota testa* a schermo
   intero (timer 5/10 min, domanda selezionabile dall'elenco o rimovibile, righe che sbiadiscono
   mentre scrivi, pannello "come funziona" con il metodo e le fonti), *rituale della sera* (tre
@@ -33,8 +37,10 @@ contabilità personale.
   dispositivo e salvata come file in `mente-digitale/diario-foto/` su OneDrive — nel JSON del mese
   finisce solo il nome. Timeline con ricerca e tag. Il bottone
   **Copia per l'AI** compone il markdown di un periodo (con la Bussola come contesto) da
-  incollare in una chat AI per chiedere supporto. Voci salvate su OneDrive in file mensili;
-  il diario non passa da alcuna funzione server. Diario e cattura sono sempre
+  incollare in una chat AI per chiedere supporto — e, se il deploy ha una chiave configurata,
+  la stessa richiesta si può fare da lì con **Chiedi qui**, leggendo la risposta nell'app.
+  Voci salvate su OneDrive in file mensili: il diario esce dal dispositivo solo quando sei tu
+  a incollarlo o a premere quel pulsante. Diario e cattura sono sempre
   raggiungibili dal menù, da qualunque vista.
 
 - **Finanze** — contabilità personale, saldo reale e proiezione futura, assorbita dall'app
@@ -249,17 +255,39 @@ con un token fresco sul 401.
 | Frontend | React 19 + Vite, react-router (hash), D3 per la mappa. Una vista per chunk, caricata a richiesta |
 | Autenticazione | MSAL Browser (account Microsoft personale, scope Graph in sola lettura + To-Do/Files in scrittura) |
 | Dati | Microsoft Graph (OneNote, To-Do, Calendar, OneDrive, Mail) con cache localStorage a TTL. I file JSON dell'app stanno nella cartella `mente-digitale/` di OneDrive (quelli rimasti in root vengono spostati automaticamente al primo avvio) |
-| Backend | nessuno: solo hosting statico su Cloudflare Pages |
+| Backend | hosting statico su Cloudflare Pages, più **una** funzione: `/api/claude` |
 | Automazioni | GitHub Actions (`sync-calendar`) |
 
-Nessun dato transita da un backend proprio, perché un backend proprio non c'è: il
-browser parla direttamente con Microsoft Graph e Cloudflare serve solo i file.
+Il browser parla direttamente con Microsoft Graph: OneNote, To-Do, calendario,
+OneDrive, il diario e Finanze non passano da nessun server nostro, e Cloudflare
+per loro serve solo i file.
 
-Ci sono state due funzioni Cloudflare — un piano generato con Claude Haiku e un
-riassunto AI dei feed ANSA — e il README le ha descritte più a lungo di quanto
-siano esistite: nel codice non c'è più una sola chiamata a `/api/*`, né la
-cartella `functions/`, né una vista del briefing. Se torneranno, torneranno
-anche qui.
+L'unica eccezione è `functions/api/claude.js`, e c'è per un motivo preciso: una
+chiave API non può stare nel codice del browser, dove chiunque apra gli strumenti
+di sviluppo la vedrebbe. La funzione fa due cose, entrambe avviate da un pulsante
+e mai da sole:
+
+- **Chiarire assistito** — il pensiero appena catturato viene inviato al modello,
+  che percorre il diagramma di *Chiarire* e propone ramo, destinazione PARA,
+  titolo azionabile e stima. La proposta apre la foglia già compilata: crea
+  qualcosa solo se la si conferma. Sta fra «Inbox» e «Che cos'è?», che è dove uno
+  si fermerebbe a pensare.
+- **Diario che risponde** — l'estratto che *Copia per l'AI* componeva per essere
+  incollato altrove si può leggere qui: stesso testo, stesso preset, risposta
+  dentro l'app. «Copia negli appunti» resta, e senza chiave configurata è
+  l'unica strada.
+
+La funzione si difende da sola: richiede il token Microsoft che l'app ha già in
+mano, lo verifica contro Graph e accetta solo l'account elencato in
+`UTENTE_AUTORIZZATO`. Senza quella variabile — o senza `ANTHROPIC_API_KEY` — si
+dichiara spenta su `GET /api/claude` e l'app non mostra affatto i due pulsanti:
+un pulsante che c'è e non funziona è peggio di un pulsante che non c'è. Vale
+anche in sviluppo con `npm run dev`, dove le funzioni Cloudflare non girano.
+
+Ci sono state, in passato, altre due funzioni — un piano generato con Claude
+Haiku e un riassunto AI dei feed ANSA — e il README le ha descritte più a lungo
+di quanto siano esistite. Quelle non sono tornate: non c'è nessuna vista del
+briefing e nessuna generazione automatica del piano.
 
 ## Sviluppo
 
@@ -272,9 +300,20 @@ npm run build     # build di produzione in dist/
 
 ### Variabili d'ambiente (Cloudflare Pages)
 
-Nessuna: non essendoci funzioni server, non c'è nessuna chiave da configurare
-per il deploy. (Il workflow `sync-calendar` ha i propri segreti fra quelli di
-GitHub Actions.)
+Due, e servono solo alle funzioni AI. Senza di esse tutto il resto dell'app
+funziona identico e i due pulsanti non compaiono.
+
+| Variabile | Cosa contiene |
+|---|---|
+| `ANTHROPIC_API_KEY` | la chiave dell'API di Anthropic |
+| `UTENTE_AUTORIZZATO` | il tuo indirizzo Microsoft (o l'id dell'account). Più di uno: separati da virgola |
+
+`UTENTE_AUTORIZZATO` non è burocrazia: `/api/claude` spende soldi a ogni
+chiamata, e senza quel controllo chiunque trovasse l'indirizzo potrebbe
+spenderli. Vanno impostate entrambe — la funzione con una sola delle due si
+considera spenta.
+
+(Il workflow `sync-calendar` ha i propri segreti fra quelli di GitHub Actions.)
 
 ### Configurazione MSAL
 

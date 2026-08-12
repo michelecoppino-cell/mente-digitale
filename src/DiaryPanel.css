@@ -745,3 +745,48 @@
 @media (hover: none) {
   .diary-entry-del { opacity: 1; }
 }
+
+/* ── La risposta dell'AI ─────────────────────────────────────────────────────
+   Il diario è scritto a mano e questa risposta no: si vede dal bordo a sinistra
+   e dal fondo appena diverso, non da un colore acceso. Sta sotto l'estratto,
+   nello stesso scorrimento, perché è la fine di una lettura e non un'altra
+   pagina. */
+.diary-ai-error {
+  margin-top: var(--sp-3);
+  padding: var(--sp-3) var(--sp-4);
+  border-left: 2px solid var(--danger);
+  background: var(--surface);
+  border-radius: 0 var(--r-sm) var(--r-sm) 0;
+  font-size: var(--fs-meta);
+  line-height: 1.5;
+  color: var(--text-3);
+}
+
+.diary-ai-answer {
+  margin-top: var(--sp-5);
+  padding: var(--sp-4) var(--sp-5);
+  border: 1px solid var(--line);
+  border-left: 2px solid var(--info);
+  border-radius: 0 var(--r) var(--r) 0;
+  background: var(--surface);
+}
+.diary-ai-answer-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--sp-4);
+  margin-bottom: var(--sp-3);
+}
+.diary-ai-answer-text {
+  white-space: pre-wrap;
+  font-size: var(--fs-row);
+  line-height: 1.65;
+  color: var(--text-2);
+  /* Selezionabile a mano: è la via d'uscita quando gli appunti sono negati. */
+  user-select: text;
+}
+.diary-ai-answer-note {
+  margin-top: var(--sp-4);
+  font-size: var(--fs-micro);
+  color: var(--muted);
+}

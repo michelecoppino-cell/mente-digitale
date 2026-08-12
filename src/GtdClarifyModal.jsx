@@ -1,6 +1,8 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { createTask, deleteTask, completeTask, createNotePage, createCalendarEvent, deleteCalendarEvent } from './api';
 import { sectionRole, paraSectionLabel } from './paraConfig';
+import { withEstimateMarker } from './taskModel';
+import { disponibile as aiDisponibile, proponiDestinazione } from './ai';
 import { pushUndo } from './undo';
 import { useDialog } from './useDialog';
 import './GtdClarifyModal.css';
@@ -42,6 +44,15 @@ export default function GtdClarifyModal({ open, onClose, todoLists = [], noteboo
   const areaLists = useMemo(() => todoLists.filter(l => sectionRole(l.displayName) === 'area'), [todoLists]);
   const resourceLists = useMemo(() => todoLists.filter(l => sectionRole(l.displayName) === 'resources'), [todoLists]);
 
+  // I nomi delle destinazioni, per ramo, da dare al modello quando gli si chiede
+  // una proposta: lista e sezione omonime sono la stessa destinazione vista da
+  // due lati (To-Do e OneNote), quindi qui l'insieme è unico.
+  const destinazioni = useMemo(() => ({
+    progetti: nomiUnici(projectLists, projectSections),
+    risorse: nomiUnici(resourceLists, resourceSections),
+    aree: nomiUnici(areaLists, areaSections),
+  }), [projectLists, projectSections, resourceLists, resourceSections, areaLists, areaSections]);
+
   function handleClose() { setActiveLeaf(null); setEventLeaf(null); onClose(); }
 
   // Escape chiude: prima l'unico modo di uscire dal diagramma era colpire la ✕
@@ -78,16 +89,24 @@ export default function GtdClarifyModal({ open, onClose, todoLists = [], noteboo
   // sezione in App.jsx, un incrocio di stato non banale per un'azione a basso
   // rischio (una pagina di riferimento in più si cancella comunque a mano
   // dal Panel in un secondo).
-  async function submitResource(text, { sectionId }) {
-    await createNotePage(sectionId, text.slice(0, 60) || 'Idea', text);
+  async function submitResource(text, { sectionId, titolo }) {
+    await createNotePage(sectionId, titolo?.trim() || text.slice(0, 60) || 'Idea', text);
   }
 
-  async function submitProjectTask(text, { listId }) {
-    const task = await createTask(listId, text);
+  // `titolo` e `stimaMinuti` arrivano solo quando si è partiti da una proposta:
+  // il titolo corto e azionabile va nel campo titolo di To-Do, il pensiero per
+  // intero nelle note, e la stima come marker [MIN:n] — che è dove il Piano la
+  // cerca. Senza proposta il comportamento è quello di sempre: il testo è il
+  // titolo, e basta.
+  async function submitProjectTask(text, { listId, titolo, stimaMinuti }) {
+    const nome = (titolo?.trim() || text).trim();
+    const note = titolo?.trim() && text.trim() !== nome ? text.trim() : '';
+    const body = stimaMinuti ? withEstimateMarker(note, stimaMinuti) : note;
+    const task = await createTask(listId, nome, body ? { body } : {});
     const list = todoLists.find(l => l.id === listId);
     onTaskCreated?.({ ...task, _listId: listId, _listName: list?.displayName || '' }, { addToday: false });
     pushUndo({
-      label: `Task "${text}" creato`,
+      label: `Task "${nome}" creato`,
       undo: async () => {
         await deleteTask(listId, task.id);
         onTaskRemoved?.(listId, task.id);
@@ -108,6 +127,34 @@ export default function GtdClarifyModal({ open, onClose, todoLists = [], noteboo
     resourceTask: { id: 'resourceTask', icon: '💡', label: 'Risorse/Idee', kind: 'list', consume: 'delete', todoLists: resourceLists, onSubmit: submitProjectTask, confirmLabel: 'Crea task', confirmMsg: 'Task creato' },
     area:         { id: 'area', icon: '🔁', label: 'Aree', kind: 'list', consume: 'delete', todoLists: areaLists, onSubmit: submitProjectTask, confirmLabel: 'Crea task', confirmMsg: 'Task creato' },
   };
+
+  // Una proposta accettata non crea niente: apre la foglia che il modello ha
+  // indicato, già compilata. L'ultimo gesto — leggere e premere «Crea» — resta
+  // di chi ha scritto il pensiero, che è il punto di tutto il diagramma.
+  function applicaProposta(p) {
+    const chiave = FOGLIA_PER_RAMO[p.ramo]?.[p.azionabile ? 'azione' : 'nota'];
+    const leaf = chiave && leaves[chiave];
+    if (!leaf) return;
+
+    const cercato = (p.destinazione || '').trim().toLowerCase();
+    let targetId = '';
+    if (cercato && leaf.kind === 'list') {
+      targetId = leaf.todoLists.find(l => l.displayName.toLowerCase() === cercato
+        || paraSectionLabel(l.displayName).toLowerCase() === cercato)?.id || '';
+    } else if (cercato && leaf.kind === 'section') {
+      targetId = leaf.sections.find(s => s.label.toLowerCase() === cercato || s.name.toLowerCase() === cercato)?.id || '';
+    }
+
+    setActiveLeaf({
+      ...leaf,
+      pre: {
+        titolo: p.titolo || '',
+        testo: seedText,
+        targetId,
+        stimaMinuti: leaf.kind === 'list' ? p.stimaMinuti || 0 : 0,
+      },
+    });
+  }
 
   if (!open) return null;
 
@@ -131,6 +178,13 @@ export default function GtdClarifyModal({ open, onClose, todoLists = [], noteboo
             <div className="gtd-flow-node-wrap">
               <div className="gtd-flow-node static">Inbox</div>
             </div>
+            {/* Il suggerimento sta qui, fra Inbox e la prima domanda: è dove si
+                sarebbe fermato uno a pensare. Compare solo se c'è un testo da
+                cui partire e se l'AI è configurata su questo deploy. */}
+            {(seedText || '').trim() && (
+              <AiProposta testo={seedText} destinazioni={destinazioni} onUsa={applicaProposta} />
+            )}
+
             <div className="gtd-flow-node-wrap">
               <div className="gtd-flow-node">Che cos'è?</div>
             </div>
@@ -203,6 +257,103 @@ export default function GtdClarifyModal({ open, onClose, todoLists = [], noteboo
 // taccuino può averne più di una (es. "ARC-AUTO" e "ARC-LORENZO" nello
 // stesso taccuino) — etichettate col nome della sezione depurato dal
 // prefisso PARA.
+// I nomi di una destinazione PARA vista dai due lati, senza doppioni. Il prefisso
+// va via anche dalle liste To-Do: senza, "RIS-Idee" (la lista) e "Idee" (la
+// sezione omonima) arrivavano al modello come due destinazioni diverse, e una
+// scelta fra due nomi della stessa cosa è una scelta sbagliata in partenza.
+function nomiUnici(lists, sections) {
+  return [...new Set([
+    ...lists.map(l => paraSectionLabel(l.displayName)),
+    ...sections.map(s => s.label),
+  ])].filter(Boolean);
+}
+
+// Dal ramo proposto alla foglia del diagramma: la stessa destinazione PARA ha due
+// foglie, una per il materiale di riferimento (pagina OneNote) e una per l'azione
+// (task To-Do) — è la biforcazione «è un'azione?».
+const FOGLIA_PER_RAMO = {
+  cestino:  { azione: 'trash', nota: 'trash' },
+  falla:    { azione: 'doNow', nota: 'doNow' },
+  progetti: { azione: 'project', nota: 'projectNote' },
+  risorse:  { azione: 'resourceTask', nota: 'resourceNote' },
+  aree:     { azione: 'area', nota: 'areaNote' },
+};
+
+const RAMO_LABEL = {
+  cestino: 'Cestino',
+  falla: 'Falla adesso',
+  progetti: 'Progetti',
+  risorse: 'Risorse/Idee',
+  aree: 'Aree',
+};
+
+// ── AiProposta ────────────────────────────────────────────────────────────────
+// «Dove la metterei io»: un pulsante, una proposta, e due modi di rispondere.
+// Non decide niente e non scrive niente — apre la foglia già compilata, e chi ha
+// scritto il pensiero conferma o cambia. Chiarire resta un atto suo: è il passo
+// in cui si guarda una cosa in faccia e si decide, e delegarlo del tutto
+// significherebbe non averlo fatto.
+function AiProposta({ testo, destinazioni, onUsa }) {
+  const [attiva, setAttiva] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [proposta, setProposta] = useState(null);
+  const [errore, setErrore] = useState('');
+
+  useEffect(() => {
+    let vivo = true;
+    aiDisponibile().then(v => { if (vivo) setAttiva(v); });
+    return () => { vivo = false; };
+  }, []);
+
+  // Niente chiave configurata (o `npm run dev`, dove le funzioni non girano):
+  // il blocco non esiste, invece di esistere e non funzionare.
+  if (!attiva) return null;
+
+  async function chiedi() {
+    setBusy(true);
+    setErrore('');
+    try {
+      setProposta(await proponiDestinazione(testo, destinazioni));
+    } catch (e) {
+      setErrore(e?.message || 'Non è arrivata nessuna proposta.');
+    }
+    setBusy(false);
+  }
+
+  if (!proposta) {
+    return (
+      <div className="gtd-ai">
+        <button className="gtd-ai-ask" onClick={chiedi} disabled={busy}>
+          ✦ {busy ? 'Ci sto pensando…' : 'Dove la metterei io'}
+        </button>
+        {errore
+          ? <div className="gtd-ai-error">{errore}</div>
+          : <div className="gtd-ai-note">Il pensiero viene inviato al modello di Anthropic per proporre una destinazione. Niente viene creato: la proposta la confermi tu.</div>}
+      </div>
+    );
+  }
+
+  const dove = [RAMO_LABEL[proposta.ramo], proposta.destinazione].filter(Boolean).join(' › ');
+  const azionabile = proposta.ramo !== 'cestino' && proposta.ramo !== 'falla' && proposta.azionabile;
+
+  return (
+    <div className="gtd-ai has-proposta">
+      <div className="gtd-ai-head">✦ Proposta</div>
+      <div className="gtd-ai-titolo">{proposta.titolo}</div>
+      <div className="gtd-ai-dove">
+        {dove}
+        {azionabile && proposta.stimaMinuti ? ` · ~${proposta.stimaMinuti} min` : ''}
+        {!proposta.azionabile && proposta.ramo !== 'cestino' && proposta.ramo !== 'falla' ? ' · pagina di riferimento' : ''}
+      </div>
+      {proposta.perche && <div className="gtd-ai-perche">{proposta.perche}</div>}
+      <div className="gtd-ai-actions">
+        <button className="gtd-ai-ghost" onClick={() => setProposta(null)}>Decido io</button>
+        <button className="gtd-ai-use" onClick={() => onUsa(proposta)}>Apri così</button>
+      </div>
+    </div>
+  );
+}
+
 function paraSectionsByRole(notebooks, sectionsMap, role) {
   const out = [];
   for (const nb of notebooks) {
@@ -263,24 +414,34 @@ function LeafPlusBadge({ kind }) {
 // se prevista) e descrizione completa. Le foglie di tipo "log" (Cestino,
 // Farla) non generano alcun task/nota: il testo serve solo a confermare la
 // scelta, nessuna chiamata a Graph.
+//
+// `leaf.pre` c'è solo quando si arriva da una proposta dell'AI: porta il titolo
+// corto, la destinazione già scelta e la stima. Il campo Titolo compare allora
+// accanto alla descrizione — perché una proposta senza il titolo modificabile
+// sarebbe una proposta da prendere o lasciare.
 function GtdLeafPopup({ leaf, seedText, onConsume, onClose }) {
-  const [text, setText] = useState(seedText || '');
-  const [listId, setListId] = useState(leaf.todoLists?.[0]?.id || '');
-  const [sectionId, setSectionId] = useState(leaf.sections?.[0]?.id || '');
+  const pre = leaf.pre || null;
+  const [titolo, setTitolo] = useState(pre?.titolo || '');
+  const [stima, setStima] = useState(pre?.stimaMinuti || 0);
+  const [text, setText] = useState(pre?.testo ?? (seedText || ''));
+  const [listId, setListId] = useState(pre?.targetId || leaf.todoLists?.[0]?.id || '');
+  const [sectionId, setSectionId] = useState(pre?.targetId || leaf.sections?.[0]?.id || '');
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState(false);
 
   const needsList = leaf.kind === 'list';
   const needsSection = leaf.kind === 'section';
-  const canSubmit = !busy && text.trim() && (!needsList || listId) && (!needsSection || sectionId);
+  const canSubmit = !busy && text.trim() && (!pre || titolo.trim())
+    && (!needsList || listId) && (!needsSection || sectionId);
 
   async function handleSubmit() {
     if (!canSubmit) return;
     setBusy(true);
+    const extra = pre ? { titolo: titolo.trim(), stimaMinuti: stima } : {};
     try {
       if (leaf.kind === 'log') await leaf.onSubmit(text.trim());
-      else if (leaf.kind === 'list') await leaf.onSubmit(text.trim(), { listId });
-      else if (leaf.kind === 'section') await leaf.onSubmit(text.trim(), { sectionId });
+      else if (leaf.kind === 'list') await leaf.onSubmit(text.trim(), { listId, ...extra });
+      else if (leaf.kind === 'section') await leaf.onSubmit(text.trim(), { sectionId, ...extra });
       await onConsume?.(leaf.consume || 'delete');
       setBusy(false);
       setDone(true);
@@ -320,11 +481,35 @@ function GtdLeafPopup({ leaf, seedText, onConsume, onClose }) {
                   </select>
                 </label>
               )}
+              {pre && (
+                <label className="gtd-popup-field">
+                  <span>Titolo</span>
+                  <input
+                    className="gtd-select"
+                    type="text"
+                    autoFocus
+                    value={titolo}
+                    onChange={e => setTitolo(e.target.value)}
+                    placeholder="Verbo + oggetto"
+                  />
+                </label>
+              )}
+              {pre && needsList && (
+                <label className="gtd-popup-field">
+                  <span>Stima</span>
+                  <select className="gtd-select" value={stima} onChange={e => setStima(Number(e.target.value))}>
+                    <option value={0}>senza stima</option>
+                    {[5, 15, 30, 45, 60, 120, 240].map(m => (
+                      <option key={m} value={m}>{m < 60 ? `${m} min` : `${m / 60}h`}</option>
+                    ))}
+                  </select>
+                </label>
+              )}
               <label className="gtd-popup-field">
-                <span>Descrizione</span>
+                <span>{pre ? 'Descrizione (finisce nelle note)' : 'Descrizione'}</span>
                 <textarea
                   className="gtd-textarea gtd-textarea-lg"
-                  autoFocus
+                  autoFocus={!pre}
                   rows={7}
                   value={text}
                   onChange={e => setText(e.target.value)}
