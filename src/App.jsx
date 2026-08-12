@@ -24,6 +24,7 @@ import { whenIdle } from './idle';
 import { useGlobalShortcuts, CMD } from './shortcuts';
 import ShortcutsHelp from './ShortcutsHelp';
 import { notifyError, notifyInfo } from './notify';
+import { watchNetwork, subscribePending, tryOrQueue } from './writeQueue';
 import UndoToast from './UndoToast';
 import Toaster from './Toaster';
 import './App.css';
@@ -255,6 +256,10 @@ export default function App() {
   // finché il tentativo non è stato fatto, «nessun appuntamento oggi» sarebbe
   // una risposta inventata (vedi TodayView).
   const [calendarLoaded, setCalendarLoaded] = useState(false);
+  // Le scritture in attesa di rete (vedi writeQueue.js): il numero sta nella
+  // barra di stato, perché una cosa catturata e non ancora salvata deve essere
+  // visibile — altrimenti «l'ho scritta e non c'è» è indistinguibile da un bug.
+  const [pendingWrites, setPendingWrites] = useState(0);
   // Incrementato ogni volta che un evento calendario viene creato fuori dal
   // Piano (es. dal popup GTD), per far invalidare a PlannerView la sua cache
   // bulk altrimenti stale fino al TTL.
@@ -292,6 +297,14 @@ export default function App() {
   useEffect(() => {
     try { localStorage.setItem(MAP_VIEW_MODE_KEY, mapViewMode); } catch { /* storage non disponibile */ }
   }, [mapViewMode]);
+
+  // La coda si svuota quando la rete torna, e all'avvio: l'app può essere stata
+  // chiusa mentre era offline. Al recupero si rileggono le liste, così le cose
+  // salvate in ritardo compaiono dove devono.
+  useEffect(() => subscribePending(setPendingWrites), []);
+  useEffect(() => watchNetwork(() => {
+    if (todoListsRef.current.length) preloadAllTasks(todoListsRef.current, true);
+  }), []);
 
   // Il parametro `apri` ha fatto il suo lavoro al primo render: si toglie
   // dall'URL, così chiudere il pannello e ricaricare la pagina non lo riapre.
@@ -787,8 +800,18 @@ export default function App() {
     const listId = task._listId;
     const before = task.status;
     try {
-      await updateTaskStatus(listId, task.id, graphStatusFor(status));
+      // Senza rete lo spostamento va in coda: la colonna cambia a schermo e la
+      // scrittura su To-Do arriva dopo.
+      const res = await tryOrQueue(
+        'stato-attività',
+        { listId, taskId: task.id, status: graphStatusFor(status) },
+        `${task.title} → ${STATUS_LABELS[status]}`,
+      );
       handleTaskPatched(listId, task.id, { status: graphStatusFor(status) });
+      if (res.queued) {
+        notifyInfo(`Senza rete: lo spostamento di «${task.title}» è in coda.`);
+        return;
+      }
       pushUndo({
         label: `Spostata in ${STATUS_LABELS[status]}`,
         undo: async () => {
@@ -971,15 +994,21 @@ export default function App() {
   // fa niente di visibile.
   const onMap = location.pathname.startsWith('/mappa');
 
+  // Quello che c'è in coda conta più di quanto sia fresca la cache: se qualcosa
+  // aspetta la rete, è quello che la barra deve dire.
+  const syncLabel = pendingWrites
+    ? `${pendingWrites} in attesa di rete`
+    : sync.label;
+
   const topbar = (
     <>
       {/* Lo stato della sincronizzazione va anche detto, non solo colorato: da
           telefono l'etichetta è nascosta dal CSS e resta il solo pallino, che
           un lettore di schermo non sa leggere. */}
-      <div className="sync-status" title={sync.label} role="status" aria-live="polite">
-        <span className={`sync-dot ${sync.state}`} aria-hidden="true" />
-        <span className="sync-label-text">{sync.label}</span>
-        <span className="sr-only">Sincronizzazione: {sync.label}</span>
+      <div className="sync-status" title={syncLabel} role="status" aria-live="polite">
+        <span className={`sync-dot ${pendingWrites ? 'waiting' : sync.state}`} aria-hidden="true" />
+        <span className="sync-label-text">{syncLabel}</span>
+        <span className="sr-only">Sincronizzazione: {syncLabel}</span>
       </div>
       {onMap && (
         <div className="map-view-toggle">
@@ -1166,6 +1195,7 @@ export default function App() {
         todoLists={todoLists}
         onClose={() => setCaptureOpen(false)}
         onCaptured={task => setScheduledTasks(prev => [...(prev || []), task])}
+        onQueued={text => notifyInfo(`«${text}» è in coda: la salvo in Inbox appena torna la rete.`)}
         onDecideNow={text => { setGtdSeedText(text); setGtdOpen(true); }}
       />
       <GtdClarifyModal

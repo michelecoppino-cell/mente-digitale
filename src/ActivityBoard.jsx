@@ -27,6 +27,7 @@ import { paraSectionLabel, sectionRole } from './paraConfig';
 import { completeTask, updateTaskStatus } from './api';
 import { pushUndo } from './undo';
 import { notifyError } from './notify';
+import { subscribePending, pendingOps } from './writeQueue';
 import { useMediaQuery } from './useMediaQuery';
 import Skeleton from './Skeleton';
 import TaskDetailPanel from './TaskDetailPanel';
@@ -239,6 +240,14 @@ export default function ActivityBoard({
   const columnsRef = useRef(/** @type {HTMLDivElement|null} */ (null));
   const [visibleCol, setVisibleCol] = useState(0);
   const wide = useMediaQuery(WIDE);
+  // Le catture fatte senza rete: non sono ancora attività su To-Do, ma stanno in
+  // coda e vanno mostrate — «l'ho scritta e non c'è» è la sensazione che fa
+  // smettere di catturare. Compaiono in Inbox come righe spente, non
+  // trascinabili, perché non c'è ancora niente da spostare.
+  const [queued, setQueued] = useState(/** @type {any[]} */ ([]));
+  useEffect(() => subscribePending(() => {
+    pendingOps().then(ops => setQueued(ops.filter(o => o.kind === 'crea-attività')));
+  }), []);
 
   // Più chiavi in un colpo solo: due `setParam` di fila partirebbero entrambe
   // dagli stessi `params`, e la seconda cancellerebbe la prima.
@@ -364,12 +373,22 @@ export default function ActivityBoard({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [byStatus, config, listColorMap]);
 
+  /** Quante cose mostra una colonna. Per Inbox comprende le catture in coda:
+   *  due righe a schermo e uno zero nell'intestazione è una contraddizione.
+   *  @param {string} status */
+  function countFor(status) {
+    return byStatus[status].length + (status === 'inbox' ? queued.length : 0);
+  }
+
   /** Una colonna è ridotta a striscia se il suo default lo dice e l'utente non
    *  l'ha aperta a mano. @param {{status: string, collapse?: string}} col */
   function isCollapsed(col) {
     if (!col.collapse) return false;
     if (col.status in expandedCols) return !expandedCols[col.status];
     if (col.collapse === 'always') return true;
+    // Inbox non si chiude se ha qualcosa in coda: sarebbe l'unica traccia di una
+    // cattura appena fatta, nascosta dietro una striscia.
+    if (col.status === 'inbox' && queued.length) return false;
     return byStatus[col.status].length === 0;
   }
 
@@ -672,7 +691,7 @@ export default function ActivityBoard({
         <div className="ab-columns" ref={columnsRef}>
           {COLUMNS.map(col => {
             const collapsed = isCollapsed(col);
-            const count = byStatus[col.status].length;
+            const count = countFor(col.status);
             return (
               <div
                 key={col.status}
@@ -709,7 +728,15 @@ export default function ActivityBoard({
                       )}
                     </div>
                     <div className="ab-col-body">
-                      {count === 0 && <div className="ab-empty">{col.empty}</div>}
+                      {col.status === 'inbox' && queued.map(op => (
+                        <div className="ab-row ab-row-queued" key={`coda-${op.id}`} title="In coda: la salvo appena torna la rete">
+                          <span className="ab-row-title">{op.args?.title}</span>
+                          <span className="ab-row-meta">
+                            <span className="ab-queued-chip">in attesa di rete</span>
+                          </span>
+                        </div>
+                      ))}
+                      {count === 0 && queued.length === 0 && <div className="ab-empty">{col.empty}</div>}
                       {groupedByStatus[col.status].map(group => (
                         <div className="ab-group" key={group.key}>
                           <div className="ab-group-head" style={{ color: group.color }}>

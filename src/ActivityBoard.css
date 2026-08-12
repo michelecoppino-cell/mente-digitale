@@ -547,3 +547,20 @@
   .ab-search { width: 100%; }
   .ab-views { margin-left: 0; }
 }
+
+/* ── Catture in coda ──────────────────────────────────────────────────────
+   Una cattura fatta senza rete: c'è, ma non è ancora un'attività su To-Do.
+   Bordo tratteggiato e nessuna spunta — non c'è niente da spuntare finché non
+   esiste davvero. Il tratteggio è a 3px perché a 2 non si distingue dal pieno. */
+.ab-row-queued {
+  border-left: 3px dashed var(--info);
+  opacity: .8;
+  cursor: default;
+  padding-left: var(--sp-4);
+}
+
+.ab-queued-chip {
+  font-size: var(--fs-micro);
+  color: var(--info);
+  white-space: nowrap;
+}

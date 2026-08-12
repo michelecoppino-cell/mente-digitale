@@ -213,6 +213,7 @@ export async function mailHits(q) {
 /** L'ordine in cui le famiglie di risultati compaiono. */
 export const GROUP_ORDER = ['command', 'section', 'page', 'task', 'diary', 'mail'];
 
+/** @type {Record<string, string>} */
 export const GROUP_LABELS = {
   command: 'Comandi',
   section: 'Sezioni',

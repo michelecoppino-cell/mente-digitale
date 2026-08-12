@@ -55,7 +55,11 @@ function SearchBox({
 }) {
   const [query, setQuery] = useState('');
   const [active, setActive] = useState(0);
-  const [remote, setRemote] = useState(/** @type {{ diary: any[], mail: any[] }} */ ({ diary: [], mail: [] }));
+  // I risultati dalla rete portano con sé la domanda a cui rispondono: così non
+  // serve azzerarli quando il campo cambia — quelli di una domanda vecchia
+  // vengono semplicemente ignorati. Azzerarli dall'effetto voleva dire chiamare
+  // setState in modo sincrono a ogni carattere, cioè un render in più per nulla.
+  const [remote, setRemote] = useState(/** @type {{ q: string, diary: any[], mail: any[] }} */ ({ q: '', diary: [], mail: [] }));
   const [remoteBusy, setRemoteBusy] = useState(false);
   const listRef = useRef(/** @type {any} */ (null));
   // Escape era gestito solo dal campo di testo: bastava un clic su un risultato
@@ -81,16 +85,19 @@ function SearchBox({
   // il suo risultato viene scartato — `annullato` è l'unica cosa che tiene
   // l'elenco coerente con quello che c'è scritto nel campo.
   useEffect(() => {
-    if (!enough) { setRemote({ diary: [], mail: [] }); return undefined; }
+    if (!enough) return undefined;
     let annullato = false;
-    setRemoteBusy(true);
     const t = setTimeout(async () => {
+      // Il puntino si accende quando la richiesta parte davvero, non alla prima
+      // battuta: accenderlo qui evita anche di chiamare setState in modo sincrono
+      // dentro l'effetto, che innesca un giro di render in più a ogni carattere.
+      setRemoteBusy(true);
       const [diary, mail] = await Promise.all([
         diaryHits(q).catch(e => { console.error('ricerca diario', e); return []; }),
         mailHits(q).catch(e => { console.error('ricerca posta', e); return []; }),
       ]);
       if (annullato) return;
-      setRemote({ diary, mail });
+      setRemote({ q, diary, mail });
       setRemoteBusy(false);
     }, REMOTE_DEBOUNCE);
     return () => { annullato = true; clearTimeout(t); };
@@ -107,10 +114,25 @@ function SearchBox({
     onWarmPages(missing);
   }, [enough, notebooks, sectionsMap, pagesCache, onWarmPages]);
 
+  const fresh = remote.q === q ? remote : { diary: [], mail: [] };
+
   const results = useMemo(
-    () => orderHits([...instant, ...remote.diary, ...remote.mail]),
-    [instant, remote],
+    () => orderHits([...instant, ...fresh.diary, ...fresh.mail]),
+    [instant, fresh.diary, fresh.mail],
   );
+
+  // Dove comincia ciascuna famiglia: calcolato qui e non mutando una variabile
+  // dentro il map. Il risultato è lo stesso, ma non dipende dall'ordine in cui
+  // React decide di disegnare le righe.
+  const headAt = useMemo(() => {
+    /** @type {Record<number, string>} */
+    const out = {};
+    let last = '';
+    results.forEach((r, i) => {
+      if (r.type !== last) { out[i] = r.type; last = r.type; }
+    });
+    return out;
+  }, [results]);
 
   // Se i risultati si accorciano, la selezione resta comunque valida
   const activeIdx = Math.max(0, Math.min(active, results.length - 1));
@@ -172,10 +194,6 @@ function SearchBox({
     listRef.current?.querySelector('.search-result.active')?.scrollIntoView({ block: 'nearest' });
   }, [activeIdx]);
 
-  // Le intestazioni compaiono al primo risultato di ciascuna famiglia: l'elenco
-  // resta piatto per le frecce, e leggibile per l'occhio.
-  let lastType = '';
-
   return (
     <div className="search-overlay" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
       <div
@@ -207,9 +225,10 @@ function SearchBox({
 
         {enough && (
           <div className="search-results" ref={listRef} id="search-results" role="listbox">
+            {/* Le intestazioni compaiono al primo risultato di ciascuna famiglia:
+                l'elenco resta piatto per le frecce, e leggibile per l'occhio. */}
             {results.map((r, i) => {
-              const head = r.type !== lastType ? r.type : null;
-              lastType = r.type;
+              const head = headAt[i];
               return (
                 <div key={r.id}>
                   {head && <div className="search-group eyebrow">{GROUP_LABELS[head]}</div>}

@@ -30,9 +30,12 @@
   background: var(--muted);
   transition: background 0.3s;
 }
-.sync-dot.ok { background: #86c07a; }
+.sync-dot.ok { background: var(--ok); }
 .sync-dot.loading { background: var(--accent); animation: pulse 1s infinite; }
-.sync-dot.error { background: #c07a7a; }
+.sync-dot.error { background: var(--danger); }
+/* Qualcosa è in coda in attesa di rete (vedi writeQueue.js): non è un errore —
+   niente è andato perso — ma non è nemmeno «tutto a posto». */
+.sync-dot.waiting { background: var(--info); animation: pulse 1.6s infinite; }
 
 .sync-label-text { white-space: nowrap; }
 /* Sotto questa soglia il gruppo di controlli a destra (ricerca, GTD,
