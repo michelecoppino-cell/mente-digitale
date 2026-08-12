@@ -292,7 +292,9 @@ export default function App() {
         });
       }
     });
-  }, []);
+    // Solo al montaggio, di proposito: `load` si ricrea a ogni render e
+    // metterlo fra le dipendenze rifarebbe l'autenticazione in continuazione.
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     try { localStorage.setItem(MAP_VIEW_MODE_KEY, mapViewMode); } catch { /* storage non disponibile */ }
