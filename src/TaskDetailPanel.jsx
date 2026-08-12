@@ -27,12 +27,21 @@ import SectionResources from './SectionResources';
 import Skeleton from './Skeleton';
 import './PlannerView.css';
 
-/** Gli stati che si possono dare da qui. `inbox` non c'è (è la lista in cui sta
- *  il task) e `scheduled` nemmeno: un orario si dà dal Piano, sulla griglia. */
+/** Gli stati che si possono dare da qui, nell'ordine delle colonne della vista
+ *  Attività: aprendo un'attività dalla colonna Programmate si leggeva
+ *  «Prossima azione», perché qui lo stato si ricavava dal solo `status` di
+ *  Graph, che per una programmata è comunque `notStarted`. Le pastiglie sono
+ *  ora le colonne del flusso, e «Programmata» porta al Piano — un orario si dà
+ *  sulla griglia, non da una pastiglia.
+ *
+ *  `inbox` non è fra le scelte: non è uno stato ma la lista in cui il task sta,
+ *  e ci si esce chiarendolo. Compare come pastiglia spenta quando è lo stato
+ *  corrente, così la scheda non mente su dove si trova l'attività. */
 const STATUS_CHOICES = [
-  { key: 'next',    label: 'Prossima azione', hint: 'Fattibile, senza data' },
-  { key: 'waiting', label: 'In attesa',       hint: 'Dipende da qualcun altro' },
-  { key: 'someday', label: 'Un giorno',       hint: 'Non adesso' },
+  { key: 'next',      label: 'Prossima azione', hint: 'Fattibile, senza data' },
+  { key: 'scheduled', label: 'Programmata',     hint: 'Ha un blocco nel Piano' },
+  { key: 'waiting',   label: 'In attesa',       hint: 'Dipende da qualcun altro' },
+  { key: 'someday',   label: 'Un giorno',       hint: 'Non adesso' },
 ];
 
 /** La persona attesa scritta nelle note, se c'è. */
@@ -61,8 +70,13 @@ function flowStatusOf(/** @type {string|undefined} */ graphStatus) {
  * @param {(listId: string, task: import('./types').TodoTask) => void} [props.onRestored]
  * @param {(min: number) => void} [props.onEstimateChanged]
  * @param {(patch: Object) => void} [props.onPatched]  stato/note cambiati: il pool va allineato
+ * @param {string} [props.status]        stato del flusso già derivato da chi apre il pannello
+ *                                       (include `scheduled` e `inbox`, che dallo `status` di
+ *                                       Graph non si vedono). Senza, si ricava da Graph.
+ * @param {(t: import('./types').TodoTask) => void} [props.onSchedule]    porta al Piano
+ * @param {(t: import('./types').TodoTask) => Promise<void>|void} [props.onUnschedule]  toglie il blocco
  */
-export default function TaskDetailPanel({ task, notebooks = [], sectionsMap = {}, pagesCache = null, onClose, onCompleted, onDeleted, onRenamed, onDueChanged, onRestored, onEstimateChanged, onPatched }) {
+export default function TaskDetailPanel({ task, notebooks = [], sectionsMap = {}, pagesCache = null, onClose, onCompleted, onDeleted, onRenamed, onDueChanged, onRestored, onEstimateChanged, onPatched, status, onSchedule, onUnschedule }) {
   const navigate = useNavigate();
   const { start: startPomodoro } = usePomodoro();
   // La sezione PARA del task è la sezione OneNote che si chiama come la sua
@@ -98,7 +112,7 @@ export default function TaskDetailPanel({ task, notebooks = [], sectionsMap = {}
   // Stato del flusso e persona attesa: si conoscono solo dopo il caricamento
   // completo del task, perché chi apre il pannello da un blocco del Piano ha in
   // mano solo id, titolo e lista.
-  const [flowStatus, setFlowStatus] = useState(() => flowStatusOf(task?.status));
+  const [flowStatus, setFlowStatus] = useState(() => status || flowStatusOf(task?.status));
   const [who, setWho] = useState('');
   const [waitingSince, setWaitingSince] = useState(/** @type {string|null} */ (null));
   const [savingStatus, setSavingStatus] = useState(false);
@@ -118,6 +132,11 @@ export default function TaskDetailPanel({ task, notebooks = [], sectionsMap = {}
 
   useEffect(() => { setTitleDraft(task.title); setEditingTitle(false); load(); }, [task.id]); // eslint-disable-line
 
+  // Chi ci passa uno stato già derivato (la vista Attività, che sa dei blocchi
+  // nel piano e della lista Inbox) è più informato di Graph: quando cambia —
+  // il task viene programmato, o il blocco tolto — la pastiglia lo segue.
+  useEffect(() => { if (status) setFlowStatus(status); }, [status, task.id]);
+
   async function load() {
     setLoading(true);
     try {
@@ -129,7 +148,7 @@ export default function TaskDetailPanel({ task, notebooks = [], sectionsMap = {}
       setNotes(body);
       setItems((full.checklistItems || []).sort((a, b) => a.isChecked - b.isChecked));
       setDueDraft(full.dueDateTime?.dateTime ? full.dueDateTime.dateTime.slice(0, 10) : '');
-      setFlowStatus(flowStatusOf(full.status));
+      setFlowStatus(status || flowStatusOf(full.status));
       setWho(whoFrom(body));
       setWaitingSince(full.lastModifiedDateTime || full.createdDateTime || null);
     } catch (e) { console.error('load task detail', e); }
@@ -198,9 +217,20 @@ export default function TaskDetailPanel({ task, notebooks = [], sectionsMap = {}
   async function applyStatus(next, whoValue = who) {
     if (savingStatus) return;
     const prevStatus = flowStatus;
+    // «Programmata» non è un campo da scrivere ma un blocco sulla griglia del
+    // Piano: la pastiglia porta lì con l'attività in mano, come fa il trascina
+    // nella colonna Programmate.
+    if (next === 'scheduled') { if (prevStatus !== 'scheduled') onSchedule?.(task); return; }
+
     const prevNotes = notes;
     const person = next === 'waiting' ? (whoValue.trim() || 'qualcuno') : null;
     const nextNotes = withWaitingFor(notes, person);
+    const graph = graphStatusFor(/** @type {any} */ (next));
+    const prevGraph = graphStatusFor(/** @type {any} */ (prevStatus));
+    // Uscire da Programmate vuol dire togliere il blocco dal piano: lo stato
+    // Graph di una programmata è già `notStarted`, quindi senza questo passo la
+    // pastiglia direbbe «Prossima azione» e la colonna resterebbe Programmate.
+    const leavingSchedule = prevStatus === 'scheduled';
     if (next === prevStatus && nextNotes === prevNotes) return;
 
     // Il debounce delle note sta per riscrivere il body con la versione
@@ -210,28 +240,31 @@ export default function TaskDetailPanel({ task, notebooks = [], sectionsMap = {}
     setNotes(nextNotes);
     setSavingStatus(true);
     try {
+      if (leavingSchedule) await onUnschedule?.(task);
       if (nextNotes !== prevNotes) await updateTaskBody(task._listId, task.id, nextNotes);
-      const graph = graphStatusFor(/** @type {any} */ (next));
-      if (next !== prevStatus) await updateTaskStatus(task._listId, task.id, graph);
+      if (graph !== prevGraph) await updateTaskStatus(task._listId, task.id, graph);
       // Senza un nome la riga dice "qualcuno": il campo deve dirlo anche lui,
       // o resterebbe vuoto mentre le note sotto raccontano un'altra cosa.
       setWho(person || '');
       setWaitingSince(new Date().toISOString());
       onPatched?.({ status: graph, body: { content: nextNotes, contentType: 'text' } });
-      pushUndo({
-        label: next === 'waiting'
-          ? `In attesa da ${person}`
-          : `Riportata in ${STATUS_CHOICES.find(s => s.key === next)?.label ?? next}`,
-        undo: async () => {
-          if (nextNotes !== prevNotes) await updateTaskBody(task._listId, task.id, prevNotes);
-          const back = graphStatusFor(/** @type {any} */ (prevStatus));
-          if (next !== prevStatus) await updateTaskStatus(task._listId, task.id, back);
-          setFlowStatus(prevStatus);
-          setNotes(prevNotes);
-          setWho(whoFrom(prevNotes));
-          onPatched?.({ status: back, body: { content: prevNotes, contentType: 'text' } });
-        },
-      });
+      // Togliere il blocco dal piano ha già il suo annulla, messo da chi lo ha
+      // fatto: qui se ne aggiunge uno solo se è cambiato qualcosa sul task.
+      if (nextNotes !== prevNotes || graph !== prevGraph) {
+        pushUndo({
+          label: next === 'waiting'
+            ? `In attesa da ${person}`
+            : `Riportata in ${STATUS_CHOICES.find(s => s.key === next)?.label ?? next}`,
+          undo: async () => {
+            if (nextNotes !== prevNotes) await updateTaskBody(task._listId, task.id, prevNotes);
+            if (graph !== prevGraph) await updateTaskStatus(task._listId, task.id, prevGraph);
+            setFlowStatus(prevStatus);
+            setNotes(prevNotes);
+            setWho(whoFrom(prevNotes));
+            onPatched?.({ status: prevGraph, body: { content: prevNotes, contentType: 'text' } });
+          },
+        });
+      }
     } catch (e) {
       console.error('cambio stato task', e);
       setFlowStatus(prevStatus);
@@ -527,16 +560,28 @@ export default function TaskDetailPanel({ task, notebooks = [], sectionsMap = {}
               Stato {savingStatus && <span className="planner-saving-dot">●</span>}
             </div>
             <div className="planner-estimate-chips">
-              {STATUS_CHOICES.map(s => (
+              {flowStatus === 'inbox' && (
                 <button
-                  key={s.key}
-                  className={`planner-estimate-chip${flowStatus === s.key ? ' active' : ''}`}
-                  title={s.hint}
-                  disabled={savingStatus}
-                  onClick={() => applyStatus(s.key)}>
-                  {s.label}
+                  className="planner-estimate-chip active"
+                  title="Sta nella lista Inbox: si esce chiarendola"
+                  disabled>
+                  Inbox
                 </button>
-              ))}
+              )}
+              {STATUS_CHOICES
+                // «Programmata» solo dove il Piano è raggiungibile: chi apre il
+                // pannello dal Piano stesso è già sulla griglia.
+                .filter(s => s.key !== 'scheduled' || onSchedule || flowStatus === 'scheduled')
+                .map(s => (
+                  <button
+                    key={s.key}
+                    className={`planner-estimate-chip${flowStatus === s.key ? ' active' : ''}`}
+                    title={s.hint}
+                    disabled={savingStatus}
+                    onClick={() => applyStatus(s.key)}>
+                    {s.label}
+                  </button>
+                ))}
             </div>
             {flowStatus === 'waiting' && (
               <div className="planner-waiting">

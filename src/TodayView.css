@@ -247,6 +247,24 @@
 .today-locked-note { font-size: var(--fs-micro); line-height: 1.55; color: var(--muted); }
 .today-locked-soon { font-size: var(--fs-micro); color: var(--disabled); }
 
+/* Finanze: come il Diario, un invito a entrare — la sezione esiste, i numeri
+   stanno dietro il PIN e non si affacciano qui. */
+.today-finanze {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  padding: var(--sp-6);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  text-decoration: none;
+  transition: border-color var(--t);
+}
+@media (hover: hover) {
+  .today-finanze:hover { border-color: var(--accent-line); }
+}
+.today-finanze-note { font-size: var(--fs-micro); line-height: 1.55; color: var(--muted); }
+.today-finanze-link { font-size: var(--fs-micro); color: var(--accent); }
+
 /* Diario: solo bordo, nessun fondo — è un invito, non una scheda di dati. */
 .today-diary {
   display: flex;
