@@ -41,10 +41,17 @@ export {};
 
 /**
  * Sezione OneNote. `_color` come per Notebook è una decorazione dell'app.
+ * `links.oneNoteClientUrl` è il link `onenote:` che apre la sezione nell'app
+ * desktop: Graph lo restituisce su sezioni e pagine.
+ * @typedef {Object} OneNoteLinks
+ * @property {{ href: string }} [oneNoteClientUrl]
+ * @property {{ href: string }} [oneNoteWebUrl]
+ *
  * @typedef {Object} Section
  * @property {string} id
  * @property {string} displayName
  * @property {string} [_color]
+ * @property {OneNoteLinks} [links]
  */
 
 /**
@@ -53,7 +60,9 @@ export {};
  * @property {string} id
  * @property {string} [title]
  * @property {number} [level]
+ * @property {number} [order]
  * @property {string} [lastModifiedDateTime]
+ * @property {OneNoteLinks} [links]
  */
 
 /**

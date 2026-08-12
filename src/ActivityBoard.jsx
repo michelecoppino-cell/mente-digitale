@@ -18,6 +18,7 @@ import {
 import { DEFAULT_CONFIG, findProject, formatDueDate, dueDateSortValue, isTaskOverdue } from './plannerShared';
 import EisenhowerTriage from './EisenhowerTriage';
 import Skeleton from './Skeleton';
+import TaskDetailDrawer from './TaskDetailDrawer';
 import './ActivityBoard.css';
 
 /** Le cinque colonne, nell'ordine del flusso. `done` non ha colonna: i task
@@ -121,15 +122,22 @@ function TaskCard({ task, status, config, placement, dragging, onClick, onDragSt
  * @param {Record<string, import('./types').DayPlan>} props.plans
  * @param {import('./types').PlannerConfig} [props.config]
  * @param {boolean} [props.loading]
- * @param {(t: import('./types').TodoTask) => void} props.onOpenTask
+ * @param {import('./types').Notebook[]} [props.notebooks]
+ * @param {Record<string, import('./types').Section[]>} [props.sectionsMap]
+ * @param {{ current: Record<string, import('./types').Page[]> }|null} [props.pagesCache]
  * @param {(t: import('./types').TodoTask) => void} props.onClarify        card di Inbox: va chiarita, non spostata
  * @param {(t: import('./types').TodoTask, s: string) => void} props.onChangeStatus
  * @param {(t: import('./types').TodoTask) => void} props.onSchedule       porta al Piano sul giorno corrente
  * @param {(t: import('./types').TodoTask) => void} props.onUnschedule     toglie il blocco dal piano
+ * @param {(listId: string, taskId: string) => void} [props.onTaskRemoved]
+ * @param {(listId: string, taskId: string, patch: Object) => void} [props.onTaskPatched]
+ * @param {(listId: string, task: import('./types').TodoTask) => void} [props.onTaskRestored]
  */
 export default function ActivityBoard({
   tasks = [], todoLists = [], plans = {}, config = DEFAULT_CONFIG, loading = false,
-  onOpenTask, onClarify, onChangeStatus, onSchedule, onUnschedule,
+  notebooks = [], sectionsMap = {}, pagesCache = null,
+  onClarify, onChangeStatus, onSchedule, onUnschedule,
+  onTaskRemoved, onTaskPatched, onTaskRestored,
 }) {
   // Filtri e vista stanno nell'URL: la vista è ricaricabile e condivisibile
   // com'è, invece di ripartire sempre da capo.
@@ -139,6 +147,9 @@ export default function ActivityBoard({
   const [query, setQuery] = useState('');
   const [dragTask, setDragTask] = useState(/** @type {import('./types').TodoTask|null} */ (null));
   const [dragOver, setDragOver] = useState(/** @type {string|null} */ (null));
+  // L'attività aperta nel cassetto di dettaglio. È stato di vista, non del
+  // pool: chiuderla non cambia niente su Graph.
+  const [openTask, setOpenTask] = useState(/** @type {import('./types').TodoTask|null} */ (null));
   // Su schermo stretto le cinque colonne scorrono in orizzontale e se ne vede
   // una e mezza: senza le pastiglie non c'è niente che dica quante sono né a
   // che punto della fila si è.
@@ -150,6 +161,11 @@ export default function ActivityBoard({
     if (value) next.set(key, value); else next.delete(key);
     setParams(next, { replace: true });
   };
+
+  // Il task aperto va riletto dal pool a ogni giro: rinominarlo o metterlo in
+  // attesa dal cassetto aggiorna il pool, e la copia nel cassetto resterebbe
+  // quella di prima.
+  const detailTask = openTask ? tasks.find(t => t.id === openTask.id) || openTask : null;
 
   const scheduled = useMemo(() => indexScheduled(plans), [plans]);
   const inboxId = useMemo(() => inboxListId(todoLists), [todoLists]);
@@ -223,6 +239,10 @@ export default function ActivityBoard({
     if (target === 'scheduled') { onSchedule(task); return; }
     if (from === 'scheduled') { onUnschedule(task); if (target !== 'next') onChangeStatus(task, target); return; }
     onChangeStatus(task, target);
+    // «In attesa» resta una colonna muta finché non si dice da chi si aspetta:
+    // il nome vive nelle note, e nessuno può indovinarne la forma. Trascinarci
+    // dentro un'attività apre quindi il dettaglio, dove il campo c'è.
+    if (target === 'waiting' && !parseWaitingFor(task)) setOpenTask(task);
   }
 
   const header = (
@@ -259,6 +279,24 @@ export default function ActivityBoard({
     </div>
   );
 
+  // Montato una volta sola, in coda a ogni ramo del render: il cassetto è lo
+  // stesso in Flusso, Quadranti e Scadenza.
+  const drawer = (
+    <TaskDetailDrawer
+      task={detailTask}
+      notebooks={notebooks}
+      sectionsMap={sectionsMap}
+      pagesCache={pagesCache}
+      onClose={() => setOpenTask(null)}
+      onCompleted={() => { if (detailTask) onTaskRemoved?.(detailTask._listId || '', detailTask.id); setOpenTask(null); }}
+      onDeleted={() => { if (detailTask) onTaskRemoved?.(detailTask._listId || '', detailTask.id); setOpenTask(null); }}
+      onRenamed={title => { if (detailTask) onTaskPatched?.(detailTask._listId || '', detailTask.id, { title }); }}
+      onDueChanged={dueDateTime => { if (detailTask) onTaskPatched?.(detailTask._listId || '', detailTask.id, { dueDateTime }); }}
+      onPatched={patch => { if (detailTask) onTaskPatched?.(detailTask._listId || '', detailTask.id, patch); }}
+      onRestored={(listId, restored) => onTaskRestored?.(listId, restored)}
+    />
+  );
+
   if (loading) {
     return (
       <div className="ab">
@@ -287,6 +325,7 @@ export default function ActivityBoard({
           </p>
           <EisenhowerTriage open inline tasks={byStatus.next} onClose={() => setParam('vista', '')} />
         </div>
+        {drawer}
       </div>
     );
   }
@@ -302,13 +341,14 @@ export default function ActivityBoard({
         <div className="ab-deadlines">
           {withDue.length === 0 && <div className="ab-empty">Nessuna attività ha una scadenza</div>}
           {withDue.map(t => (
-            <button key={t.id} className="ab-deadline-row" onClick={() => onOpenTask(t)}>
+            <button key={t.id} className="ab-deadline-row" onClick={() => setOpenTask(t)}>
               <span className={`ab-due${isTaskOverdue(t.dueDateTime) ? ' overdue' : ''}`}>{formatDueDate(t.dueDateTime)}</span>
               <span className="ab-deadline-title">{t.title}</span>
               <span className="ab-deadline-list">{t._listName}</span>
             </button>
           ))}
         </div>
+        {drawer}
       </div>
     );
   }
@@ -351,7 +391,7 @@ export default function ActivityBoard({
                   config={config}
                   placement={scheduled.get(t.id) || null}
                   dragging={dragTask?.id === t.id}
-                  onClick={col.status === 'inbox' ? onClarify : onOpenTask}
+                  onClick={col.status === 'inbox' ? onClarify : setOpenTask}
                   onDragStart={setDragTask}
                   onDragEnd={() => { setDragTask(null); setDragOver(null); }}
                 />
@@ -360,6 +400,7 @@ export default function ActivityBoard({
           </div>
         ))}
       </div>
+      {drawer}
     </div>
   );
 }

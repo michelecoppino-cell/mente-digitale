@@ -26,16 +26,10 @@ function clearDraft() {
   try { localStorage.removeItem(DRAFT_KEY); } catch { /* no-op */ }
 }
 
-// Il contenuto vive in un componente montato solo quando il diario è aperto:
-// così lo stato iniziale (bozza da riprendere, caricamento in corso) si
-// esprime negli inizializzatori di useState invece che in un effetto, e ogni
-// apertura riparte pulita.
-export default function DiaryPanel({ open, onClose }) {
-  if (!open) return null;
-  return <DiaryPanelInner onClose={onClose} />;
-}
-
-function DiaryPanelInner({ onClose }) {
+// Il Diario è una scheda come Oggi, Piano e Attività: sta nel contenuto della
+// rotta, non in una finestra sopra il resto dell'app. Resta a tutto schermo
+// solo mentre si scrive — lì l'interfaccia deve sparire, ed è il punto.
+export default function DiaryPanel() {
   const [view, setView] = useState('home');   // home | write | sera | ai | importa
   const [writeType, setWriteType] = useState('svuota-testa');
   const [entries, setEntries] = useState([]);
@@ -70,16 +64,6 @@ function DiaryPanelInner({ onClose }) {
   }
 
   useEffect(() => { ricarica(); }, []);
-
-  // Esc chiude il pannello, ma non mentre si sta scrivendo: lì il tasto è
-  // troppo a portata di dito per rischiare di far sparire una pagina di getto.
-  useEffect(() => {
-    function onKey(e) {
-      if (e.key === 'Escape' && view === 'home') onClose();
-    }
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [view, onClose]);
 
   async function loadOlderMonth() {
     const older = months.filter(m => !loadedMonths.includes(m)).sort().reverse()[0];
@@ -135,7 +119,7 @@ function DiaryPanelInner({ onClose }) {
   const hasOlder = months.some(m => !loadedMonths.includes(m));
 
   return (
-    <div className="diary-overlay">
+    <div className="diary-page">
       {view === 'home' && (
         <DiaryHome
           entries={entries}
@@ -157,7 +141,6 @@ function DiaryPanelInner({ onClose }) {
           onOpenAi={() => setView('ai')}
           onOpenImport={() => setView('importa')}
           onDelete={handleDelete}
-          onClose={onClose}
         />
       )}
       {view === 'write' && (
@@ -188,7 +171,7 @@ function DiaryPanelInner({ onClose }) {
 
 function DiaryHome({
   entries, loading, loadFailed, resumeDraft, hasOlder, monthsLeft, loadingAll,
-  onLoadOlder, onLoadAll, onStart, onResume, onDiscardDraft, onOpenAi, onOpenImport, onDelete, onClose,
+  onLoadOlder, onLoadAll, onStart, onResume, onDiscardDraft, onOpenAi, onOpenImport, onDelete,
 }) {
   const [query, setQuery] = useState('');
   const [tag, setTag] = useState(null);
@@ -209,7 +192,6 @@ function DiaryHome({
           <button className="diary-ghost-btn" onClick={onOpenAi} title="Prepara il testo da incollare in una chat AI">
             Copia per l'AI
           </button>
-          <button className="diary-close" onClick={onClose}>✕</button>
         </div>
       </div>
 
