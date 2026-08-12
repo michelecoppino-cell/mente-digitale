@@ -2065,7 +2065,7 @@ export default function PlannerView({
           onDayClick={day => { setCurrentDate(day); setViewMode('day'); }}
           onMoveBlock={moveBlockBetweenDays}
           onCopyBlock={copyBlockBetweenDays}
-          onBlockClick={openBlockDetail}
+          onBlockClick={narrow ? openBlockDetail : undefined}
           onEventClick={openEditEventModal}
           onCopyEvent={copyCalendarEvent}
           onAddTask={addBlockToDay}
@@ -2878,7 +2878,7 @@ function TaskDetailPanel({ task, notebooks = [], sectionsMap = {}, pagesCache = 
       await updateTaskBody(task._listId, task.id, next);
       onEstimateChanged?.(min);
       pushUndo({
-        label: `Stima riportata a ${estimate < 60 ? `${estimate}m` : `${estimate / 60}h`}`,
+        label: `Stima portata a ${ESTIMATE_CHOICES.find(c => c.min === min)?.label ?? `${min}m`}`,
         undo: async () => {
           await updateTaskBody(task._listId, task.id, prev);
           setNotes(prev);

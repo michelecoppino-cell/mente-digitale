@@ -280,7 +280,11 @@ export default function AppShell({ children, topbar, onCapture, onOpenSettings }
                   <div className="shell-menu-scrim" onClick={() => setMenuOpen(false)} />
                   <div className="shell-menu">
                     <PomodoroMenuActions onDone={() => setMenuOpen(false)} />
-                    <div className="shell-menu-actions" onClick={() => setMenuOpen(false)}>{topbar}</div>
+                    {/* Gli stessi bottoni della topbar, distanziati da dito.
+                        Il menù non si chiude al click: la campanella della
+                        Daily Review apre un suo pannello annidato qui dentro,
+                        e chiudere il menù lo smonterebbe all'istante. */}
+                    <div className="shell-menu-actions">{topbar}</div>
                   </div>
                 </>
               )}
