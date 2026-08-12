@@ -47,7 +47,15 @@ function slots(start, end) {
 // .vertical-layout in PlannerView.css): etichetta a sx (sezione + titolo
 // ruotati), resto del blocco libero per sottostep/note.
 const VERTICAL_LAYOUT_MIN_DURATION = 60; // minuti
-const VERTICAL_TITLE_MIN_FONT      = 10; // px, limite inferiore di leggibilità
+// px. È il minimo assoluto dichiarato in tokens.css (--fs-micro): sotto gli
+// 11px il testo dell'interfaccia non è leggibile su un telefono, e i titoli
+// ruotati dei blocchi sono l'unico posto dell'app dove si scendeva più giù.
+// Il titolo che non ci sta viene troncato, non rimpicciolito oltre.
+const VERTICAL_TITLE_MIN_FONT      = 11;
+// Dimensione di partenza dei titoli ruotati. Prima ogni chiamante passava la
+// sua (9px nei blocchi task della settimana, 10 negli eventi, 11 nel giorno):
+// tre misure diverse per la stessa cosa, due sotto il minimo.
+const VERTICAL_TITLE_BASE_FONT     = 11;
 // Spazio riservato in basso nella colonna etichetta per l'etichetta di durata
 // (linea di separazione + testo ruotato) — va sottratto all'altezza
 // disponibile per il titolo, come già si fa per il nome sezione in alto.
@@ -2135,7 +2143,7 @@ export default function PlannerView({
               const height = Math.max(SLOT_HEIGHT - 4, (t2m(wb.endTime) - t2m(wb.startTime)) / 30 * SLOT_HEIGHT - 4);
               const wbColor = liveWorkbookColor(wb, workbooks);
               const isVertical  = (t2m(wb.endTime) - t2m(wb.startTime)) > VERTICAL_LAYOUT_MIN_DURATION;
-              const titleLayout = isVertical ? verticalTitleLayout(wb.label, height - 12 - VERTICAL_DURATION_RESERVE_PX, 11) : null;
+              const titleLayout = isVertical ? verticalTitleLayout(wb.label, height - 12 - VERTICAL_DURATION_RESERVE_PX, VERTICAL_TITLE_BASE_FONT) : null;
               const notesEls = (wb.notes || []).map(note => (
                 <WorkbookBlockNote
                   key={note.id}
@@ -2208,7 +2216,7 @@ export default function PlannerView({
               const height = Math.max(SLOT_HEIGHT / 2, (Math.min(evEndMin, DAY_END_MIN) - Math.max(evStartMin, DAY_START_MIN)) / 30 * SLOT_HEIGHT);
               const evColor = calendarSwatch(ev._calColor);
               const isVertical  = (evEndMin - evStartMin) > VERTICAL_LAYOUT_MIN_DURATION;
-              const titleLayout = isVertical ? verticalTitleLayout(ev.subject, height - 12 - VERTICAL_DURATION_RESERVE_PX, 10) : null;
+              const titleLayout = isVertical ? verticalTitleLayout(ev.subject, height - 12 - VERTICAL_DURATION_RESERVE_PX, VERTICAL_TITLE_BASE_FONT) : null;
               return (
                 <div
                   key={`cal-${i}`}
@@ -2255,7 +2263,7 @@ export default function PlannerView({
               const top      = Math.max(0, (startMin - DAY_START_MIN) / 30 * SLOT_HEIGHT);
               const height   = Math.max(SLOT_HEIGHT - 4, (endMin - startMin) / 30 * SLOT_HEIGHT - 4);
               const isVertical  = (endMin - startMin) > VERTICAL_LAYOUT_MIN_DURATION;
-              const titleLayout = isVertical ? verticalTitleLayout(block.taskTitle, height - (block.listName ? 34 : 12) - VERTICAL_DURATION_RESERVE_PX, 11) : null;
+              const titleLayout = isVertical ? verticalTitleLayout(block.taskTitle, height - (block.listName ? 34 : 12) - VERTICAL_DURATION_RESERVE_PX, VERTICAL_TITLE_BASE_FONT) : null;
               const blockColor = liveBlockColor(block, config, listColorMap);
               const checkBtn = (
                 <button
@@ -2377,8 +2385,18 @@ export default function PlannerView({
         </div>
 
         <div className="planner-col-resize" onMouseDown={handleAiResizeStart} title="Ridimensiona" />
-        {/* ── Column 3: Detail Panel ── */}
-        <div className={`planner-ai-panel${mobileTab === 'panel' ? ' mobile-active' : ''}`} style={{ width: aiWidth }}>
+        {/* ── Column 3: Detail Panel ──
+            Da telefono la stessa colonna è un foglio inferiore che sale al
+            tocco di un blocco (vedi @media 768px in PlannerView.css). Il
+            serbatoio resta fuori — da telefono il Piano si legge e si avvia,
+            non si compone — ma i Dettagli no: è qui che stanno sottoattività,
+            note e «Avvia pomodoro», e finché la colonna era nascosta quel
+            gesto, che apre il workbook della sezione, da telefono non era
+            raggiungibile per niente. */}
+        {selectedTask && <div className="planner-sheet-scrim" onClick={() => setSelectedTask(null)} />}
+        <div
+          className={`planner-ai-panel${mobileTab === 'panel' ? ' mobile-active' : ''}${selectedTask ? ' sheet-open' : ''}`}
+          style={{ width: aiWidth }}>
           <div className="planner-col-header">
             <span>📋 Dettagli</span>
             <span className={`planner-save-status ${saveStatus}`}>{saveLabel()}</span>
@@ -3420,7 +3438,7 @@ function WeeklyTimeline({
                 const height = Math.max(SLOT_HEIGHT - 4, (t2m(wb.endTime) - t2m(wb.startTime)) / 30 * SLOT_HEIGHT - 4);
                 const wbColor = liveWorkbookColor(wb, workbooks);
                 const isVertical  = (t2m(wb.endTime) - t2m(wb.startTime)) > VERTICAL_LAYOUT_MIN_DURATION;
-                const titleLayout = isVertical ? verticalTitleLayout(wb.label, height - 12 - VERTICAL_DURATION_RESERVE_PX, 10) : null;
+                const titleLayout = isVertical ? verticalTitleLayout(wb.label, height - 12 - VERTICAL_DURATION_RESERVE_PX, VERTICAL_TITLE_BASE_FONT) : null;
                 const notesEls = (wb.notes || []).map(note => (
                   <WorkbookBlockNote
                     key={note.id}
@@ -3491,7 +3509,7 @@ function WeeklyTimeline({
                 const height = Math.max(SLOT_HEIGHT / 2, (t2m(evEnd) - t2m(evStart)) / 30 * SLOT_HEIGHT);
                 const evColor = calendarSwatch(ev._calColor);
                 const isVertical  = (t2m(evEnd) - t2m(evStart)) > VERTICAL_LAYOUT_MIN_DURATION;
-                const titleLayout = isVertical ? verticalTitleLayout(ev.subject, height - 12 - VERTICAL_DURATION_RESERVE_PX, 10) : null;
+                const titleLayout = isVertical ? verticalTitleLayout(ev.subject, height - 12 - VERTICAL_DURATION_RESERVE_PX, VERTICAL_TITLE_BASE_FONT) : null;
                 return (
                   <div key={i} className={`planner-week-cal-event${isVertical ? ' vertical-layout' : ''}`}
                     style={{ top, height, background: evColor, borderLeftColor: evColor }}
@@ -3528,7 +3546,7 @@ function WeeklyTimeline({
                 const top    = Math.max(0, (t2m(block.startTime) - DAY_START_MIN) / 30 * SLOT_HEIGHT);
                 const height = Math.max(SLOT_HEIGHT - 4, (t2m(block.endTime) - t2m(block.startTime)) / 30 * SLOT_HEIGHT - 4);
                 const isVertical  = (t2m(block.endTime) - t2m(block.startTime)) > VERTICAL_LAYOUT_MIN_DURATION;
-                const titleLayout = isVertical ? verticalTitleLayout(block.taskTitle, height - (block.listName ? 30 : 12) - VERTICAL_DURATION_RESERVE_PX, 9) : null;
+                const titleLayout = isVertical ? verticalTitleLayout(block.taskTitle, height - (block.listName ? 30 : 12) - VERTICAL_DURATION_RESERVE_PX, VERTICAL_TITLE_BASE_FONT) : null;
                 const blockColor = liveBlockColor(block, config, listColorMap);
                 return (
                   <div key={block.id}

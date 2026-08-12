@@ -2148,22 +2148,79 @@ input[type="time"].planner-modal-select::-webkit-calendar-picker-indicator {
 /* ── Tab colonne mobile ── */
 .planner-mobile-tabs { display: none; }
 
-/* Da mobile il Piano mostra solo il calendario (Giornata/Settimana): niente
-   pannelli laterali Task/Dettagli, pensati per l'uso desktop (drag & drop,
-   editing) — da mobile l'unico punto di inserimento resta il "+" GTD
+/* Lo scrim del foglio inferiore esiste solo da telefono: su desktop i
+   Dettagli sono una colonna, e una colonna non ha niente da oscurare. */
+.planner-sheet-scrim { display: none; }
+
+/* Da mobile il Piano mostra il calendario (Giornata/Settimana) a piena
+   larghezza: il serbatoio resta fuori — comporre la giornata è un lavoro da
+   mouse, e l'unico punto di inserimento da telefono resta il "+" GTD
    flottante. .planner-timeline e .planner-week-wrap sono già flex:1 di base,
-   quindi occupano da soli tutta la larghezza una volta tolti pool/dettagli
-   dal flusso. */
+   quindi occupano da soli tutta la larghezza una volta tolto il pool dal
+   flusso.
+
+   I Dettagli invece restano, come foglio inferiore: dentro ci sono
+   sottoattività, note e «Avvia pomodoro», cioè il gesto che apre il workbook
+   della sezione. Nascondendo la colonna, da telefono quel gesto non era
+   raggiungibile in nessun modo. */
 @media (max-width: 768px) {
   .planner-mobile-tabs { display: none; }
   .planner-col-resize { display: none; }
-  .planner-pool, .planner-ai-panel { display: none !important; }
+  .planner-pool { display: none !important; }
+
+  .planner-sheet-scrim {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 310;
+    background: rgba(0, 0, 0, .5);
+  }
+
+  /* `width: auto !important` scavalca lo stile inline `width: aiWidth`, che è
+     la larghezza trascinabile della colonna desktop: qui il foglio è larghezza
+     piena e quel valore non significa niente. */
+  .planner-ai-panel {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 320;
+    width: auto !important;
+    max-height: min(82dvh, 620px);
+    background: var(--bg-rail);
+    border-top: 1px solid var(--line);
+    border-radius: var(--r-xl) var(--r-xl) 0 0;
+    box-shadow: 0 -12px 32px rgba(0, 0, 0, .5);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+    transform: translateY(101%);
+    visibility: hidden;
+    transition: transform var(--t), visibility var(--t);
+  }
+  .planner-ai-panel.sheet-open { transform: translateY(0); visibility: visible; }
+
+  /* La testata della colonna fa da maniglia del foglio. */
+  .planner-ai-panel .planner-col-header { padding: 14px 14px 10px; }
+
+  /* Il franco per il widget Pomodoro serve su desktop, dove il widget è fisso
+     nello stesso angolo della colonna. Qui il foglio gli sta sopra, e 260px di
+     padding sarebbero solo un buco in fondo allo scorrimento. */
+  .planner-ai-body.pomodoro-clearance { padding-bottom: 12px; }
 
   /* Header più compatto */
   .planner-header { flex-wrap: wrap; padding: 8px 10px; gap: 8px; }
   .planner-date { min-width: 0; font-size: 14px; flex: 1; }
   .planner-header-actions { gap: 6px; }
   .planner-timeline-hint { display: none; }
+
+  /* Le quattro cose del Piano che da telefono si leggono davvero passano da
+     11px (il minimo assoluto, pensato per le micro-meta) a --fs-chip: titolo
+     del blocco, orario dell'evento, iniziali dei giorni del mese e chip del
+     mese. Non è un ritocco a tutti gli 11px del file — solo a quello che
+     serve leggere, non riconoscere. */
+  .planner-block-title,
+  .planner-event-time,
+  .planner-month-dow,
+  .planner-month-chip { font-size: var(--fs-chip); }
 }
 
 /* ── Vista Mese ─────────────────────────────────────────────────────────────── */
