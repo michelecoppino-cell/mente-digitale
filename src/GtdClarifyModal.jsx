@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { createTask, deleteTask, createNotePage, createCalendarEvent, deleteCalendarEvent } from './api';
+import { createTask, deleteTask, completeTask, createNotePage, createCalendarEvent, deleteCalendarEvent } from './api';
 import { sectionRole, paraSectionLabel } from './paraConfig';
 import { pushUndo } from './undo';
 import './GtdClarifyModal.css';
@@ -18,7 +18,13 @@ import './GtdClarifyModal.css';
 // (OneNote); azionabile → task (ToDo/Calendario). Ogni foglia apre una
 // finestra pop-up con la scelta della destinazione e la descrizione
 // completa, invece di un modulo inline.
-export default function GtdClarifyModal({ open, onClose, todoLists = [], notebooks = [], sectionsMap = {}, onTaskCreated, onTaskRemoved, onEventCreated, onEventRemoved, seedText = '' }) {
+//
+// `sourceTask` è l'attività di Inbox da cui il chiarimento parte, quando si
+// entra qui dalla prima colonna della vista Attività invece che dalla cattura
+// rapida: il diagramma è lo stesso, ma alla fine l'originale in Inbox va
+// consumato — cancellato se è finito altrove o nel cestino, spuntato se lo si
+// è fatto sul momento. Senza, chiarire un pensiero ne lasciava due.
+export default function GtdClarifyModal({ open, onClose, todoLists = [], notebooks = [], sectionsMap = {}, onTaskCreated, onTaskRemoved, onEventCreated, onEventRemoved, seedText = '', sourceTask = null }) {
   const [activeLeaf, setActiveLeaf] = useState(null);
   const [eventLeaf, setEventLeaf] = useState(null);
 
@@ -36,6 +42,21 @@ export default function GtdClarifyModal({ open, onClose, todoLists = [], noteboo
   const resourceLists = useMemo(() => todoLists.filter(l => sectionRole(l.displayName) === 'resources'), [todoLists]);
 
   function handleClose() { setActiveLeaf(null); setEventLeaf(null); onClose(); }
+
+  // Il task di partenza dopo che la foglia ha fatto il suo lavoro: «Falla» lo
+  // chiude come fatto, tutto il resto lo toglie dall'Inbox — la cosa adesso
+  // vive dove l'abbiamo messa.
+  async function consumeSource(/** @type {'complete'|'delete'} */ mode) {
+    if (!sourceTask) return;
+    const listId = sourceTask._listId || '';
+    try {
+      if (mode === 'complete') await completeTask(listId, sourceTask.id);
+      else await deleteTask(listId, sourceTask.id);
+      onTaskRemoved?.(listId, sourceTask.id);
+    } catch (e) {
+      console.error('gtd: consumo del task di Inbox', e);
+    }
+  }
 
   async function submitLog() {
     // Cestino / Farla: nessun task o nota — si registra solo localmente il testo.
@@ -67,14 +88,14 @@ export default function GtdClarifyModal({ open, onClose, todoLists = [], noteboo
   // solo cosa crea il pulsante, non l'icona): 🗂 Progetti, 💡 Risorse/Idee,
   // 🔁 Aree (coerente con "Aree/Ricorrenti" già usato nella vista PARA).
   const leaves = {
-    trash:        { id: 'trash', icon: '🗑', label: 'Cestino', kind: 'log', onSubmit: submitLog, confirmLabel: 'Scarta', confirmMsg: 'Scartato' },
-    projectNote:  { id: 'projectNote', icon: '🗂', label: 'Progetti', kind: 'section', sections: projectSections, onSubmit: submitResource, confirmLabel: 'Crea pagina', confirmMsg: 'Pagina creata' },
-    resourceNote: { id: 'resourceNote', icon: '💡', label: 'Risorse/Idee', kind: 'section', sections: resourceSections, onSubmit: submitResource, confirmLabel: 'Crea pagina', confirmMsg: 'Pagina creata' },
-    areaNote:     { id: 'areaNote', icon: '🔁', label: 'Aree', kind: 'section', sections: areaSections, onSubmit: submitResource, confirmLabel: 'Crea pagina', confirmMsg: 'Pagina creata' },
-    doNow:        { id: 'doNow', icon: '⚡', label: 'Falla', kind: 'log', onSubmit: submitLog, confirmLabel: 'Fatto', confirmMsg: 'Fatto' },
-    project:      { id: 'project', icon: '🗂', label: 'Progetti', kind: 'list', todoLists: projectLists, onSubmit: submitProjectTask, confirmLabel: 'Crea task', confirmMsg: 'Task creato' },
-    resourceTask: { id: 'resourceTask', icon: '💡', label: 'Risorse/Idee', kind: 'list', todoLists: resourceLists, onSubmit: submitProjectTask, confirmLabel: 'Crea task', confirmMsg: 'Task creato' },
-    area:         { id: 'area', icon: '🔁', label: 'Aree', kind: 'list', todoLists: areaLists, onSubmit: submitProjectTask, confirmLabel: 'Crea task', confirmMsg: 'Task creato' },
+    trash:        { id: 'trash', icon: '🗑', label: 'Cestino', kind: 'log', consume: 'delete', onSubmit: submitLog, confirmLabel: 'Scarta', confirmMsg: 'Scartato' },
+    projectNote:  { id: 'projectNote', icon: '🗂', label: 'Progetti', kind: 'section', consume: 'delete', sections: projectSections, onSubmit: submitResource, confirmLabel: 'Crea pagina', confirmMsg: 'Pagina creata' },
+    resourceNote: { id: 'resourceNote', icon: '💡', label: 'Risorse/Idee', kind: 'section', consume: 'delete', sections: resourceSections, onSubmit: submitResource, confirmLabel: 'Crea pagina', confirmMsg: 'Pagina creata' },
+    areaNote:     { id: 'areaNote', icon: '🔁', label: 'Aree', kind: 'section', consume: 'delete', sections: areaSections, onSubmit: submitResource, confirmLabel: 'Crea pagina', confirmMsg: 'Pagina creata' },
+    doNow:        { id: 'doNow', icon: '⚡', label: 'Falla', kind: 'log', consume: 'complete', onSubmit: submitLog, confirmLabel: 'Fatto', confirmMsg: 'Fatto' },
+    project:      { id: 'project', icon: '🗂', label: 'Progetti', kind: 'list', consume: 'delete', todoLists: projectLists, onSubmit: submitProjectTask, confirmLabel: 'Crea task', confirmMsg: 'Task creato' },
+    resourceTask: { id: 'resourceTask', icon: '💡', label: 'Risorse/Idee', kind: 'list', consume: 'delete', todoLists: resourceLists, onSubmit: submitProjectTask, confirmLabel: 'Crea task', confirmMsg: 'Task creato' },
+    area:         { id: 'area', icon: '🔁', label: 'Aree', kind: 'list', consume: 'delete', todoLists: areaLists, onSubmit: submitProjectTask, confirmLabel: 'Crea task', confirmMsg: 'Task creato' },
   };
 
   if (!open) return null;
@@ -150,10 +171,10 @@ export default function GtdClarifyModal({ open, onClose, todoLists = [], noteboo
         </div>
 
         {activeLeaf && (
-          <GtdLeafPopup leaf={activeLeaf} seedText={seedText} onClose={() => setActiveLeaf(null)} />
+          <GtdLeafPopup leaf={activeLeaf} seedText={seedText} onConsume={consumeSource} onClose={() => setActiveLeaf(null)} />
         )}
         {eventLeaf && (
-          <GtdEventPopup leaf={eventLeaf} seedText={seedText} onEventCreated={onEventCreated} onEventRemoved={onEventRemoved} onClose={() => setEventLeaf(null)} />
+          <GtdEventPopup leaf={eventLeaf} seedText={seedText} onConsume={consumeSource} onEventCreated={onEventCreated} onEventRemoved={onEventRemoved} onClose={() => setEventLeaf(null)} />
         )}
       </div>
     </div>
@@ -225,7 +246,7 @@ function LeafPlusBadge({ kind }) {
 // se prevista) e descrizione completa. Le foglie di tipo "log" (Cestino,
 // Farla) non generano alcun task/nota: il testo serve solo a confermare la
 // scelta, nessuna chiamata a Graph.
-function GtdLeafPopup({ leaf, seedText, onClose }) {
+function GtdLeafPopup({ leaf, seedText, onConsume, onClose }) {
   const [text, setText] = useState(seedText || '');
   const [listId, setListId] = useState(leaf.todoLists?.[0]?.id || '');
   const [sectionId, setSectionId] = useState(leaf.sections?.[0]?.id || '');
@@ -243,6 +264,7 @@ function GtdLeafPopup({ leaf, seedText, onClose }) {
       if (leaf.kind === 'log') await leaf.onSubmit(text.trim());
       else if (leaf.kind === 'list') await leaf.onSubmit(text.trim(), { listId });
       else if (leaf.kind === 'section') await leaf.onSubmit(text.trim(), { sectionId });
+      await onConsume?.(leaf.consume || 'delete');
       setBusy(false);
       setDone(true);
       setTimeout(onClose, 900);
@@ -311,7 +333,7 @@ function GtdLeafPopup({ leaf, seedText, onClose }) {
 // task/nota), la seconda si scrive a mano — stessa convenzione letta da
 // deadlineReminders.js/refreshDeadlineReminders in App.jsx, che trasforma
 // l'evento in un task nella lista dell'Area quando il reminder scatta.
-function GtdEventPopup({ leaf, seedText, onEventCreated, onEventRemoved, onClose }) {
+function GtdEventPopup({ leaf, seedText, onConsume, onEventCreated, onEventRemoved, onClose }) {
   const options = leaf.kind === 'list' ? leaf.todoLists : leaf.sections;
   const [targetId, setTargetId] = useState(options?.[0]?.id || '');
   const [title, setTitle] = useState(seedText || '');
@@ -357,6 +379,7 @@ function GtdEventPopup({ leaf, seedText, onEventCreated, onEventRemoved, onClose
           onEventRemoved?.(event.id);
         },
       });
+      await onConsume?.('delete');
       setBusy(false);
       setDone(true);
       setTimeout(onClose, 900);

@@ -31,6 +31,27 @@ export function findProject(task, cfg) {
 }
 
 /**
+ * Il colore di ogni sezione OneNote, indicizzato per nome di lista To-Do in
+ * minuscolo: una lista è una sezione, ed è così che un task risale al proprio
+ * colore. Nasce dentro TaskPool — il Piano colora i task così — e vive qui
+ * perché anche la vista Attività dipinge le sue colonne con gli stessi colori:
+ * due copie della stessa mappa avrebbero preso strade diverse.
+ * @param {import('./types').Notebook[]} notebooks
+ * @param {Record<string, import('./types').Section[]>} sectionsMap
+ * @returns {Record<string, string>}
+ */
+export function buildListColorMap(notebooks = [], sectionsMap = {}) {
+  /** @type {Record<string, string>} */
+  const map = {};
+  for (const nb of notebooks) {
+    (sectionsMap[nb.id] || []).forEach((s, i) => {
+      map[s.displayName.toLowerCase()] = s._color || shadeColor(nb._color || '#888', i);
+    });
+  }
+  return map;
+}
+
+/**
  * @param {string|null|undefined} hex
  * @param {number} alpha
  * @returns {string}
