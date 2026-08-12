@@ -9,7 +9,7 @@
 // La lente Eisenhower resta disponibile come vista alternativa (Quadranti),
 // applicata alle sole Prossime azioni: è una lettura del serbatoio, non più
 // la struttura.
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
   taskStatus, inboxListId, indexScheduled, taskContext, taskEstimateMin,
@@ -139,6 +139,11 @@ export default function ActivityBoard({
   const [query, setQuery] = useState('');
   const [dragTask, setDragTask] = useState(/** @type {import('./types').TodoTask|null} */ (null));
   const [dragOver, setDragOver] = useState(/** @type {string|null} */ (null));
+  // Su schermo stretto le cinque colonne scorrono in orizzontale e se ne vede
+  // una e mezza: senza le pastiglie non c'è niente che dica quante sono né a
+  // che punto della fila si è.
+  const columnsRef = useRef(/** @type {HTMLDivElement|null} */ (null));
+  const [visibleCol, setVisibleCol] = useState(0);
 
   const setParam = (/** @type {string} */ key, /** @type {string} */ value) => {
     const next = new URLSearchParams(params);
@@ -176,6 +181,27 @@ export default function ActivityBoard({
     }
     return out;
   }, [visible, scheduled, inboxId]);
+
+  // La pastiglia attiva segue lo scorrimento: si ricava dalla posizione, non
+  // da uno stato a parte, così resta giusta anche scorrendo col dito.
+  useEffect(() => {
+    const el = columnsRef.current;
+    if (!el) return undefined;
+    const onScroll = () => {
+      const width = el.scrollWidth / COLUMNS.length;
+      if (!width) return;
+      setVisibleCol(Math.min(COLUMNS.length - 1, Math.round(el.scrollLeft / width)));
+    };
+    onScroll();
+    el.addEventListener('scroll', onScroll, { passive: true });
+    return () => el.removeEventListener('scroll', onScroll);
+  }, [view]);
+
+  function scrollToColumn(/** @type {number} */ index) {
+    const el = columnsRef.current;
+    if (!el) return;
+    el.scrollTo({ left: (el.scrollWidth / COLUMNS.length) * index, behavior: 'smooth' });
+  }
 
   function handleDrop(/** @type {string} */ target) {
     setDragOver(null);
@@ -290,7 +316,20 @@ export default function ActivityBoard({
   return (
     <div className="ab">
       {header}
-      <div className="ab-columns">
+      {/* Solo su schermo stretto (CSS): cinque pastiglie col conteggio, che
+          dicono quante colonne ci sono e portano a quella toccata. */}
+      <div className="ab-pills">
+        {COLUMNS.map((col, i) => (
+          <button
+            key={col.status}
+            className={`ab-pill${visibleCol === i ? ' active' : ''}`}
+            onClick={() => scrollToColumn(i)}>
+            {col.label}
+            <span className="ab-pill-count">{byStatus[col.status].length}</span>
+          </button>
+        ))}
+      </div>
+      <div className="ab-columns" ref={columnsRef}>
         {COLUMNS.map(col => (
           <div
             key={col.status}
