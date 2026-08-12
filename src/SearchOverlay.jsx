@@ -1,17 +1,12 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
+import { useDialog } from './useDialog';
+import { openProtocol } from './protocolLink';
 
 const TYPE_META = {
   section: { icon: '▦', label: 'Sezione' },
   page:    { icon: '❐', label: 'Pagina' },
   task:    { icon: '✓', label: 'Task' },
 };
-
-function openProtocol(url) {
-  if (!url) return;
-  const a = document.createElement('a');
-  a.href = url;
-  a.click();
-}
 
 // Cerca tra i dati già in cache (sezioni, pagine OneNote, task) — nessuna chiamata API.
 // Il contenuto è montato solo quando open: lo stato riparte pulito a ogni apertura.
@@ -24,6 +19,10 @@ function SearchBox({ onClose, notebooks, sectionsMap, pagesCache, tasks, onSelec
   const [query, setQuery] = useState('');
   const [active, setActive] = useState(0);
   const listRef = useRef(null);
+  // Escape era gestito solo dal campo di testo: bastava un clic su un risultato
+  // (che sposta il fuoco) perché il tasto non chiudesse più nulla. Qui vale per
+  // tutta la finestra, e il fuoco torna dove era all'apertura.
+  const boxRef = useDialog(true, onClose);
 
   const results = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -80,7 +79,7 @@ function SearchBox({ onClose, notebooks, sectionsMap, pagesCache, tasks, onSelec
   }
 
   function handleKeyDown(e) {
-    if (e.key === 'Escape') { onClose(); return; }
+    // Escape lo gestisce useDialog, per tutta la finestra.
     if (!results.length) return;
     if (e.key === 'ArrowDown') {
       e.preventDefault();
@@ -101,7 +100,12 @@ function SearchBox({ onClose, notebooks, sectionsMap, pagesCache, tasks, onSelec
 
   return (
     <div className="search-overlay" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="search-box">
+      <div
+        ref={boxRef}
+        className="search-box"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Cerca sezioni, pagine e attività">
         <div className="search-input-row">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
             <circle cx="11" cy="11" r="7" />
@@ -112,6 +116,10 @@ function SearchBox({ onClose, notebooks, sectionsMap, pagesCache, tasks, onSelec
             className="search-input"
             placeholder="Cerca sezioni, pagine, task…"
             value={query}
+            role="combobox"
+            aria-expanded={results.length > 0}
+            aria-controls="search-results"
+            aria-activedescendant={results.length ? `search-result-${activeIdx}` : undefined}
             onChange={e => { setQuery(e.target.value); setActive(0); }}
             onKeyDown={handleKeyDown}
           />
@@ -119,10 +127,13 @@ function SearchBox({ onClose, notebooks, sectionsMap, pagesCache, tasks, onSelec
         </div>
 
         {query.trim().length >= 2 && (
-          <div className="search-results" ref={listRef}>
+          <div className="search-results" ref={listRef} id="search-results" role="listbox">
             {results.map((r, i) => (
               <div
                 key={`${r.type}-${i}`}
+                id={`search-result-${i}`}
+                role="option"
+                aria-selected={i === activeIdx}
                 className={`search-result${i === activeIdx ? ' active' : ''}`}
                 onClick={() => handleOpen(r)}
                 onMouseEnter={() => setActive(i)}>

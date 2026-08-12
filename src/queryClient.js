@@ -14,6 +14,7 @@
 // passeranno a questo client.
 
 import { QueryClient, hydrate, dehydrate } from '@tanstack/react-query';
+import { whenIdle } from './idle';
 
 const MIN = 60 * 1000;
 const HOUR = 60 * MIN;
@@ -28,6 +29,7 @@ export const STALE = {
   todolists:      24 * HOUR,
   tasks:           2 * HOUR,
   colorSettings:  30 * MIN,
+  diaryStreak:    15 * MIN,   // TodayView
   // PlannerView.jsx
   plannerConfig:      30 * MIN,
   dailyPlans:          5 * MIN,   // ex PLANS_CACHE_TTL
@@ -65,6 +67,8 @@ export const qk = {
   /** @param {string} listId */
   tasks:         (listId) => /** @type {const} */ (['tasks', listId]),
   colorSettings: () => /** @type {const} */ (['colorSettings']),
+  /** @param {string} ym 'YYYY-MM' — la striscia dipende dal mese corrente */
+  diaryStreak:   (ym) => /** @type {const} */ (['diaryStreak', ym]),
   // PlannerView.jsx — file singoli su OneDrive + bulk eventi ±3 mesi
   plannerConfig:      () => /** @type {const} */ (['plannerConfig']),
   dailyPlans:         () => /** @type {const} */ (['dailyPlans']),
@@ -100,16 +104,51 @@ try {
 
 // Salvataggio con debounce a ogni cambiamento della cache (una scrittura sola
 // dopo una raffica di aggiornamenti, invece di una per query come cacheSet).
+//
+// La serializzazione non è gratis: la cache contiene l'elenco pagine di ogni
+// sezione OneNote e tutti i task di ogni lista, cioè qualche centinaio di
+// kilobyte di JSON, e `JSON.stringify` + `setItem` sono sincroni — cadendo in
+// mezzo al primo caricamento (quando le query arrivano una dopo l'altra) si
+// vedeva l'interfaccia inchiodarsi per una frazione di secondo alla volta.
+// Il debounce aspetta la fine della raffica, e whenIdle aspetta che il browser
+// sia libero prima di scrivere davvero.
+//
+// Si persistono solo le query riuscite: salvare un errore voleva dire
+// ripresentarlo al riavvio successivo come se fosse un dato.
 /** @type {ReturnType<typeof setTimeout>|undefined} */
 let _saveTimer;
+/** @type {(() => void)|undefined} */
+let _cancelIdleSave;
+let _pending = false;
+
+function persistCache() {
+  _pending = false;
+  try {
+    const clientState = dehydrate(queryClient, {
+      shouldDehydrateQuery: q => q.state.status === 'success',
+    });
+    window.localStorage.setItem(PERSIST_KEY, JSON.stringify({ timestamp: Date.now(), clientState }));
+  } catch {
+    // localStorage pieno: si rinuncia a persistere, la cache in memoria resta.
+  }
+}
+
 queryClient.getQueryCache().subscribe(() => {
+  _pending = true;
   clearTimeout(_saveTimer);
+  _cancelIdleSave?.();
   _saveTimer = setTimeout(() => {
-    try {
-      const clientState = dehydrate(queryClient);
-      window.localStorage.setItem(PERSIST_KEY, JSON.stringify({ timestamp: Date.now(), clientState }));
-    } catch {
-      // localStorage pieno: si rinuncia a persistere, la cache in memoria resta.
-    }
+    _cancelIdleSave = whenIdle(persistCache, 4000);
   }, 1000);
+});
+
+// Alla chiusura della scheda l'ultima raffica potrebbe non essere ancora stata
+// scritta: si salva subito, senza aspettare il momento libero che non arriverà.
+// `pagehide` e non `beforeunload`: è l'unico evento che Safari iOS garantisce
+// quando l'app finisce in sottofondo.
+window.addEventListener('pagehide', () => {
+  if (!_pending) return;
+  clearTimeout(_saveTimer);
+  _cancelIdleSave?.();
+  persistCache();
 });

@@ -13,7 +13,7 @@
 // destra; le colonne che non servono — «Un giorno» sempre, «Inbox» quando è
 // vuota — si riducono a una striscia, e lo spazio che liberano va al dettaglio
 // dell'attività, che sta sempre lì a destra invece di aprirsi sopra la board.
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
   taskStatus, inboxListId, indexScheduled, taskContext, taskEstimateMin,
@@ -25,6 +25,7 @@ import {
 import { paraSectionLabel } from './paraConfig';
 import { completeTask, updateTaskStatus } from './api';
 import { pushUndo } from './undo';
+import { notifyError } from './notify';
 import { useMediaQuery } from './useMediaQuery';
 import Skeleton from './Skeleton';
 import TaskDetailPanel from './TaskDetailPanel';
@@ -210,6 +211,11 @@ export default function ActivityBoard({
   const ctxFilter = params.get('ctx') || '';
   const listFilter = params.get('lista') || '';
   const [query, setQuery] = useState('');
+  // Il filtro applicato è quello "in ritardo": la scrittura nel campo resta
+  // fluida anche quando il ricalcolo delle cinque colonne (smistamento,
+  // raggruppamento per sezione, ordinamenti) è lungo, perché React può
+  // interromperlo e ridisegnare prima il carattere appena battuto.
+  const deferredQuery = useDeferredValue(query);
   const [dragTask, setDragTask] = useState(/** @type {import('./types').TodoTask|null} */ (null));
   const [dragOver, setDragOver] = useState(/** @type {string|null} */ (null));
   // L'attività aperta nel dettaglio. È stato di vista, non del pool: chiuderla
@@ -243,6 +249,11 @@ export default function ActivityBoard({
 
   const scheduled = useMemo(() => indexScheduled(plans), [plans]);
   const inboxId = useMemo(() => inboxListId(todoLists), [todoLists]);
+  // L'insieme degli id programmati, costruito una volta per piano. Prima
+  // `new Set(scheduled.keys())` stava dentro il ciclo che smista le attività
+  // per colonna: con trecento attività e cento blocchi voleva dire trecento
+  // Set nuovi a ogni battuta nel campo di ricerca.
+  const scheduledIds = useMemo(() => new Set(scheduled.keys()), [scheduled]);
 
   // Il colore di ogni sezione, lo stesso che il Piano dà ai blocchi: qui tinge
   // il bordo della riga e il pallino del gruppo.
@@ -258,9 +269,9 @@ export default function ActivityBoard({
   // conosce i blocchi nel piano e la lista Inbox — e il pannello no.
   const detailStatus = useMemo(
     () => (detailTask
-      ? taskStatus(detailTask, { scheduledIds: new Set(scheduled.keys()), inboxListId: inboxId })
+      ? taskStatus(detailTask, { scheduledIds, inboxListId: inboxId })
       : undefined),
-    [detailTask, scheduled, inboxId],
+    [detailTask, scheduledIds, inboxId],
   );
 
   // Le liste di To-Do in cui ci sono davvero attività, col loro conteggio: è
@@ -275,20 +286,20 @@ export default function ActivityBoard({
   const hasContexts = useMemo(() => tasks.some(t => taskContext(t)), [tasks]);
 
   const visible = useMemo(() => {
-    const q = query.trim().toLowerCase();
+    const q = deferredQuery.trim().toLowerCase();
     return tasks.filter(t => {
       if (q && !(t.title || '').toLowerCase().includes(q)) return false;
       if (listFilter && t._listId !== listFilter) return false;
       if (ctxFilter && taskContext(t) !== ctxFilter) return false;
       return true;
     });
-  }, [tasks, query, ctxFilter, listFilter]);
+  }, [tasks, deferredQuery, ctxFilter, listFilter]);
 
   const byStatus = useMemo(() => {
     /** @type {Record<string, import('./types').TodoTask[]>} */
     const out = { inbox: [], next: [], waiting: [], scheduled: [], someday: [] };
     for (const t of visible) {
-      const s = taskStatus(t, { scheduledIds: new Set(scheduled.keys()), inboxListId: inboxId });
+      const s = taskStatus(t, { scheduledIds, inboxListId: inboxId });
       if (out[s]) out[s].push(t);
     }
     // Le programmate in ordine di quando toccano; le altre per scadenza, che è
@@ -301,7 +312,7 @@ export default function ActivityBoard({
       out[k].sort((a, b) => dueDateSortValue(a.dueDateTime) - dueDateSortValue(b.dueDateTime));
     }
     return out;
-  }, [visible, scheduled, inboxId]);
+  }, [visible, scheduled, scheduledIds, inboxId]);
 
   // Dentro la colonna, i task per sezione: lo stesso raggruppamento del Piano,
   // con lo stesso colore. L'ordine dei gruppi è alfabetico — l'ordine interno
@@ -343,23 +354,60 @@ export default function ActivityBoard({
 
   // La pastiglia attiva segue lo scorrimento: si ricava dalla posizione, non
   // da uno stato a parte, così resta giusta anche scorrendo col dito.
+  //
+  // Si misurano le colonne vere e non `scrollWidth / 5`: le colonne non hanno
+  // tutte la stessa larghezza — una ridotta a striscia ne occupa una frazione —
+  // quindi la divisione indicava la pastiglia sbagliata ogni volta che «Inbox»
+  // o «Un giorno» erano chiuse, cioè quasi sempre.
   useEffect(() => {
     const el = columnsRef.current;
     if (!el) return undefined;
     const onScroll = () => {
-      const width = el.scrollWidth / COLUMNS.length;
-      if (!width) return;
-      setVisibleCol(Math.min(COLUMNS.length - 1, Math.round(el.scrollLeft / width)));
+      // Rettangoli rispetto al viewport e non `offsetLeft`: il contenitore delle
+      // colonne non è posizionato, quindi l'offset dei figli è calcolato su un
+      // antenato più in alto e la colonna "più visibile" risultava sempre
+      // l'ultima. Con getBoundingClientRect il confronto è fra le stesse
+      // coordinate, sempre.
+      const box = el.getBoundingClientRect();
+      let best = 0;
+      let bestOverlap = -Infinity;
+      Array.from(el.children).forEach((child, i) => {
+        const r = /** @type {HTMLElement} */ (child).getBoundingClientRect();
+        const overlap = Math.min(box.right, r.right) - Math.max(box.left, r.left);
+        if (overlap > bestOverlap) { bestOverlap = overlap; best = i; }
+      });
+      setVisibleCol(best);
     };
     onScroll();
     el.addEventListener('scroll', onScroll, { passive: true });
-    return () => el.removeEventListener('scroll', onScroll);
-  }, [view]);
+    window.addEventListener('resize', onScroll);
+    return () => {
+      el.removeEventListener('scroll', onScroll);
+      window.removeEventListener('resize', onScroll);
+    };
+  }, [view, expandedCols]);
 
   function scrollToColumn(/** @type {number} */ index) {
     const el = columnsRef.current;
-    if (!el) return;
-    el.scrollTo({ left: (el.scrollWidth / COLUMNS.length) * index, behavior: 'smooth' });
+    const target = /** @type {HTMLElement|undefined} */ (el?.children[index]);
+    if (!el || !target) return;
+    const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    const left = el.scrollLeft + (target.getBoundingClientRect().left - el.getBoundingClientRect().left);
+    el.scrollTo({ left, behavior: reduce ? 'auto' : 'smooth' });
+  }
+
+  /** La pastiglia di una colonna ridotta la riapre prima di portarci: portare a
+   *  una striscia chiusa era un comando che sembrava non fare niente. */
+  function handlePillClick(/** @type {{status: string, collapse?: string}} */ col, /** @type {number} */ index) {
+    if (isCollapsed(col)) {
+      setExpandedCols(s => ({ ...s, [col.status]: true }));
+      // Le colonne cambiano larghezza con una transizione (flex-basis, var(--t)
+      // = 140ms): scorrere prima che sia finita punterebbe alla posizione che la
+      // colonna aveva da chiusa.
+      setTimeout(() => scrollToColumn(index), 180);
+      return;
+    }
+    scrollToColumn(index);
   }
 
   function handleDrop(/** @type {string} */ target) {
@@ -368,7 +416,7 @@ export default function ActivityBoard({
     setDragTask(null);
     if (!task) return;
 
-    const from = taskStatus(task, { scheduledIds: new Set(scheduled.keys()), inboxListId: inboxId });
+    const from = taskStatus(task, { scheduledIds, inboxListId: inboxId });
     if (from === target) return;
 
     // Uscire da Inbox non è uno spostamento ma il passo di chiarimento: un
@@ -408,8 +456,10 @@ export default function ActivityBoard({
         },
       });
     } catch (e) {
-      console.error('completamento attività', e);
+      // La riga torna al suo posto: senza un avviso sembrerebbe che la spunta
+      // non sia stata registrata dal tocco, e si riprova all'infinito.
       onTaskRestored?.(listId, snapshot);
+      notifyError(`Non ho potuto spuntare "${task.title}". Controlla la connessione e riprova.`, e);
     }
   }
 
@@ -419,6 +469,7 @@ export default function ActivityBoard({
         className="ab-search"
         type="search"
         placeholder="Filtra le attività…"
+        aria-label="Filtra le attività per titolo"
         value={query}
         onChange={e => setQuery(e.target.value)}
       />
@@ -570,7 +621,8 @@ export default function ActivityBoard({
           <button
             key={col.status}
             className={`ab-pill${visibleCol === i ? ' active' : ''}`}
-            onClick={() => scrollToColumn(i)}>
+            aria-current={visibleCol === i ? 'true' : undefined}
+            onClick={() => handlePillClick(col, i)}>
             {col.label}
             <span className="ab-pill-count">{byStatus[col.status].length}</span>
           </button>

@@ -1,39 +1,38 @@
+/* Finanze arriva da un'app che viveva per conto suo, e se ne portava dietro il
+ * tema: fondo chiaro di suo, scuro solo se il sistema operativo era in modalità
+ * scura. Mente Digitale invece ha un tema solo, scuro, sempre — quindi con il
+ * Mac in modalità chiara si passava da «Oggi» (nero) a «Finanze» (bianco
+ * accecante) toccando una voce di menù, e sembravano due programmi diversi.
+ *
+ * Qui il tema è uno, ed è quello dell'app: gli stessi valori di `tokens.css`,
+ * con i nomi che i CSS di Finanze già usano. I valori sono scritti a mano invece
+ * di rimandare ai token con `var()` perché queste variabili hanno gli stessi
+ * nomi di alcuni token (`--bg`, `--muted`): `--bg: var(--bg)` dentro un
+ * discendente sarebbe un riferimento circolare, e la regola verrebbe scartata.
+ * Il commento accanto dice a quale token corrisponde ciascuno. */
 .finanze-root {
-  --bg: #f6f7f9;
-  --bg-card: #ffffff;
-  --bg-elev: #f0f2f5;
-  --testo: #1b1f24;
-  --muted: #6b7280;
-  --bordo: #e3e6ea;
-  --primario: #2f6feb;
-  --primario-testo: #ffffff;
-  --entrata: #1a9c5b;
-  --uscita: #d23b3b;
-  --ombra: 0 1px 3px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.04);
-  --raggio: 10px;
+  --bg: #0e1013;             /* = --bg */
+  --bg-card: #14171c;        /* = --surface */
+  --bg-elev: #1a1d23;        /* = --line-soft */
+  --testo: #eceef4;          /* = --text */
+  --muted: #868b98;          /* = --muted */
+  --bordo: #23262e;          /* = --line */
+  --primario: #d4a44a;       /* = --accent — l'ocra dell'app, non il blu di prima */
+  --primario-testo: #0e1013; /* testo scuro sull'ocra: sul chiaro non si leggeva */
+  --entrata: #86c07a;        /* = --ok */
+  --uscita: #c07a7a;         /* = --danger */
+  --ombra: none;             /* sul fondo scuro un'ombra morbida non si vede */
+  --raggio: 10px;            /* = --r-lg */
   --sidebar-w: 220px;
-}
-@media (prefers-color-scheme: dark) {
-  .finanze-root {
-      --bg: #14171c;
-      --bg-card: #1c2027;
-      --bg-elev: #232830;
-      --testo: #e7eaee;
-      --muted: #9aa3af;
-      --bordo: #2c323b;
-      --primario: #4b86f0;
-      --entrata: #35c07e;
-      --uscita: #ef6a6a;
-      --ombra: none;
-    }
 }
 .finanze-root * {
   box-sizing: border-box;
 }
 .finanze-root {
   margin: 0;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica,
-    Arial, sans-serif;
+  /* Lo stesso carattere del resto dell'app: prima era il font di sistema, e le
+     tabelle dei movimenti stonavano accanto a ogni altra vista. */
+  font-family: var(--font-ui);
   background: var(--bg);
   color: var(--testo);
   font-size: 14px;

@@ -1875,7 +1875,7 @@ export default function PlannerView({
       <div className="planner-ai-panel mobile-active">
         <div className="planner-col-header">
           <span>📋 Dettagli</span>
-          <button className="planner-sheet-close" onClick={closeDetail} title="Chiudi">✕</button>
+          <button className="planner-sheet-close" onClick={closeDetail} title="Chiudi" aria-label="Chiudi il dettaglio">✕</button>
         </div>
         <div className="planner-ai-body">{detailBody}</div>
       </div>
@@ -2356,7 +2356,7 @@ export default function PlannerView({
               const actionsBtns = (
                 <div className="planner-block-actions">
                   <button className="planner-block-btn" onClick={() => handleBreakdownTask(block)} disabled={locked} title="Scomponi in sottostep">🔀</button>
-                  <button className="planner-block-btn" onClick={() => handleRemoveBlock(block.id)} disabled={locked} title="Rimuovi">✕</button>
+                  <button className="planner-block-btn" onClick={() => handleRemoveBlock(block.id)} disabled={locked} title="Rimuovi" aria-label="Rimuovi questo blocco dal piano">✕</button>
                 </div>
               );
               const subStepsOverlay = block.subSteps?.length > 0 ? (() => {
@@ -2471,7 +2471,7 @@ export default function PlannerView({
           <div className="planner-modal" onClick={e => e.stopPropagation()}>
             <div className="planner-modal-header">
               <span>Sottoattività: {breakdownModal.block.taskTitle}</span>
-              <button onClick={() => setBreakdownModal(null)}>✕</button>
+              <button onClick={() => setBreakdownModal(null)} aria-label="Chiudi" title="Chiudi">✕</button>
             </div>
             <div className="planner-modal-body">
               {breakdownModal.loading && (

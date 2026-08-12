@@ -277,6 +277,32 @@
   flex-direction: column;
 }
 
+/* Il contenuto è il bersaglio di «Salta al contenuto»: riceve il fuoco per via
+   programmatica (tabIndex -1) e non deve mostrare l'anello attorno a mezza
+   pagina per questo. */
+.shell-content:focus { outline: none; }
+
+/* ── Salta al contenuto ─────────────────────────────────────────────────── */
+/* Fuori schermo finché non riceve il fuoco: allora scende in alto a sinistra,
+   sopra ogni altra cosa. */
+.shell-skip {
+  position: fixed;
+  top: var(--sp-3);
+  left: var(--sp-3);
+  z-index: 100;
+  transform: translateY(-200%);
+  padding: var(--sp-2) var(--sp-4);
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--accent);
+  border-radius: var(--r-sm);
+  font-family: var(--font-ui);
+  font-size: var(--fs-meta);
+  cursor: pointer;
+  transition: transform var(--t);
+}
+.shell-skip:focus { transform: translateY(0); }
+
 /* ── Barra Pomodoro ───────────────────────────────────────────────────── */
 
 .pomo-bar {

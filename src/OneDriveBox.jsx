@@ -126,7 +126,7 @@ export default function OneDriveBox({ sectionId, color = 'var(--accent)' }) {
               )}
               {link.urlPc && <CopyBtn text={link.urlPc} />}
               <button className="od-edit-btn" onClick={() => handleStartEdit(i)} title="Modifica">✎</button>
-              <button className="od-remove-btn" onClick={() => handleRemove(i)}>✕</button>
+              <button className="od-remove-btn" onClick={() => handleRemove(i)} aria-label="Rimuovi questo collegamento" title="Rimuovi">✕</button>
             </div>
           </div>
         ))}

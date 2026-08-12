@@ -239,7 +239,9 @@ function DiaryHome({
         <div className="diary-filters">
           <input
             className="diary-search"
+            type="search"
             placeholder="Cerca nel diario…"
+            aria-label="Cerca nel diario"
             value={query}
             onChange={e => setQuery(e.target.value)}
           />
@@ -405,7 +407,7 @@ function PhotoLightbox({ photos, index, onIndex, onClose }) {
 
   return (
     <div className="diary-lightbox" onClick={onClose}>
-      <button className="diary-lightbox-close" onClick={onClose}>✕</button>
+      <button className="diary-lightbox-close" onClick={onClose} aria-label="Chiudi la foto" title="Chiudi">✕</button>
       {index > 0 && (
         <button
           className="diary-lightbox-nav prev"
@@ -470,7 +472,7 @@ function PhotoPicker({ photos, onChange, disabled }) {
         {photos.map((p, i) => (
           <div key={p.name} className="diary-photo-edit">
             <DiaryPhotoImg photo={p} className="diary-photo-thumb" />
-            <button className="diary-photo-remove" onClick={() => removeAt(i)} title="Togli questa foto">✕</button>
+            <button className="diary-photo-remove" onClick={() => removeAt(i)} title="Togli questa foto" aria-label="Togli questa foto">✕</button>
             <input
               className="diary-photo-caption"
               placeholder="didascalia"
@@ -666,7 +668,7 @@ function DiaryWriter({ type, initial, onSave, onCancel }) {
           >
             {seed} <span className="diary-seed-caret">▾</span>
           </button>
-          <button className="diary-seed-btn" onClick={() => setSeed(null)} title="Scrivi senza domanda">✕</button>
+          <button className="diary-seed-btn" onClick={() => setSeed(null)} title="Scrivi senza domanda" aria-label="Scrivi senza domanda">✕</button>
         </div>
       )}
       {isRitual && !seed && !seedListOpen && (
@@ -743,7 +745,7 @@ function MethodHelp({ onClose }) {
     <div className="diary-help">
       <div className="diary-help-head">
         <span className="diary-help-title">Come funziona questa pagina</span>
-        <button className="diary-seed-btn" onClick={onClose}>✕</button>
+        <button className="diary-seed-btn" onClick={onClose} aria-label="Chiudi" title="Chiudi">✕</button>
       </div>
       <ul className="diary-help-list">
         {SVUOTA_TESTA_METHOD.howTo.map((line, i) => <li key={i}>{line}</li>)}
@@ -803,7 +805,7 @@ function EveningRitual({ onSave, onCancel }) {
     <div className="diary-panel diary-evening">
       <div className="diary-header">
         <span className="diary-title">🕯️ Rituale della sera</span>
-        <button className="diary-close" onClick={cancel}>✕</button>
+        <button className="diary-close" onClick={cancel} aria-label="Chiudi senza salvare" title="Chiudi senza salvare">✕</button>
       </div>
       <div className="diary-body">
         {EVENING_QUESTIONS.map(q => (
@@ -926,7 +928,7 @@ function AiExport({ entries, onBack }) {
     <div className="diary-panel">
       <div className="diary-header">
         <span className="diary-title">Copia per l'AI</span>
-        <button className="diary-close" onClick={onBack}>✕</button>
+        <button className="diary-close" onClick={onBack} aria-label="Torna indietro" title="Indietro">✕</button>
       </div>
       <div className="diary-body">
         <div className="diary-field">

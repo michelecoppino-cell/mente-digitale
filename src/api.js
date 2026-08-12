@@ -20,33 +20,73 @@ async function getTokenCached() {
 export function invalidateTokenCache() { _cachedToken = null; _cachedTokenExp = 0; }
 
 /**
+ * Le opzioni di una chiamata a Graph: come RequestInit, ma con gli header come
+ * semplice dizionario — un valore `undefined` toglie l'header predefinito.
+ * @typedef {Omit<RequestInit, 'headers'> & { headers?: Record<string, string|undefined> }} GraphInit
+ */
+
+/**
  * Chiamata a Microsoft Graph con retry/backoff, un giro extra sul 401 (token
  * fresco) e gestione di 429/503/504. Accetta path relativi (`/me/...`) o URL
  * assoluti (i @odata.nextLink di paginazione).
  * @param {string} path
- * @param {RequestInit} [options]
+ * @param {GraphInit} [options]
  * @param {number} [retries]
  * @returns {Promise<any>}
  */
 async function call(path, options = {}, retries = 3) {
+  const r = await callRaw(path, options, retries);
+  if (r.status === 204) return null;
+  return r.json();
+}
+
+/**
+ * Il motore di `call`: restituisce la Response invece del JSON, così anche le
+ * chiamate che non parlano JSON — l'HTML di una pagina OneNote, il PUT di un
+ * file su OneDrive, il caricamento di una foto del diario — passano dagli stessi
+ * tentativi, dallo stesso backoff sul 429 e dallo stesso giro extra sul 401.
+ *
+ * Prima ognuna di quelle faceva `fetch` a mano con il token in cache: bastava
+ * che il token fosse scaduto (la cache lo tiene 45 minuti, senza guardare la
+ * scadenza vera) perché un salvataggio uscisse con un 401 secco, senza
+ * riprovare. Sul percorso di lettura era un fastidio; sul salvataggio di una
+ * voce di diario o del piano del giorno era il testo appena scritto che non
+ * arrivava su OneDrive — e con la rete di un telefono succede.
+ *
+ * @param {string} path
+ * @param {GraphInit} [options]
+ * @param {number} [retries]
+ * @returns {Promise<Response>}
+ */
+async function callRaw(path, options = {}, retries = 3) {
   // Accetta anche URL assoluti: i link di paginazione @odata.nextLink di Graph
   // arrivano già completi di host.
   const url = path.startsWith('https://') ? path : GRAPH + path;
+  const { headers: extraHeaders, ...rest } = options;
   let retried401 = false;
   for (let attempt = 0; attempt < retries; attempt++) {
     let r;
     try {
       const token = await getTokenCached();
-      r = await fetch(url, {
-        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-        ...options
-      });
+      // Il Content-Type predefinito resta JSON, ma un chiamante può sostituirlo
+      // (xhtml per le pagine OneNote, il tipo del file per una foto) — o
+      // toglierlo del tutto passandolo `undefined`, come serve al multipart,
+      // dove il boundary lo deve mettere il browser.
+      /** @type {Record<string, string|undefined>} */
+      const headers = {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+        ...extraHeaders,
+      };
+      for (const k of Object.keys(headers)) {
+        if (headers[k] === undefined) delete headers[k];
+      }
+      r = await fetch(url, { ...rest, headers: /** @type {Record<string, string>} */ (headers) });
     } catch (e) {
       if (attempt === retries - 1) throw e;
       await new Promise(res => setTimeout(res, (attempt + 1) * 1000));
       continue;
     }
-    if (r.status === 204) return null;
     // Il token cachato può risultare scaduto (es. dopo una pausa lunga):
     // invalida la cache e riprova una volta sola con un token fresco prima
     // di arrendersi con un errore secco. Il giro extra non consuma uno dei
@@ -78,10 +118,13 @@ async function call(path, options = {}, retries = 3) {
       err.status = r.status; // permette ai chiamanti di distinguere 404 da errori transitori
       throw err;
     }
-    return r.json();
+    return r;
   }
   throw new Error(`Graph error: tentativi esauriti per ${path}`);
 }
+
+/** Un corpo multipart: il Content-Type (col boundary) lo mette il browser. */
+const MULTIPART = /** @type {Record<string, string|undefined>} */ ({ 'Content-Type': undefined });
 
 // Segue @odata.nextLink e concatena i .value di tutte le pagine: senza,
 // le liste più lunghe di $top venivano troncate in silenzio (task mancanti,
@@ -197,13 +240,13 @@ export async function migrateLegacyDriveFiles() {
  */
 async function putDriveJson(filename, data) {
   await ensureAppFolder();
-  const token = await getTokenCached();
-  const r = await fetch(`${GRAPH}${drivePath(filename)}:/content`, {
+  // Passa da callRaw: un salvataggio è la cosa che meno di tutte deve arrendersi
+  // al primo 401 o al primo singhiozzo di rete — dietro c'è il testo che
+  // l'utente ha appena scritto.
+  const r = await callRaw(`${drivePath(filename)}:/content`, {
     method: 'PUT',
-    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
     body: JSON.stringify(data, null, 2),
   });
-  if (!r.ok) throw new Error(`Save ${filename} error ${r.status}`);
   return r.json();
 }
 
@@ -240,11 +283,7 @@ export async function getPages(sectionId) {
  * @returns {Promise<string>}
  */
 export async function getPageContentHtml(pageId) {
-  const token = await getTokenCached();
-  const r = await fetch(`${GRAPH}/me/onenote/pages/${pageId}/content`, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  if (!r.ok) throw new Error(`Page content error ${r.status}`);
+  const r = await callRaw(`/me/onenote/pages/${pageId}/content`);
   return r.text();
 }
 
@@ -426,15 +465,13 @@ function escapeHtml(s) {
  * @returns {Promise<any>}
  */
 export async function createNotePage(sectionId, title, contentText) {
-  const token = await getTokenCached();
   const html = `<!DOCTYPE html><html><head><title>${escapeHtml(title)}</title></head>` +
     `<body><p>${escapeHtml(contentText).replace(/\n/g, '<br/>')}</p></body></html>`;
-  const r = await fetch(`${GRAPH}/me/onenote/sections/${sectionId}/pages`, {
+  const r = await callRaw(`/me/onenote/sections/${sectionId}/pages`, {
     method: 'POST',
-    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/xhtml+xml' },
+    headers: { 'Content-Type': 'application/xhtml+xml' },
     body: html,
   });
-  if (!r.ok) throw new Error(`Create page error ${r.status}`);
   return r.json();
 }
 
@@ -446,15 +483,13 @@ export async function createNotePage(sectionId, title, contentText) {
  * @returns {Promise<void>}
  */
 export async function patchPageContent(pageId, commands) {
-  const token = await getTokenCached();
   const form = new FormData();
   form.append('Commands', new Blob([JSON.stringify(commands)], { type: 'application/json' }));
-  const r = await fetch(`${GRAPH}/me/onenote/pages/${pageId}/content`, {
+  await callRaw(`/me/onenote/pages/${pageId}/content`, {
     method: 'PATCH',
-    headers: { Authorization: `Bearer ${token}` },
+    headers: MULTIPART,
     body: form,
   });
-  if (!r.ok) throw new Error(`Patch page content error ${r.status}`);
 }
 
 // Spunta come completata la riga "Da fare" (data-tag="to-do") di una pagina
@@ -1044,13 +1079,11 @@ function photoPath(name) {
  */
 export async function uploadDiaryPhoto(blob, name) {
   await ensurePhotoFolder();
-  const token = await getTokenCached();
-  const r = await fetch(`${GRAPH}${photoPath(name)}:/content`, {
+  await callRaw(`${photoPath(name)}:/content`, {
     method: 'PUT',
-    headers: { Authorization: `Bearer ${token}`, 'Content-Type': blob.type || 'application/octet-stream' },
+    headers: { 'Content-Type': blob.type || 'application/octet-stream' },
     body: blob,
   });
-  if (!r.ok) throw new Error(`Upload foto ${name} error ${r.status}`);
   return name;
 }
 

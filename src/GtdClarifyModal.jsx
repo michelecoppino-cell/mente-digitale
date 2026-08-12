@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react';
 import { createTask, deleteTask, completeTask, createNotePage, createCalendarEvent, deleteCalendarEvent } from './api';
 import { sectionRole, paraSectionLabel } from './paraConfig';
 import { pushUndo } from './undo';
+import { useDialog } from './useDialog';
 import './GtdClarifyModal.css';
 
 // Diagramma di flusso GTD "Chiarire" (David Allen), adattato al metodo PARA
@@ -42,6 +43,16 @@ export default function GtdClarifyModal({ open, onClose, todoLists = [], noteboo
   const resourceLists = useMemo(() => todoLists.filter(l => sectionRole(l.displayName) === 'resources'), [todoLists]);
 
   function handleClose() { setActiveLeaf(null); setEventLeaf(null); onClose(); }
+
+  // Escape chiude: prima l'unico modo di uscire dal diagramma era colpire la ✕
+  // o il velo intorno — e con una foglia aperta a schermo pieno da telefono il
+  // velo non c'era. Escape chiude prima la foglia, se ne è aperta una: annullare
+  // la scelta di destinazione non deve buttare via anche il testo del pensiero.
+  const boxRef = useDialog(open, () => {
+    if (eventLeaf) { setEventLeaf(null); return; }
+    if (activeLeaf) { setActiveLeaf(null); return; }
+    handleClose();
+  });
 
   // Il task di partenza dopo che la foglia ha fatto il suo lavoro: «Falla» lo
   // chiude come fatto, tutto il resto lo toglie dall'Inbox — la cosa adesso
@@ -102,10 +113,16 @@ export default function GtdClarifyModal({ open, onClose, todoLists = [], noteboo
 
   return (
     <div className="gtd-overlay" onClick={handleClose}>
-      <div className="gtd-modal" onClick={e => e.stopPropagation()}>
+      <div
+        ref={boxRef}
+        className="gtd-modal"
+        onClick={e => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Chiarire: diagramma di flusso del lavoro">
         <div className="gtd-header">
           <span>📥 Diagramma di flusso del lavoro: Chiarire</span>
-          <button className="gtd-close" onClick={handleClose} title="Chiudi">✕</button>
+          <button className="gtd-close" onClick={handleClose} title="Chiudi" aria-label="Chiudi">✕</button>
         </div>
 
         <div className="gtd-body">
@@ -280,7 +297,7 @@ function GtdLeafPopup({ leaf, seedText, onConsume, onClose }) {
         <div className="gtd-popup-header">
           <span className="gtd-popup-icon">{leaf.icon}</span>
           <span className="gtd-popup-title">{leaf.label}</span>
-          <button className="gtd-popup-close" onClick={onClose} title="Chiudi">✕</button>
+          <button className="gtd-popup-close" onClick={onClose} title="Chiudi" aria-label="Chiudi">✕</button>
         </div>
         <div className="gtd-popup-body">
           {done ? (
@@ -396,7 +413,7 @@ function GtdEventPopup({ leaf, seedText, onConsume, onEventCreated, onEventRemov
         <div className="gtd-popup-header">
           <span className="gtd-popup-icon">📅</span>
           <span className="gtd-popup-title">{leaf.label} — Scadenza a calendario</span>
-          <button className="gtd-popup-close" onClick={onClose} title="Chiudi">✕</button>
+          <button className="gtd-popup-close" onClick={onClose} title="Chiudi" aria-label="Chiudi">✕</button>
         </div>
         <div className="gtd-popup-body">
           {done ? (

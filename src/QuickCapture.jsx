@@ -12,6 +12,7 @@
 import { useState } from 'react';
 import { createTask } from './api';
 import { inboxListId } from './taskModel';
+import { useDialog } from './useDialog';
 import './QuickCapture.css';
 
 /**
@@ -34,6 +35,8 @@ export default function QuickCapture({ open, todoLists, onClose, onCaptured, onD
     setWasOpen(open);
     if (open) { setText(''); setBusy(false); setError(''); }
   }
+  // Escape, Tab che resta dentro, e il fuoco che torna dove era: vedi useDialog.
+  const boxRef = useDialog(open, onClose);
 
   if (!open) return null;
 
@@ -64,7 +67,13 @@ export default function QuickCapture({ open, todoLists, onClose, onCaptured, onD
 
   return (
     <div className="qc-overlay" onClick={onClose}>
-      <div className="qc" onClick={e => e.stopPropagation()} role="dialog" aria-label="Cattura un pensiero">
+      <div
+        ref={boxRef}
+        className="qc"
+        onClick={e => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Cattura un pensiero">
         <span className="eyebrow">Cattura</span>
         <textarea
           className="qc-input"
@@ -72,8 +81,9 @@ export default function QuickCapture({ open, todoLists, onClose, onCaptured, onD
           onChange={e => setText(e.target.value)}
           onKeyDown={e => {
             // Invio manda, Maiusc+Invio va a capo: catturare è un gesto solo.
+            // (Escape lo gestisce useDialog, per tutta la modale e non solo per
+            // questo campo.)
             if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); capture(); }
-            if (e.key === 'Escape') onClose();
           }}
           placeholder="Cosa ti è venuto in mente?"
           rows={3}

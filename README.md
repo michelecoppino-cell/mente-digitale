@@ -186,11 +186,68 @@ Colori, tipografia, spazi, raggi e target di tocco stanno una volta sola in
 `src/tokens.css`. I CSS per componente li leggono da lì: cambiare l'accento è
 una riga, non una ricerca-e-sostituzione in dieci file.
 
+Un tema solo, scuro, sempre — anche in **Finanze**, che arrivando da un'app a sé
+seguiva la modalità del sistema operativo: con il Mac in chiaro si passava da
+«Oggi» nero a «Finanze» bianca toccando una voce di menù. Ora la sua palette
+(`src/finanze/finanze.css`) porta gli stessi valori dei token, accento ocra e
+carattere Inter compresi.
+
+I caratteri (Playfair Display, Inter) sono caricati con un `<link>` in
+`index.html`, non con un `@import` dentro il CSS: dentro il foglio dell'app
+sarebbero una richiesta in fila dopo il suo download, invece che in parallelo.
+
+## Prestazioni
+
+**Una vista, un pezzo.** Ogni destinazione è un chunk a sé, caricato alla prima
+visita (`lazy` in `App.jsx`): l'app si apre su «Oggi», che è una lettura di dati
+già in memoria, e non ha motivo di far scaricare prima la mappa mentale con d3,
+la griglia del Piano, il Diario e la board delle Attività. Il primo caricamento
+è passato da 272 kB di JS + 128 kB di CSS a 107 kB + 49 kB; d3 (115 kB) e
+recharts (358 kB) non stanno più sul percorso critico. Piano e Attività vengono
+poi precaricate in sottofondo, così il primo click resta immediato.
+
+**Il sottofondo aspetta il suo turno.** Le letture d'avvio (taccuini, liste,
+colori) partono insieme invece che una dopo l'altra. Tutto ciò che non serve al
+primo schermo — pagine OneNote, eventi del calendario, Daily Review, scadenze —
+è appeso a `requestIdleCallback` (`src/idle.js`) e non a `setTimeout` con numeri
+scelti a mano: parte quando il browser è fermo, non mentre sta ancora
+disegnando. Anche la serializzazione della cache su localStorage passa da lì.
+
+**Il tempo del Pomodoro sta in un contesto suo** (`PomodoroTickContext`): prima
+era nello stesso oggetto della sessione, quindi ogni componente che leggeva il
+contesto — App compreso, che di suo usa solo `start` e `stop` — si ridisegnava
+una volta al secondo, griglia del Piano inclusa.
+
+## Accessibilità
+
+- **`useDialog`** (`src/useDialog.js`) dà a ogni modale le tre cose che le
+  servono: Escape che chiude da qualunque punto, Tab che resta dentro, e il
+  fuoco che torna al comando che l'ha aperta.
+- **«Salta al contenuto»**, primo elemento nella sequenza di tabulazione:
+  prima si attraversavano panino, cattura, sette voci di menù e impostazioni
+  prima di arrivare al contenuto, a ogni cambio di vista.
+- I bottoni di sola icona hanno un `aria-label` — un `title` su una `✕` non
+  basta, il lettore di schermo legge il glifo.
+- `prefers-reduced-motion` spegne transizioni e animazioni in un blocco solo
+  (`index.css`), scorrimenti compresi.
+
+## Quando qualcosa non riesce
+
+Le scritture verso Graph fallivano in silenzio: `catch (e) { console.error(...) }`
+e la card che tornava al suo posto senza dire niente — in un'app che si usa in
+mobilità, credere di aver spostato un'attività senza averlo fatto. Ora c'è un
+canale di avvisi (`src/notify.js`, banner in `Toaster.jsx`, accanto a quello
+dell'undo): un errore resta a schermo finché non lo si chiude, e dice cosa non è
+riuscito. Sul lato rete, ogni chiamata — anche il PUT di un file su OneDrive o
+il caricamento di una foto, che prima usavano `fetch` a mano — passa da
+`callRaw` in `api.js`, quindi dagli stessi tentativi e dallo stesso giro extra
+con un token fresco sul 401.
+
 ## Architettura
 
 | Componente | Tecnologia |
 |---|---|
-| Frontend | React 19 + Vite, react-router (hash), D3 per la mappa |
+| Frontend | React 19 + Vite, react-router (hash), D3 per la mappa. Una vista per chunk, caricata a richiesta |
 | Autenticazione | MSAL Browser (account Microsoft personale, scope Graph in sola lettura + To-Do/Files in scrittura) |
 | Dati | Microsoft Graph (OneNote, To-Do, Calendar, OneDrive, Mail) con cache localStorage a TTL. I file JSON dell'app stanno nella cartella `mente-digitale/` di OneDrive (quelli rimasti in root vengono spostati automaticamente al primo avvio) |
 | Backend | Cloudflare Pages Functions (`functions/api/*`) |

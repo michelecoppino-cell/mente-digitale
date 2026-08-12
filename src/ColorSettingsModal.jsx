@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { ColorPickerPopup } from './WorkbookPool';
+import { useDialog } from './useDialog';
 import './ColorSettingsModal.css';
 
 // Impostazioni colori — apribile dall'ingranaggio nell'header. Permette di
@@ -16,6 +17,12 @@ export default function ColorSettingsModal({
   onExpandNotebook,
 }) {
   const [pickerFor, setPickerFor] = useState(null); // { type: 'notebook'|'section', id, anchor }
+
+  // Escape e fuoco (vedi useDialog). Con un selettore di colore aperto la
+  // gestione è disattivata: il popup ha già il suo Escape — e sta in un portale
+  // fuori da questo contenitore, quindi trattenere il Tab qui dentro gli
+  // impedirebbe di raggiungere i propri campi.
+  const boxRef = useDialog(open && !pickerFor, onClose);
 
   // Le sezioni dei taccuini non ancora espansi altrove potrebbero mancare da
   // sectionsMap: le richiede alla prima apertura, così ogni taccuino mostra
@@ -34,10 +41,16 @@ export default function ColorSettingsModal({
 
   return (
     <div className="cset-overlay" onClick={onClose}>
-      <div className="cset-modal" onClick={e => e.stopPropagation()}>
+      <div
+        ref={boxRef}
+        className="cset-modal"
+        onClick={e => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Colori di taccuini e sezioni">
         <div className="cset-header">
           <span>Colori taccuini e sezioni</span>
-          <button className="cset-close" onClick={onClose} title="Chiudi">✕</button>
+          <button className="cset-close" onClick={onClose} title="Chiudi" aria-label="Chiudi">✕</button>
         </div>
         <div className="cset-body">
           <p className="cset-hint">
@@ -52,16 +65,21 @@ export default function ColorSettingsModal({
             return (
               <div key={nb.id} className="cset-group">
                 <div className="cset-row">
-                  <span
+                  {/* Un <button> e non uno <span> con onClick: era l'unico
+                      modo di cambiare colore, e da tastiera non si raggiungeva. */}
+                  <button
+                    type="button"
                     className="cset-dot"
                     style={{ background: nb._color || '#888' }}
                     onClick={e => openPicker('notebook', nb.id, e)}
+                    aria-label={`Cambia il colore del taccuino ${nb.displayName}`}
                     title="Cambia colore" />
                   <span className="cset-name">{nb.displayName}</span>
                   {overridden && (
                     <button
                       className="cset-reset-btn"
                       onClick={() => onResetNotebookColor(nb.id)}
+                      aria-label={`Ripristina il colore automatico di ${nb.displayName}`}
                       title="Ripristina colore automatico">
                       ↺
                     </button>
@@ -79,16 +97,19 @@ export default function ColorSettingsModal({
                   const secOverridden = !!overrides.sections[sec.id];
                   return (
                     <div key={sec.id} className="cset-subrow">
-                      <span
+                      <button
+                        type="button"
                         className="cset-dot cset-dot-sm"
                         style={{ background: sec._color || nb._color || '#888' }}
                         onClick={e => openPicker('section', sec.id, e)}
+                        aria-label={`Cambia il colore della sezione ${sec.displayName}`}
                         title="Cambia colore" />
                       <span className="cset-name">{sec.displayName}</span>
                       {secOverridden && (
                         <button
                           className="cset-reset-btn"
                           onClick={() => onResetSectionColor(sec.id)}
+                          aria-label={`Ripristina il colore automatico di ${sec.displayName}`}
                           title="Ripristina colore automatico">
                           ↺
                         </button>

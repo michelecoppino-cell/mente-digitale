@@ -171,7 +171,7 @@ export default function DiaryImport({ onBack, onImported }) {
     <div className="diary-panel">
       <div className="diary-header">
         <span className="diary-title">Importa dall'iPhone</span>
-        <button className="diary-close" onClick={onBack}>✕</button>
+        <button className="diary-close" onClick={onBack} aria-label="Torna al Diario" title="Torna al Diario">✕</button>
       </div>
 
       <div className="diary-body">

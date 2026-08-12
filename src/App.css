@@ -60,6 +60,14 @@
 }
 .search-btn.has-badge { border-color: var(--accent); color: var(--accent); }
 .search-btn.active { background: rgba(212,164,74,0.14); border-color: var(--accent); color: var(--accent); }
+.search-btn:disabled { cursor: default; }
+
+/* «Aggiorna tutto» gira mentre aggiorna. Prima l'unico segno che il comando
+   fosse arrivato era il pallino della sincronizzazione all'altro capo della
+   barra — e da telefono, dove l'etichetta è nascosta, nemmeno quello. */
+.search-btn.spinning { color: var(--accent); border-color: var(--accent-line); }
+.search-btn.spinning svg { animation: search-btn-spin 900ms linear infinite; }
+@keyframes search-btn-spin { to { transform: rotate(360deg); } }
 
 
 /* ── Campanella Daily Review ── */

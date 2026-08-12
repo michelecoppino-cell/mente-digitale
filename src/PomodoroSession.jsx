@@ -9,7 +9,7 @@
 //
 // Una sessione per volta: avviarne una nuova sostituisce la precedente.
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { PomodoroContext, sessionElapsedMs } from './pomodoroContext';
+import { PomodoroContext, PomodoroTickContext, sessionElapsedMs } from './pomodoroContext';
 
 const STORAGE_KEY = 'md_pomodoro_session_v1';
 
@@ -79,11 +79,19 @@ export function PomodoroProvider({ children }) {
 
   const stop = useCallback(() => setSession(null), []);
 
+  // La sessione e i comandi cambiano solo quando cambia davvero qualcosa; il
+  // tempo trascorso vive nel contesto del tick, letto solo da chi lo mostra
+  // (vedi PomodoroTickContext).
   const value = useMemo(() => ({
     session,
-    elapsedMs: sessionElapsedMs(session, now),
     start, pause, resume, stop,
-  }), [session, now, start, pause, resume, stop]);
+  }), [session, start, pause, resume, stop]);
 
-  return <PomodoroContext.Provider value={value}>{children}</PomodoroContext.Provider>;
+  return (
+    <PomodoroContext.Provider value={value}>
+      <PomodoroTickContext.Provider value={sessionElapsedMs(session, now)}>
+        {children}
+      </PomodoroTickContext.Provider>
+    </PomodoroContext.Provider>
+  );
 }
