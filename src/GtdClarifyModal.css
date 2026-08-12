@@ -40,7 +40,9 @@
   background: none; border: none; color: var(--muted); cursor: pointer;
   font-size: 14px; transition: color 0.12s;
 }
-.gtd-close:hover { color: var(--text); }
+@media (hover: hover) {
+  .gtd-close:hover { color: var(--text); }
+}
 
 .gtd-body { padding: 24px 24px 28px; }
 
@@ -214,7 +216,9 @@
   cursor: pointer;
   transition: background 0.15s, border-color 0.15s;
 }
-.gtd-leaf-event-btn:hover { background: rgba(255,255,255,0.06); border-color: var(--muted); }
+@media (hover: hover) {
+  .gtd-leaf-event-btn:hover { background: rgba(255,255,255,0.06); border-color: var(--muted); }
+}
 
 .gtd-mini-badge {
   position: relative;
@@ -274,7 +278,9 @@
   text-align: left;
   transition: background 0.15s, border-color 0.15s;
 }
-.gtd-leaf-btn:hover { background: rgba(212,164,74,0.08); border-color: var(--accent); }
+@media (hover: hover) {
+  .gtd-leaf-btn:hover { background: rgba(212,164,74,0.08); border-color: var(--accent); }
+}
 
 .gtd-leaf-icon { flex-shrink: 0; }
 .gtd-leaf-label {
@@ -325,7 +331,9 @@
   background: none; border: none; color: var(--muted); cursor: pointer;
   font-size: 14px; transition: color 0.12s;
 }
-.gtd-popup-close:hover { color: var(--text); }
+@media (hover: hover) {
+  .gtd-popup-close:hover { color: var(--text); }
+}
 
 .gtd-popup-body {
   padding: 16px;
@@ -432,7 +440,9 @@ input[type="date"].gtd-select::-webkit-calendar-picker-indicator {
   gap: 2px;
   transition: background 0.15s, border-width 0.1s;
 }
-.gtd-quadrant-btn:hover { background: rgba(255,255,255,0.06); }
+@media (hover: hover) {
+  .gtd-quadrant-btn:hover { background: rgba(255,255,255,0.06); }
+}
 .gtd-quadrant-btn.active {
   background: color-mix(in srgb, var(--q-color) 18%, transparent);
   border-width: 2px;
@@ -461,7 +471,9 @@ input[type="date"].gtd-select::-webkit-calendar-picker-indicator {
   font-family: var(--font-ui);
   transition: background 0.15s;
 }
-.gtd-primary-btn:hover:not(:disabled) { background: rgba(212,164,74,0.1); }
+@media (hover: hover) {
+  .gtd-primary-btn:hover:not(:disabled) { background: rgba(212,164,74,0.1); }
+}
 .gtd-primary-btn:disabled { opacity: 0.4; cursor: default; }
 
 @media (max-width: 640px) {

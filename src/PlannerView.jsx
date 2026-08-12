@@ -17,16 +17,27 @@ import PomodoroTimer from './PomodoroTimer';
 import TaskPool from './TaskPool';
 import { useNavigate } from 'react-router-dom';
 import { usePomodoro } from './pomodoroContext';
+import { useMediaQuery } from './useMediaQuery';
 import WorkbookPool from './WorkbookPool';
 import SectionResources from './SectionResources';
 import { DEFAULT_CONFIG, findProject, shadeColor, hexToRgba } from './plannerShared';
+import {
+  ESTIMATE_CHOICES, DEFAULT_ESTIMATE_MIN, parseEstimate, withEstimateMarker, taskEstimateMin,
+} from './taskModel';
 import { pushUndo } from './undo';
 import './PlannerView.css';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 const SLOT_HEIGHT      = 32;  // px per 30-min slot (32 → ~12h visible at once)
-const DEFAULT_DURATION = 60;  // minutes for newly dropped tasks
 const SAVE_DEBOUNCE    = 2000;
+// Durata di partenza di ciò che non ha una stima: eventi calendario e blocchi
+// workbook. I blocchi task usano invece blockMinutesFor().
+const DEFAULT_DURATION = 60;
+// Il blocco dura quanto la stima del task ([MIN:n] nelle note, impostata nel
+// chiarimento o dal pannello Dettagli). Prima ogni blocco nasceva di un'ora
+// fissa e la stima serviva solo a colorare una chip nel serbatoio: la durata
+// dichiarata e quella pianificata non si parlavano.
+const SNAP_MIN = 30; // la griglia è a mezz'ore: le durate ci si allineano
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function t2m(t) {
@@ -35,6 +46,11 @@ function t2m(t) {
 }
 function m2t(min) {
   return `${String(Math.floor(min / 60)).padStart(2,'0')}:${String(min % 60).padStart(2,'0')}`;
+}
+/** La stima del task, arrotondata in su alla mezz'ora della griglia. */
+function blockMinutesFor(task) {
+  const est = taskEstimateMin(task);
+  return Math.max(SNAP_MIN, Math.ceil(est / SNAP_MIN) * SNAP_MIN);
 }
 function slots(start, end) {
   const out = [];
@@ -280,7 +296,9 @@ export default function PlannerView({
   const [weekPoolWidth, setWeekPoolWidth]   = useState(280); // metà della larghezza di default del pool in vista Giorno
   const [aiWidth, setAiWidth]               = useState(560);
   const [calOutOfRange, setCalOutOfRange]   = useState(false);
-  const [mobileTab, setMobileTab]           = useState('timeline'); // colonna visibile su schermi stretti
+  // Stessa soglia della media query del Piano: sotto, la terza colonna non
+  // esiste e il dettaglio è un foglio dal basso.
+  const narrow = useMediaQuery('(max-width: 768px)');
   const [calendarsList, setCalendarsList]   = useState([]);
   const [calFilterOpen, setCalFilterOpen]   = useState(false);
   const [calColorPickerFor, setCalColorPickerFor] = useState(null); // id del calendario con lo swatch colori aperto
@@ -917,6 +935,37 @@ export default function PlannerView({
     });
   }
 
+  // Cambiare la stima di un task riscala i suoi blocchi già a piano — su tutti
+  // i giorni, non solo quello aperto: se la stessa attività è in agenda tre
+  // volte, ha la stessa durata tutte e tre. L'inizio non si tocca.
+  function resizeBlocksForTask(taskId, minutes) {
+    if (!taskId) return;
+    const dur = Math.max(SNAP_MIN, Math.ceil(minutes / SNAP_MIN) * SNAP_MIN);
+    mutatePlansMulti(all => {
+      const next = {};
+      for (const [date, plan] of Object.entries(all || {})) {
+        next[date] = {
+          ...plan,
+          blocks: (plan.blocks || []).map(b => b.taskId === taskId && !b.completed
+            ? { ...b, endTime: m2t(Math.min(t2m(b.startTime) + dur, DAY_END_MIN)) }
+            : b),
+        };
+      }
+      return next;
+    });
+  }
+
+  // Apre il dettaglio del task di un blocco — da desktop nella terza colonna,
+  // da telefono nel foglio che sale dal basso.
+  function openBlockDetail(block) {
+    if (!block?.taskId || !block?.listId) return;
+    setSelectedTask({ id: block.taskId, title: block.taskTitle, _listId: block.listId, _listName: block.listName });
+  }
+
+  function closeDetail() {
+    setSelectedTask(null);
+  }
+
   // Mutazione su più giorni (vista settimana): aggiorna tutti i piani e salva
   function mutatePlansMulti(updater) {
     const next = updater(plansRef.current);
@@ -1031,7 +1080,7 @@ export default function PlannerView({
   function makeBlock(task, startTime) {
     const proj    = findProject(task, configRef.current);
     const color   = proj?.color ?? listColorMapRef.current[(task._listName ?? '').toLowerCase()] ?? '#888';
-    const endMin  = Math.min(t2m(startTime) + DEFAULT_DURATION, DAY_END_MIN);
+    const endMin  = Math.min(t2m(startTime) + blockMinutesFor(task), DAY_END_MIN);
     return {
       id: genId(), taskId: task.id, taskTitle: task.title,
       listId: task._listId, listName: task._listName,
@@ -1788,6 +1837,56 @@ export default function PlannerView({
   // a sx, Mente Digitale al centro, sezione a dx).
   if (!open && !pomodoroActive) return null;
 
+  // Note, sottoattività, stima e «Avvia pomodoro» del task selezionato. Uno
+  // solo, montato o nella terza colonna (desktop) o nel foglio dal basso
+  // (telefono): due istanze vorrebbero dire due caricamenti da Graph.
+  const detailBody = selectedTask ? (
+    <TaskDetailPanel
+      task={selectedTask}
+      notebooks={notebooks}
+      sectionsMap={sectionsMap}
+      pagesCache={pagesCache}
+      onEstimateChanged={min => resizeBlocksForTask(selectedTask.id, min)}
+      onClose={closeDetail}
+      onCompleted={() => { onTaskCompleted?.(selectedTask._listId, selectedTask.id); closeDetail(); }}
+      onDeleted={() => { onTaskDeleted?.(selectedTask._listId, selectedTask.id); closeDetail(); }}
+      onRenamed={title => { onTaskRenamed?.(selectedTask._listId, selectedTask.id, title); setSelectedTask(prev => prev && ({ ...prev, title })); }}
+      onDueChanged={dueDateTime => onTaskDueChanged?.(selectedTask._listId, selectedTask.id, dueDateTime)}
+      onRestored={(listId, restoredTask) => onTaskRestored?.(listId, restoredTask)}
+    />
+  ) : (
+    <div className="planner-detail-empty">
+      <p>Clicca un task nel pool per vedere note e sottoattività.</p>
+    </div>
+  );
+
+  const detailColumn = (
+    <div className="planner-ai-panel" style={{ width: aiWidth }}>
+      <div className="planner-col-header">
+        <span>📋 Dettagli</span>
+        <span className={`planner-save-status ${saveStatus}`}>{saveLabel()}</span>
+      </div>
+      <div className={`planner-ai-body${pomodoroActive ? ' pomodoro-clearance' : ''}`}>
+        {detailBody}
+      </div>
+    </div>
+  );
+
+  // Foglio inferiore: da telefono il Piano si legge e si avvia, e questo è il
+  // solo punto in cui ci si arriva — su un blocco, con un tocco.
+  const detailSheet = narrow && selectedTask && (
+    <>
+      <div className="planner-sheet-scrim" onClick={closeDetail} />
+      <div className="planner-ai-panel mobile-active">
+        <div className="planner-col-header">
+          <span>📋 Dettagli</span>
+          <button className="planner-sheet-close" onClick={closeDetail} title="Chiudi">✕</button>
+        </div>
+        <div className="planner-ai-body">{detailBody}</div>
+      </div>
+    </>
+  );
+
   // ── Render ────────────────────────────────────────────────────────────────────
   return (
     <>
@@ -1908,15 +2007,6 @@ export default function PlannerView({
         </div>
       </div>
 
-      {/* Tab colonne — visibili solo su mobile (CSS) */}
-      {viewMode === 'day' && (
-        <div className="planner-mobile-tabs">
-          <button className={mobileTab === 'pool' ? 'active' : ''} onClick={() => setMobileTab('pool')}>Task</button>
-          <button className={mobileTab === 'timeline' ? 'active' : ''} onClick={() => setMobileTab('timeline')}>Giornata</button>
-          <button className={mobileTab === 'panel' ? 'active' : ''} onClick={() => setMobileTab('panel')}>Dettagli</button>
-        </div>
-      )}
-
       {/* Body */}
       <div className="planner-body">
 
@@ -1975,6 +2065,7 @@ export default function PlannerView({
           onDayClick={day => { setCurrentDate(day); setViewMode('day'); }}
           onMoveBlock={moveBlockBetweenDays}
           onCopyBlock={copyBlockBetweenDays}
+          onBlockClick={narrow ? openBlockDetail : undefined}
           onEventClick={openEditEventModal}
           onCopyEvent={copyCalendarEvent}
           onAddTask={addBlockToDay}
@@ -1996,7 +2087,7 @@ export default function PlannerView({
             Durante il blocco Pomodoro resta visibile ma del tutto non
             interagibile: solo il task già aperto nel pannello Dettagli
             si può modificare. */}
-        <div className={`planner-pool${mobileTab === 'pool' ? ' mobile-active' : ''}${locked ? ' locked' : ''}`} style={{ width: poolWidth }}>
+        <div className={`planner-pool${locked ? ' locked' : ''}`} style={{ width: poolWidth }}>
           <div className="planner-col-header">
             <span>Pannello</span>
             <div className="planner-view-toggle">
@@ -2014,7 +2105,7 @@ export default function PlannerView({
               scheduledIds={scheduledIds}
               selectedTaskId={selectedTask?.id ?? null}
               draggable={!locked}
-              onTaskClick={locked ? undefined : task => { setSelectedTask(task); setMobileTab('panel'); }}
+              onTaskClick={locked ? undefined : setSelectedTask}
             />
           ) : (
             <WorkbookPool workbooks={workbooks} onChange={persistWorkbooks} draggable={!locked} notebooks={notebooks} stats={workbookMinuteStats} />
@@ -2023,7 +2114,7 @@ export default function PlannerView({
 
         <div className="planner-col-resize" onMouseDown={handlePoolResizeStart} title="Ridimensiona" />
         {/* ── Column 2: Timeline ── */}
-        <div className={`planner-timeline${mobileTab === 'timeline' ? ' mobile-active' : ''}`}>
+        <div className="planner-timeline">
           <div className="planner-col-header">
             <span>
               {new Date(currentDate + 'T12:00:00').toLocaleDateString('it-IT', {
@@ -2314,13 +2405,7 @@ export default function PlannerView({
                     borderLeftColor: blockColor,
                   }}
                   draggable={!locked && !block.completed && resizingId !== block.id}
-                  onClick={e => {
-                    e.stopPropagation();
-                    if (block.taskId && block.listId) {
-                      setSelectedTask({ id: block.taskId, title: block.taskTitle, _listId: block.listId, _listName: block.listName });
-                      setMobileTab('panel');
-                    }
-                  }}
+                  onClick={e => { e.stopPropagation(); openBlockDetail(block); }}
                   onDragStart={locked ? undefined : e => {
                     e.stopPropagation();
                     e.dataTransfer.setData('text/plain', JSON.stringify({ type: 'block', blockId: block.id, copy: e.ctrlKey || e.metaKey }));
@@ -2378,32 +2463,10 @@ export default function PlannerView({
 
         <div className="planner-col-resize" onMouseDown={handleAiResizeStart} title="Ridimensiona" />
         {/* ── Column 3: Detail Panel ── */}
-        <div className={`planner-ai-panel${mobileTab === 'panel' ? ' mobile-active' : ''}`} style={{ width: aiWidth }}>
-          <div className="planner-col-header">
-            <span>📋 Dettagli</span>
-            <span className={`planner-save-status ${saveStatus}`}>{saveLabel()}</span>
-          </div>
-          <div className={`planner-ai-body${pomodoroActive ? ' pomodoro-clearance' : ''}`}>
-            {selectedTask ? (
-              <TaskDetailPanel
-                task={selectedTask}
-                notebooks={notebooks}
-                sectionsMap={sectionsMap}
-                pagesCache={pagesCache}
-                onClose={() => setSelectedTask(null)}
-                onCompleted={() => { onTaskCompleted?.(selectedTask._listId, selectedTask.id); setSelectedTask(null); }}
-                onDeleted={() => { onTaskDeleted?.(selectedTask._listId, selectedTask.id); setSelectedTask(null); }}
-                onRenamed={title => { onTaskRenamed?.(selectedTask._listId, selectedTask.id, title); setSelectedTask(prev => prev && ({ ...prev, title })); }}
-                onDueChanged={dueDateTime => onTaskDueChanged?.(selectedTask._listId, selectedTask.id, dueDateTime)}
-                onRestored={(listId, restoredTask) => onTaskRestored?.(listId, restoredTask)}
-              />
-            ) : (
-              <div className="planner-detail-empty">
-                <p>Clicca un task nel pool per vedere note e sottoattività.</p>
-              </div>
-            )}
-          </div>
-        </div>
+        {/* Da telefono questa colonna non viene montata: il dettaglio diventa
+            un foglio che sale dal basso (vedi detailSheet in fondo al render),
+            montato una volta sola e valido anche in vista Settimana. */}
+        {!narrow && detailColumn}
       </>)}
       </div>
 
@@ -2488,6 +2551,8 @@ export default function PlannerView({
         />
       )}
     </div>
+
+    {open && detailSheet}
 
     {/* Pulsante volante per avviare il Pomodoro, a fianco del "+" dorato GTD:
         solo indicatore di concentrazione, scollegato da qualunque task. */}
@@ -2714,7 +2779,7 @@ function CalendarEventModal({ mode, event, defaultDate, defaultStartTime, defaul
 }
 
 // ── TaskDetailPanel ───────────────────────────────────────────────────────────
-function TaskDetailPanel({ task, notebooks = [], sectionsMap = {}, pagesCache = null, onClose, onCompleted, onDeleted, onRenamed, onDueChanged, onRestored }) {
+function TaskDetailPanel({ task, notebooks = [], sectionsMap = {}, pagesCache = null, onClose, onCompleted, onDeleted, onRenamed, onDueChanged, onRestored, onEstimateChanged }) {
   const navigate = useNavigate();
   const { start: startPomodoro } = usePomodoro();
   // La sezione PARA del task è la sezione OneNote che si chiama come la sua
@@ -2746,6 +2811,8 @@ function TaskDetailPanel({ task, notebooks = [], sectionsMap = {}, pagesCache = 
   const [dueDraft, setDueDraft]       = useState('');
   const [savingDue, setSavingDue]     = useState(false);
   const [itemError, setItemError]     = useState('');
+  const [savingEstimate, setSavingEstimate] = useState(false);
+  const estimate = parseEstimate(notes) ?? DEFAULT_ESTIMATE_MIN;
 
   // Sezione OneNote collegata alla lista ToDo del task (per nome, come nel
   // resto dell'app) — usata per mostrare qui sotto i riquadri OneNote/OneDrive.
@@ -2796,6 +2863,33 @@ function TaskDetailPanel({ task, notebooks = [], sectionsMap = {}, pagesCache = 
       }
     } catch (err) { console.error('save due date', err); }
     setSavingDue(false);
+  }
+
+  async function handleEstimateChange(min) {
+    if (min === estimate || savingEstimate) return;
+    const prev = notes;
+    const next = withEstimateMarker(notes, min);
+    // Il debounce delle note sta per riscrivere il body con la versione
+    // vecchia: va fermato, o sovrascriverebbe il marker appena messo.
+    clearTimeout(notesTimerRef.current);
+    setNotes(next);
+    setSavingEstimate(true);
+    try {
+      await updateTaskBody(task._listId, task.id, next);
+      onEstimateChanged?.(min);
+      pushUndo({
+        label: `Stima portata a ${ESTIMATE_CHOICES.find(c => c.min === min)?.label ?? `${min}m`}`,
+        undo: async () => {
+          await updateTaskBody(task._listId, task.id, prev);
+          setNotes(prev);
+          onEstimateChanged?.(estimate);
+        },
+      });
+    } catch (e) {
+      console.error('save estimate', e);
+      setNotes(prev);
+    }
+    setSavingEstimate(false);
   }
 
   function handleNotesChange(e) {
@@ -3057,6 +3151,26 @@ function TaskDetailPanel({ task, notebooks = [], sectionsMap = {}, pagesCache = 
         <Skeleton rows={5} />
       ) : (
         <>
+          {/* La stima vive nelle note come marker [MIN:n], ed è la stessa che
+              il chiarimento chiede in «Quanto ci vuole». Fino a qui si poteva
+              scrivere solo lì: da qualunque altra parte un task valeva mezz'ora
+              per definizione. Cambiarla riscala anche il blocco già a piano. */}
+          <div className="planner-task-detail-section">
+            <div className="planner-task-detail-section-label">
+              Quanto ci vuole {savingEstimate && <span className="planner-saving-dot">●</span>}
+            </div>
+            <div className="planner-estimate-chips">
+              {ESTIMATE_CHOICES.map(c => (
+                <button
+                  key={c.min}
+                  className={`planner-estimate-chip${estimate === c.min ? ' active' : ''}`}
+                  onClick={() => handleEstimateChange(c.min)}>
+                  {c.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
           <div className="planner-task-detail-section">
             <div className="planner-task-detail-section-label">
               Note {savingNotes && <span className="planner-saving-dot">●</span>}
@@ -3251,7 +3365,7 @@ function MonthlyCalendar({ currentDate, plans, calEvents, calOutOfRange, config,
 function WeeklyTimeline({
   weekDays, plans, calEvents, workbookPlans, workbooks, workbookCalHidden, workdayStartMin, timeSlots, locked, suppressClickRef,
   config, listColorMap,
-  onDayClick, onMoveBlock, onCopyBlock, onEventClick, onCopyEvent, onAddTask, onCreateEvent,
+  onDayClick, onMoveBlock, onCopyBlock, onBlockClick, onEventClick, onCopyEvent, onAddTask, onCreateEvent,
   onAddWorkbookBlock, onMoveWorkbookBlock, onCopyWorkbookBlock, onRemoveWorkbookBlock, onResizeWorkbookBlockStart, onResizeBlockStart,
   onAddWorkbookNote, onEditWorkbookNote, onMoveWorkbookNote, onRemoveWorkbookNote,
 }) {
@@ -3541,7 +3655,7 @@ function WeeklyTimeline({
                   }}
                     title={`${block.startTime}–${block.endTime} · ${block.taskTitle} (trascina per spostare, Ctrl+trascina per duplicare)`}
                     draggable={!block.completed && !locked && resizingId !== block.id}
-                    onClick={e => e.stopPropagation()}
+                    onClick={e => { e.stopPropagation(); onBlockClick?.(block); }}
                     onDragStart={e => {
                       e.stopPropagation();
                       e.dataTransfer.setData('text/plain', JSON.stringify({ type: 'weekblock', blockId: block.id, fromDay: day, copy: e.ctrlKey || e.metaKey }));

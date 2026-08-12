@@ -47,7 +47,9 @@
   white-space: nowrap;
   transition: border-color var(--t), color var(--t);
 }
-.ab-filter:hover { color: var(--text-3); }
+@media (hover: hover) {
+  .ab-filter:hover { color: var(--text-3); }
+}
 .ab-filter.active {
   border-color: var(--chip, var(--accent));
   color: var(--chip, var(--accent));
@@ -75,7 +77,9 @@
   transition: background var(--t), color var(--t);
 }
 .ab-views button:last-child { border-right: none; }
-.ab-views button:hover { color: var(--text-3); }
+@media (hover: hover) {
+  .ab-views button:hover { color: var(--text-3); }
+}
 .ab-views button.active { background: var(--accent-tint); color: var(--accent); }
 
 /* ── Colonne ──────────────────────────────────────────────────────────── */
@@ -142,7 +146,9 @@
   cursor: grab;
   transition: border-color var(--t), background var(--t), opacity var(--t);
 }
-.ab-card:hover { border-color: var(--accent-line); }
+@media (hover: hover) {
+  .ab-card:hover { border-color: var(--accent-line); }
+}
 .ab-card:active { cursor: grabbing; }
 .ab-card.dragging { opacity: .4; }
 
@@ -247,23 +253,79 @@
   text-align: left;
   cursor: pointer;
 }
-.ab-deadline-row:hover { background: rgba(255, 255, 255, .03); }
+@media (hover: hover) {
+  .ab-deadline-row:hover { background: rgba(255, 255, 255, .03); }
+}
 
 .ab-deadline-row .ab-due { flex: 0 0 52px; font-size: var(--fs-chip); }
 .ab-deadline-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ab-deadline-list { flex: 0 0 auto; font-size: var(--fs-chip); color: var(--muted); }
 
+/* ── Pastiglie di stato ───────────────────────────────────────────────────
+   Nascoste finché le cinque colonne ci stanno tutte: lì la fila di intestazioni
+   dice già quante sono e quanto pesano. */
+
+.ab-pills { display: none; }
+
+.ab-pill {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  height: 32px;
+  padding: 0 var(--sp-4);
+  background: none;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--muted);
+  font-family: var(--font-ui);
+  font-size: var(--fs-chip);
+  white-space: nowrap;
+  cursor: pointer;
+  transition: border-color var(--t), color var(--t);
+}
+@media (hover: hover) {
+  .ab-pill:hover { color: var(--text-3); }
+}
+.ab-pill.active { border-color: var(--accent-line); color: var(--accent); }
+
+.ab-pill-count {
+  font-size: var(--fs-micro);
+  font-variant-numeric: tabular-nums;
+  color: var(--disabled);
+}
+.ab-pill.active .ab-pill-count { color: var(--accent); }
+
 /* ── Schermi stretti ──────────────────────────────────────────────────────
    Cinque colonne da 1fr sotto i 1100px danno colonne da 150px, dove il
    titolo di un task va a capo cinque volte. Si scorre in orizzontale con
-   colonne a larghezza leggibile. */
+   colonne a larghezza leggibile, una alla volta: lo scroll-snap fa fermare
+   il dito su una colonna intera invece che a metà fra due. */
 
 @media (max-width: 1100px) {
   .ab-columns {
     display: flex;
     overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    scrollbar-width: none;
   }
-  .ab-col { flex: 0 0 260px; }
+  .ab-columns::-webkit-scrollbar { display: none; }
+
+  .ab-col {
+    flex: 0 0 min(280px, 88%);
+    scroll-snap-align: start;
+  }
+
+  .ab-pills {
+    flex: 0 0 auto;
+    display: flex;
+    gap: var(--sp-2);
+    padding: var(--sp-3) var(--sp-4);
+    overflow-x: auto;
+    scrollbar-width: none;
+    border-bottom: 1px solid var(--line-soft);
+  }
+  .ab-pills::-webkit-scrollbar { display: none; }
 }
 
 @media (max-width: 860px) {

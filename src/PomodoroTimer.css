@@ -46,7 +46,9 @@
   background: none; border: none; color: var(--muted); cursor: pointer;
   font-size: 12px; transition: color 0.12s;
 }
-.pomodoro-close:hover { color: var(--text); }
+@media (hover: hover) {
+  .pomodoro-close:hover { color: var(--text); }
+}
 
 .pomodoro-time {
   font-family: var(--font-title);
@@ -74,13 +76,17 @@
   font-family: var(--font-ui);
   transition: background 0.15s;
 }
-.pomodoro-btn:hover { background: rgba(212,164,74,0.1); }
+@media (hover: hover) {
+  .pomodoro-btn:hover { background: rgba(212,164,74,0.1); }
+}
 
 .pomodoro-btn-secondary {
   border-color: var(--border2);
   color: var(--muted);
 }
-.pomodoro-btn-secondary:hover { background: rgba(255,255,255,0.06); color: var(--text); }
+@media (hover: hover) {
+  .pomodoro-btn-secondary:hover { background: rgba(255,255,255,0.06); color: var(--text); }
+}
 
 .pomodoro-breaks {
   display: flex;
@@ -101,11 +107,20 @@
   transition: background 0.15s, border-color 0.15s, color 0.15s;
 }
 .pomodoro-break-btn.personal { border-color: rgba(230,201,77,0.45); color: var(--break-personal); }
-.pomodoro-break-btn.personal:hover, .pomodoro-break-btn.personal.active { background: rgba(230,201,77,0.16); }
+.pomodoro-break-btn.personal.active { background: rgba(230,201,77,0.16); }
+@media (hover: hover) {
+  .pomodoro-break-btn.personal:hover { background: rgba(230,201,77,0.16); }
+}
 .pomodoro-break-btn.office   { border-color: rgba(157,127,214,0.45); color: var(--break-office); }
-.pomodoro-break-btn.office:hover, .pomodoro-break-btn.office.active { background: rgba(157,127,214,0.16); }
+.pomodoro-break-btn.office.active { background: rgba(157,127,214,0.16); }
+@media (hover: hover) {
+  .pomodoro-break-btn.office:hover { background: rgba(157,127,214,0.16); }
+}
 .pomodoro-break-btn.client   { border-color: rgba(91,143,217,0.45); color: var(--break-client); }
-.pomodoro-break-btn.client:hover, .pomodoro-break-btn.client.active { background: rgba(91,143,217,0.16); }
+.pomodoro-break-btn.client.active { background: rgba(91,143,217,0.16); }
+@media (hover: hover) {
+  .pomodoro-break-btn.client:hover { background: rgba(91,143,217,0.16); }
+}
 .pomodoro-break-btn.active { font-weight: 600; }
 
 .pomodoro-stats {
@@ -170,4 +185,6 @@
   font-weight: 600;
   flex: none;
 }
-.pomodoro-alert-card .pomodoro-btn:hover { background: var(--accent); opacity: 0.9; }
+@media (hover: hover) {
+  .pomodoro-alert-card .pomodoro-btn:hover { background: var(--accent); opacity: 0.9; }
+}

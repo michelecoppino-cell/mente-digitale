@@ -18,6 +18,7 @@
   flex-direction: column;
   padding: var(--sp-4) var(--sp-3) var(--sp-3);
   padding-top: calc(var(--sp-4) + env(safe-area-inset-top, 0px));
+  padding-bottom: calc(var(--sp-3) + env(safe-area-inset-bottom, 0px));
   gap: var(--sp-4);
   transition: width var(--t), flex-basis var(--t);
 }
@@ -26,7 +27,29 @@
 .shell.rail-collapsed .rail-label,
 .shell.rail-collapsed .rail-kbd { display: none; }
 .shell.rail-collapsed .rail-capture,
+.shell.rail-collapsed .rail-menu,
 .shell.rail-collapsed .rail-item { justify-content: center; padding-inline: 0; }
+
+/* Panino: il comando che riduce o riespande il menù, in testa al rail.
+   Prima era un carattere tipografico alto 32px in fondo alla colonna, colore
+   --disabled: l'elemento più spento di tutta la navigazione, per l'unica cosa
+   che resta visibile quando il rail è ridotto. */
+.rail-menu {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  height: var(--tap);
+  padding: 0 var(--sp-4);
+  background: none;
+  border: none;
+  border-radius: var(--r);
+  color: var(--text-3);
+  font-family: var(--font-ui);
+  font-size: var(--fs-card);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background var(--t), color var(--t);
+}
 
 /* Cattura */
 .rail-capture {
@@ -44,7 +67,9 @@
   cursor: pointer;
   transition: background var(--t), border-color var(--t);
 }
-.rail-capture:hover { background: var(--accent-tint); border-color: var(--accent); }
+@media (hover: hover) {
+  .rail-capture:hover { background: var(--accent-tint); border-color: var(--accent); }
+}
 
 .rail-kbd {
   margin-left: auto;
@@ -74,7 +99,9 @@
   white-space: nowrap;
   transition: background var(--t), color var(--t);
 }
-.rail-item:hover { background: rgba(255, 255, 255, .04); color: var(--text); }
+@media (hover: hover) {
+  .rail-item:hover { background: rgba(255, 255, 255, .04); color: var(--text); }
+}
 .rail-item.active { background: var(--accent-tint); color: var(--accent); }
 
 .rail-foot {
@@ -86,22 +113,13 @@
   gap: 2px;
 }
 .rail-foot .rail-item { height: 40px; font-size: var(--fs-meta); color: var(--muted); }
-.rail-foot .rail-item:hover { color: var(--text-3); }
-
-.rail-collapse {
-  align-self: flex-end;
-  width: var(--tap);
-  height: 32px;
-  margin-top: var(--sp-1);
-  background: none;
-  border: none;
-  color: var(--disabled);
-  font-size: var(--fs-row);
-  cursor: pointer;
-  border-radius: var(--r-sm);
+@media (hover: hover) {
+  .rail-menu:hover { background: rgba(255, 255, 255, .04); color: var(--text); }
+  .rail-foot .rail-item:hover { color: var(--text-3); }
+  .shell-drawer-btn:hover,
+  .shell-more-btn:hover { color: var(--text); }
+  .shell-menu-item:hover { background: rgba(255, 255, 255, .05); }
 }
-.rail-collapse:hover { color: var(--text-3); background: rgba(255, 255, 255, .04); }
-.shell.rail-collapsed .rail-collapse { align-self: center; }
 
 /* ── Colonna principale ───────────────────────────────────────────────── */
 
@@ -134,18 +152,120 @@
   gap: var(--sp-4);
 }
 
-/* Il bottone del drawer serve solo quando il rail è nascosto. */
+/* Lo stesso panino del rail, per quando il rail è un drawer fuori schermo e
+   quindi il suo non è raggiungibile. Sopra gli 860px questo sparisce e resta
+   solo quello in testa al rail. */
 .shell-drawer-btn {
   display: none;
-  width: 34px;
-  height: 34px;
+  width: 36px;
+  height: 36px;
   align-items: center;
   justify-content: center;
   background: none;
-  border: 1px solid var(--line);
+  border: none;
   border-radius: var(--r-sm);
   color: var(--text-3);
   cursor: pointer;
+}
+
+/* ── Topbar fusa con la sessione Pomodoro (telefono) ──────────────────────
+   48px di topbar più 52px di barra Pomodoro sono 100px su uno schermo da 667:
+   quando la sessione gira le due righe diventano una. */
+
+.shell-topbar.fused { position: relative; }
+
+.pomo-inline {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  height: 36px;
+  padding: 0 var(--sp-3);
+  background: none;
+  border: none;
+  border-radius: var(--r-sm);
+  color: inherit;
+  font-family: var(--font-ui);
+  text-align: left;
+  cursor: pointer;
+}
+.pomo-inline:disabled { cursor: default; }
+
+.pomo-inline-time {
+  flex: 0 0 auto;
+  font-size: var(--fs-row);
+  font-weight: 500;
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+}
+
+.pomo-inline-task {
+  min-width: 0;
+  font-size: var(--fs-meta);
+  color: var(--text-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.shell-more-btn {
+  flex: 0 0 auto;
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  border-radius: var(--r-sm);
+  color: var(--text-3);
+  cursor: pointer;
+}
+.shell-more-btn.active { color: var(--accent); }
+
+.shell-menu-scrim { position: fixed; inset: 0; z-index: 130; }
+
+.shell-menu {
+  position: absolute;
+  z-index: 131;
+  top: 100%;
+  right: var(--sp-4);
+  min-width: 200px;
+  padding: var(--sp-2);
+  background: var(--bg-rail);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, .55);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.shell-menu-item {
+  height: var(--tap);
+  padding: 0 var(--sp-4);
+  background: none;
+  border: none;
+  border-radius: var(--r-sm);
+  color: var(--text-2);
+  font-family: var(--font-ui);
+  font-size: var(--fs-card);
+  text-align: left;
+  cursor: pointer;
+}
+.shell-menu-item.accent { color: var(--accent); }
+
+.shell-menu-sep { height: 1px; margin: var(--sp-2) 0; background: var(--line); }
+
+/* Le azioni globali della topbar, impilate: restano gli stessi bottoni, solo
+   distanziati da dito invece che da mouse. */
+.shell-menu-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-5);
+  padding: var(--sp-3) var(--sp-4);
 }
 
 .shell-content {
@@ -237,9 +357,13 @@
   cursor: pointer;
   transition: border-color var(--t), color var(--t);
 }
-.pomo-bar-btn:hover { border-color: var(--accent-line); color: var(--text); }
+@media (hover: hover) {
+  .pomo-bar-btn:hover { border-color: var(--accent-line); color: var(--text); }
+}
 .pomo-bar-btn.primary { border-color: var(--accent-line); color: var(--accent); }
-.pomo-bar-btn.primary:hover { background: var(--accent-tint); }
+@media (hover: hover) {
+  .pomo-bar-btn.primary:hover { background: var(--accent-tint); }
+}
 
 /* ── Scrim del drawer ─────────────────────────────────────────────────── */
 
@@ -266,8 +390,13 @@
   .shell.rail-collapsed .rail { width: 240px; flex-basis: 240px; }
   .shell.rail-collapsed .rail-label { display: flex; }
   .shell.rail-collapsed .rail-capture,
+  .shell.rail-collapsed .rail-menu,
   .shell.rail-collapsed .rail-item { justify-content: flex-start; padding-inline: var(--sp-4); }
-  .rail-collapse { display: none; }
+
+  /* In standalone su iPhone il fondo della colonna finisce sotto l'indicatore
+     Home. Il margine si prende una volta sola qui, sul contenitore di tutte
+     le rotte, invece che in ogni singola vista scrollabile. */
+  .shell-content { padding-bottom: env(safe-area-inset-bottom, 0px); }
 
   .shell.drawer-open .shell-scrim {
     display: block;
