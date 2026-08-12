@@ -12,6 +12,8 @@ import {
   parseWaitingFor, waitingDays, CONTEXTS, isSlipped,
 } from './taskModel';
 import { DEFAULT_CONFIG, findProject, formatDueDate, dueDateSortValue, isTaskOverdue } from './plannerShared';
+import { completeTask, updateTaskStatus } from './api';
+import { pushUndo } from './undo';
 import Skeleton from './Skeleton';
 import TaskDetailDrawer from './TaskDetailDrawer';
 import './ActivityBoard.css';
@@ -56,6 +58,33 @@ function fmtWhen(/** @type {{date: string, startTime: string}} */ placement) {
 }
 
 /**
+ * Le liste di To-Do in cui ci sono davvero attività, col loro conteggio, in
+ * ordine alfabetico.
+ * @param {import('./types').TodoTask[]} tasks
+ * @returns {{ id: string, name: string, count: number }[]}
+ */
+function countByList(tasks) {
+  /** @type {Record<string, { id: string, name: string, count: number }>} */
+  const byId = {};
+  for (const t of tasks) {
+    const id = t._listId || '';
+    if (!id) continue;
+    if (!byId[id]) byId[id] = { id, name: t._listName || 'Senza lista', count: 0 };
+    byId[id].count += 1;
+  }
+  return Object.values(byId).sort((a, b) => a.name.localeCompare(b.name, 'it'));
+}
+
+/** La spunta di un'attività: lo stesso segno di Oggi, perché è la stessa cosa. */
+function CheckMark() {
+  return (
+    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+      <polyline points="4 12.5 9.5 18 20 6.5" />
+    </svg>
+  );
+}
+
+/**
  * @param {Object} props
  * @param {import('./types').TodoTask} props.task
  * @param {string} props.status
@@ -63,10 +92,11 @@ function fmtWhen(/** @type {{date: string, startTime: string}} */ placement) {
  * @param {{ date: string, startTime: string, endTime: string, completed: boolean }|null} props.placement
  * @param {boolean} props.dragging
  * @param {(t: import('./types').TodoTask) => void} props.onClick
+ * @param {(t: import('./types').TodoTask) => void} props.onComplete
  * @param {(t: import('./types').TodoTask) => void} props.onDragStart
  * @param {() => void} props.onDragEnd
  */
-function TaskCard({ task, status, config, placement, dragging, onClick, onDragStart, onDragEnd }) {
+function TaskCard({ task, status, config, placement, dragging, onClick, onComplete, onDragStart, onDragEnd }) {
   const ctx = taskContext(task);
   const project = findProject(task, config);
   const waiting = status === 'waiting' ? parseWaitingFor(task) : null;
@@ -74,14 +104,33 @@ function TaskCard({ task, status, config, placement, dragging, onClick, onDragSt
   const due = formatDueDate(task.dueDateTime);
   const slipped = placement ? isSlipped(placement, todayStr()) : false;
 
+  // La card non è più un <button>: dentro ce n'è uno vero, la spunta, e un
+  // bottone dentro un bottone non è HTML valido. Resta attivabile da tastiera
+  // come prima.
   return (
-    <button
+    <div
       className={`ab-card ab-card-${status}${dragging ? ' dragging' : ''}`}
+      role="button"
+      tabIndex={0}
       draggable
       onDragStart={e => { e.dataTransfer.effectAllowed = 'move'; onDragStart(task); }}
       onDragEnd={onDragEnd}
-      onClick={() => onClick(task)}>
-      <span className="ab-card-title">{task.title}</span>
+      onClick={() => onClick(task)}
+      onKeyDown={e => {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick(task); }
+      }}>
+      <span className="ab-card-top">
+        {/* Spuntare da qui: finora un'attività finita si chiudeva solo aprendo
+            il dettaglio, o dal blocco in Oggi se era programmata. */}
+        <button
+          className="ab-card-check"
+          title="Segna come fatta"
+          aria-label={`Segna "${task.title}" come fatta`}
+          onClick={e => { e.stopPropagation(); onComplete(task); }}>
+          <CheckMark />
+        </button>
+        <span className="ab-card-title">{task.title}</span>
+      </span>
 
       <span className="ab-card-meta">
         {project && (
@@ -105,7 +154,7 @@ function TaskCard({ task, status, config, placement, dragging, onClick, onDragSt
           da {waiting.who}{days !== null ? ` · ${days === 0 ? 'oggi' : `${days} ${days === 1 ? 'giorno' : 'giorni'}`}` : ''}
         </span>
       )}
-    </button>
+    </div>
   );
 }
 
@@ -138,6 +187,7 @@ export default function ActivityBoard({
   const [params, setParams] = useSearchParams();
   const view = VIEWS.some(v => v.key === params.get('vista')) ? params.get('vista') : 'flusso';
   const ctxFilter = params.get('ctx') || '';
+  const listFilter = params.get('lista') || '';
   const [query, setQuery] = useState('');
   const [dragTask, setDragTask] = useState(/** @type {import('./types').TodoTask|null} */ (null));
   const [dragOver, setDragOver] = useState(/** @type {string|null} */ (null));
@@ -150,9 +200,13 @@ export default function ActivityBoard({
   const columnsRef = useRef(/** @type {HTMLDivElement|null} */ (null));
   const [visibleCol, setVisibleCol] = useState(0);
 
-  const setParam = (/** @type {string} */ key, /** @type {string} */ value) => {
+  // Più chiavi in un colpo solo: due `setParam` di fila partirebbero entrambe
+  // dagli stessi `params`, e la seconda cancellerebbe la prima.
+  const setParam = (/** @type {Record<string, string>} */ patch) => {
     const next = new URLSearchParams(params);
-    if (value) next.set(key, value); else next.delete(key);
+    for (const [key, value] of Object.entries(patch)) {
+      if (value) next.set(key, value); else next.delete(key);
+    }
     setParams(next, { replace: true });
   };
 
@@ -164,14 +218,35 @@ export default function ActivityBoard({
   const scheduled = useMemo(() => indexScheduled(plans), [plans]);
   const inboxId = useMemo(() => inboxListId(todoLists), [todoLists]);
 
+  // Lo stato del flusso dell'attività aperta nel cassetto: la board lo sa —
+  // conosce i blocchi nel piano e la lista Inbox — e il pannello no.
+  const detailStatus = useMemo(
+    () => (detailTask
+      ? taskStatus(detailTask, { scheduledIds: new Set(scheduled.keys()), inboxListId: inboxId })
+      : undefined),
+    [detailTask, scheduled, inboxId],
+  );
+
+  // Le liste di To-Do in cui ci sono davvero attività, col loro conteggio: è
+  // così che le attività sono organizzate qui dentro — una lista per sezione
+  // PARA — e finora la testata offriva solo i contesti, che sono le
+  // `categories` di To-Do. Chi non le usa aveva tre filtri che non filtravano
+  // niente: «Lavoro» svuotava la board invece di mostrare il lavoro.
+  const lists = useMemo(() => countByList(tasks), [tasks]);
+
+  // I contesti restano, ma solo per chi li usa davvero: le pastiglie compaiono
+  // se almeno un'attività porta una categoria.
+  const hasContexts = useMemo(() => tasks.some(t => taskContext(t)), [tasks]);
+
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase();
     return tasks.filter(t => {
       if (q && !(t.title || '').toLowerCase().includes(q)) return false;
+      if (listFilter && t._listId !== listFilter) return false;
       if (ctxFilter && taskContext(t) !== ctxFilter) return false;
       return true;
     });
-  }, [tasks, query, ctxFilter]);
+  }, [tasks, query, ctxFilter, listFilter]);
 
   const byStatus = useMemo(() => {
     /** @type {Record<string, import('./types').TodoTask[]>} */
@@ -239,6 +314,31 @@ export default function ActivityBoard({
     if (target === 'waiting' && !parseWaitingFor(task)) setOpenTask(task);
   }
 
+  // Spuntare un'attività dalla board. Il completamento sta su Graph — la
+  // colonna sparisce perché il task esce dal pool, non perché la board tenga
+  // un elenco di "fatte" per conto suo — e l'annulla lo riporta indietro come
+  // ovunque nell'app.
+  async function handleComplete(/** @type {import('./types').TodoTask} */ task) {
+    const listId = task._listId || '';
+    const snapshot = { ...task };
+    const before = task.status || 'notStarted';
+    onTaskRemoved?.(listId, task.id);
+    if (openTask?.id === task.id) setOpenTask(null);
+    try {
+      await completeTask(listId, task.id);
+      pushUndo({
+        label: `"${task.title}" fatta`,
+        undo: async () => {
+          await updateTaskStatus(listId, task.id, before);
+          onTaskRestored?.(listId, snapshot);
+        },
+      });
+    } catch (e) {
+      console.error('completamento attività', e);
+      onTaskRestored?.(listId, snapshot);
+    }
+  }
+
   const header = (
     <div className="ab-head">
       <input
@@ -249,13 +349,27 @@ export default function ActivityBoard({
         onChange={e => setQuery(e.target.value)}
       />
       <div className="ab-chips">
-        <button className={`ab-filter${!ctxFilter ? ' active' : ''}`} onClick={() => setParam('ctx', '')}>Tutti</button>
-        {CONTEXTS.map(c => (
+        <button
+          className={`ab-filter${!listFilter && !ctxFilter ? ' active' : ''}`}
+          onClick={() => setParam({ lista: '', ctx: '' })}>
+          Tutte
+        </button>
+        {lists.map(l => (
+          <button
+            key={l.id}
+            className={`ab-filter${listFilter === l.id ? ' active' : ''}`}
+            title={`Solo le attività della lista ${l.name}`}
+            onClick={() => setParam({ lista: listFilter === l.id ? '' : l.id })}>
+            {l.name}
+            <span className="ab-filter-count">{l.count}</span>
+          </button>
+        ))}
+        {hasContexts && CONTEXTS.map(c => (
           <button
             key={c.key}
             className={`ab-filter${ctxFilter === c.key ? ' active' : ''}`}
             style={/** @type {import('react').CSSProperties} */ ({ '--chip': c.color })}
-            onClick={() => setParam('ctx', ctxFilter === c.key ? '' : c.key)}>
+            onClick={() => setParam({ ctx: ctxFilter === c.key ? '' : c.key })}>
             {c.label}
           </button>
         ))}
@@ -265,7 +379,7 @@ export default function ActivityBoard({
           <button
             key={v.key}
             className={view === v.key ? 'active' : ''}
-            onClick={() => setParam('vista', v.key === 'flusso' ? '' : v.key)}>
+            onClick={() => setParam({ vista: v.key === 'flusso' ? '' : v.key })}>
             {v.label}
           </button>
         ))}
@@ -288,6 +402,12 @@ export default function ActivityBoard({
       onDueChanged={dueDateTime => { if (detailTask) onTaskPatched?.(detailTask._listId || '', detailTask.id, { dueDateTime }); }}
       onPatched={patch => { if (detailTask) onTaskPatched?.(detailTask._listId || '', detailTask.id, patch); }}
       onRestored={(listId, restored) => onTaskRestored?.(listId, restored)}
+      // Lo stato lo sa la board, non Graph: una programmata su To-Do è un
+      // `notStarted` come tutti gli altri, e il pannello mostrava «Prossima
+      // azione» per un'attività aperta dalla colonna Programmate.
+      status={detailStatus}
+      onSchedule={onSchedule}
+      onUnschedule={onUnschedule}
     />
   );
 
@@ -318,11 +438,24 @@ export default function ActivityBoard({
         <div className="ab-deadlines">
           {withDue.length === 0 && <div className="ab-empty">Nessuna attività ha una scadenza</div>}
           {withDue.map(t => (
-            <button key={t.id} className="ab-deadline-row" onClick={() => setOpenTask(t)}>
+            <div
+              key={t.id}
+              className="ab-deadline-row"
+              role="button"
+              tabIndex={0}
+              onClick={() => setOpenTask(t)}
+              onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setOpenTask(t); } }}>
+              <button
+                className="ab-card-check"
+                title="Segna come fatta"
+                aria-label={`Segna "${t.title}" come fatta`}
+                onClick={e => { e.stopPropagation(); handleComplete(t); }}>
+                <CheckMark />
+              </button>
               <span className={`ab-due${isTaskOverdue(t.dueDateTime) ? ' overdue' : ''}`}>{formatDueDate(t.dueDateTime)}</span>
               <span className="ab-deadline-title">{t.title}</span>
               <span className="ab-deadline-list">{t._listName}</span>
-            </button>
+            </div>
           ))}
         </div>
         {drawer}
@@ -369,6 +502,7 @@ export default function ActivityBoard({
                   placement={scheduled.get(t.id) || null}
                   dragging={dragTask?.id === t.id}
                   onClick={col.status === 'inbox' ? onClarify : setOpenTask}
+                  onComplete={handleComplete}
                   onDragStart={setDragTask}
                   onDragEnd={() => { setDragTask(null); setDragOver(null); }}
                 />

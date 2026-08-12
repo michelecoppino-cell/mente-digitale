@@ -32,9 +32,22 @@
 .ab-search::placeholder { color: var(--disabled); }
 .ab-search:focus { border-color: var(--accent-line); }
 
-.ab-chips { display: flex; gap: var(--sp-2); }
+/* Le liste sono quante ne ha To-Do: la fila scorre invece di mandare a capo
+   la testata. */
+.ab-chips {
+  display: flex;
+  gap: var(--sp-2);
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.ab-chips::-webkit-scrollbar { display: none; }
 
 .ab-filter {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
   height: 34px;
   padding: 0 var(--sp-4);
   background: none;
@@ -56,7 +69,15 @@
   background: color-mix(in srgb, var(--chip, var(--accent)) 10%, transparent);
 }
 
+.ab-filter-count {
+  font-size: var(--fs-micro);
+  font-variant-numeric: tabular-nums;
+  color: var(--disabled);
+}
+.ab-filter.active .ab-filter-count { color: inherit; }
+
 .ab-views {
+  flex: 0 0 auto;
   margin-left: auto;
   display: flex;
   border: 1px solid var(--line);
@@ -152,20 +173,61 @@
 .ab-card:active { cursor: grabbing; }
 .ab-card.dragging { opacity: .4; }
 
+.ab-card-top {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-3);
+}
+
 .ab-card-title {
+  flex: 1;
+  min-width: 0;
   font-size: var(--fs-card);
   line-height: 1.45;
   color: var(--text);
 }
 
+/* La spunta: un cerchietto vuoto che si accende solo quando lo si punta, per
+   non trasformare ogni card in un invito a chiudere l'attività. */
+.ab-card-check {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  margin-top: 1px;
+  padding: 0;
+  background: none;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  color: transparent;
+  cursor: pointer;
+  transition: border-color var(--t), color var(--t), background var(--t);
+}
+@media (hover: hover) {
+  .ab-card-check:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+    background: var(--accent-tint);
+  }
+}
+.ab-card-check:focus-visible { border-color: var(--accent); color: var(--accent); }
+
+/* Meta e attesa rientrano quanto la spunta: la colonna del testo è una sola. */
 .ab-card-meta {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: var(--sp-2);
+  padding-left: calc(18px + var(--sp-3));
 }
 
-.ab-card-waiting { font-size: var(--fs-chip); color: var(--text-3); }
+.ab-card-waiting {
+  padding-left: calc(18px + var(--sp-3));
+  font-size: var(--fs-chip);
+  color: var(--text-3);
+}
 
 /* Inbox: da chiarire, e si vede. */
 .ab-card-inbox { border-left: 2px solid var(--accent); }
@@ -219,7 +281,7 @@
 .ab-deadline-row {
   display: flex;
   align-items: center;
-  gap: var(--sp-5);
+  gap: var(--sp-4);
   width: 100%;
   min-height: 46px;
   padding: 0 var(--sp-3);

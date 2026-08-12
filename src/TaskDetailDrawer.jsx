@@ -24,6 +24,9 @@ import './TaskDetailDrawer.css';
  * @param {(due: {dateTime: string, timeZone: string}|null) => void} [props.onDueChanged]
  * @param {(patch: Object) => void} [props.onPatched]
  * @param {(listId: string, task: import('./types').TodoTask) => void} [props.onRestored]
+ * @param {string} [props.status]
+ * @param {(t: import('./types').TodoTask) => void} [props.onSchedule]
+ * @param {(t: import('./types').TodoTask) => Promise<void>|void} [props.onUnschedule]
  */
 export default function TaskDetailDrawer({ task, onClose, ...rest }) {
   useEffect(() => {

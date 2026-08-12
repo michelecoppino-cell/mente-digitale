@@ -290,20 +290,26 @@ export default function TodayView({ plans, tasks, calendarEvents, onCompleteBloc
             })}
           </section>
 
-          {/* Movimento e Finanze sono due riquadri senza una fonte dati: nel
-              codebase non esiste niente su allenamenti né su conti. Restano
-              qui come segnaposto inerti, dichiarati, invece di essere finti
-              con numeri inventati. */}
+          {/* Movimento resta un riquadro senza fonte dati: nel codebase non
+              esiste niente sugli allenamenti. Sta qui come segnaposto inerte,
+              dichiarato, invece di essere finto con numeri inventati. */}
           <LockedCard
             title="Movimento"
             eyebrow="Movimento"
             note="Sette barre, una per giorno. Serve una fonte: un calendario dedicato agli allenamenti o una sezione PARA da cui contarli."
           />
-          <LockedCard
-            title="Finanze"
-            eyebrow="Finanze"
-            note="Nessuna integrazione bancaria collegata."
-          />
+
+          {/* Finanze invece la sezione ce l'ha: saldo reale, tasse, fatture e
+              proiezione. Qui non compaiono cifre di proposito — i conti stanno
+              dietro il PIN, e Oggi è una pagina che resta aperta sulla
+              scrivania: questo è il collegamento, non un'anteprima. */}
+          <Link className="today-finanze" to="/finanze">
+            <span className="eyebrow">Finanze</span>
+            <p className="today-finanze-note">
+              Saldo reale, tasse, fatture e proiezione. I numeri restano nella sezione, dietro il PIN.
+            </p>
+            <span className="today-finanze-link">Apri Finanze →</span>
+          </Link>
 
           <Link className="today-diary" to="/diario">
             <span className="eyebrow">Diario</span>
