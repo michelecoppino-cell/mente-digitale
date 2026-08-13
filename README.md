@@ -2,7 +2,7 @@
 
 Dashboard personale (PWA) che unifica l'ecosistema Microsoft 365 in un'unica "mente digitale":
 una mappa mentale interattiva dei taccuini OneNote, un pianificatore giornaliero collegato a
-Microsoft To-Do e al calendario Outlook, e un briefing di notizie generato con l'AI.
+Microsoft To-Do e al calendario Outlook, e un diario con supporto AI via copia-incolla.
 
 ## Funzionalità
 
@@ -13,8 +13,8 @@ Microsoft To-Do e al calendario Outlook, e un briefing di notizie generato con l
   per la sezione selezionata.
 - **Pianificatore giornaliero** — drag & drop dei task su una timeline a slot di 30 minuti,
   vista giorno/settimana, eventi del calendario in sola lettura, sottostep ridimensionabili,
-  piani salvati su OneDrive. Piano AI generato via Claude (`/api/daily-plan`) ed estrazione
-  di action item dalle email.
+  piani salvati su OneDrive. Candidati task estratti da email ed email OneNote con euristiche
+  locali (`src/dailyReview.js`), senza chiamate AI.
 - **Oggi** — la home. Cosa c'è adesso (o subito dopo), l'agenda del calendario in sola lettura, le
   azioni programmate per il giorno, e a lato ricorrenze, diario e due riquadri ancora bloccati.
   Non ha una lista propria: è tutto una query sul giorno corrente.
@@ -23,7 +23,6 @@ Microsoft To-Do e al calendario Outlook, e un briefing di notizie generato con l
 - **Attività** — le cinque colonne del flusso GTD (Inbox · Prossime azioni · In attesa · Programmate · Un giorno):
   la colonna *è* lo stato, e trascinare una card fra colonne lo cambia su Microsoft To-Do. Un clic su una
   card apre il pannello di dettaglio — note, sottoattività, stima, scadenza, stato.
-- **Briefing notizie** — riassunti AI dei feed ANSA (mondo, Italia, Friuli) via `/api/briefing`.
 - **Diario** (voce *Diario* nel menù, `⌘J`) — tre modalità distinte: *svuota testa* a schermo
   intero (timer 5/10 min, domanda selezionabile dall'elenco o rimovibile, righe che sbiadiscono
   mentre scrivi, pannello "come funziona" con il metodo e le fonti), *rituale della sera* (tre
@@ -193,12 +192,14 @@ una riga, non una ricerca-e-sostituzione in dieci file.
 | Frontend | React 19 + Vite, react-router (hash), D3 per la mappa |
 | Autenticazione | MSAL Browser (account Microsoft personale, scope Graph in sola lettura + To-Do/Files in scrittura) |
 | Dati | Microsoft Graph (OneNote, To-Do, Calendar, OneDrive, Mail) con cache localStorage a TTL. I file JSON dell'app stanno nella cartella `mente-digitale/` di OneDrive (quelli rimasti in root vengono spostati automaticamente al primo avvio) |
-| Backend | Cloudflare Pages Functions (`functions/api/*`) |
-| AI | Claude Haiku (`daily-plan`), Mistral (`briefing`) |
-| Automazioni | GitHub Actions (`generate-news`, `sync-calendar`) |
+| Backend | Nessuno: sito statico servito da Cloudflare Pages |
+| Automazioni | GitHub Actions (`sync-calendar`) |
 
-I dati utente non transitano da alcun backend proprio: il browser parla direttamente con
-Microsoft Graph; le funzioni Cloudflare ricevono solo i payload minimi necessari all'AI.
+I dati utente non transitano da alcun backend: il browser parla direttamente con Microsoft
+Graph. Non ci sono chiamate a nessuna API AI a pagamento: dove serve un aiuto dell'AI (Diario,
+Finanze → Movimenti) l'app compone un prompt e lo mette negli appunti con un pulsante **Copia
+per l'AI** / **Categorizza con Claude**; l'utente lo incolla in una chat Claude a parte e, se
+vuole, incolla qui il risultato. Nessuna chiave API, nessun costo per token lato app.
 
 ## Sviluppo
 
@@ -208,13 +209,6 @@ npm run dev       # dev server Vite
 npm run lint      # ESLint
 npm run build     # build di produzione in dist/
 ```
-
-### Variabili d'ambiente (Cloudflare Pages)
-
-| Nome | Uso |
-|---|---|
-| `ANTHROPIC_API_KEY` | `/api/daily-plan` (piano AI, email, breakdown task) |
-| `MISTRAL_API_KEY` | `/api/briefing` (riassunto notizie) |
 
 ### Configurazione MSAL
 
