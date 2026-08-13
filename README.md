@@ -210,6 +210,11 @@ npm run lint      # ESLint
 npm run build     # build di produzione in dist/
 ```
 
+### Workflow git
+
+Niente push diretto su `main`: ogni modifica va su un branch, poi pull request
+e merge su `main`. La CI (type-check, lint, build) gira su ogni push e ogni PR.
+
 ### Configurazione MSAL
 
 `src/config.js` contiene `CLIENT_ID` dell'app registrata su Entra ID e gli scope richiesti.
