@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, lazy, Suspense } from 'react';
 import { Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom';
-import { initAuth, getAccount, login, trySsoSilent } from './auth';
+import { initAuth, getAccount, login, trySsoSilent, getLastAuthDebug } from './auth';
 import { getNotebooks, getSections, getTodoLists, getTodoTasks, getPages, getRecentEmails, getPageContentHtml, markOneNoteTagDone, getReminders, createTask, getCalendarEvents, getTasksForDeadlineDedup, invalidateCalendarsCache, loadColorSettings, saveColorSettings, migrateLegacyDriveFiles, loadPlannerConfig, loadDailyPlans, saveDailyPlans, updateTaskStatus, completeTask } from './api';
 import { getMarker, setMarker, clearMarkers } from './markers';
 import { queryClient, qk, STALE } from './queryClient';
@@ -796,6 +796,7 @@ export default function App() {
   if (!ready) return null;
 
   if (!account) {
+    const lastAuthDebug = getLastAuthDebug();
     return (
       <div className="login-screen">
         <div className="login-card">
@@ -811,6 +812,11 @@ export default function App() {
             Accedi con Microsoft
           </button>
           <div className="login-note">Solo permessi di lettura · nessun dato salvato</div>
+          {lastAuthDebug && (
+            <div className="login-note" style={{ opacity: 0.6, marginTop: 4 }}>
+              Ultima disconnessione: {lastAuthDebug.errorCode || lastAuthDebug.message} ({new Date(lastAuthDebug.t).toLocaleTimeString('it-IT')})
+            </div>
+          )}
         </div>
       </div>
     );
