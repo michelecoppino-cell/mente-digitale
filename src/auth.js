@@ -12,6 +12,25 @@ const PERSONAL_USERNAME_KEY = 'md_personal_username';
 // Il tenantId dei Microsoft Account personali (MSA) è sempre questo
 const MSA_TENANT = '9188040d-6c67-4c5b-b112-36a304b66dad';
 
+// Traccia l'ultimo motivo per cui è scattato un redirect di login: su iPhone
+// senza Mac collegato non c'è modo di leggere la console, quindi lo teniamo
+// qui per poterlo mostrare nella schermata di login stessa.
+const AUTH_DEBUG_KEY = 'md_auth_debug';
+
+function logAuthRedirect(e) {
+  try {
+    localStorage.setItem(AUTH_DEBUG_KEY, JSON.stringify({
+      t: new Date().toISOString(),
+      errorCode: e?.errorCode || null,
+      message: e?.errorMessage || String(e),
+    }));
+  } catch { /* storage non disponibile */ }
+}
+
+export function getLastAuthDebug() {
+  try { return JSON.parse(localStorage.getItem(AUTH_DEBUG_KEY) || 'null'); } catch { return null; }
+}
+
 export async function initAuth() {
   msal = new PublicClientApplication({
     auth: {
@@ -91,6 +110,7 @@ export async function getToken() {
     return r.accessToken;
   } catch (e) {
     if (e instanceof InteractionRequiredAuthError) {
+      logAuthRedirect(e);
       return msal.acquireTokenRedirect({ scopes: SCOPES, account });
     }
     throw e;
