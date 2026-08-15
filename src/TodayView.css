@@ -226,9 +226,24 @@
   overflow: hidden;
 }
 
-/* ── Bussola ──────────────────────────────────────────────────────────── */
+/* ── Bussola e cento desideri ─────────────────────────────────────────── */
 
-.today-compass { gap: var(--sp-4); }
+.today-compass,
+.today-wishes { gap: var(--sp-4); }
+
+/* La Bussola è una porta, non una scheda di dati: solo bordo, come Diario e
+   Finanze. I desideri invece hanno il fondo pieno di .today-card — è il
+   riquadro che si guarda tutti i giorni, e deve pesare più degli altri. */
+.today-compass {
+  background: none;
+  border: 1px solid var(--line);
+  transition: border-color var(--t);
+}
+@media (hover: hover) {
+  .today-compass:hover { border-color: var(--accent-line); }
+}
+
+.today-compass-note { font-size: var(--fs-micro); line-height: 1.55; color: var(--muted); }
 
 .today-compass-wish {
   font-family: var(--font-title);
@@ -237,7 +252,9 @@
   color: var(--text);
 }
 
-.today-compass-count { font-size: var(--fs-micro); color: var(--muted); }
+/* Gruppo, posizione e quanti ne mancano — la riga che dà al desiderio del
+   giorno il suo contesto senza mostrare tutti gli altri. */
+.today-compass-count { font-size: var(--fs-micro); line-height: 1.5; color: var(--muted); }
 
 .today-compass-links { display: flex; flex-wrap: wrap; gap: var(--sp-5); }
 .today-compass-links button {
