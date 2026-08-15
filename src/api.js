@@ -8,12 +8,19 @@ const GRAPH = 'https://graph.microsoft.com/v1.0';
 let _cachedToken = null;
 let _cachedTokenExp = 0;
 
-/** @returns {Promise<string>} */
-async function getTokenCached() {
-  if (_cachedToken && Date.now() < _cachedTokenExp) return _cachedToken;
-  const token = await getToken();
+/**
+ * Il token vale fino alla scadenza che dichiara lui, meno un minuto di
+ * margine. Prima qui c'erano 45 minuti fissi «tanto il token MS dura un'ora»:
+ * ma acquireTokenSilent restituisce il token che ha in cache, che può essere
+ * già vecchio di cinquanta minuti — e da lì partiva una raffica di 401.
+ * @param {boolean} [forceRefresh]
+ * @returns {Promise<string>}
+ */
+async function getTokenCached(forceRefresh = false) {
+  if (!forceRefresh && _cachedToken && Date.now() < _cachedTokenExp) return _cachedToken;
+  const { token, expiresOn } = await getToken(forceRefresh);
   _cachedToken = token;
-  _cachedTokenExp = Date.now() + 45 * 60 * 1000; // 45 min (token MS dura 1h)
+  _cachedTokenExp = expiresOn - 60_000;
   return token;
 }
 
@@ -36,7 +43,7 @@ async function call(path, options = {}, retries = 3) {
   for (let attempt = 0; attempt < retries; attempt++) {
     let r;
     try {
-      const token = await getTokenCached();
+      const token = await getTokenCached(retried401);
       r = await fetch(url, {
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
         ...options
@@ -52,6 +59,9 @@ async function call(path, options = {}, retries = 3) {
     // di arrendersi con un errore secco. Il giro extra non consuma uno dei
     // tentativi normali (altrimenti un 401 all'ultimo giro usciva con
     // "tentativi esauriti" senza aver mai provato il token fresco).
+    // «Fresco» vuol dire forceRefresh: svuotare la sola cache locale faceva
+    // richiedere a MSAL lo stesso identico token che Graph aveva appena
+    // rifiutato, e il giro extra non serviva a niente.
     if (r.status === 401 && !retried401) {
       retried401 = true;
       invalidateTokenCache();

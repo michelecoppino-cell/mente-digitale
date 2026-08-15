@@ -11,7 +11,7 @@
 // Nessuna lista è "di Oggi": tutto è una query sul giorno corrente.
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { loadDiaryIndex, loadDiaryMonth } from './api';
+import { loadDiaryIndex, loadDiaryMonth, loadIdentityDoc } from './api';
 import { monthKey, shiftMonth } from './diary';
 import { taskContext, contextColor } from './taskModel';
 import './TodayView.css';
@@ -66,6 +66,32 @@ function initials(/** @type {string} */ name) {
 }
 
 const RECURRENCE_RE = /complean|ricorrenz|anniversar|onomastic/i;
+
+/** Una ricorrenza è un evento come gli altri, solo che torna ogni anno. */
+function isRecurrence(/** @type {any} */ e) {
+  return RECURRENCE_RE.test(e._calName || '') || RECURRENCE_RE.test(e.subject || '');
+}
+
+/** "ven 22" — l'etichetta di una data futura in agenda. */
+function fmtDayLabel(/** @type {string} */ ymd) {
+  return new Date(ymd + 'T00:00:00')
+    .toLocaleDateString('it-IT', { weekday: 'short', day: 'numeric' })
+    .replace('.', '');
+}
+
+/** Giorni interi fra due 'YYYY-MM-DD'. */
+function daysBetween(/** @type {string} */ from, /** @type {string} */ to) {
+  return Math.round((new Date(to + 'T00:00:00').getTime() - new Date(from + 'T00:00:00').getTime()) / 86_400_000);
+}
+
+// Quanto lontano guarda la parte «in arrivo» dell'agenda. Le due finestre sono
+// diverse di proposito: un appuntamento fra tre settimane non è cosa di oggi e
+// sta nel Piano, mentre un compleanno fra tre settimane è esattamente il tipo
+// di cosa che si vuole vedere in anticipo, perché richiede di preparare
+// qualcosa.
+const AHEAD_APPOINTMENTS = 7;
+const AHEAD_RECURRENCES = 30;
+const AHEAD_MAX_ROWS = 7;
 
 /**
  * Giorni consecutivi di diario che finiscono oggi (o ieri: la giornata non è
@@ -125,8 +151,9 @@ function useDiaryStreak(enabled = true) {
  * @param {import('./types').TodoTask[]} props.tasks
  * @param {import('./types').CalendarEvent[]} props.calendarEvents
  * @param {(block: any) => void} props.onCompleteBlock
+ * @param {(which: 'bussola'|'visione') => void} props.onOpenIdentity
  */
-export default function TodayView({ plans, tasks, calendarEvents, onCompleteBlock }) {
+export default function TodayView({ plans, tasks, calendarEvents, onCompleteBlock, onOpenIdentity }) {
   const navigate = useNavigate();
   // Un tick al minuto: basta a far avanzare "restano 1h40" e a far passare la
   // card da ADESSO a PROSSIMO senza ricaricare.
@@ -151,21 +178,28 @@ export default function TodayView({ plans, tasks, calendarEvents, onCompleteBloc
   const upcoming = blocks.find(b => !b.completed && t2m(b.startTime) > nowMin);
   const focus = current || upcoming || null;
 
-  const events = useMemo(() => (calendarEvents || [])
-    .filter(e => evDate(e.start?.dateTime) === today)
-    .filter(e => !RECURRENCE_RE.test(e._calName || ''))
-    .sort((a, b) => (a.start?.dateTime || '').localeCompare(b.start?.dateTime || '')),
-    [calendarEvents, today]);
-
-  const recurrences = useMemo(() => {
-    const limit = new Date(now); limit.setDate(limit.getDate() + 30);
-    const limitStr = todayStr(limit);
-    return (calendarEvents || [])
-      .filter(e => RECURRENCE_RE.test(e._calName || '') || RECURRENCE_RE.test(e.subject || ''))
-      .filter(e => { const d = evDate(e.start?.dateTime); return d >= today && d <= limitStr; })
-      .sort((a, b) => (a.start?.dateTime || '').localeCompare(b.start?.dateTime || ''))
-      .slice(0, 6);
-  }, [calendarEvents, today, now]);
+  // Agenda e Ricorrenze erano due riquadri lontani fra loro, ma sono la stessa
+  // cosa: eventi del calendario Microsoft, tagliati su due finestre di tempo
+  // diverse. Tenerli separati voleva dire che il compleanno di oggi finiva
+  // nella colonna di destra, in mezzo a quelli fra tre settimane, invece che in
+  // agenda accanto agli altri impegni della giornata. Qui c'è una sola
+  // cronologia: prima oggi, poi quello che arriva.
+  const { events, ahead } = useMemo(() => {
+    const all = (calendarEvents || [])
+      .map(e => ({ e, date: evDate(e.start?.dateTime), rec: isRecurrence(e) }))
+      .filter(x => x.date >= today)
+      .sort((a, b) => (a.e.start?.dateTime || '').localeCompare(b.e.start?.dateTime || ''));
+    return {
+      events: all.filter(x => x.date === today),
+      ahead: all
+        .filter(x => {
+          const gap = daysBetween(today, x.date);
+          if (gap <= 0) return false;
+          return gap <= (x.rec ? AHEAD_RECURRENCES : AHEAD_APPOINTMENTS);
+        })
+        .slice(0, AHEAD_MAX_ROWS),
+    };
+  }, [calendarEvents, today]);
 
   const plannedMin = blocks.reduce((sum, b) => sum + Math.max(0, t2m(b.endTime) - t2m(b.startTime)), 0);
   const dateLabel = now.toLocaleDateString('it-IT', { weekday: 'long', day: 'numeric', month: 'long' });
@@ -223,13 +257,18 @@ export default function TodayView({ plans, tasks, calendarEvents, onCompleteBloc
           <section className="today-block">
             <span className="eyebrow">Agenda</span>
             {events.length === 0 && <p className="today-empty">Nessun appuntamento oggi</p>}
-            {events.map(e => (
-              <div className="today-event" key={e.id}>
-                <span className="today-event-time">{e.isAllDay ? 'tutto il giorno' : evTime(e.start?.dateTime)}</span>
-                <span className="today-event-title">{e.subject || '(senza titolo)'}</span>
-                <span className="today-event-cal">{e._calName}</span>
-              </div>
+            {events.map(({ e, rec }) => (
+              <EventRow key={`${e.id}-${today}`} event={e} recurrence={rec} />
             ))}
+
+            {ahead.length > 0 && (
+              <>
+                <span className="today-ahead-sep">In arrivo</span>
+                {ahead.map(({ e, date, rec }) => (
+                  <EventRow key={`${e.id}-${date}`} event={e} recurrence={rec} day={fmtDayLabel(date)} soon={daysBetween(today, date) <= 1} />
+                ))}
+              </>
+            )}
           </section>
 
           {/* ── Azioni di oggi ─────────────────────────────────────────── */}
@@ -272,23 +311,7 @@ export default function TodayView({ plans, tasks, calendarEvents, onCompleteBloc
 
         {/* ── Colonna destra ───────────────────────────────────────────── */}
         <aside className="today-aside">
-          <section className="today-card">
-            <span className="eyebrow">Ricorrenze</span>
-            {recurrences.length === 0 && <p className="today-empty">Niente nei prossimi 30 giorni</p>}
-            {recurrences.map(e => {
-              const d = evDate(e.start?.dateTime);
-              const soon = d <= todayStr(new Date(now.getTime() + 86_400_000));
-              return (
-                <div className="today-rec" key={e.id}>
-                  <span className="today-rec-badge">{initials(e.subject || '')}</span>
-                  <span className="today-rec-name">{e.subject}</span>
-                  <span className={`today-rec-date${soon ? ' soon' : ''}`}>
-                    {new Date(d + 'T00:00:00').toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit' })}
-                  </span>
-                </div>
-              );
-            })}
-          </section>
+          <CompassCard today={today} onOpenIdentity={onOpenIdentity} />
 
           {/* Movimento resta un riquadro senza fonte dati: nel codebase non
               esiste niente sugli allenamenti. Sta qui come segnaposto inerte,
@@ -321,6 +344,104 @@ export default function TodayView({ plans, tasks, calendarEvents, onCompleteBloc
         </aside>
       </div>
     </div>
+  );
+}
+
+/**
+ * Una riga di agenda. È la stessa forma per un appuntamento di oggi, per un
+ * compleanno di oggi e per uno fra tre settimane: cambia solo cosa sta nella
+ * colonna di sinistra (l'ora, oppure il giorno) e il cerchietto con le
+ * iniziali, che è il segno che distingue una ricorrenza da un impegno.
+ * @param {Object} props
+ * @param {any} props.event
+ * @param {boolean} props.recurrence
+ * @param {string} [props.day]  etichetta del giorno, per le righe «in arrivo»
+ * @param {boolean} [props.soon]
+ */
+function EventRow({ event, recurrence, day, soon }) {
+  const when = day || (event.isAllDay ? 'tutto il giorno' : evTime(event.start?.dateTime));
+  return (
+    <div className={`today-event${recurrence ? ' recurrence' : ''}${day ? ' ahead' : ''}`}>
+      <span className={`today-event-time${soon ? ' soon' : ''}`}>{when}</span>
+      {recurrence && <span className="today-rec-badge">{initials(event.subject || '')}</span>}
+      <span className="today-event-title">{event.subject || '(senza titolo)'}</span>
+      <span className="today-event-cal">{event._calName}</span>
+    </div>
+  );
+}
+
+// La Bussola e la Visione stanno su OneDrive e cambiano una volta ogni tanto:
+// una volta lette restano qui per tutta la sessione, così passare da Oggi a
+// un'altra vista e tornare non rifà due chiamate.
+/** @type {{bussola: any, visione: any}|null} */
+let identityMemo = null;
+
+/** Le righe «Voglio …» della Bussola: i cento desideri, uno per riga. */
+function extractWishes(/** @type {any} */ bussola) {
+  const section = (bussola?.sections || []).find((/** @type {any} */ s) => /cosa voglio/i.test(s.title || ''));
+  return /** @type {string[]} */ ((section?.content || '')
+    .split('\n')
+    .map((/** @type {string} */ l) => l.trim())
+    .filter((/** @type {string} */ l) => l.length > 2));
+}
+
+/**
+ * Bussola: chi sono, cosa voglio. Sulla schermata del giorno non ci sta tutta
+ * — sono quattro schermate di testo — e metterla tutta la ridurrebbe a un muro
+ * che si smette di leggere dopo tre giorni. Ci sta un desiderio, quello di
+ * oggi, scelto in modo che sia lo stesso per tutta la giornata e cambi domani.
+ * @param {{ today: string, onOpenIdentity?: (which: 'bussola'|'visione') => void }} props
+ */
+function CompassCard({ today, onOpenIdentity }) {
+  const [docs, setDocs] = useState(identityMemo);
+
+  useEffect(() => {
+    if (identityMemo) return;
+    let cancelled = false;
+    Promise.all([
+      loadIdentityDoc('bussola').catch(() => null),
+      loadIdentityDoc('visione').catch(() => null),
+    ]).then(([bussola, visione]) => {
+      identityMemo = { bussola, visione };
+      if (!cancelled) setDocs(identityMemo);
+    });
+    return () => { cancelled = true; };
+  }, []);
+
+  const wishes = useMemo(() => extractWishes(docs?.bussola), [docs]);
+  // L'indice si ricava dalla data e non da un random: un desiderio che cambia
+  // a ogni render sarebbe rumore, e riaprire la pagina per «trovarne uno
+  // migliore» è esattamente il contrario di quello che serve.
+  const wish = wishes.length
+    ? wishes[Math.floor(new Date(today + 'T00:00:00').getTime() / 86_400_000) % wishes.length]
+    : null;
+
+  const visioneText = (docs?.visione?.sections || [])
+    .map((/** @type {any} */ s) => (s.content || '').trim())
+    .filter(Boolean)
+    .join(' ')
+    .slice(0, 150);
+
+  return (
+    <section className="today-card today-compass">
+      <span className="eyebrow">Bussola</span>
+      {!docs && <p className="today-empty">…</p>}
+      {docs && (
+        wish
+          ? <p className="today-compass-wish">{wish}</p>
+          : <p className="today-empty">La Bussola è ancora vuota — scrivi cosa vuoi.</p>
+      )}
+      {wishes.length > 0 && (
+        <span className="today-compass-count">
+          uno dei {wishes.length} desideri scritti{wishes.length < 100 ? ` · ne mancano ${100 - wishes.length} ai cento` : ''}
+        </span>
+      )}
+      <div className="today-compass-links">
+        <button type="button" onClick={() => onOpenIdentity?.('bussola')}>La Bussola →</button>
+        <button type="button" onClick={() => onOpenIdentity?.('visione')}>La Visione →</button>
+      </div>
+      {visioneText && <p className="today-compass-vision">{visioneText}…</p>}
+    </section>
   );
 }
 
