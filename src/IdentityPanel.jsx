@@ -1,5 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { loadIdentityDoc, saveIdentityDoc } from './api';
+import { parseWishGroups, WISH_TITLE_RE } from './wishes';
 
 const OCRA = '#d4a44a';
 
@@ -27,55 +28,73 @@ Con la felicità si fa tutto al meglio.
     },
     {
       title: 'COSA VOGLIO',
-      content: `Voglio essere più felice
-Voglio continuare a interrogarmi sui 100 desideri
-Voglio dimostrare il mio amore per Sara
-Voglio dedicare del tempo la sera alla scrittura
-Voglio avere il controllo della mia testa e del mio corpo
-Voglio avere un rapporto più vero con la mia famiglia
-Voglio piacermi fisicamente ed essere in forma
-Voglio costruire una bella famiglia
-Voglio riempire il tempo che ho a disposizione per me
-Voglio avere delle passioni con cui ritagliarmi uno spazio per me ogni giorno
-Voglio essere utile per gli altri
-Voglio essere un buon padre
-Voglio piacermi come persona
-Voglio dormire bene e svegliarmi con energia e entusiasmo
-Voglio continuare ad andare a fondo in me stesso
-Voglio appassionarmi al mio lavoro, trovare il modo di farlo più Mio
-Voglio vivere il lavoro con meno ansia
-Voglio riprendere a studiare
-Voglio dare un senso alle mie giornate
-Voglio riuscire a rimuovere odio, invidia e competizione per le altre persone
-Voglio voler bene al prossimo
-Voglio volermi bene, lo merito
-Voglio amare la vita
-Voglio sentirmi un adulto
-Voglio avere più conoscenza in cucina
-Voglio conoscere di più il territorio
-Voglio conoscere i vini
-Voglio avere un po' di cultura in più
-Voglio informarmi con continuità sull'attualità
-Voglio smetterla di preoccuparmi per il futuro finanziario
-Voglio essere grato
-Voglio andare in Thailandia
-Voglio andare in America
-Voglio avere un cane
-Voglio avere un outfit vario che mi faccia sentire a mio agio
-Voglio essere in forma
-Voglio avere una casa
-Voglio avere un giardino
-Voglio avere un orto
-Voglio cucinare al barbecue
-Voglio saper nuotare
-Voglio saper sciare`,
+      content: `── ESSERE ────────────────────────────
+
+  · Essere più felice
+  · Volermi bene — lo merito
+  · Piacermi come persona
+  · Sentirmi un adulto
+  · Amare la vita
+  · Essere grato
+  · Rimuovere odio, invidia e competizione
+  · Voler bene al prossimo
+  · Essere utile per gli altri
+
+── FAMIGLIA & RELAZIONI ──────────────
+
+  · Costruire una bella famiglia
+  · Essere un buon padre
+  · Dimostrare il mio amore per Sara
+  · Avere un rapporto più vero con la mia famiglia
+
+── MENTE & CRESCITA ──────────────────
+
+  · Continuare a interrogarmi sui 100 desideri
+  · Andare a fondo in me stesso
+  · Avere il controllo della mia testa e del mio corpo
+  · Dare un senso alle mie giornate
+  · Riprendere a studiare
+  · Avere più cultura
+  · Informarmi con continuità sull'attualità
+  · Dedicare del tempo la sera alla scrittura
+
+── LAVORO ────────────────────────────
+
+  · Appassionarmi al lavoro, renderlo più Mio
+  · Viverlo con meno ansia
+  · Smettere di preoccuparmi per il futuro finanziario
+
+── CORPO & BENESSERE ─────────────────
+
+  · Piacermi fisicamente ed essere in forma
+  · Dormire bene e svegliarmi con energia
+  · Saper nuotare
+  · Saper sciare
+
+── VITA & SPAZIO ─────────────────────
+
+  · Avere una casa con giardino e orto
+  · Avere un cane
+  · Cucinare al barbecue
+  · Avere più conoscenza in cucina
+  · Conoscere i vini
+  · Conoscere meglio il territorio
+  · Avere un outfit vario che mi faccia sentire a mio agio
+  · Riempire il tempo libero con passioni mie
+
+── SOGNI ─────────────────────────────
+
+  · Andare in Thailandia
+  · Andare in America`,
     },
     {
       title: 'COSA FACCIO PER ME',
-      content: `camminare scalzo per scaricare,
-isha krya,
-shambavi,
-yoga della sera,`,
+      content: `Pratiche quotidiane per ritornare a me stesso:
+
+  ◦ Camminare scalzo — per scaricare
+  ◦ Isha Kriya
+  ◦ Shambavi
+  ◦ Yoga della sera`,
     },
   ],
 };
@@ -98,6 +117,18 @@ function IconPencil() {
   );
 }
 
+/**
+ * Bussola, Visione e i cento desideri.
+ *
+ * I desideri sono una sezione del documento della Bussola, non un file loro:
+ * spostarli avrebbe voluto dire due file da tenere allineati, e l'esportazione
+ * del Diario per l'AI legge la Bussola intera per dare contesto — dividerla le
+ * avrebbe tolto metà del senso. Quello che cambia è la porta: «i cento
+ * desideri» ha un bottone suo e si apre da solo, senza le altre due sezioni
+ * intorno, perché è l'unica parte che si guarda tutti i giorni.
+ *
+ * @param {{ open: 'bussola'|'visione'|'desideri'|null, onClose: () => void }} props
+ */
 export default function IdentityPanel({ open, onClose }) {
   const [doc, setDoc] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -118,12 +149,12 @@ export default function IdentityPanel({ open, onClose }) {
     }
     setLoading(true);
     setLoadFailed(false);
-    loadIdentityDoc(open)
+    loadIdentityDoc(open === 'desideri' ? 'bussola' : open)
       .then(data => {
         // null = file non ancora creato (404): i default sono un punto di
         // partenza legittimo. Un errore transitorio invece NON deve mostrare
         // i default: un "Salva" successivo sovrascriverebbe il documento vero.
-        setDoc(data || (open === 'bussola' ? DEFAULT_BUSSOLA : DEFAULT_VISIONE));
+        setDoc(data || (open === 'visione' ? DEFAULT_VISIONE : DEFAULT_BUSSOLA));
       })
       .catch(() => setLoadFailed(true))
       .finally(() => setLoading(false));
@@ -158,7 +189,9 @@ export default function IdentityPanel({ open, onClose }) {
     setSaving(true);
     setSaveError(null);
     try {
-      await saveIdentityDoc(open, draft);
+      // Si salva sempre il documento intero, anche quando se ne stava
+      // guardando una sezione sola: le altre sono nel draft, intatte.
+      await saveIdentityDoc(open === 'desideri' ? 'bussola' : open, draft);
       setDoc(draft);
       setEditing(false);
       setDraft(null);
@@ -169,7 +202,24 @@ export default function IdentityPanel({ open, onClose }) {
     }
   }
 
-  const modalTitle = open === 'bussola' ? 'La Bussola' : 'La Visione';
+  const modalTitle = open === 'desideri' ? 'I cento desideri'
+    : open === 'visione' ? 'La Visione'
+    : 'La Bussola';
+
+  // Quali sezioni del documento si vedono. Gli indici sono quelli veri: la
+  // modifica scrive nel documento intero, così le sezioni che non si stanno
+  // guardando non rischiano di sparire al salvataggio.
+  const shown = useMemo(() => {
+    const sections = (editing ? draft : doc)?.sections || [];
+    return sections
+      .map((/** @type {any} */ s, /** @type {number} */ i) => i)
+      .filter((/** @type {number} */ i) => {
+        const isWishes = WISH_TITLE_RE.test(sections[i].title || '');
+        if (open === 'desideri') return isWishes;
+        if (open === 'bussola') return !isWishes;
+        return true;
+      });
+  }, [doc, draft, editing, open]);
 
   if (!open) return null;
 
@@ -254,7 +304,9 @@ export default function IdentityPanel({ open, onClose }) {
             </div>
           ) : editing ? (
             <>
-              {(draft?.sections || []).map((section, i) => (
+              {shown.map(i => draft.sections[i]).map((section, n) => {
+                const i = shown[n];
+                return (
                 <div key={i} style={{ marginBottom: 30 }}>
                   <input
                     value={section.title}
@@ -281,7 +333,8 @@ export default function IdentityPanel({ open, onClose }) {
                     }}
                   />
                 </div>
-              ))}
+                );
+              })}
               {saveError && (
                 <div style={{ color: '#e07070', fontSize: 12, marginTop: -10, marginBottom: 10 }}>
                   {saveError}
@@ -289,28 +342,87 @@ export default function IdentityPanel({ open, onClose }) {
               )}
             </>
           ) : (
-            (doc?.sections || []).map((section, i) => (
-              <div key={i} style={{ marginBottom: 30 }}>
-                <div style={{
-                  color: OCRA, fontSize: 11, fontWeight: 700,
-                  letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: 10,
-                }}>
-                  {section.title}
-                </div>
-                {section.content ? (
-                  <div style={{ color: '#c0c0c8', fontSize: 13, lineHeight: 1.8, whiteSpace: 'pre-wrap' }}>
-                    {section.content}
-                  </div>
-                ) : (
-                  <div style={{ color: '#3a3d4a', fontSize: 13, fontStyle: 'italic' }}>
-                    Ancora vuoto — clicca la matita per aggiungere contenuto.
-                  </div>
-                )}
+            shown.length === 0 ? (
+              <div style={{ color: '#3a3d4a', fontSize: 13, fontStyle: 'italic', padding: '32px 0' }}>
+                {open === 'desideri'
+                  ? 'Nella Bussola non c\'è ancora una sezione «Cosa voglio».'
+                  : 'Ancora vuoto — clicca la matita per aggiungere contenuto.'}
               </div>
-            ))
+            ) : (
+              shown.map(i => {
+                const section = doc.sections[i];
+                return (
+                  <div key={i} style={{ marginBottom: 30 }}>
+                    {/* Nella vista dei soli desideri il titolo della sezione è
+                        già quello del modale: ripeterlo sarebbe una riga persa
+                        in cima a un elenco che è tutto quello che c'è. */}
+                    {open !== 'desideri' && (
+                      <div style={{
+                        color: OCRA, fontSize: 11, fontWeight: 700,
+                        letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: 10,
+                      }}>
+                        {section.title}
+                      </div>
+                    )}
+                    {!section.content ? (
+                      <div style={{ color: '#3a3d4a', fontSize: 13, fontStyle: 'italic' }}>
+                        Ancora vuoto — clicca la matita per aggiungere contenuto.
+                      </div>
+                    ) : open === 'desideri' ? (
+                      <WishList content={section.content} />
+                    ) : (
+                      <div style={{ color: '#c0c0c8', fontSize: 13, lineHeight: 1.8, whiteSpace: 'pre-wrap' }}>
+                        {section.content}
+                      </div>
+                    )}
+                  </div>
+                );
+              })
+            )
           )}
         </div>
       </div>
     </div>
+  );
+}
+
+/**
+ * I desideri come elenco, non come blocco di testo con dentro delle barre di
+ * trattini. I gruppi li ha scritti lui nel documento: qui diventano
+ * intestazioni vere, e il conteggio dice a che punto sono i cento.
+ * @param {{ content: string }} props
+ */
+function WishList({ content }) {
+  const groups = parseWishGroups(content);
+  const total = groups.reduce((n, g) => n + g.items.length, 0);
+
+  return (
+    <>
+      <div style={{ color: '#6a6e7c', fontSize: 12, marginBottom: 22 }}>
+        {total} {total === 1 ? 'desiderio scritto' : 'desideri scritti'}
+        {total < 100 && ` · ne mancano ${100 - total} ai cento`}
+      </div>
+      {groups.map((g, i) => (
+        <div key={i} style={{ marginBottom: g.title ? 24 : 0 }}>
+          {g.title && (
+            <div style={{
+              color: OCRA, fontSize: 10, fontWeight: 700, letterSpacing: '0.14em',
+              textTransform: 'uppercase', opacity: 0.75, marginBottom: 8,
+            }}>
+              {g.title}
+            </div>
+          )}
+          {g.items.map((item, j) => (
+            <div key={j} style={{
+              display: 'flex', gap: 10, alignItems: 'baseline',
+              color: '#c0c0c8', fontSize: 13, lineHeight: 1.7, padding: '3px 0',
+            }}>
+              <span style={{ color: OCRA, opacity: 0.5, flex: '0 0 auto' }}>·</span>
+              <span>{item}</span>
+            </div>
+          ))}
+        </div>
+      ))}
+    </>
   );
 }

@@ -12,6 +12,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { loadDiaryIndex, loadDiaryMonth, loadIdentityDoc } from './api';
+import { parseWishes, wishSection, wishOfTheDay } from './wishes';
 import { monthKey, shiftMonth } from './diary';
 import { taskContext, contextColor } from './taskModel';
 import './TodayView.css';
@@ -151,7 +152,7 @@ function useDiaryStreak(enabled = true) {
  * @param {import('./types').TodoTask[]} props.tasks
  * @param {import('./types').CalendarEvent[]} props.calendarEvents
  * @param {(block: any) => void} props.onCompleteBlock
- * @param {(which: 'bussola'|'visione') => void} props.onOpenIdentity
+ * @param {(which: 'bussola'|'visione'|'desideri') => void} props.onOpenIdentity
  */
 export default function TodayView({ plans, tasks, calendarEvents, onCompleteBlock, onOpenIdentity }) {
   const navigate = useNavigate();
@@ -164,6 +165,7 @@ export default function TodayView({ plans, tasks, calendarEvents, onCompleteBloc
   }, []);
 
   const today = todayStr(now);
+  const { docs: identityDocs } = useIdentityDocs();
   const nowMin = now.getHours() * 60 + now.getMinutes();
   const streak = useDiaryStreak();
 
@@ -311,7 +313,8 @@ export default function TodayView({ plans, tasks, calendarEvents, onCompleteBloc
 
         {/* ── Colonna destra ───────────────────────────────────────────── */}
         <aside className="today-aside">
-          <CompassCard today={today} onOpenIdentity={onOpenIdentity} />
+          <WishesCard docs={identityDocs} today={today} onOpenIdentity={onOpenIdentity} />
+          <CompassCard docs={identityDocs} onOpenIdentity={onOpenIdentity} />
 
           {/* Movimento resta un riquadro senza fonte dati: nel codebase non
               esiste niente sugli allenamenti. Sta qui come segnaposto inerte,
@@ -376,25 +379,9 @@ function EventRow({ event, recurrence, day, soon }) {
 /** @type {{bussola: any, visione: any}|null} */
 let identityMemo = null;
 
-/** Le righe «Voglio …» della Bussola: i cento desideri, uno per riga. */
-function extractWishes(/** @type {any} */ bussola) {
-  const section = (bussola?.sections || []).find((/** @type {any} */ s) => /cosa voglio/i.test(s.title || ''));
-  return /** @type {string[]} */ ((section?.content || '')
-    .split('\n')
-    .map((/** @type {string} */ l) => l.trim())
-    .filter((/** @type {string} */ l) => l.length > 2));
-}
-
-/**
- * Bussola: chi sono, cosa voglio. Sulla schermata del giorno non ci sta tutta
- * — sono quattro schermate di testo — e metterla tutta la ridurrebbe a un muro
- * che si smette di leggere dopo tre giorni. Ci sta un desiderio, quello di
- * oggi, scelto in modo che sia lo stesso per tutta la giornata e cambi domani.
- * @param {{ today: string, onOpenIdentity?: (which: 'bussola'|'visione') => void }} props
- */
-function CompassCard({ today, onOpenIdentity }) {
+/** @returns {{docs: {bussola: any, visione: any}|null}} */
+function useIdentityDocs() {
   const [docs, setDocs] = useState(identityMemo);
-
   useEffect(() => {
     if (identityMemo) return;
     let cancelled = false;
@@ -407,15 +394,16 @@ function CompassCard({ today, onOpenIdentity }) {
     });
     return () => { cancelled = true; };
   }, []);
+  return { docs };
+}
 
-  const wishes = useMemo(() => extractWishes(docs?.bussola), [docs]);
-  // L'indice si ricava dalla data e non da un random: un desiderio che cambia
-  // a ogni render sarebbe rumore, e riaprire la pagina per «trovarne uno
-  // migliore» è esattamente il contrario di quello che serve.
-  const wish = wishes.length
-    ? wishes[Math.floor(new Date(today + 'T00:00:00').getTime() / 86_400_000) % wishes.length]
-    : null;
-
+/**
+ * Bussola: chi sono, cosa faccio per me. È la porta, non il documento — sono
+ * quattro schermate di testo, e metterle qui le ridurrebbe a un muro che si
+ * smette di leggere dopo tre giorni.
+ * @param {{ docs: any, onOpenIdentity?: (which: 'bussola'|'visione'|'desideri') => void }} props
+ */
+function CompassCard({ docs, onOpenIdentity }) {
   const visioneText = (docs?.visione?.sections || [])
     .map((/** @type {any} */ s) => (s.content || '').trim())
     .filter(Boolean)
@@ -425,22 +413,52 @@ function CompassCard({ today, onOpenIdentity }) {
   return (
     <section className="today-card today-compass">
       <span className="eyebrow">Bussola</span>
-      {!docs && <p className="today-empty">…</p>}
-      {docs && (
-        wish
-          ? <p className="today-compass-wish">{wish}</p>
-          : <p className="today-empty">La Bussola è ancora vuota — scrivi cosa vuoi.</p>
-      )}
-      {wishes.length > 0 && (
-        <span className="today-compass-count">
-          uno dei {wishes.length} desideri scritti{wishes.length < 100 ? ` · ne mancano ${100 - wishes.length} ai cento` : ''}
-        </span>
-      )}
+      <p className="today-compass-note">
+        Chi sono, cosa faccio per me — e dove sto andando.
+      </p>
       <div className="today-compass-links">
         <button type="button" onClick={() => onOpenIdentity?.('bussola')}>La Bussola →</button>
         <button type="button" onClick={() => onOpenIdentity?.('visione')}>La Visione →</button>
       </div>
       {visioneText && <p className="today-compass-vision">{visioneText}…</p>}
+    </section>
+  );
+}
+
+/**
+ * I cento desideri, con la loro porta. Stanno in un riquadro loro e non in
+ * fondo alla Bussola: sono l'unica parte di quel documento che si guarda tutti
+ * i giorni, e sotto tre link e due paragrafi non la si guardava.
+ *
+ * Ne compare uno solo, quello di oggi. Quaranta righe in colonna sono un
+ * elenco da scorrere; una riga sola è una cosa a cui pensare.
+ * @param {{ docs: any, today: string, onOpenIdentity?: (which: 'bussola'|'visione'|'desideri') => void }} props
+ */
+function WishesCard({ docs, today, onOpenIdentity }) {
+  const wishes = useMemo(() => parseWishes(wishSection(docs?.bussola)?.content || ''), [docs]);
+  const wish = wishOfTheDay(wishes, today);
+
+  return (
+    <section className="today-card today-wishes">
+      <span className="eyebrow">I cento desideri</span>
+      {!docs && <p className="today-empty">…</p>}
+      {docs && (
+        wish
+          ? <p className="today-compass-wish">{wish.text}</p>
+          : <p className="today-empty">Ancora nessun desiderio scritto.</p>
+      )}
+      {wish && (
+        <span className="today-compass-count">
+          {[
+            wish.group,
+            `uno dei ${wishes.length}`,
+            wishes.length < 100 ? `ne mancano ${100 - wishes.length} ai cento` : null,
+          ].filter(Boolean).join(' · ')}
+        </span>
+      )}
+      <div className="today-compass-links">
+        <button type="button" onClick={() => onOpenIdentity?.('desideri')}>I cento desideri →</button>
+      </div>
     </section>
   );
 }
