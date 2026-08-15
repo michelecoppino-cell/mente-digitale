@@ -3,7 +3,10 @@ export const REDIRECT_URI = window.location.origin + '/';
 // Account Microsoft personale usato di default: evita lo chooser dei 3 account
 // anche al primo accesso su un dispositivo nuovo (nessuna cache locale ancora).
 export const PREFERRED_LOGIN_HINT = 'michelecoppino@gmail.com';
-export const SCOPES = ['Notes.Read', 'Notes.Read.All', 'Notes.ReadWrite', 'Tasks.Read', 'Tasks.ReadWrite', 'Calendars.ReadWrite', 'Files.ReadWrite', 'Mail.Read'];
+// `offline_access` è scritto qui invece di lasciarlo ai default impliciti di
+// MSAL: è lo scope che fa rilasciare il refresh token, cioè la differenza fra
+// «l'accesso dura un'ora» e «l'accesso dura finché Microsoft lo rinnova».
+export const SCOPES = ['offline_access', 'Notes.Read', 'Notes.Read.All', 'Notes.ReadWrite', 'Tasks.Read', 'Tasks.ReadWrite', 'Calendars.ReadWrite', 'Files.ReadWrite', 'Mail.Read'];
 export const COLORS = [
   '#7eb8c9','#c084a0','#86c07a',
   '#c8a96e','#a084c8','#c8907a','#7ab8a0'

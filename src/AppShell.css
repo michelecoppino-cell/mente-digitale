@@ -394,9 +394,25 @@
   .shell.rail-collapsed .rail-item { justify-content: flex-start; padding-inline: var(--sp-4); }
 
   /* In standalone su iPhone il fondo della colonna finisce sotto l'indicatore
-     Home. Il margine si prende una volta sola qui, sul contenitore di tutte
-     le rotte, invece che in ogni singola vista scrollabile. */
-  .shell-content { padding-bottom: env(safe-area-inset-bottom, 0px); }
+     Home. Il margine però non va preso qui sul contenitore delle rotte: fatto
+     così accorcia l'area che scorre e lascia sotto una fascia di fondo app
+     alta 34px, vuota e ferma, che è la banda nera che si vede in fondo alla
+     web app. Il posto giusto è dentro l'area che scorre — diventa coda di
+     scorrimento invece che bordo morto, e il contenuto arriva fino in fondo
+     allo schermo. Le viste elencate qui sotto sono quelle che, da telefono,
+     toccano il bordo inferiore. */
+  .shell-content { padding-bottom: 0; }
+
+  .today,
+  .ab-col-body,
+  .ab-deadlines,
+  .ab-detail,
+  .sv-cols,
+  .sv-list,
+  .diary-page,
+  .finanze-root {
+    padding-bottom: calc(var(--sp-5) + env(safe-area-inset-bottom, 0px));
+  }
 
   .shell.drawer-open .shell-scrim {
     display: block;

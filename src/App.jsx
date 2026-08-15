@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, lazy, Suspense } from 'react';
 import { Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom';
-import { initAuth, getAccount, login, trySsoSilent, getLastAuthDebug } from './auth';
+import { initAuth, getAccount, login, trySsoSilent, getLastAuthDebug, onInteractionRequired, isInteractionRequired, reconnect } from './auth';
 import { getNotebooks, getSections, getTodoLists, getTodoTasks, getPages, getRecentEmails, getPageContentHtml, markOneNoteTagDone, getReminders, createTask, getCalendarEvents, getTasksForDeadlineDedup, invalidateCalendarsCache, loadColorSettings, saveColorSettings, migrateLegacyDriveFiles, loadPlannerConfig, loadDailyPlans, saveDailyPlans, updateTaskStatus, completeTask } from './api';
 import { getMarker, setMarker, clearMarkers } from './markers';
 import { queryClient, qk, STALE } from './queryClient';
@@ -178,6 +178,10 @@ export default function App() {
   const [todoCountMap, setTodoCountMap] = useState({});
   const [selected, setSelected] = useState(null);
   const [sync, setSync] = useState({ state: 'idle', label: 'Non connesso' });
+  // La sessione Microsoft è scaduta e serve un accesso interattivo. Non è più
+  // un redirect automatico: è una striscia in cima con un bottone, e finché
+  // non la si tocca l'app continua a funzionare con quello che ha già in cache.
+  const [needsReconnect, setNeedsReconnect] = useState(isInteractionRequired);
   const [zoom, setZoom] = useState(1);
   // La Mappa riapre come l'hai lasciata: il commutatore Taccuini/PARA è una
   // preferenza, non un parametro di sessione, e ripartire sempre da «Taccuini»
@@ -249,6 +253,21 @@ export default function App() {
       }
     });
   }, []);
+
+  useEffect(() => onInteractionRequired(setNeedsReconnect), []);
+
+  // Tornando sull'app dopo che iPhone l'ha messa in pausa, un tentativo
+  // silenzioso: molto spesso la sessione Microsoft nel browser è ancora
+  // buona e la striscia sparisce da sola, senza che si sia toccato niente.
+  useEffect(() => {
+    if (!needsReconnect) return;
+    function onVisible() {
+      if (document.visibilityState !== 'visible') return;
+      trySsoSilent().then(acc => { if (acc) { setNeedsReconnect(false); load(false); } });
+    }
+    document.addEventListener('visibilitychange', onVisible);
+    return () => document.removeEventListener('visibilitychange', onVisible);
+  }, [needsReconnect]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     try { localStorage.setItem(MAP_VIEW_MODE_KEY, mapViewMode); } catch { /* storage non disponibile */ }
@@ -888,6 +907,12 @@ export default function App() {
 
   return (
     <>
+      {needsReconnect && (
+        <div className="auth-banner" role="status">
+          <span>Sessione Microsoft scaduta — i dati mostrati sono quelli dell'ultimo caricamento.</span>
+          <button onClick={() => reconnect()}>Riconnetti</button>
+        </div>
+      )}
       <AppShell
         topbar={topbar}
         onCapture={() => setCaptureOpen(true)}
@@ -899,6 +924,7 @@ export default function App() {
               tasks={scheduledTasks || []}
               calendarEvents={sectionCalendarEvents}
               onCompleteBlock={handleCompleteBlock}
+              onOpenIdentity={setIdentityOpen}
             />
           } />
 
@@ -971,7 +997,6 @@ export default function App() {
 
           <Route path="/mappa" element={
             <div className="canvas-area">
-              <IdentityPanel open={identityOpen} onClose={() => setIdentityOpen(null)} />
               <MindMap
                 notebooks={notebooks}
                 sectionsMap={sectionsMap}
@@ -990,6 +1015,10 @@ export default function App() {
           <Route path="*" element={<Navigate to="/oggi" replace />} />
         </Routes>
       </AppShell>
+
+      {/* Bussola e Visione sono un modale a schermo intero, non un pezzo della
+          Mappa: da quando li apre anche Oggi vivono qui, fuori dalle rotte. */}
+      <IdentityPanel open={identityOpen} onClose={() => setIdentityOpen(null)} />
 
       {/* Pannello sezione (ToDo/OneNote/OneDrive) — fisso rispetto al
           viewport, non alla rotta corrente, così resta aperto anche

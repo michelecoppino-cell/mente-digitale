@@ -6,7 +6,8 @@
   min-height: 0;
   overflow-y: auto;
   font-family: var(--font-ui);
-  padding-bottom: env(safe-area-inset-bottom, 0px);
+  /* La fascia dell'indicatore Home la aggiunge AppShell.css, insieme a tutte
+     le altre aree che scorrono fino al bordo inferiore. */
 }
 
 .diary-panel {

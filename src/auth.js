@@ -32,6 +32,11 @@ export function getLastAuthDebug() {
 }
 
 export async function initAuth() {
+  // initAuth viene chiamata una volta sola dal boot dell'app, ma in StrictMode
+  // l'effetto parte due volte: una seconda PublicClientApplication sullo stesso
+  // clientId significa due cache che si sovrascrivono a vicenda, ed è uno dei
+  // modi in cui una sessione valida sembra sparire.
+  if (msal) return msal;
   msal = new PublicClientApplication({
     auth: {
       clientId: CLIENT_ID,
@@ -43,7 +48,14 @@ export async function initAuth() {
       cacheLocation: 'localStorage',
       storeAuthStateInCookie: true, // fondamentale per Safari iOS
     },
-    system: { allowNativeBroker: false },
+    system: {
+      allowNativeBroker: false,
+      // I 6 secondi di default per l'iframe nascosto del rinnovo silenzioso
+      // sono tarati su un desktop: su iPhone in rete mobile scadono prima che
+      // Microsoft risponda, e un timeout viene trattato come «serve il login».
+      iframeHashTimeout: 12_000,
+      loadFrameTimeout: 12_000,
+    },
   });
   await msal.initialize();
 
@@ -66,6 +78,7 @@ export async function trySsoSilent() {
   try {
     const result = await msal.ssoSilent({ scopes: SCOPES, loginHint: getLoginHint() });
     rememberAccount(result.account);
+    setInteractionRequired(false);
     return result.account;
   } catch {
     return null;
@@ -102,17 +115,80 @@ export async function login() {
   return msal.loginRedirect({ scopes: SCOPES, loginHint: getLoginHint() });
 }
 
-export async function getToken() {
+// ── Sessione scaduta: si avvisa, non si scaraventa fuori ────────────────────
+//
+// Prima, il primo errore "serve interazione" faceva partire un
+// acquireTokenRedirect da dentro una fetch qualunque: la pagina spariva verso
+// Microsoft nel mezzo di quello che si stava facendo, e siccome ogni schermata
+// fa una decina di chiamate Graph in parallelo, bastava un token stanco perché
+// succedesse in continuazione. Ora il redirect parte solo da un gesto
+// dell'utente (il bottone «Riconnetti»), e nel frattempo l'app resta in piedi
+// con i dati che ha già.
+const listeners = new Set();
+let interactionRequired = false;
+
+/** @returns {boolean} true se serve un nuovo accesso interattivo */
+export function isInteractionRequired() { return interactionRequired; }
+
+/** @param {(needed: boolean) => void} fn @returns {() => void} */
+export function onInteractionRequired(fn) {
+  listeners.add(fn);
+  return () => listeners.delete(fn);
+}
+
+function setInteractionRequired(v) {
+  if (interactionRequired === v) return;
+  interactionRequired = v;
+  listeners.forEach(fn => { try { fn(v); } catch { /* listener rotto */ } });
+}
+
+/** Riporta l'utente su Microsoft — da chiamare solo da un click. */
+export async function reconnect() {
+  const account = getAccount();
+  return msal.acquireTokenRedirect(
+    account ? { scopes: SCOPES, account } : { scopes: SCOPES, loginHint: getLoginHint() }
+  );
+}
+
+// Una sola acquisizione alla volta. Senza questo, le dieci chiamate Graph che
+// parte una schermata all'apertura facevano dieci acquireTokenSilent in
+// parallelo: dieci iframe verso Microsoft, che su Safari finiscono in timeout
+// a vicenda e producono l'errore che poi portava al login.
+/** @type {Promise<{token: string, expiresOn: number}>|null} */
+let inFlight = null;
+
+/**
+ * Access token per Graph, con la sua scadenza vera.
+ * @param {boolean} [forceRefresh] ignora la cache MSAL e rinnova davvero
+ * @returns {Promise<{token: string, expiresOn: number}>}
+ */
+export function getToken(forceRefresh = false) {
+  if (inFlight && !forceRefresh) return inFlight;
+  const p = acquire(forceRefresh).finally(() => { if (inFlight === p) inFlight = null; });
+  inFlight = p;
+  return p;
+}
+
+async function acquire(forceRefresh) {
   const account = getAccount();
   if (!account) throw new Error('Non autenticato');
   try {
-    const r = await msal.acquireTokenSilent({ scopes: SCOPES, account });
-    return r.accessToken;
+    const r = await msal.acquireTokenSilent({ scopes: SCOPES, account, forceRefresh });
+    setInteractionRequired(false);
+    return { token: r.accessToken, expiresOn: r.expiresOn ? r.expiresOn.getTime() : Date.now() + 55 * 60_000 };
   } catch (e) {
-    if (e instanceof InteractionRequiredAuthError) {
-      logAuthRedirect(e);
-      return msal.acquireTokenRedirect({ scopes: SCOPES, account });
-    }
+    if (!(e instanceof InteractionRequiredAuthError)) throw e;
+    // Secondo tentativo silenzioso per un'altra strada: se il cookie di
+    // sessione Microsoft nel browser è ancora buono, ssoSilent riesce dove
+    // il refresh token in cache ha smesso di funzionare — ed è invisibile.
+    try {
+      const r = await msal.ssoSilent({ scopes: SCOPES, loginHint: getLoginHint() });
+      rememberAccount(r.account);
+      setInteractionRequired(false);
+      return { token: r.accessToken, expiresOn: r.expiresOn ? r.expiresOn.getTime() : Date.now() + 55 * 60_000 };
+    } catch { /* niente da fare in silenzio */ }
+    logAuthRedirect(e);
+    setInteractionRequired(true);
     throw e;
   }
 }

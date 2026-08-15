@@ -21,6 +21,38 @@
 }
 .map-view-toggle button.active { background: rgba(212,164,74,0.12); border-color: var(--accent); color: var(--accent); }
 
+/* Striscia «sessione scaduta» — fissa in fondo, sopra tutto tranne i modali.
+   Sta in fondo e non in cima perché in cima c'è già la topbar, e perché
+   l'indicatore Home dell'iPhone lascia lì una fascia libera che è esattamente
+   lo spazio che serve. Non blocca niente: l'app sotto continua a funzionare. */
+.auth-banner {
+  position: fixed;
+  z-index: 200;
+  left: 0; right: 0; bottom: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-4);
+  padding: var(--sp-4) var(--sp-5);
+  padding-bottom: calc(var(--sp-4) + env(safe-area-inset-bottom, 0px));
+  background: rgba(20, 23, 28, .97);
+  border-top: 1px solid var(--accent-line);
+  font-size: var(--fs-meta);
+  color: var(--text-3);
+}
+.auth-banner span { flex: 1; min-width: 0; line-height: 1.45; }
+.auth-banner button {
+  flex: 0 0 auto;
+  height: 36px;
+  padding: 0 var(--sp-5);
+  background: none;
+  border: 1px solid var(--accent-line);
+  border-radius: var(--r);
+  color: var(--accent);
+  font-family: var(--font-ui);
+  font-size: var(--fs-meta);
+  cursor: pointer;
+}
+
 /* Sync status */
 .sync-status { display: flex; align-items: center; gap: 7px; font-size: 11px; color: var(--muted); }
 

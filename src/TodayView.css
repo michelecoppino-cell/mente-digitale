@@ -118,9 +118,52 @@
   opacity: .75;
 }
 
-.today-event-time { flex: 0 0 auto; font-size: var(--fs-chip); color: var(--text-3); font-variant-numeric: tabular-nums; }
+.today-event-time {
+  flex: 0 0 auto;
+  /* Larghezza fissa: le colonne di sinistra ("09:30", "tutto il giorno",
+     "ven 22") hanno lunghezze molto diverse, e senza questa i titoli partono
+     ognuno da un punto suo. */
+  width: 82px;
+  font-size: var(--fs-chip);
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+.today-event-time.soon { color: var(--accent); }
 .today-event-title { flex: 1; min-width: 0; font-size: var(--fs-card); color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .today-event-cal { flex: 0 0 auto; font-size: var(--fs-micro); color: var(--muted); }
+
+/* Una ricorrenza è un evento del calendario come gli altri: stessa riga, con
+   il cerchietto delle iniziali al posto del bordo punteggiato. */
+.today-event.recurrence { border-left-style: solid; border-left-color: var(--accent-line); }
+
+/* «In arrivo»: le stesse righe, un gradino più indietro — non è roba di oggi.
+   Il separatore è una parola in mezzo a una linea, non un'altra testata: due
+   eyebrow di fila dentro la stessa sezione la spezzerebbero in due riquadri,
+   che è esattamente quello che c'era prima. */
+.today-ahead-sep {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-4);
+  margin: var(--sp-4) 0 var(--sp-1);
+  font-size: var(--fs-micro);
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--disabled);
+}
+.today-ahead-sep::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--line-soft);
+}
+
+.today-event.ahead {
+  min-height: 44px;
+  background: none;
+  border-left-color: var(--line);
+  opacity: 1;
+}
+.today-event.ahead .today-event-title { font-size: var(--fs-meta); color: var(--text-3); }
 
 /* Azioni */
 .today-action {
@@ -183,12 +226,46 @@
   overflow: hidden;
 }
 
-.today-rec { display: flex; align-items: center; gap: var(--sp-3); min-height: 38px; }
+/* ── Bussola ──────────────────────────────────────────────────────────── */
 
+.today-compass { gap: var(--sp-4); }
+
+.today-compass-wish {
+  font-family: var(--font-title);
+  font-size: 17px;
+  line-height: 1.45;
+  color: var(--text);
+}
+
+.today-compass-count { font-size: var(--fs-micro); color: var(--muted); }
+
+.today-compass-links { display: flex; flex-wrap: wrap; gap: var(--sp-5); }
+.today-compass-links button {
+  background: none;
+  border: none;
+  padding: 0;
+  font-family: var(--font-ui);
+  font-size: var(--fs-micro);
+  color: var(--accent);
+  cursor: pointer;
+}
+@media (hover: hover) {
+  .today-compass-links button:hover { text-decoration: underline; }
+}
+
+.today-compass-vision {
+  padding-top: var(--sp-4);
+  border-top: 1px solid var(--line);
+  font-size: var(--fs-micro);
+  line-height: 1.6;
+  color: var(--muted);
+}
+
+/* Cerchietto con le iniziali: il segno delle ricorrenze dentro l'agenda. */
 .today-rec-badge {
   flex: 0 0 auto;
-  width: 28px;
-  height: 28px;
+  width: 26px;
+  height: 26px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -197,10 +274,6 @@
   font-size: var(--fs-micro);
   color: var(--text-3);
 }
-
-.today-rec-name { flex: 1; min-width: 0; font-size: var(--fs-meta); color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.today-rec-date { flex: 0 0 auto; font-size: var(--fs-chip); color: var(--muted); font-variant-numeric: tabular-nums; }
-.today-rec-date.soon { color: var(--accent); }
 
 /* Riquadri bloccati: il contenuto c'è come forma, non come dato. */
 .today-card.locked { min-height: 150px; }
