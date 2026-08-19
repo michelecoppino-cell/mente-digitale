@@ -18,8 +18,11 @@ Microsoft To-Do e al calendario Outlook, e un diario con supporto AI via copia-i
 - **Oggi** — la home. Cosa c'è adesso (o subito dopo), l'agenda del calendario in sola lettura, le
   azioni programmate per il giorno, e a lato ricorrenze, diario e due riquadri ancora bloccati.
   Non ha una lista propria: è tutto una query sul giorno corrente.
-- **Sezioni** — il workbook di una sezione PARA in tre colonne: pagine OneNote, file OneDrive,
-  attività della sezione. È dove atterra il Pomodoro avviato dal Piano.
+- **Sezioni** — la plancia operativa di una sezione PARA in cinque colonne: pagine OneNote,
+  percorsi (cartelle, dischi di rete e link come pastiglie che al clic copiano il percorso, o
+  aprono il collegamento se sono OneDrive), attività della sezione, il dettaglio di quella
+  scelta e la giornata di oggi. L'elenco delle sezioni si toglie di mezzo appena se ne apre una.
+  È dove atterra il Pomodoro avviato dal Piano.
 - **Attività** — le cinque colonne del flusso GTD (Inbox · Prossime azioni · In attesa · Programmate · Un giorno):
   la colonna *è* lo stato, e trascinare una card fra colonne lo cambia su Microsoft To-Do. Un clic su una
   card apre il pannello di dettaglio — note, sottoattività, stima, scadenza, stato.
@@ -126,7 +129,7 @@ Sei destinazioni, ognuna con un indirizzo proprio. Il menù è il rail a sinistr
 | `#/oggi` | Home di sola lettura: adesso, agenda, azioni di oggi, recap |
 | `#/piano` | Il Piano: serbatoio, giornata a blocchi, capacità della giornata, pannello di dettaglio |
 | `#/attivita` | Le cinque colonne del flusso, con la lente Scadenza (`?vista=`, `?ctx=`) |
-| `#/sezioni/:id` | Workbook della sezione: pagine OneNote, file OneDrive, attività |
+| `#/sezioni/:id` | Plancia della sezione: OneNote, percorsi, attività, dettaglio, oggi |
 | `#/diario` | Diario |
 | `#/mappa` | La mappa mentale |
 

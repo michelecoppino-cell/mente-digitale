@@ -1,20 +1,12 @@
 import { useState, useEffect } from 'react';
-import { loadODLinksFromCloud, saveODLinksToCloud } from './api';
-
-const LOCAL_KEY = 'onedrive_links_v2';
-
-function loadLocal() {
-  try { return JSON.parse(localStorage.getItem(LOCAL_KEY) || '{}'); } catch { return {}; }
-}
-function saveLocal(obj) {
-  try { localStorage.setItem(LOCAL_KEY, JSON.stringify(obj)); } catch { /* quota piena — ignora */ }
-}
+import { loadODLinksFromCloud } from './api';
+import { loadLocalLinks, persistSectionLinks, saveLocalLinks } from './odLinks';
 
 // Riquadro OneDrive di una sezione (elenco link + form aggiungi/modifica).
 // Usato sia nel Panel di sezione (ToDo/OneNote/OneDrive) sia nel pannello
 // Dettagli task del Piano — stesso componente, stessi dati su OneDrive.
 export default function OneDriveBox({ sectionId, color = 'var(--accent)' }) {
-  const [odLinks, setOdLinks]     = useState(loadLocal());
+  const [odLinks, setOdLinks]     = useState(loadLocalLinks);
   const [odSyncing, setOdSyncing] = useState(false);
   const [addingOD, setAddingOD]   = useState(false);
   const [newODName, setNewODName] = useState('');
@@ -24,7 +16,7 @@ export default function OneDriveBox({ sectionId, color = 'var(--accent)' }) {
 
   useEffect(() => {
     loadODLinksFromCloud()
-      .then(cloud => { if (cloud && typeof cloud === 'object') { setOdLinks(cloud); saveLocal(cloud); } })
+      .then(cloud => { if (cloud && typeof cloud === 'object') { setOdLinks(cloud); saveLocalLinks(cloud); } })
       .catch(e => console.error('OD links sync', e));
   }, []);
 
@@ -33,18 +25,9 @@ export default function OneDriveBox({ sectionId, color = 'var(--accent)' }) {
   // dispositivi) riscrive l'intero file, e partire dalla propria copia in
   // stato avrebbe sovrascritto le modifiche fatte altrove nel frattempo.
   async function persist(sectionLinks) {
-    const localNext = { ...odLinks, [sectionId]: sectionLinks };
-    setOdLinks(localNext);
-    saveLocal(localNext);
+    setOdLinks(o => ({ ...o, [sectionId]: sectionLinks }));
     setOdSyncing(true);
-    try {
-      const cloud = await loadODLinksFromCloud();
-      const base = (cloud && typeof cloud === 'object') ? cloud : localNext;
-      const merged = { ...base, [sectionId]: sectionLinks };
-      await saveODLinksToCloud(merged);
-      setOdLinks(merged);
-      saveLocal(merged);
-    } catch (e) { console.error('OD sync error', e); }
+    setOdLinks(await persistSectionLinks(sectionId, sectionLinks, { ...odLinks, [sectionId]: sectionLinks }));
     setOdSyncing(false);
   }
 
@@ -78,7 +61,10 @@ export default function OneDriveBox({ sectionId, color = 'var(--accent)' }) {
 
   async function handleSaveEdit() {
     const existing = odLinks[sectionId] || [];
+    // `...l` tiene quello che il form non conosce — le categorie della colonna
+    // Percorsi — invece di azzerarlo a ogni modifica fatta da qui.
     const updated = existing.map((l, i) => i === editingIdx ? {
+      ...l,
       name: newODName.trim(),
       url: newODUrl.trim() || null,
       urlPc: newODUrlPc.trim() || null,

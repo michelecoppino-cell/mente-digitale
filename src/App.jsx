@@ -977,6 +977,7 @@ export default function App() {
               todoListsMap={todoListsMap}
               tasks={scheduledTasks || []}
               pagesCache={pagesCache}
+              plans={dailyPlans}
               onTaskRemoved={handleTaskRemoved}
               onTaskPatched={handleTaskPatched}
               onTaskRestored={handleTaskRestored}
