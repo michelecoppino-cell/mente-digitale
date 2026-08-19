@@ -762,6 +762,22 @@ export default function App() {
     }
   }
 
+  // Il piano di oggi cambiato da Sezioni: si trascina un'attività sulla
+  // colonna Oggi della plancia e il blocco nasce lì. È la stessa scrittura del
+  // Piano — stesso file su OneDrive, stessa cache — perché è lo stesso piano:
+  // la plancia non ne tiene una copia sua.
+  async function handlePlansChanged(next) {
+    const previous = dailyPlans;
+    setDailyPlans(next);
+    try {
+      await saveDailyPlans(next);
+      queryClient.setQueryData(qk.dailyPlans(), next);
+    } catch (e) {
+      console.error('salvataggio piano da Sezioni', e);
+      setDailyPlans(previous);
+    }
+  }
+
   // Completare un'azione da Oggi tocca due cose: il task su To-Do e il blocco
   // nel piano del giorno. Il blocco va segnato comunque — è lo storico della
   // giornata, e serve al Diario — anche se il task nel frattempo non esiste
@@ -978,6 +994,7 @@ export default function App() {
               tasks={scheduledTasks || []}
               pagesCache={pagesCache}
               plans={dailyPlans}
+              onPlansChanged={handlePlansChanged}
               onTaskRemoved={handleTaskRemoved}
               onTaskPatched={handleTaskPatched}
               onTaskRestored={handleTaskRestored}

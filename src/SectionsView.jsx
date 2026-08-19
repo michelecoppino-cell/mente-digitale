@@ -83,12 +83,14 @@ function flattenSections(notebooks, sectionsMap) {
  * @param {import('./types').TodoTask[]} props.tasks
  * @param {{ current: Record<string, import('./types').Page[]> }} props.pagesCache
  * @param {Record<string, {blocks?: any[]}>} [props.plans]  i piani giornalieri, per la colonna Oggi
+ * @param {(plans: Record<string, any>) => void} [props.onPlansChanged]  il piano di oggi
+ *        cambiato trascinando un'attività sulla colonna Oggi
  * @param {(listId: string, taskId: string) => void} [props.onTaskRemoved]
  * @param {(listId: string, taskId: string, patch: Object) => void} [props.onTaskPatched]
  * @param {(listId: string, task: import('./types').TodoTask) => void} [props.onTaskRestored]
  */
 export default function SectionsView({
-  notebooks, sectionsMap, todoListsMap, tasks, pagesCache, plans,
+  notebooks, sectionsMap, todoListsMap, tasks, pagesCache, plans, onPlansChanged,
   onTaskRemoved, onTaskPatched, onTaskRestored,
 }) {
   const { sectionId } = useParams();
@@ -152,6 +154,15 @@ export default function SectionsView({
     () => (tasks || []).filter(t => list && t._listId === list.id),
     [tasks, list]
   );
+
+  // I task che hanno già un blocco nel piano di oggi: la riga lo segna, così
+  // non li si trascina due volte. È la stessa cosa che il pool del Piano fa
+  // con i task già programmati.
+  const scheduledTaskIds = useMemo(() => {
+    const d = new Date();
+    const today = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    return new Set((plans?.[today]?.blocks || []).map(b => b.taskId).filter(Boolean));
+  }, [plans]);
 
   const pomodoroTaskId = session?.taskId || null;
   // La colonna Dettagli non è mai vuota se c'è qualcosa da mostrare: senza una
@@ -308,10 +319,18 @@ export default function SectionsView({
                 const est = estimateLabel(t);
                 return (
                   <button
-                    className={`sv-task${t.id === detailTask?.id ? ' selected' : ''}${t.id === pomodoroTaskId ? ' current' : ''}`}
+                    className={`sv-task${t.id === detailTask?.id ? ' selected' : ''}${t.id === pomodoroTaskId ? ' current' : ''}${scheduledTaskIds.has(t.id) ? ' scheduled' : ''}`}
                     key={t.id}
+                    draggable
+                    onDragStart={e => {
+                      // Lo stesso payload del pool del Piano: la colonna Oggi
+                      // qui accanto e la griglia del Piano leggono lo stesso
+                      // trascinamento.
+                      e.dataTransfer.setData('text/plain', JSON.stringify({ type: 'task', task: t }));
+                      e.dataTransfer.effectAllowed = 'move';
+                    }}
                     onClick={() => setSelectedTaskId(t.id)}
-                    title="Apri note, sottoattività e stato">
+                    title="Apri note, sottoattività e stato · trascina su Oggi per programmarla">
                     <span
                       className="sv-task-dot"
                       style={/** @type {import('react').CSSProperties} */ ({ background: contextColor(taskContext(t)) })}
@@ -355,7 +374,13 @@ export default function SectionsView({
 
           {/* Oggi — dove sta questa attività nella giornata */}
           <section className="sv-col sv-col-timeline">
-            <SectionTimeline plans={plans} listName={active.displayName} />
+            <SectionTimeline
+              plans={plans}
+              listName={active.displayName}
+              color={colorMap[active.displayName.toLowerCase()]}
+              onPlansChanged={onPlansChanged}
+              onPickTask={setSelectedTaskId}
+            />
           </section>
         </div>
       </div>

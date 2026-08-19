@@ -209,11 +209,11 @@
 }
 .sv-col:last-child { border-right: none; }
 
-.sv-col-onenote  { flex: 0 0 172px; width: 172px; }
-.sv-col-paths    { flex: 1 1 auto; min-width: 300px; }
-.sv-col-tasks    { flex: 0 0 300px; width: 300px; }
-.sv-col-detail   { flex: 0 0 320px; width: 320px; background: var(--surface-2); }
-.sv-col-timeline { flex: 0 0 268px; width: 268px; background: var(--bg-rail); }
+.sv-col-onenote  { flex: 0 0 258px; width: 258px; }
+.sv-col-paths    { flex: 1 1 auto; min-width: 150px; }
+.sv-col-tasks    { flex: 0 0 390px; width: 390px; }
+.sv-col-detail   { flex: 0 0 306px; width: 306px; background: var(--surface-2); }
+.sv-col-timeline { flex: 0 0 252px; width: 252px; background: var(--bg-rail); }
 
 /* Testata di colonna: l'etichetta e, se serve, un bottone. Resta ferma mentre
    il corpo della colonna scorre. */
@@ -260,13 +260,13 @@
 
 .sv-empty { font-size: var(--fs-micro); line-height: 1.6; color: var(--disabled); }
 
-/* Pagine OneNote — l'albero si separa da solo con le proprie linee. La colonna
-   è la metà di prima: sono titoli da riconoscere, non testo da leggere, e a
-   questa misura ce ne stanno una quindicina senza scorrere. */
+/* Pagine OneNote — l'albero si separa da solo con le proprie linee. I titoli
+   delle pagine sono nomi lunghi («Elenco note Alessandro pre ferie»): la
+   colonna sta larga abbastanza da leggerli senza troncarli a metà. */
 .sv-pages { display: flex; flex-direction: column; }
 .sv-col-onenote .page-link {
-  font-size: var(--fs-chip);
-  padding: 3px 4px;
+  font-size: var(--fs-meta);
+  padding: 4px 4px;
   border-bottom: none;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -302,10 +302,12 @@
   background: linear-gradient(90deg, var(--line), transparent);
 }
 
-/* Le pastiglie: tante per riga quante ce ne stanno, mai più strette di 118px. */
+/* Le pastiglie: tante per riga quante ce ne stanno. La colonna è quella che
+   cede spazio alle altre, quindi la misura minima è bassa — meglio due
+   pastiglie per riga che una striscia che scorre in orizzontale. */
 .sv-pills {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(118px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(108px, 1fr));
   gap: var(--sp-2);
 }
 
@@ -486,13 +488,21 @@
 .sv-task-title {
   flex: 1;
   min-width: 0;
-  font-size: var(--fs-chip);
+  font-size: var(--fs-meta);
   color: var(--text-2);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .sv-task-est { flex: 0 0 auto; font-size: var(--fs-micro); color: var(--disabled); font-variant-numeric: tabular-nums; }
+
+/* Si trascina sulla colonna Oggi per programmarla: la mano lo dice. */
+.sv-task { cursor: grab; }
+.sv-task:active { cursor: grabbing; }
+
+/* Quella che ha già un blocco nel piano di oggi: il pallino si svuota, come
+   nel pool del Piano — è ancora trascinabile, ma si vede che c'è già. */
+.sv-task.scheduled .sv-task-dot { background: none !important; box-shadow: inset 0 0 0 1px var(--muted); }
 
 /* Quella aperta nel dettaglio, e quella su cui gira il Pomodoro. */
 .sv-task.selected { background: var(--accent-tint); }
@@ -534,6 +544,7 @@
    si spostano sulla griglia grande, non qui. */
 .sv-tl-block {
   position: absolute;
+  z-index: 1;
   left: 42px;
   right: 0;
   display: flex;
@@ -552,6 +563,53 @@
   background: rgba(127, 180, 136, .12);
 }
 .sv-tl-block.done { opacity: .5; }
+.sv-tl-block[draggable='true'] { cursor: grab; }
+.sv-tl-block[draggable='true']:active { cursor: grabbing; }
+
+/* Togli dal piano: compare sul blocco quando ci si passa sopra, così non fa
+   rumore su una giornata piena. */
+.sv-tl-block-del {
+  position: absolute;
+  top: 1px;
+  right: 1px;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  background: none;
+  border: none;
+  border-radius: var(--r-sm);
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity var(--t), color var(--t);
+}
+@media (hover: hover) {
+  .sv-tl-block:hover .sv-tl-block-del { opacity: 1; }
+  .sv-tl-block-del:hover { color: var(--danger); }
+}
+
+/* Dove finirà il blocco che si sta trascinando. */
+.sv-tl-drop {
+  position: absolute;
+  left: 42px;
+  right: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  height: 0;
+  border-top: 1px dashed var(--accent);
+  pointer-events: none;
+}
+.sv-tl-drop-time {
+  padding: 0 var(--sp-1);
+  background: var(--bg-rail);
+  font-size: 10px;
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+  transform: translateY(-50%);
+}
 .sv-tl-block-meta {
   font-size: 10px;
   color: var(--muted);
@@ -581,13 +639,20 @@
 .sv-tl-now-line { flex: 1; height: 1px; background: linear-gradient(90deg, var(--accent), rgba(212, 164, 74, .15)); }
 .sv-tl-now-time { flex: 0 0 auto; font-size: 10px; color: var(--accent); font-variant-numeric: tabular-nums; }
 
-.sv-tl-empty { margin-top: var(--sp-4); }
+/* Il messaggio della giornata vuota sta in cima alla griglia, non in fondo:
+   la griglia è alta 16 ore e in fondo non lo si vedrebbe. */
+.sv-tl-empty {
+  position: absolute;
+  top: 4px;
+  left: 46px;
+  right: 0;
+}
 
 /* ── Schermi stretti ──────────────────────────────────────────────────────
    Sotto una certa larghezza la striscia scorre in orizzontale: schiacciare
    cinque colonne in mezzo schermo non le rende leggibili, le rende inutili. */
 @media (max-width: 1450px) {
-  .sv-col-paths { flex: 0 0 380px; width: 380px; }
+  .sv-col-paths { flex: 0 0 300px; width: 300px; }
 }
 
 @media (max-width: 860px) {
