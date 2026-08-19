@@ -1,4 +1,5 @@
-/* Sezioni — elenco 248px | workbook a tre colonne. */
+/* Sezioni — la plancia operativa: elenco 232px (che si toglie di mezzo) e
+   cinque colonne di lavoro — OneNote, Percorsi, Attività, Dettagli, Oggi. */
 
 .sv {
   flex: 1;
@@ -9,8 +10,8 @@
 /* ── Elenco ───────────────────────────────────────────────────────────── */
 
 .sv-list {
-  flex: 0 0 248px;
-  width: 248px;
+  flex: 0 0 232px;
+  width: 232px;
   min-height: 0;
   overflow-y: auto;
   padding: var(--sp-4);
@@ -107,7 +108,7 @@
   display: flex;
   align-items: center;
   gap: var(--sp-3);
-  min-height: 40px;
+  min-height: 34px;
   padding: 0 var(--sp-3);
   background: none;
   border: none;
@@ -127,7 +128,8 @@
 .sv-list-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sv-list-count { flex: 0 0 auto; font-size: var(--fs-micro); color: var(--muted); font-variant-numeric: tabular-nums; }
 
-/* ── Workbook ─────────────────────────────────────────────────────────── */
+
+/* ── Plancia ──────────────────────────────────────────────────────────── */
 
 .sv-workbook {
   flex: 1;
@@ -147,73 +149,331 @@
 
 .sv-head {
   flex: 0 0 auto;
-  padding: var(--sp-6) var(--sp-7);
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-4);
+  padding: var(--sp-5) var(--sp-6) var(--sp-4);
   border-bottom: 1px solid var(--line);
+}
+
+.sv-head-text { min-width: 0; }
+
+/* La freccia che riapre l'elenco delle sezioni. Sta dove stava la colonna, in
+   testa al contenuto: è l'unica cosa che si sposta quando l'elenco si chiude. */
+.sv-nav-open {
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
+  margin-top: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  color: var(--text-3);
+  font-size: 14px;
+  cursor: pointer;
+  transition: background var(--t), border-color var(--t), color var(--t);
+}
+@media (hover: hover) {
+  .sv-nav-open:hover { background: var(--accent-tint); border-color: var(--accent-line); color: var(--accent); }
 }
 
 .sv-title {
   font-family: var(--font-title);
   font-size: 26px;
+  line-height: 1.1;
   font-weight: 400;
   color: var(--text);
 }
 
-.sv-subtitle { margin-top: var(--sp-2); font-size: var(--fs-meta); color: var(--muted); }
+.sv-subtitle { margin-top: var(--sp-2); font-size: var(--fs-micro); color: var(--muted); }
 
+/* Le cinque colonne. Larghezze fisse tranne Percorsi, che prende quel che
+   avanza: è l'unica che guadagna qualcosa ad essere larga, perché le pastiglie
+   si dispongono su più file. Sotto i 1450px la striscia scorre in orizzontale
+   invece di schiacciare tutto. */
 .sv-cols {
   flex: 1;
   min-height: 0;
-  display: grid;
-  grid-template-columns: 1fr 1fr 300px;
+  display: flex;
+  overflow-x: auto;
 }
 
 .sv-col {
-  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--line-soft);
+}
+.sv-col:last-child { border-right: none; }
+
+.sv-col-onenote  { flex: 0 0 172px; width: 172px; }
+.sv-col-paths    { flex: 1 1 auto; min-width: 300px; }
+.sv-col-tasks    { flex: 0 0 300px; width: 300px; }
+.sv-col-detail   { flex: 0 0 320px; width: 320px; background: var(--surface-2); }
+.sv-col-timeline { flex: 0 0 268px; width: 268px; background: var(--bg-rail); }
+
+/* Testata di colonna: l'etichetta e, se serve, un bottone. Resta ferma mentre
+   il corpo della colonna scorre. */
+.sv-col-head {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-4) var(--sp-4) var(--sp-3);
+}
+.sv-col-label { flex: 1; min-width: 0; color: var(--accent); }
+.sv-col-sync { font-size: var(--fs-micro); color: var(--muted); }
+
+.sv-col-body {
+  flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: var(--sp-5);
-  border-right: 1px solid var(--line);
+  padding: 0 var(--sp-4) var(--sp-6);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+}
+
+/* Bottone-icona di testata: la matita dei percorsi, l'apri-sezione di OneNote. */
+.sv-icon-btn {
+  flex: 0 0 auto;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  color: var(--muted);
+  font-size: 12px;
+  cursor: pointer;
+  transition: background var(--t), border-color var(--t), color var(--t);
+}
+@media (hover: hover) {
+  .sv-icon-btn:hover { border-color: var(--accent-line); color: var(--accent); }
+}
+.sv-icon-btn.active { border-color: var(--accent-line); background: var(--accent-tint); color: var(--accent); }
+
+.sv-empty { font-size: var(--fs-micro); line-height: 1.6; color: var(--disabled); }
+
+/* Pagine OneNote — l'albero si separa da solo con le proprie linee. La colonna
+   è la metà di prima: sono titoli da riconoscere, non testo da leggere, e a
+   questa misura ce ne stanno una quindicina senza scorrere. */
+.sv-pages { display: flex; flex-direction: column; }
+.sv-col-onenote .page-link {
+  font-size: var(--fs-chip);
+  padding: 3px 4px;
+  border-bottom: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-2);
+}
+.sv-col-onenote .page-expand-btn { font-size: 10px; }
+
+/* ── Percorsi ─────────────────────────────────────────────────────────── */
+
+.sv-edit-note { font-size: var(--fs-micro); color: var(--accent); }
+
+.sv-path-group { display: flex; flex-direction: column; gap: var(--sp-2); margin-bottom: var(--sp-5); }
+
+.sv-path-group-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-3);
+}
+.sv-path-cat {
+  flex: 0 0 auto;
+  font-size: var(--fs-micro);
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+.sv-path-hint { flex: 0 0 auto; font-size: var(--fs-micro); color: var(--disabled); }
+/* La linea che chiude la testata di categoria: parte dal bordo e si spegne. */
+.sv-path-rule {
+  flex: 1;
+  min-width: 0;
+  height: 1px;
+  background: linear-gradient(90deg, var(--line), transparent);
+}
+
+/* Le pastiglie: tante per riga quante ce ne stanno, mai più strette di 118px. */
+.sv-pills {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(118px, 1fr));
+  gap: var(--sp-2);
+}
+
+.sv-pill {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+  padding: var(--sp-2) var(--sp-3);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 99px;
+  color: var(--text-2);
+  font-family: var(--font-ui);
+  font-size: var(--fs-chip);
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--t), border-color var(--t), color var(--t);
+}
+@media (hover: hover) {
+  .sv-pill:hover { background: var(--accent-tint); border-color: var(--accent-line); color: var(--text); }
+}
+.sv-pill-icon { flex: 0 0 auto; font-size: 11px; opacity: .85; }
+.sv-pill-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Il momento dopo il clic: la pastiglia dice cosa ha fatto, e lo dice al posto
+   del proprio nome — è l'unica conferma che si guarda davvero. */
+.sv-pill.flashed {
+  background: var(--accent-tint);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* Modifica: una scheda per percorso. */
+.sv-path-card {
   display: flex;
   flex-direction: column;
   gap: var(--sp-2);
+  padding: var(--sp-3);
+  margin-bottom: var(--sp-2);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
 }
-.sv-col:last-child { border-right: none; }
-.sv-col > .eyebrow { margin-bottom: var(--sp-2); }
+.sv-path-card-top { display: flex; align-items: center; gap: var(--sp-2); }
 
-.sv-empty { font-size: var(--fs-chip); line-height: 1.6; color: var(--disabled); }
+.sv-path-input {
+  flex: 1;
+  min-width: 0;
+  padding: var(--sp-2) var(--sp-3);
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  color: var(--text-2);
+  font-family: var(--font-ui);
+  font-size: var(--fs-chip);
+}
+.sv-path-input.mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: var(--fs-micro);
+  color: var(--text-3);
+}
+.sv-path-input::placeholder { color: var(--disabled); }
+.sv-path-input:focus { border-color: var(--accent-line); outline: none; }
 
-/* Pagine OneNote */
-/* L'albero delle pagine: le righe si separano da sole con la propria linea
-   (.page-link in App.css), quindi niente gap ereditato dalla colonna. */
-.sv-pages { display: flex; flex-direction: column; }
-
-/* Apri l'intera sezione nell'app OneNote del computer. */
-.sv-open-section {
-  align-self: flex-start;
-  padding: var(--sp-2) 0;
+.sv-path-del {
+  flex: 0 0 auto;
+  width: 26px;
+  height: 26px;
   background: none;
   border: none;
-  color: var(--onenote);
+  border-radius: var(--r-sm);
+  color: var(--muted);
+  font-size: 12px;
+  cursor: pointer;
+  transition: background var(--t), color var(--t);
+}
+@media (hover: hover) {
+  .sv-path-del:hover { background: var(--surface-2); color: var(--danger); }
+}
+
+.sv-path-cats { display: flex; flex-wrap: wrap; gap: var(--sp-1); }
+
+.sv-cat-chip {
+  padding: 2px var(--sp-3);
+  background: none;
+  border: 1px solid var(--line);
+  border-radius: 99px;
+  color: var(--muted);
   font-family: var(--font-ui);
   font-size: var(--fs-micro);
   cursor: pointer;
+  transition: background var(--t), border-color var(--t), color var(--t);
 }
 @media (hover: hover) {
-  .sv-open-section:hover { text-decoration: underline; }
+  .sv-cat-chip:hover { border-color: var(--accent-line); color: var(--text-3); }
+}
+.sv-cat-chip.on { background: var(--accent-tint); border-color: var(--accent-line); color: var(--accent); }
+.sv-cat-chip.add { padding: 2px var(--sp-2); }
+
+.sv-cat-new {
+  width: 116px;
+  padding: 2px var(--sp-3);
+  background: var(--bg);
+  border: 1px solid var(--accent-line);
+  border-radius: 99px;
+  color: var(--text-2);
+  font-family: var(--font-ui);
+  font-size: var(--fs-micro);
+}
+.sv-cat-new:focus { outline: none; }
+
+.sv-path-add {
+  padding: var(--sp-3);
+  background: none;
+  border: 1px dashed var(--line);
+  border-radius: var(--r);
+  color: var(--muted);
+  font-family: var(--font-ui);
+  font-size: var(--fs-chip);
+  cursor: pointer;
+  transition: border-color var(--t), color var(--t);
+}
+@media (hover: hover) {
+  .sv-path-add:hover { border-color: var(--accent-line); color: var(--accent); }
 }
 
-/* Attività della sezione — un bottone: al clic si apre il cassetto di
-   dettaglio, lo stesso pannello che il Piano ha nella terza colonna. */
+.sv-path-done {
+  align-self: flex-start;
+  margin-top: var(--sp-2);
+  padding: var(--sp-2) var(--sp-5);
+  background: var(--accent-tint);
+  border: 1px solid var(--accent-line);
+  border-radius: var(--r-sm);
+  color: var(--accent);
+  font-family: var(--font-ui);
+  font-size: var(--fs-chip);
+  cursor: pointer;
+}
+
+/* Il messaggio che conferma la copia. In fondo allo schermo e non accanto alla
+   pastiglia: la mano è già altrove quando lo si legge. */
+.sv-toast {
+  position: fixed;
+  left: 50%;
+  bottom: 22px;
+  transform: translateX(-50%);
+  z-index: 60;
+  padding: var(--sp-3) var(--sp-5);
+  background: var(--surface);
+  border: 1px solid var(--accent-line);
+  border-radius: var(--r);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, .65);
+  color: var(--text);
+  font-size: var(--fs-chip);
+  pointer-events: none;
+}
+
+/* ── Attività ─────────────────────────────────────────────────────────── */
+
 .sv-task {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: var(--sp-3);
   width: 100%;
-  min-height: 44px;
-  padding: 0 var(--sp-2);
+  padding: var(--sp-2) var(--sp-2);
   background: none;
   border: none;
-  border-bottom: 1px solid var(--line-soft);
+  border-radius: var(--r-sm);
   font-family: var(--font-ui);
   text-align: left;
   cursor: pointer;
@@ -222,19 +482,112 @@
 @media (hover: hover) {
   .sv-task:hover { background: rgba(255, 255, 255, 0.04); }
 }
-.sv-task:last-child { border-bottom: none; }
-.sv-task-dot { flex: 0 0 auto; width: 6px; height: 6px; border-radius: 50%; }
-.sv-task-title { flex: 1; min-width: 0; font-size: var(--fs-meta); color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sv-task-dot { flex: 0 0 auto; width: 6px; height: 6px; margin-top: 6px; border-radius: 50%; }
+.sv-task-title {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--fs-chip);
+  color: var(--text-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sv-task-est { flex: 0 0 auto; font-size: var(--fs-micro); color: var(--disabled); font-variant-numeric: tabular-nums; }
 
-/* Quella su cui gira il Pomodoro. */
-.sv-task.current { background: var(--accent-tint); border-radius: var(--r-sm); padding: 0 var(--sp-3); }
-.sv-task.current .sv-task-title { color: var(--accent); }
+/* Quella aperta nel dettaglio, e quella su cui gira il Pomodoro. */
+.sv-task.selected { background: var(--accent-tint); }
+.sv-task.selected .sv-task-title { color: var(--accent); }
+.sv-task.current .sv-task-dot { box-shadow: 0 0 0 2px var(--accent-tint); }
 
-/* ── Schermi stretti ──────────────────────────────────────────────────── */
+/* ── Dettagli ─────────────────────────────────────────────────────────────
+   Il pannello arriva dal Piano, dove è la terza colonna di una griglia larga.
+   Qui la colonna è già il contenitore: si tolgono il fondo e i margini suoi,
+   e si stringe la tipografia di un gradino. */
+.sv-col-detail .planner-task-detail {
+  width: 100%;
+  min-width: 0;
+  padding: 0;
+  background: none;
+  border: none;
+  overflow: visible;
+}
+.sv-col-detail .planner-task-detail-header { padding-right: 0; }
+.sv-col-detail .planner-task-detail-title { font-size: var(--fs-card); }
 
-@media (max-width: 1100px) {
-  .sv-cols { grid-template-columns: 1fr; overflow-y: auto; }
-  .sv-col { border-right: none; border-bottom: 1px solid var(--line); overflow: visible; }
+/* ── Oggi ─────────────────────────────────────────────────────────────── */
+
+.sv-timeline-body { padding-top: var(--sp-2); }
+.sv-timeline { position: relative; }
+
+.sv-tl-row { display: flex; align-items: center; gap: var(--sp-2); }
+.sv-tl-time {
+  flex: 0 0 34px;
+  font-size: var(--fs-micro);
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.sv-tl-time.half { color: var(--disabled); }
+.sv-tl-line { flex: 1; height: 1px; background: var(--line); }
+.sv-tl-line.half { background: var(--line-soft); }
+
+/* Un blocco del Piano, messo dove sta nella giornata. Sola lettura: gli orari
+   si spostano sulla griglia grande, non qui. */
+.sv-tl-block {
+  position: absolute;
+  left: 42px;
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: var(--sp-1) var(--sp-2);
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--muted);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+}
+.sv-tl-block.mine {
+  border-color: rgba(127, 180, 136, .45);
+  border-left-color: var(--ctx-lavoro);
+  background: rgba(127, 180, 136, .12);
+}
+.sv-tl-block.done { opacity: .5; }
+.sv-tl-block-meta {
+  font-size: 10px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sv-tl-block.mine .sv-tl-block-meta { color: var(--ctx-lavoro); }
+.sv-tl-block-title {
+  font-size: var(--fs-micro);
+  line-height: 1.35;
+  color: var(--text-2);
+  overflow: hidden;
+}
+
+/* L'ora adesso. */
+.sv-tl-now {
+  position: absolute;
+  left: 0;
+  right: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  pointer-events: none;
+}
+.sv-tl-now-dot { flex: 0 0 auto; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); }
+.sv-tl-now-line { flex: 1; height: 1px; background: linear-gradient(90deg, var(--accent), rgba(212, 164, 74, .15)); }
+.sv-tl-now-time { flex: 0 0 auto; font-size: 10px; color: var(--accent); font-variant-numeric: tabular-nums; }
+
+.sv-tl-empty { margin-top: var(--sp-4); }
+
+/* ── Schermi stretti ──────────────────────────────────────────────────────
+   Sotto una certa larghezza la striscia scorre in orizzontale: schiacciare
+   cinque colonne in mezzo schermo non le rende leggibili, le rende inutili. */
+@media (max-width: 1450px) {
+  .sv-col-paths { flex: 0 0 380px; width: 380px; }
 }
 
 @media (max-width: 860px) {
@@ -247,12 +600,3 @@
     border-bottom: 1px solid var(--line);
   }
 }
-
-/* OneDriveBox arriva dal pannello laterale della mappa, dove viveva dentro una
-   striscia da 385px con la sua intestazione e il suo padding. Qui la colonna è
-   già un contenitore: si tolgono i margini che raddoppiavano. */
-.sv-col-drive { padding-top: var(--sp-5); }
-.sv-col-drive .panel-col-header { padding: 0 0 var(--sp-3); }
-.sv-col-drive .panel-col-body { padding: 0; }
-.sv-col-drive .od-add-form { padding: var(--sp-2) 0; }
-.sv-col-drive .od-link-row { padding: var(--sp-2) 0; min-height: 46px; }

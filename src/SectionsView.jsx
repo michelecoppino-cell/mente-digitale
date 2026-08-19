@@ -1,24 +1,30 @@
 // @ts-check
-// Sezioni: il workbook di una sezione PARA — pagine OneNote, file OneDrive e
-// attività collegate, uno accanto all'altro.
+// Sezioni: la plancia operativa di un progetto — pagine OneNote, percorsi,
+// attività, il dettaglio di quella scelta e la giornata di oggi, tutto in una
+// schermata sola.
 //
-// Prima queste tre cose stavano in un pannello che si apriva a destra della
-// mappa mentale: una striscia da 385px, raggiungibile solo dalla mappa e solo
-// una alla volta, senza un indirizzo proprio. Qui la sezione è una rotta, e il
-// posto di lavoro è la pagina intera.
+// Prima queste cose stavano in un pannello che si apriva a destra della mappa
+// mentale: una striscia da 385px, raggiungibile solo dalla mappa e solo una
+// alla volta, senza un indirizzo proprio. Poi sono diventate tre colonne con
+// un cassetto che si apriva sopra per il dettaglio di un'attività. Il cassetto
+// copriva proprio le cose che servono mentre si lavora — le pagine e i
+// percorsi — quindi ora il dettaglio è una colonna, e accanto c'è la giornata:
+// scegliere l'attività, leggerne le note e vedere quando la si fa sono tre
+// gesti che si fanno di seguito, senza aprire e chiudere niente.
 //
-// È anche dove atterra il Pomodoro: avviarlo dal Piano porta qui, sul workbook
-// della sezione a cui appartiene l'attività.
+// È anche dove atterra il Pomodoro: avviarlo dal Piano porta qui, sulla
+// plancia della sezione a cui appartiene l'attività.
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { getPages } from './api';
 import { paraSectionLabel, sectionRole } from './paraConfig';
 import { buildListColorMap } from './plannerShared';
 import { usePomodoro } from './pomodoroContext';
-import { taskContext, contextColor } from './taskModel';
-import OneDriveBox from './OneDriveBox';
+import { taskContext, contextColor, parseEstimate } from './taskModel';
+import SectionPaths from './SectionPaths';
+import SectionTimeline from './SectionTimeline';
 import Skeleton from './Skeleton';
-import TaskDetailDrawer from './TaskDetailDrawer';
+import TaskDetailPanel from './TaskDetailPanel';
 import { PageTree } from './Panel';
 import { openProtocol } from './protocolLink';
 import './SectionsView.css';
@@ -40,6 +46,17 @@ const ROLE_LABELS = Object.fromEntries(ROLES.map(r => [r.key, r.label]));
 /** L'archivio parte chiuso: c'è per essere ritrovato, non per stare fra i
  *  piedi ogni volta che si cerca una sezione viva. */
 const DEFAULT_FOLDED = { archive: true };
+
+/** La stima scritta nelle note, come la si legge in fondo alla riga
+ *  dell'attività. Solo quella davvero scritta: mostrare la mezz'ora di
+ *  partenza su tutte le righe sarebbe un numero inventato. */
+function estimateLabel(/** @type {import('./types').TodoTask} */ t) {
+  const min = parseEstimate(/** @type {any} */ (t)?.body?.content);
+  if (!min) return null;
+  const h = Math.floor(min / 60), m = min % 60;
+  if (!h) return `${m}m`;
+  return m ? `${h}h${String(m).padStart(2, '0')}` : `${h}h`;
+}
 
 /**
  * Tutte le sezioni di tutti i taccuini, in piatto, con il taccuino di
@@ -65,12 +82,13 @@ function flattenSections(notebooks, sectionsMap) {
  * @param {Record<string, {id: string, displayName: string}>} props.todoListsMap
  * @param {import('./types').TodoTask[]} props.tasks
  * @param {{ current: Record<string, import('./types').Page[]> }} props.pagesCache
+ * @param {Record<string, {blocks?: any[]}>} [props.plans]  i piani giornalieri, per la colonna Oggi
  * @param {(listId: string, taskId: string) => void} [props.onTaskRemoved]
  * @param {(listId: string, taskId: string, patch: Object) => void} [props.onTaskPatched]
  * @param {(listId: string, task: import('./types').TodoTask) => void} [props.onTaskRestored]
  */
 export default function SectionsView({
-  notebooks, sectionsMap, todoListsMap, tasks, pagesCache,
+  notebooks, sectionsMap, todoListsMap, tasks, pagesCache, plans,
   onTaskRemoved, onTaskPatched, onTaskRestored,
 }) {
   const { sectionId } = useParams();
@@ -79,8 +97,12 @@ export default function SectionsView({
   const [query, setQuery] = useState('');
   // Le famiglie PARA chiuse: solo l'archivio, di partenza.
   const [folds, setFolds] = useState(/** @type {Record<string, boolean>} */ (DEFAULT_FOLDED));
-  // L'attività aperta nel cassetto di dettaglio — lo stesso pannello del Piano.
-  const [openTask, setOpenTask] = useState(/** @type {import('./types').TodoTask|null} */ (null));
+  // L'elenco delle sezioni: si sceglie una sezione e si toglie di mezzo, così
+  // le cinque colonne del lavoro hanno tutta la larghezza. La freccetta in
+  // testata lo fa tornare.
+  const [navOpen, setNavOpen] = useState(true);
+  // L'attività aperta nella colonna Dettagli.
+  const [selectedTaskId, setSelectedTaskId] = useState(/** @type {string|null} */ (null));
 
   const sections = useMemo(() => flattenSections(notebooks, sectionsMap), [notebooks, sectionsMap]);
   const active = sections.find(s => s.id === sectionId) || null;
@@ -132,9 +154,14 @@ export default function SectionsView({
   );
 
   const pomodoroTaskId = session?.taskId || null;
-  // Il task aperto va riletto dal pool: rinominarlo dal cassetto aggiorna il
-  // pool, e la copia tenuta qui resterebbe quella di prima.
-  const detailTask = openTask ? (tasks || []).find(t => t.id === openTask.id) || openTask : null;
+  // La colonna Dettagli non è mai vuota se c'è qualcosa da mostrare: senza una
+  // scelta esplicita apre la prima attività della sezione. Il task va riletto
+  // dal pool, perché rinominarlo dal pannello aggiorna il pool e la copia
+  // tenuta qui resterebbe quella di prima.
+  const detailTask = useMemo(() => {
+    if (!sectionTasks.length) return null;
+    return sectionTasks.find(t => t.id === selectedTaskId) || sectionTasks[0];
+  }, [sectionTasks, selectedTaskId]);
   // Il link `onenote:` che apre l'intera sezione nell'app desktop.
   const sectionClientUrl = active?.links?.oneNoteClientUrl?.href || null;
 
@@ -176,7 +203,7 @@ export default function SectionsView({
                       key={s.id}
                       className={`sv-list-item${s.id === sectionId ? ' active' : ''}`}
                       title={`${paraSectionLabel(s.displayName)} · ${s._nbName}`}
-                      onClick={() => navigate(`/sezioni/${s.id}`)}>
+                      onClick={() => { navigate(`/sezioni/${s.id}`); setNavOpen(false); }}>
                       <span
                         className="sv-list-dot"
                         style={{ background: colorMap[s.displayName.toLowerCase()] || 'var(--line)' }}
@@ -202,7 +229,7 @@ export default function SectionsView({
           <p className="sv-empty">
             {sections.length === 0
               ? 'I taccuini non sono ancora arrivati. Un attimo…'
-              : 'Scegli una sezione per aprirne il workbook.'}
+              : 'Scegli una sezione per aprirne la plancia.'}
           </p>
         </div>
       </div>
@@ -211,10 +238,21 @@ export default function SectionsView({
 
   return (
     <div className="sv">
-      {aside}
+      {navOpen && aside}
 
       <div className="sv-workbook">
         <header className="sv-head">
+          {/* Quando l'elenco è chiuso resta questa freccia, al suo posto: la
+              colonna torna dov'era, e niente altro si muove. */}
+          {!navOpen && (
+            <button
+              className="sv-nav-open"
+              onClick={() => setNavOpen(true)}
+              title="Mostra l'elenco delle sezioni"
+              aria-label="Mostra l'elenco delle sezioni">
+              →
+            </button>
+          )}
           <div className="sv-head-text">
             <h1 className="sv-title">{paraSectionLabel(active.displayName)}</h1>
             <p className="sv-subtitle">
@@ -227,65 +265,100 @@ export default function SectionsView({
         </header>
 
         <div className="sv-cols">
-          {/* OneNote */}
-          <section className="sv-col">
-            <span className="eyebrow" style={{ color: 'var(--onenote)' }}>OneNote</span>
-            {sectionClientUrl && (
-              <button className="sv-open-section" onClick={() => openProtocol(sectionClientUrl)}>
-                ↗ Apri la sezione in OneNote
-              </button>
-            )}
-            {pages === null && <><Skeleton /><Skeleton /><Skeleton /></>}
-            {pages?.length === 0 && <p className="sv-empty">Nessuna pagina in questa sezione</p>}
-            {/* L'albero delle pagine, con le sottopagine raggruppate sotto la
-                loro pagina madre e chiuse di partenza: OneNote le annida fino a
-                due livelli, e un elenco piatto le rendeva indistinguibili.
-                Un clic apre la pagina nell'app OneNote del computer. */}
-            {pages && pages.length > 0 && (
-              <div className="sv-pages"><PageTree pages={pages} /></div>
-            )}
+          {/* OneNote — stretta: sono titoli di pagina, non testo da leggere */}
+          <section className="sv-col sv-col-onenote">
+            <div className="sv-col-head">
+              <span className="eyebrow sv-col-label">OneNote</span>
+              {sectionClientUrl && (
+                <button
+                  className="sv-icon-btn"
+                  onClick={() => openProtocol(sectionClientUrl)}
+                  title="Apri la sezione in OneNote">
+                  ↗
+                </button>
+              )}
+            </div>
+            <div className="sv-col-body">
+              {pages === null && <><Skeleton /><Skeleton /><Skeleton /></>}
+              {pages?.length === 0 && <p className="sv-empty">Nessuna pagina in questa sezione</p>}
+              {/* L'albero delle pagine, con le sottopagine raggruppate sotto la
+                  loro pagina madre e chiuse di partenza: OneNote le annida fino a
+                  due livelli, e un elenco piatto le rendeva indistinguibili.
+                  Un clic apre la pagina nell'app OneNote del computer. */}
+              {pages && pages.length > 0 && (
+                <div className="sv-pages"><PageTree pages={pages} /></div>
+              )}
+            </div>
           </section>
 
-          {/* OneDrive — riusa il componente che già gestisce i link per sezione */}
-          <section className="sv-col sv-col-drive">
-            <OneDriveBox sectionId={active.id} color={'var(--onedrive)'} />
+          {/* Percorsi — cartelle, dischi di rete, link: pastiglie da copiare */}
+          <section className="sv-col sv-col-paths">
+            <SectionPaths sectionId={active.id} />
           </section>
 
           {/* Attività della sezione */}
-          <section className="sv-col">
-            <span className="eyebrow">Attività</span>
-            {!list && <p className="sv-empty">Nessuna lista To-Do con questo nome</p>}
-            {list && sectionTasks.length === 0 && <p className="sv-empty">Nessuna attività aperta</p>}
-            {sectionTasks.map(t => (
-              <button
-                className={`sv-task${t.id === pomodoroTaskId ? ' current' : ''}`}
-                key={t.id}
-                onClick={() => setOpenTask(t)}
-                title="Apri note, sottoattività e stato">
-                <span
-                  className="sv-task-dot"
-                  style={/** @type {import('react').CSSProperties} */ ({ background: contextColor(taskContext(t)) })}
+          <section className="sv-col sv-col-tasks">
+            <div className="sv-col-head">
+              <span className="eyebrow sv-col-label">Attività</span>
+            </div>
+            <div className="sv-col-body">
+              {!list && <p className="sv-empty">Nessuna lista To-Do con questo nome</p>}
+              {list && sectionTasks.length === 0 && <p className="sv-empty">Nessuna attività aperta</p>}
+              {sectionTasks.map(t => {
+                const est = estimateLabel(t);
+                return (
+                  <button
+                    className={`sv-task${t.id === detailTask?.id ? ' selected' : ''}${t.id === pomodoroTaskId ? ' current' : ''}`}
+                    key={t.id}
+                    onClick={() => setSelectedTaskId(t.id)}
+                    title="Apri note, sottoattività e stato">
+                    <span
+                      className="sv-task-dot"
+                      style={/** @type {import('react').CSSProperties} */ ({ background: contextColor(taskContext(t)) })}
+                    />
+                    <span className="sv-task-title">{t.title}</span>
+                    {est && <span className="sv-task-est">{est}</span>}
+                  </button>
+                );
+              })}
+            </div>
+          </section>
+
+          {/* Dettagli — lo stesso pannello del Piano e della vista Attività,
+              qui senza le risorse della sezione: OneNote e i percorsi sono già
+              le due colonne accanto, e ripeterli sotto le sottoattività
+              allungava la colonna per niente. */}
+          <section className="sv-col sv-col-detail">
+            <div className="sv-col-head">
+              <span className="eyebrow sv-col-label">Dettagli</span>
+            </div>
+            <div className="sv-col-body">
+              {!detailTask && <p className="sv-empty">Scegli un'attività per vederne il dettaglio</p>}
+              {detailTask && (
+                <TaskDetailPanel
+                  key={detailTask.id}
+                  task={detailTask}
+                  notebooks={notebooks}
+                  sectionsMap={sectionsMap}
+                  pagesCache={pagesCache}
+                  showResources={false}
+                  onCompleted={() => { onTaskRemoved?.(detailTask._listId || '', detailTask.id); setSelectedTaskId(null); }}
+                  onDeleted={() => { onTaskRemoved?.(detailTask._listId || '', detailTask.id); setSelectedTaskId(null); }}
+                  onRenamed={title => onTaskPatched?.(detailTask._listId || '', detailTask.id, { title })}
+                  onDueChanged={dueDateTime => onTaskPatched?.(detailTask._listId || '', detailTask.id, { dueDateTime })}
+                  onPatched={patch => onTaskPatched?.(detailTask._listId || '', detailTask.id, patch)}
+                  onRestored={(listId, restored) => onTaskRestored?.(listId, restored)}
                 />
-                <span className="sv-task-title">{t.title}</span>
-              </button>
-            ))}
+              )}
+            </div>
+          </section>
+
+          {/* Oggi — dove sta questa attività nella giornata */}
+          <section className="sv-col sv-col-timeline">
+            <SectionTimeline plans={plans} listName={active.displayName} />
           </section>
         </div>
       </div>
-
-      <TaskDetailDrawer
-        task={detailTask}
-        notebooks={notebooks}
-        sectionsMap={sectionsMap}
-        pagesCache={pagesCache}
-        onClose={() => setOpenTask(null)}
-        onCompleted={() => { if (detailTask) onTaskRemoved?.(detailTask._listId || '', detailTask.id); setOpenTask(null); }}
-        onDeleted={() => { if (detailTask) onTaskRemoved?.(detailTask._listId || '', detailTask.id); setOpenTask(null); }}
-        onRenamed={title => { if (detailTask) onTaskPatched?.(detailTask._listId || '', detailTask.id, { title }); }}
-        onDueChanged={dueDateTime => { if (detailTask) onTaskPatched?.(detailTask._listId || '', detailTask.id, { dueDateTime }); }}
-        onPatched={patch => { if (detailTask) onTaskPatched?.(detailTask._listId || '', detailTask.id, patch); }}
-        onRestored={(listId, restored) => onTaskRestored?.(listId, restored)}
-      />
     </div>
   );
 }

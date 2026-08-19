@@ -75,8 +75,11 @@ function flowStatusOf(/** @type {string|undefined} */ graphStatus) {
  *                                       Graph non si vedono). Senza, si ricava da Graph.
  * @param {(t: import('./types').TodoTask) => void} [props.onSchedule]    porta al Piano
  * @param {(t: import('./types').TodoTask) => Promise<void>|void} [props.onUnschedule]  toglie il blocco
+ * @param {boolean} [props.showResources]  le risorse della sezione in fondo al pannello.
+ *                                         Spente dove OneNote e i percorsi sono già colonne
+ *                                         accanto — nella plancia di Sezioni.
  */
-export default function TaskDetailPanel({ task, notebooks = [], sectionsMap = {}, pagesCache = null, onClose, onCompleted, onDeleted, onRenamed, onDueChanged, onRestored, onEstimateChanged, onPatched, status, onSchedule, onUnschedule }) {
+export default function TaskDetailPanel({ task, notebooks = [], sectionsMap = {}, pagesCache = null, onClose, onCompleted, onDeleted, onRenamed, onDueChanged, onRestored, onEstimateChanged, onPatched, status, onSchedule, onUnschedule, showResources = true }) {
   const navigate = useNavigate();
   const { start: startPomodoro } = usePomodoro();
   // La sezione PARA del task è la sezione OneNote che si chiama come la sua
@@ -525,7 +528,9 @@ export default function TaskDetailPanel({ task, notebooks = [], sectionsMap = {}
           <button className="planner-task-detail-action" onClick={handleCompleteTask} disabled={working} title="Segna come completato">✓</button>
           <button className="planner-task-detail-action danger" onClick={handleDeleteTask} disabled={working} title="Elimina task">🗑</button>
         </div>
-        <button className="planner-task-detail-close" onClick={onClose} title="Chiudi">✕</button>
+        {/* Il pannello vive anche dentro una colonna, dove non c'è niente da
+            chiudere: la crocetta compare solo se qualcuno la sta ascoltando. */}
+        {onClose && <button className="planner-task-detail-close" onClick={onClose} title="Chiudi">✕</button>}
       </div>
 
       {loading ? (
@@ -697,7 +702,7 @@ export default function TaskDetailPanel({ task, notebooks = [], sectionsMap = {}
             </button>
           )}
 
-          <SectionResources section={section} notebook={notebook} pagesCache={pagesCache} />
+          {showResources && <SectionResources section={section} notebook={notebook} pagesCache={pagesCache} />}
         </>
       )}
     </div>
