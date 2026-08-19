@@ -19,9 +19,11 @@ Microsoft To-Do e al calendario Outlook, e un diario con supporto AI via copia-i
   azioni programmate per il giorno, e a lato ricorrenze, diario e due riquadri ancora bloccati.
   Non ha una lista propria: è tutto una query sul giorno corrente.
 - **Sezioni** — la plancia operativa di una sezione PARA in cinque colonne: pagine OneNote,
-  percorsi (cartelle, dischi di rete e link come pastiglie che al clic copiano il percorso, o
-  aprono il collegamento se sono OneDrive), attività della sezione, il dettaglio di quella
-  scelta e la giornata di oggi. L'elenco delle sezioni si toglie di mezzo appena se ne apre una.
+  percorsi (cartelle, dischi di rete e link come pastiglie: le categorie OneDrive e Web aprono
+  il collegamento, tutte le altre copiano il percorso), attività della sezione — che si
+  trascinano sulla giornata per programmarle, come nel Piano e sullo stesso piano — il
+  dettaglio di quella scelta e la giornata di oggi. L'elenco delle sezioni si toglie di mezzo
+  appena se ne apre una.
   È dove atterra il Pomodoro avviato dal Piano.
 - **Attività** — le cinque colonne del flusso GTD (Inbox · Prossime azioni · In attesa · Programmate · Un giorno):
   la colonna *è* lo stato, e trascinare una card fra colonne lo cambia su Microsoft To-Do. Un clic su una

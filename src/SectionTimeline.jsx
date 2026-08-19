@@ -3,9 +3,15 @@
 //
 // Serve a rispondere alla domanda che ci si fa mentre si guarda l'elenco delle
 // attività di un progetto: quando la faccio? Finora bisognava lasciare la
-// scheda e andare al Piano. Qui la giornata sta accanto alle attività, in sola
-// lettura: i blocchi si spostano ancora dov'è la griglia grande, sul Piano.
-import { useEffect, useMemo, useState } from 'react';
+// scheda e andare al Piano. Qui si trascina l'attività sull'ora e il blocco è
+// fatto — è lo stesso gesto della griglia del Piano, sugli stessi dati
+// (`daily-plans` su OneDrive), quindi un blocco creato qui è già lì.
+//
+// Quello che resta al Piano: le fasce di focus, i sottostep, le note sul
+// blocco, la settimana, gli eventi del calendario. Qui si programma e si
+// sposta, che è quel che serve mentre si lavora a un progetto.
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { taskEstimateMin } from './taskModel';
 
 const SLOT_MIN = 30;
 const SLOT_H = 24;      // altezza di mezz'ora, px
@@ -27,13 +33,28 @@ function fmtDur(/** @type {number} */ min) {
   if (!h) return `${m}m`;
   return m ? `${h}h${String(m).padStart(2, '0')}` : `${h}h`;
 }
+function genId() {
+  return `b${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
+}
+
+/** La durata del blocco: la stima del task arrotondata in su alla mezz'ora
+ *  della griglia, come fa il Piano. Un blocco non può essere più corto di una
+ *  casella, o non lo si vedrebbe. */
+function blockMinutesFor(/** @type {any} */ task) {
+  const est = taskEstimateMin(task);
+  return Math.max(SLOT_MIN, Math.ceil(est / SLOT_MIN) * SLOT_MIN);
+}
 
 /**
  * @param {Object} props
  * @param {Record<string, {blocks?: any[]}>} [props.plans]  i piani giornalieri, per data
  * @param {string} [props.listName]  la sezione aperta: i suoi blocchi si accendono
+ * @param {string} [props.color]     il colore della sezione, per i blocchi nuovi
+ * @param {(plans: Record<string, any>) => void} [props.onPlansChanged]  senza, la
+ *        colonna è in sola lettura: niente da salvare, niente da trascinare
+ * @param {(taskId: string) => void} [props.onPickTask]  clic su un blocco della sezione
  */
-export default function SectionTimeline({ plans, listName }) {
+export default function SectionTimeline({ plans, listName, color, onPlansChanged, onPickTask }) {
   // Un tick al minuto: la lancetta dell'ora attuale è l'unica cosa che si
   // muove da sola in questa colonna.
   const [now, setNow] = useState(() => new Date());
@@ -42,8 +63,14 @@ export default function SectionTimeline({ plans, listName }) {
     return () => clearInterval(id);
   }, []);
 
+  // L'ora sotto il puntatore durante il trascinamento, e il blocco che si sta
+  // spostando: la riga di anteprima dice dove finirà prima di lasciarlo.
+  const [dragOverMin, setDragOverMin] = useState(/** @type {number|null} */ (null));
+  const gridRef = useRef(/** @type {HTMLDivElement|null} */ (null));
+
   const today = ymd(now);
   const nowMin = now.getHours() * 60 + now.getMinutes();
+  const editable = !!onPlansChanged;
 
   const blocks = useMemo(
     () => [...(plans?.[today]?.blocks || [])]
@@ -63,19 +90,104 @@ export default function SectionTimeline({ plans, listName }) {
   const top = (/** @type {number} */ min) => ((min - DAY_START) / SLOT_MIN) * SLOT_H;
   const inRange = (/** @type {number} */ min) => min >= DAY_START && min <= DAY_END;
 
+  /** L'ora della casella sotto il puntatore, agganciata alla mezz'ora. */
+  function minuteAt(/** @type {DragEvent|any} */ e) {
+    const el = gridRef.current;
+    if (!el) return null;
+    const rect = el.getBoundingClientRect();
+    const slot = Math.floor((e.clientY - rect.top) / SLOT_H);
+    return Math.max(DAY_START, Math.min(DAY_END - SLOT_MIN, DAY_START + slot * SLOT_MIN));
+  }
+
+  /** Scrive il piano di oggi. Il resto dei giorni non si tocca: questa colonna
+   *  conosce solo oggi. @param {any[]} nextBlocks */
+  function writeToday(nextBlocks) {
+    const plan = plans?.[today] || { date: today, blocks: [], emailExtractedActions: [] };
+    onPlansChanged?.({ ...(plans || {}), [today]: { ...plan, blocks: nextBlocks } });
+  }
+
+  /** Un blocco nuovo da un'attività trascinata. Colore e nomi sono copiati
+   *  adesso, come fa il Piano: il blocco è lo storico della giornata e non deve
+   *  cambiare se poi il task viene rinominato. */
+  function addBlock(/** @type {any} */ task, /** @type {number} */ startMin) {
+    const endMin = Math.min(startMin + blockMinutesFor(task), DAY_END);
+    writeToday([...blocks, {
+      id: genId(),
+      taskId: task.id,
+      taskTitle: task.title,
+      listId: task._listId || null,
+      listName: task._listName || null,
+      projectKey: null,
+      projectColor: color || null,
+      startTime: m2t(startMin),
+      endTime: m2t(endMin),
+      completed: false,
+      completedAt: null,
+      subSteps: [],
+    }]);
+  }
+
+  /** Sposta un blocco tenendone la durata, come sulla griglia del Piano. */
+  function moveBlock(/** @type {string} */ blockId, /** @type {number} */ startMin) {
+    writeToday(blocks.map(b => {
+      if (b.id !== blockId) return b;
+      const dur = t2m(b.endTime) - t2m(b.startTime);
+      return { ...b, startTime: m2t(startMin), endTime: m2t(Math.min(startMin + dur, DAY_END)) };
+    }));
+  }
+
+  function removeBlock(/** @type {string} */ blockId) {
+    writeToday(blocks.filter(b => b.id !== blockId));
+  }
+
+  function handleDragOver(/** @type {any} */ e) {
+    if (!editable) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    setDragOverMin(minuteAt(e));
+  }
+
+  function handleDrop(/** @type {any} */ e) {
+    if (!editable) return;
+    e.preventDefault();
+    const startMin = dragOverMin ?? minuteAt(e);
+    setDragOverMin(null);
+    if (startMin === null) return;
+    try {
+      // Lo stesso payload del pool del Piano: un'attività trascinata da lì e
+      // una trascinata da qui sono la stessa cosa.
+      const data = JSON.parse(e.dataTransfer.getData('text/plain'));
+      if (data.type === 'task' && data.task) addBlock(data.task, startMin);
+      else if (data.type === 'block' && data.blockId) moveBlock(data.blockId, startMin);
+    } catch { /* payload non nostro — ignora */ }
+  }
+
   return (
     <>
       <div className="sv-col-head">
         <span className="eyebrow sv-col-label">Oggi · {dayLabel}</span>
       </div>
       <div className="sv-col-body sv-timeline-body">
-        <div className="sv-timeline" style={{ height: slots.length * SLOT_H }}>
+        <div
+          className="sv-timeline"
+          ref={gridRef}
+          style={{ height: slots.length * SLOT_H }}
+          onDragOver={handleDragOver}
+          onDragLeave={() => setDragOverMin(null)}
+          onDrop={handleDrop}>
           {slots.map(m => (
             <div className="sv-tl-row" key={m} style={{ height: SLOT_H }}>
               <span className={`sv-tl-time${m % 60 ? ' half' : ''}`}>{m2t(m)}</span>
               <span className={`sv-tl-line${m % 60 ? ' half' : ''}`} />
             </div>
           ))}
+
+          {/* Dove finirebbe adesso il blocco che si sta trascinando. */}
+          {dragOverMin !== null && (
+            <div className="sv-tl-drop" style={{ top: top(dragOverMin) + SLOT_H / 2 }}>
+              <span className="sv-tl-drop-time">{m2t(dragOverMin)}</span>
+            </div>
+          )}
 
           {blocks.map(b => {
             const startMin = Math.max(DAY_START, t2m(b.startTime));
@@ -87,14 +199,34 @@ export default function SectionTimeline({ plans, listName }) {
                 key={b.id}
                 className={`sv-tl-block${mine ? ' mine' : ''}${b.completed ? ' done' : ''}`}
                 style={{ top: top(startMin) + SLOT_H / 2, height: ((endMin - startMin) / SLOT_MIN) * SLOT_H }}
-                title={`${b.startTime}–${b.endTime} · ${b.taskTitle || b.label || ''}`}>
+                draggable={editable}
+                onDragStart={e => {
+                  e.dataTransfer.setData('text/plain', JSON.stringify({ type: 'block', blockId: b.id }));
+                  e.dataTransfer.effectAllowed = 'move';
+                }}
+                onClick={() => { if (mine && b.taskId) onPickTask?.(b.taskId); }}
+                title={`${b.startTime}–${b.endTime} · ${b.taskTitle || b.label || ''}${editable ? ' — trascina per spostare' : ''}`}>
                 <span className="sv-tl-block-meta">
                   {[fmtDur(endMin - startMin), b.listName].filter(Boolean).join(' · ')}
                 </span>
                 <span className="sv-tl-block-title">{b.taskTitle || b.label || 'Blocco'}</span>
+                {editable && (
+                  <button
+                    className="sv-tl-block-del"
+                    title="Togli dal piano"
+                    onClick={e => { e.stopPropagation(); removeBlock(b.id); }}>
+                    ✕
+                  </button>
+                )}
               </div>
             );
           })}
+
+          {blocks.length === 0 && (
+            <p className="sv-empty sv-tl-empty">
+              {editable ? 'Niente in programma: trascina qui un’attività' : 'Niente in programma oggi'}
+            </p>
+          )}
 
           {inRange(nowMin) && (
             <div className="sv-tl-now" style={{ top: top(nowMin) + SLOT_H / 2 }}>
@@ -104,7 +236,6 @@ export default function SectionTimeline({ plans, listName }) {
             </div>
           )}
         </div>
-        {blocks.length === 0 && <p className="sv-empty sv-tl-empty">Niente in programma oggi</p>}
       </div>
     </>
   );

@@ -9,9 +9,18 @@ import { loadODLinksFromCloud, saveODLinksToCloud } from './api';
 
 const LOCAL_KEY = 'onedrive_links_v2';
 
-/** La categoria che apre invece di copiare: le sue pastiglie sono link, non
- *  percorsi da incollare in Esplora risorse. */
+/** La categoria dei collegamenti su OneDrive. */
 export const CAT_DRIVE = 'OneDrive';
+
+/** Le categorie che aprono invece di copiare: le loro pastiglie sono link da
+ *  far aprire al browser, non percorsi da incollare in Esplora risorse. È la
+ *  categoria a decidere il gesto — il campo indirizzo è uno solo. */
+export const OPEN_CATS = [CAT_DRIVE, 'Web'];
+
+/** @param {string[]} cats */
+export function opensLink(cats) {
+  return (cats || []).some(c => OPEN_CATS.includes(c));
+}
 
 /** Dove finisce un percorso appena creato, e dove finiscono i vecchi record
  *  senza link web: da qualche parte devono stare, o non si vedrebbero. */
@@ -24,8 +33,10 @@ export const KNOWN_CATS = [CAT_DRIVE, CAT_DEFAULT, 'Rete', 'Web'];
 /**
  * @typedef {Object} PathLink
  * @property {string} name
- * @property {string|null} url     link web (quello che si apre)
- * @property {string|null} urlPc   percorso sul computer (quello che si copia)
+ * @property {string} link         l'indirizzo, uno solo: la categoria dice se
+ *                                 si apre o si copia
+ * @property {string|null} url     link web — mantenuto per il riquadro OneDrive
+ * @property {string|null} urlPc   percorso sul computer — idem
  * @property {string[]} cats
  */
 
@@ -44,6 +55,10 @@ export function saveLocalLinks(obj) {
  * prima delle categorie non ne hanno nessuna: quelli con un link web sono
  * OneDrive — è l'unica cosa che il riquadro di prima sapesse fare — gli altri
  * finiscono nella categoria di partenza.
+ *
+ * L'indirizzo è uno solo. Nei record vecchi ce ne sono due, `url` e `urlPc`:
+ * si sceglie quello che serve al gesto della categoria, e l'altro resta nel
+ * record senza essere toccato — il riquadro OneDrive del Panel lo usa ancora.
  * @param {any} l
  * @returns {PathLink}
  */
@@ -51,11 +66,34 @@ export function normalizeLink(l) {
   const cats = Array.isArray(l?.cats) && l.cats.length
     ? l.cats.filter(/** @param {any} c */ c => typeof c === 'string' && c.trim()).map(/** @param {string} c */ c => c.trim())
     : [l?.url ? CAT_DRIVE : CAT_DEFAULT];
+  const safeCats = cats.length ? cats : [CAT_DEFAULT];
+  const open = opensLink(safeCats);
   return {
     name: l?.name || '',
+    link: l?.link || (open ? (l?.url || l?.urlPc) : (l?.urlPc || l?.url)) || '',
     url: l?.url || null,
     urlPc: l?.urlPc || null,
-    cats: cats.length ? cats : [CAT_DEFAULT],
+    cats: safeCats,
+  };
+}
+
+/**
+ * Il record da scrivere nel file. L'indirizzo unico va anche nel campo che il
+ * riquadro OneDrive si aspetta — `url` se la categoria apre, `urlPc` se copia —
+ * e l'altro campo resta com'era: cambiare categoria qui non deve cancellare un
+ * percorso scritto altrove.
+ * @param {PathLink} p
+ * @returns {any}  il record grezzo del file, dove un indirizzo vuoto è `null`
+ */
+export function serializeLink(p) {
+  const link = (p.link || '').trim();
+  const open = opensLink(p.cats);
+  return {
+    name: p.name,
+    link: link || null,
+    url: open ? (link || null) : (p.url ?? null),
+    urlPc: open ? (p.urlPc ?? null) : (link || null),
+    cats: p.cats,
   };
 }
 

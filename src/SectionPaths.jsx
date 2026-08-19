@@ -11,7 +11,8 @@
 import { useEffect, useRef, useState } from 'react';
 import {
   CAT_DEFAULT, CAT_DRIVE, KNOWN_CATS,
-  categoriesOf, copyToClipboard, loadLocalLinks, normalizeLinks, persistSectionLinks, saveLocalLinks,
+  categoriesOf, copyToClipboard, loadLocalLinks, normalizeLinks, opensLink,
+  persistSectionLinks, saveLocalLinks, serializeLink,
 } from './odLinks';
 import { loadODLinksFromCloud } from './api';
 
@@ -20,28 +21,18 @@ import { loadODLinksFromCloud } from './api';
 const FLASH_MS = 900;
 const TOAST_MS = 1600;
 
-/** Il gesto di una categoria: OneDrive apre, tutto il resto copia. */
-function opensLink(/** @type {string[]} */ cats) { return cats.includes(CAT_DRIVE); }
-
-/** Cosa fa la pastiglia quando la si clicca: il link web se apre, il percorso
- *  sul computer se copia — con l'altro come ripiego, perché un percorso con un
- *  campo solo compilato deve comunque funzionare. */
-function targetOf(/** @type {import('./odLinks').PathLink} */ p) {
-  return opensLink(p.cats) ? (p.url || p.urlPc) : (p.urlPc || p.url);
-}
-
 /** L'icona della pastiglia: nuvola per OneDrive, mondo per il web, cartella
  *  per tutto il resto. Sono i tre posti in cui può stare un percorso. */
 function pillIcon(/** @type {import('./odLinks').PathLink} */ p) {
-  if (opensLink(p.cats)) return '☁';
+  if (p.cats.includes(CAT_DRIVE)) return '☁';
   if (p.cats.includes('Web')) return '⊕';
   return '🗀';
 }
 
-/** La riga di aiuto sotto il nome della categoria: dice cosa succede al clic
+/** La riga di aiuto accanto al nome della categoria: dice cosa succede al clic
  *  prima che si clicchi, invece di lasciarlo scoprire. */
 function catHint(/** @type {string} */ cat) {
-  return cat === CAT_DRIVE ? 'apre il collegamento' : 'clic = copia percorso';
+  return opensLink([cat]) ? 'clic = apre il collegamento' : 'clic = copia percorso';
 }
 
 /**
@@ -84,9 +75,10 @@ export default function SectionPaths({ sectionId }) {
    *  @param {import('./odLinks').PathLink[]} next */
   async function save(next) {
     setDraft(next);
-    setStore(s => ({ ...s, [sectionId]: next }));
+    const record = next.map(serializeLink);
+    setStore(s => ({ ...s, [sectionId]: record }));
     setSyncing(true);
-    const merged = await persistSectionLinks(sectionId, next, { ...store, [sectionId]: next });
+    const merged = await persistSectionLinks(sectionId, record, { ...store, [sectionId]: record });
     setStore(merged);
     setSyncing(false);
   }
@@ -101,7 +93,7 @@ export default function SectionPaths({ sectionId }) {
   }
 
   async function handlePill(/** @type {import('./odLinks').PathLink} */ p, /** @type {number} */ index) {
-    const target = targetOf(p);
+    const target = p.link;
     if (!target) { flash(index, 'Questo percorso è vuoto'); return; }
     if (opensLink(p.cats)) {
       window.open(target, '_blank', 'noopener');
@@ -126,7 +118,9 @@ export default function SectionPaths({ sectionId }) {
   function commit(next = draft) {
     // Uscire da un campo senza averlo toccato non è una modifica: senza questo
     // controllo ogni giro di Tab scriverebbe di nuovo il file su OneDrive.
-    if (next && JSON.stringify(next) !== JSON.stringify(saved)) save(next);
+    // Il confronto è sul record da scrivere, non sulla bozza: è quello che
+    // finirebbe sul file, e due bozze diverse possono dare lo stesso record.
+    if (next && JSON.stringify(next.map(serializeLink)) !== JSON.stringify(saved.map(serializeLink))) save(next);
   }
 
   function toggleCat(/** @type {number} */ index, /** @type {string} */ cat) {
@@ -183,7 +177,7 @@ export default function SectionPaths({ sectionId }) {
                   <button
                     key={`${cat}-${i}`}
                     className={`sv-pill${flashed === i ? ' flashed' : ''}`}
-                    title={targetOf(p) || 'Percorso vuoto'}
+                    title={p.link || 'Percorso vuoto'}
                     onClick={() => handlePill(p, i)}>
                     <span className="sv-pill-icon" aria-hidden="true">{pillIcon(p)}</span>
                     <span className="sv-pill-label">
@@ -197,10 +191,10 @@ export default function SectionPaths({ sectionId }) {
         })}
 
         {/* ── Modifica ───────────────────────────────────────────────────
-            Una scheda per percorso: nome, i due indirizzi e le categorie.
-            Gli indirizzi restano due perché due sono le cose che un percorso
-            può essere — un link web da aprire e una cartella da incollare in
-            Esplora risorse — e i percorsi già salvati li hanno tutti e due. */}
+            Una scheda per percorso: nome, indirizzo e categorie. L'indirizzo è
+            uno: la categoria dice già se è un link da aprire o un percorso da
+            copiare, e chiedere due campi voleva dire farne compilare uno a
+            vuoto ogni volta. */}
         {editing && paths.map((p, i) => (
           <div className="sv-path-card" key={i}>
             <div className="sv-path-card-top">
@@ -218,18 +212,13 @@ export default function SectionPaths({ sectionId }) {
                 🗑
               </button>
             </div>
+            {/* Un campo solo: è la categoria a dire se questo indirizzo va
+                aperto nel browser o copiato negli appunti. */}
             <input
               className="sv-path-input mono"
-              value={p.urlPc || ''}
-              placeholder="Percorso sul computer (S:\Progetti\…)"
-              onChange={e => patch(i, { urlPc: e.target.value || null })}
-              onBlur={() => commit()}
-            />
-            <input
-              className="sv-path-input mono"
-              value={p.url || ''}
-              placeholder="Link web (https://…)"
-              onChange={e => patch(i, { url: e.target.value || null })}
+              value={p.link}
+              placeholder={opensLink(p.cats) ? 'https://…' : 'S:\\Progetti\\… oppure \\\\nas\\…'}
+              onChange={e => patch(i, { link: e.target.value })}
               onBlur={() => commit()}
             />
             <div className="sv-path-cats">
@@ -268,7 +257,7 @@ export default function SectionPaths({ sectionId }) {
           <>
             <button
               className="sv-path-add"
-              onClick={() => save([...paths, { name: 'Nuovo percorso', url: null, urlPc: null, cats: [CAT_DEFAULT] }])}>
+              onClick={() => save([...paths, { name: 'Nuovo percorso', link: '', url: null, urlPc: null, cats: [CAT_DEFAULT] }])}>
               + nuovo percorso
             </button>
             <button className="sv-path-done" onClick={() => { commit(); setEditing(false); setDraft(null); setNewCatFor(null); }}>Fine</button>
