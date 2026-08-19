@@ -256,6 +256,20 @@ export default function App() {
 
   useEffect(() => onInteractionRequired(setNeedsReconnect), []);
 
+  // Il piano del giorno è uno e si scrive da più posti: il Piano, la plancia di
+  // Sezioni, «Completa» in Oggi. Tutti passano dalla cache di query, questo
+  // stato le sta dietro — senza, un blocco creato nel Piano non compariva né in
+  // Oggi né nella colonna Oggi di Sezioni fino al ricaricamento dell'app,
+  // perché lo stato qui veniva scritto solo all'avvio.
+  useEffect(() => {
+    const key = qk.dailyPlans()[0];
+    return queryClient.getQueryCache().subscribe(ev => {
+      if (ev?.query?.queryKey?.[0] !== key) return;
+      const next = queryClient.getQueryData(qk.dailyPlans());
+      if (next && typeof next === 'object') setDailyPlans(prev => prev === next ? prev : next);
+    });
+  }, []);
+
   // Tornando sull'app dopo che iPhone l'ha messa in pausa, un tentativo
   // silenzioso: molto spesso la sessione Microsoft nel browser è ancora
   // buona e la striscia sparisce da sola, senza che si sia toccato niente.

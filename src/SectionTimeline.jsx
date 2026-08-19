@@ -66,7 +66,13 @@ export default function SectionTimeline({ plans, listName, color, onPlansChanged
   // L'ora sotto il puntatore durante il trascinamento, e il blocco che si sta
   // spostando: la riga di anteprima dice dove finirà prima di lasciarlo.
   const [dragOverMin, setDragOverMin] = useState(/** @type {number|null} */ (null));
+  // Il blocco che si sta allungando col bordo inferiore, e la sua fine mentre
+  // la si trascina: il blocco cresce sotto il puntatore e si salva al rilascio.
+  const [resize, setResize] = useState(/** @type {{blockId: string, endMin: number}|null} */ (null));
   const gridRef = useRef(/** @type {HTMLDivElement|null} */ (null));
+  const resizeRef = useRef(/** @type {any} */ (null));
+  const blocksRef = useRef(/** @type {any[]} */ ([]));
+  const plansRef = useRef(/** @type {any} */ (null));
 
   const today = ymd(now);
   const nowMin = now.getHours() * 60 + now.getMinutes();
@@ -78,6 +84,11 @@ export default function SectionTimeline({ plans, listName, color, onPlansChanged
       .sort((a, b) => t2m(a.startTime) - t2m(b.startTime)),
     [plans, today]
   );
+
+  // I gestori del mouse dell'allungamento vivono oltre il render in cui sono
+  // nati: leggono blocchi e piani da qui, non dalla chiusura, o salverebbero
+  // una giornata vecchia.
+  useEffect(() => { blocksRef.current = blocks; plansRef.current = plans; });
 
   const slots = [];
   for (let m = DAY_START; m < DAY_END; m += SLOT_MIN) slots.push(m);
@@ -102,8 +113,9 @@ export default function SectionTimeline({ plans, listName, color, onPlansChanged
   /** Scrive il piano di oggi. Il resto dei giorni non si tocca: questa colonna
    *  conosce solo oggi. @param {any[]} nextBlocks */
   function writeToday(nextBlocks) {
-    const plan = plans?.[today] || { date: today, blocks: [], emailExtractedActions: [] };
-    onPlansChanged?.({ ...(plans || {}), [today]: { ...plan, blocks: nextBlocks } });
+    const all = plansRef.current || {};
+    const plan = all[today] || { date: today, blocks: [], emailExtractedActions: [] };
+    onPlansChanged?.({ ...all, [today]: { ...plan, blocks: nextBlocks } });
   }
 
   /** Un blocco nuovo da un'attività trascinata. Colore e nomi sono copiati
@@ -138,6 +150,51 @@ export default function SectionTimeline({ plans, listName, color, onPlansChanged
 
   function removeBlock(/** @type {string} */ blockId) {
     writeToday(blocks.filter(b => b.id !== blockId));
+  }
+
+  /** Allunga o accorcia un blocco dal bordo inferiore, come sulla griglia del
+   *  Piano: si muove solo la fine, mai l'inizio, e mai sotto la mezz'ora. La
+   *  stima del task non si tocca — un blocco più lungo è una giornata diversa,
+   *  non un'attività diversa. */
+  function handleResizeStart(/** @type {any} */ e, /** @type {any} */ block) {
+    if (!editable) return;
+    e.preventDefault();
+    e.stopPropagation();
+    resizeRef.current = {
+      blockId: block.id,
+      startY: e.clientY,
+      startEndMin: t2m(block.endTime),
+      blockStartMin: t2m(block.startTime),
+      endMin: undefined,
+    };
+    setResize({ blockId: block.id, endMin: t2m(block.endTime) });
+
+    function onMove(/** @type {MouseEvent} */ ev) {
+      const d = resizeRef.current;
+      if (!d) return;
+      const deltaSlots = Math.round((ev.clientY - d.startY) / SLOT_H);
+      const endMin = Math.max(
+        d.blockStartMin + SLOT_MIN,
+        Math.min(DAY_END, d.startEndMin + deltaSlots * SLOT_MIN)
+      );
+      // La fine corrente sta anche nel ref: al rilascio serve il valore
+      // dell'ultimo movimento, e lo stato di React non è ancora leggibile lì.
+      d.endMin = endMin;
+      setResize({ blockId: d.blockId, endMin });
+    }
+
+    function onUp() {
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+      const d = resizeRef.current;
+      resizeRef.current = null;
+      setResize(null);
+      if (!d || d.endMin === undefined || d.endMin === d.startEndMin) return;
+      writeToday(blocksRef.current.map(b => b.id === d.blockId ? { ...b, endTime: m2t(d.endMin) } : b));
+    }
+
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
   }
 
   function handleDragOver(/** @type {any} */ e) {
@@ -191,32 +248,40 @@ export default function SectionTimeline({ plans, listName, color, onPlansChanged
 
           {blocks.map(b => {
             const startMin = Math.max(DAY_START, t2m(b.startTime));
-            const endMin = Math.min(DAY_END, t2m(b.endTime));
+            const resizing = resize?.blockId === b.id;
+            const endMin = (resizing && resize) ? resize.endMin : Math.min(DAY_END, t2m(b.endTime));
             if (endMin <= startMin) return null;
             const mine = !!listName && (b.listName || '').toLowerCase() === listName.toLowerCase();
             return (
               <div
                 key={b.id}
-                className={`sv-tl-block${mine ? ' mine' : ''}${b.completed ? ' done' : ''}`}
+                className={`sv-tl-block${mine ? ' mine' : ''}${b.completed ? ' done' : ''}${resizing ? ' resizing' : ''}`}
                 style={{ top: top(startMin) + SLOT_H / 2, height: ((endMin - startMin) / SLOT_MIN) * SLOT_H }}
-                draggable={editable}
+                draggable={editable && !resizing}
                 onDragStart={e => {
                   e.dataTransfer.setData('text/plain', JSON.stringify({ type: 'block', blockId: b.id }));
                   e.dataTransfer.effectAllowed = 'move';
                 }}
                 onClick={() => { if (mine && b.taskId) onPickTask?.(b.taskId); }}
-                title={`${b.startTime}–${b.endTime} · ${b.taskTitle || b.label || ''}${editable ? ' — trascina per spostare' : ''}`}>
+                title={`${b.startTime}–${m2t(endMin)} · ${b.taskTitle || b.label || ''}${editable ? ' — trascina per spostare, il bordo in basso per allungare' : ''}`}>
                 <span className="sv-tl-block-meta">
                   {[fmtDur(endMin - startMin), b.listName].filter(Boolean).join(' · ')}
                 </span>
                 <span className="sv-tl-block-title">{b.taskTitle || b.label || 'Blocco'}</span>
                 {editable && (
-                  <button
-                    className="sv-tl-block-del"
-                    title="Togli dal piano"
-                    onClick={e => { e.stopPropagation(); removeBlock(b.id); }}>
-                    ✕
-                  </button>
+                  <>
+                    <button
+                      className="sv-tl-block-del"
+                      title="Togli dal piano"
+                      onClick={e => { e.stopPropagation(); removeBlock(b.id); }}>
+                      ✕
+                    </button>
+                    <span
+                      className="sv-tl-block-resize"
+                      title="Trascina per allungare"
+                      draggable={false}
+                      onMouseDown={e => handleResizeStart(e, b)} />
+                  </>
                 )}
               </div>
             );
