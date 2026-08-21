@@ -206,6 +206,60 @@ Finanze → Movimenti) l'app compone un prompt e lo mette negli appunti con un p
 per l'AI** / **Categorizza con Claude**; l'utente lo incolla in una chat Claude a parte e, se
 vuole, incolla qui il risultato. Nessuna chiave API, nessun costo per token lato app.
 
+## Da riga di comando (e da un'AI)
+
+`scripts/mente.mjs` è la stessa mente digitale senza l'app: legge OneNote, To-Do,
+calendario, piani, Bussola e diario parlando direttamente con Microsoft Graph, e
+scrive in due punti soli — una voce di diario, un'attività su To-Do. Serve a
+guardare i propri dati senza aprire il browser e, soprattutto, a metterli a
+disposizione di un assistente come Claude che gira in un terminale: invece di
+incollargli il diario a mano, gli si lascia eseguire `mente.mjs diario leggi`.
+
+```bash
+node scripts/mente.mjs aiuto            # tutti i comandi
+npm run mente -- oggi                   # lo stesso, via npm
+
+node scripts/mente.mjs oggi             # agenda, piano e conteggi del giorno
+node scripts/mente.mjs attivita lista --stato next --sezione Casa
+node scripts/mente.mjs diario leggi --giorni 30 --tag lavoro
+node scripts/mente.mjs note leggi Manutenzioni --sezione Casa
+
+node scripts/mente.mjs attivita crea "Preventivo caldaia" --sezione Casa --stima 20
+node scripts/mente.mjs diario scrivi --testo "Giornata piena." --umore 4
+```
+
+Ogni comando accetta `--json`: la stessa risposta in una forma che un programma
+— o un modello — legge senza doverla interpretare a occhio.
+
+Non è un secondo modello di dati: le attività passano da `src/taskModel.js` e le
+voci di diario da `src/diary.js`, gli stessi moduli dell'app, quindi il marker
+`[MIN:45]`, la riga `In attesa da:` e la forma di una voce restano quelle di
+prima. Un'attività creata da qui compare su To-Do e nell'app senza differenze.
+
+**Cosa non fa.** Calendario, OneNote, Bussola, Visione e piani del giorno si
+leggono soltanto. Sono le cose che non si ricostruiscono da una cronologia, e un
+comando sbagliato — o un'AI troppo sicura di sé — non deve poterle toccare.
+Restano fuori anche `scheduled` e `inbox` come stati scrivibili: il primo è un
+blocco nel piano, il secondo è la lista di default, e si cambiano trascinando,
+nell'app. Le Finanze non ci sono affatto: vivono in IndexedDB, dentro il browser.
+
+### Il token
+
+Il CLI non ha MSAL: usa un refresh token, come `sync-calendar.mjs`. Se ne prende
+uno con gli scope giusti — tutto in lettura, scrittura su file e attività — e lo
+si tiene sulla propria macchina:
+
+```bash
+node scripts/get-refresh-token.mjs --mente
+```
+
+Il token va in `scripts/.mente-refresh-token` (ignorato da git) oppure nella
+variabile `MENTE_REFRESH_TOKEN`, anche da un `.env` nella radice del progetto.
+Resta separato dal segreto `MS_REFRESH_TOKEN` di GitHub Actions, che continua a
+poter fare pochissimo: solo mail e calendario, per la sincronizzazione. Quel file
+è la chiave del OneDrive personale — vale quanto la password, e non va copiato in
+posti in cui non metteresti la password.
+
 ## Sviluppo
 
 ```bash

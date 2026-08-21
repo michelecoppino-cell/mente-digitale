@@ -24,3 +24,7 @@ dist-ssr
 *.sw?
 .token-cache.json
 scripts/.new-refresh-token
+# Il refresh token del CLI (scripts/mente.mjs) e le variabili locali:
+# sono credenziali del OneDrive personale, non devono entrare nel repo.
+scripts/.mente-refresh-token
+.env

@@ -9,6 +9,7 @@
     "lint": "eslint .",
     "typecheck": "tsc -p jsconfig.json",
     "importa-diario": "node scripts/importa-diario-apple.mjs",
+    "mente": "node scripts/mente.mjs",
     "preview": "vite preview"
   },
   "dependencies": {
