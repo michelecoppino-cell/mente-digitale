@@ -3,11 +3,18 @@
  * Esegui UNA SOLA VOLTA in locale per ottenere il refresh token.
  * Richiede Node 18+, nessuna dipendenza.
  *
- *   node scripts/get-refresh-token.mjs
+ *   node scripts/get-refresh-token.mjs           token per sync-calendar (Actions)
+ *   node scripts/get-refresh-token.mjs --mente    token per il CLI mente.mjs
+ *
+ * I due token restano separati: quello di sync-calendar vive come segreto su
+ * GitHub e può fare pochissimo (mail e calendario), quello del CLI vive solo
+ * sulla macchina di chi lo usa e arriva fino a diario e attività.
  */
 
-const CLIENT_ID = 'b639e8ea-2c30-4beb-8226-46e342721a50';
-const SCOPE     = 'Mail.ReadWrite Calendars.ReadWrite offline_access';
+import { CLIENT_ID, MENTE_SCOPE, TOKEN_FILE } from './mente-graph.mjs';
+
+const MENTE      = process.argv.includes('--mente');
+const SCOPE      = MENTE ? MENTE_SCOPE : 'Mail.ReadWrite Calendars.ReadWrite offline_access';
 
 async function main() {
   // 1 — Richiedi device code
@@ -48,7 +55,9 @@ async function main() {
     if (tok.refresh_token) {
       console.log('✓ Autenticato!\n');
       console.log('━'.repeat(60));
-      console.log('REFRESH TOKEN — copialo come segreto GitHub MS_REFRESH_TOKEN:\n');
+      console.log(MENTE
+        ? `REFRESH TOKEN — salvalo in ${TOKEN_FILE}\n(oppure esportalo come MENTE_REFRESH_TOKEN):\n`
+        : 'REFRESH TOKEN — copialo come segreto GitHub MS_REFRESH_TOKEN:\n');
       console.log(tok.refresh_token);
       console.log('━'.repeat(60));
       return;
