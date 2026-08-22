@@ -206,14 +206,25 @@ Finanze → Movimenti) l'app compone un prompt e lo mette negli appunti con un p
 per l'AI** / **Categorizza con Claude**; l'utente lo incolla in una chat Claude a parte e, se
 vuole, incolla qui il risultato. Nessuna chiave API, nessun costo per token lato app.
 
-## Da riga di comando (e da un'AI)
+## Fuori dall'app: riga di comando e server MCP
 
-`scripts/mente.mjs` è la stessa mente digitale senza l'app: legge OneNote, To-Do,
-calendario, piani, Bussola e diario parlando direttamente con Microsoft Graph, e
-scrive in due punti soli — una voce di diario, un'attività su To-Do. Serve a
-guardare i propri dati senza aprire il browser e, soprattutto, a metterli a
-disposizione di un assistente come Claude che gira in un terminale: invece di
-incollargli il diario a mano, gli si lascia eseguire `mente.mjs diario leggi`.
+Le stesse operazioni dell'app, senza l'app: leggere OneNote, To-Do, calendario,
+piani, Bussola e diario parlando direttamente con Microsoft Graph, e scrivere in
+due punti soli — una voce di diario, un'attività su To-Do. Servono a guardare i
+propri dati senza aprire il browser e, soprattutto, a metterli a disposizione di
+un assistente come Claude: invece di incollargli il diario a mano, lo legge lui.
+
+Tre file, uno sopra l'altro:
+
+| File | Cosa fa |
+|---|---|
+| `scripts/mente-graph.mjs` | parla con Microsoft Graph: token, retry, la cartella `mente-digitale/` su OneDrive. È il gemello di `src/api.js` senza MSAL |
+| `scripts/mente-comandi.mjs` | le operazioni, una funzione ciascuna, con le regole su cosa si può scrivere |
+| `scripts/mente.mjs` · `scripts/mente-mcp.mjs` | i due modi di chiamarle: un terminale, o una chat |
+
+Le regole stanno nel mezzo, una volta sola: le due strade non possono divergere.
+
+### Da riga di comando
 
 ```bash
 node scripts/mente.mjs aiuto            # tutti i comandi
@@ -232,7 +243,7 @@ Ogni comando accetta `--json`: la stessa risposta in una forma che un programma
 — o un modello — legge senza doverla interpretare a occhio.
 
 Non è un secondo modello di dati: le attività passano da `src/taskModel.js` e le
-voci di diario da `src/diary.js`, gli stessi moduli dell'app, quindi il marker
+voci di diario da `src/diary.js`, gli stessi moduli dell'app — quindi il marker
 `[MIN:45]`, la riga `In attesa da:` e la forma di una voce restano quelle di
 prima. Un'attività creata da qui compare su To-Do e nell'app senza differenze.
 
@@ -243,9 +254,59 @@ Restano fuori anche `scheduled` e `inbox` come stati scrivibili: il primo è un
 blocco nel piano, il secondo è la lista di default, e si cambiano trascinando,
 nell'app. Le Finanze non ci sono affatto: vivono in IndexedDB, dentro il browser.
 
+### Come server MCP
+
+`scripts/mente-mcp.mjs` espone le stesse operazioni come strumenti che un client
+MCP può chiamare da solo durante una conversazione: si chiede *"come sta andando
+la settimana?"* e il modello sceglie `oggi`, `attivita_lista` o `diario_leggi`
+invece di farsi dettare un comando. Parla JSON-RPC su stdio, protocollo scritto a
+mano — un handshake e tre metodi non valgono una dipendenza in un progetto che
+non ne ha.
+
+Il client lo avvia quando serve e lo chiude con la chat: non è un servizio che
+resta acceso, e a client chiuso non esiste alcun processo.
+
+**Claude Code** — `--scope user` lo rende disponibile in ogni cartella, non solo
+nel progetto:
+
+```bash
+claude mcp add --scope user mente -- node /percorso/assoluto/scripts/mente-mcp.mjs
+claude mcp list                        # deve dire "✔ Connected"
+```
+
+**App desktop** — nel file di configurazione dei server MCP:
+
+```json
+{
+  "mcpServers": {
+    "mente": {
+      "command": "node",
+      "args": ["C:\\percorso\\assoluto\\scripts\\mente-mcp.mjs"]
+    }
+  }
+}
+```
+
+Il percorso va assoluto in entrambi i casi: il client avvia il processo dalla
+cartella che gli pare. Non è un problema per il token, che il server cerca
+accanto a sé e non nella cartella di lavoro.
+
+I dodici strumenti sono gli stessi comandi: `oggi`, `agenda`, `piano`, `sezioni`,
+`attivita_lista`, `attivita_crea`, `attivita_stato`, `diario_leggi`,
+`diario_scrivi`, `note_pagine`, `note_leggi`, `identita`. Quelli in sola lettura
+sono marcati come tali (`readOnlyHint`), così un client che chiede conferma prima
+di scrivere sa quando chiederla.
+
+**Dove funziona.** Nei client che girano sulla stessa macchina — Claude Code e
+l'app desktop. Il sito claude.ai in una scheda del browser, e l'app sul telefono,
+non possono avviare un processo locale: parlano solo con server MCP remoti,
+raggiungibili via HTTPS e con un'autenticazione propria. Questo server è locale
+di proposito: il token non lascia la macchina.
+
 ### Il token
 
-Il CLI non ha MSAL: usa un refresh token, come `sync-calendar.mjs`. Se ne prende
+Vale per entrambe le strade. Non c'è MSAL: si usa un refresh token, come
+`sync-calendar.mjs`. Se ne prende
 uno con gli scope giusti — tutto in lettura, scrittura su file e attività — e lo
 si tiene sulla propria macchina:
 
@@ -255,6 +316,7 @@ node scripts/get-refresh-token.mjs --mente
 
 Il token va in `scripts/.mente-refresh-token` (ignorato da git) oppure nella
 variabile `MENTE_REFRESH_TOKEN`, anche da un `.env` nella radice del progetto.
+Ruota a ogni uso e il file viene riscritto, quindi non scade da solo.
 Resta separato dal segreto `MS_REFRESH_TOKEN` di GitHub Actions, che continua a
 poter fare pochissimo: solo mail e calendario, per la sincronizzazione. Quel file
 è la chiave del OneDrive personale — vale quanto la password, e non va copiato in
