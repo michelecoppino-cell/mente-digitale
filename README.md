@@ -266,15 +266,57 @@ non ne ha.
 Il client lo avvia quando serve e lo chiude con la chat: non è un servizio che
 resta acceso, e a client chiuso non esiste alcun processo.
 
-**Claude Code** — `--scope user` lo rende disponibile in ogni cartella, non solo
-nel progetto:
+Si registra una volta sola, dal terminale. `--scope user` lo rende disponibile
+in ogni cartella invece che solo in questo progetto, e vale sia per la CLI sia
+per l'app desktop, che leggono la stessa configurazione (`~/.claude.json`, cioè
+`%USERPROFILE%\.claude.json` su Windows):
 
 ```bash
 claude mcp add --scope user mente -- node /percorso/assoluto/scripts/mente-mcp.mjs
 claude mcp list                        # deve dire "✔ Connected"
 ```
 
-**App desktop** — nel file di configurazione dei server MCP:
+Il percorso va assoluto: il client avvia il processo dalla cartella che gli pare.
+Non è un problema per il token, che il server cerca accanto a sé e non nella
+cartella di lavoro.
+
+Dentro una sessione, `/mcp` — scritto da solo, è un comando e non una domanda —
+elenca i server e il loro stato. Il segno che gli strumenti stanno funzionando
+davvero è che nella risposta compaiono chiamate a `oggi` o `attivita_lista`, e
+non comandi `node scripts/mente.mjs`.
+
+I dodici strumenti sono gli stessi comandi: `oggi`, `agenda`, `piano`, `sezioni`,
+`attivita_lista`, `attivita_crea`, `attivita_stato`, `diario_leggi`,
+`diario_scrivi`, `note_pagine`, `note_leggi`, `identita`. Quelli in sola lettura
+sono marcati come tali (`readOnlyHint`), così un client che chiede conferma prima
+di scrivere sa quando chiederla. Nessuno cancella niente: un'attività di prova si
+può spuntare, non eliminare.
+
+#### Dove funziona e dove no
+
+Solo dove il client può avviare un processo **su questa macchina**:
+
+| Dove | Funziona |
+|---|---|
+| CLI `claude` in un terminale | sì |
+| App desktop, scheda **Code**, ambiente **Local** | sì |
+| App desktop, sessione **Cloud** (icona della nuvola in cima alla sessione) | no |
+| App desktop, schede **Chat** e **Cowork** | no |
+| claude.ai nel browser, app sul telefono | no |
+
+Una sessione Cloud gira in un container remoto: non ha il file del token, e non
+è un difetto da aggirare — se lo avesse, vorrebbe dire che il token ha lasciato
+il computer. È la confusione più facile da fare, perché l'app è la stessa: la
+nuvola accanto al titolo della sessione è il modo per accorgersene.
+
+Le schede Chat e Cowork prendono i connettori dall'account claude.ai, cioè server
+MCP **remoti**, raggiungibili via HTTPS. Un server stdio come questo vive sul
+disco e parla su una pipe: non è raggiungibile da lì, e non c'è percorso o
+configurazione che lo renda tale. Servirebbe la versione remota — il server
+esposto su internet con un'autenticazione propria, e la macchina sempre accesa.
+
+Per client MCP diversi da Claude Code — che leggono un `claude_desktop_config.json`
+o simile — l'entrata è la stessa in forma JSON:
 
 ```json
 {
@@ -287,28 +329,11 @@ claude mcp list                        # deve dire "✔ Connected"
 }
 ```
 
-Il percorso va assoluto in entrambi i casi: il client avvia il processo dalla
-cartella che gli pare. Non è un problema per il token, che il server cerca
-accanto a sé e non nella cartella di lavoro.
-
-I dodici strumenti sono gli stessi comandi: `oggi`, `agenda`, `piano`, `sezioni`,
-`attivita_lista`, `attivita_crea`, `attivita_stato`, `diario_leggi`,
-`diario_scrivi`, `note_pagine`, `note_leggi`, `identita`. Quelli in sola lettura
-sono marcati come tali (`readOnlyHint`), così un client che chiede conferma prima
-di scrivere sa quando chiederla.
-
-**Dove funziona.** Nei client che girano sulla stessa macchina — Claude Code e
-l'app desktop. Il sito claude.ai in una scheda del browser, e l'app sul telefono,
-non possono avviare un processo locale: parlano solo con server MCP remoti,
-raggiungibili via HTTPS e con un'autenticazione propria. Questo server è locale
-di proposito: il token non lascia la macchina.
-
 ### Il token
 
 Vale per entrambe le strade. Non c'è MSAL: si usa un refresh token, come
-`sync-calendar.mjs`. Se ne prende
-uno con gli scope giusti — tutto in lettura, scrittura su file e attività — e lo
-si tiene sulla propria macchina:
+`sync-calendar.mjs`. Se ne prende uno con gli scope giusti — tutto in lettura,
+scrittura su file e attività — e lo si tiene sulla propria macchina:
 
 ```bash
 node scripts/get-refresh-token.mjs --mente
@@ -321,6 +346,15 @@ Resta separato dal segreto `MS_REFRESH_TOKEN` di GitHub Actions, che continua a
 poter fare pochissimo: solo mail e calendario, per la sincronizzazione. Quel file
 è la chiave del OneDrive personale — vale quanto la password, e non va copiato in
 posti in cui non metteresti la password.
+
+**Su un secondo computer** si rifà il giro — Node, clone, token, `claude mcp add`
+— e si genera un token **nuovo** invece di copiare il file: il refresh token ruota
+a ogni uso, e due macchine che si passano la stessa copia finiscono prima o poi
+con una delle due che si ritrova in mano un token già rinnovato altrove.
+
+Il codice, invece, non si aggiorna da solo: il server esegue i file che stanno su
+quel disco. Dopo un `git pull` va riavviata la sessione, perché il client avvia il
+processo all'inizio della chat e lo tiene fino alla fine.
 
 ## Sviluppo
 
