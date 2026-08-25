@@ -21,6 +21,7 @@ import {
   ESTIMATE_CHOICES, DEFAULT_ESTIMATE_MIN, parseEstimate, withEstimateMarker,
   graphStatusFor, parseWaitingFor, withWaitingFor, waitingDays,
 } from './taskModel';
+import { listLabel, sectionNameForList } from './paraConfig';
 import { usePomodoro } from './pomodoroContext';
 import { pushUndo } from './undo';
 import SectionResources from './SectionResources';
@@ -83,17 +84,22 @@ export default function TaskDetailPanel({ task, notebooks = [], sectionsMap = {}
   const navigate = useNavigate();
   const { start: startPomodoro } = usePomodoro();
   // La sezione PARA del task è la sezione OneNote che si chiama come la sua
-  // lista To-Do: è la convenzione su cui poggia tutta l'app. Senza, il
-  // pomodoro non saprebbe quale workbook aprire e il bottone non compare.
-  const sectionId = (() => {
-    const name = (task?._listName || '').toLowerCase();
-    if (!name) return null;
-    for (const sects of Object.values(sectionsMap || {})) {
-      const sec = (sects || []).find(x => (x.displayName || '').toLowerCase() === name);
-      if (sec) return sec.id;
+  // lista To-Do — o, se la lista è una consegna annidata (`2573.A60`, vedi
+  // paraConfig.js), quella della sua commessa. Senza, il pomodoro non saprebbe
+  // quale workbook aprire, il bottone non comparirebbe e i riquadri
+  // OneNote/OneDrive resterebbero vuoti: tutte cose che sparirebbero in
+  // silenzio, senza un errore.
+  const { section, notebook } = useMemo(() => {
+    const names = Object.values(sectionsMap || {}).flat().map(s => s.displayName);
+    const target = (sectionNameForList(task?._listName, names) || '').toLowerCase();
+    if (!target) return { section: null, notebook: null };
+    for (const [nbId, sects] of Object.entries(sectionsMap || {})) {
+      const sec = (sects || []).find(x => (x.displayName || '').toLowerCase() === target);
+      if (sec) return { section: sec, notebook: notebooks.find(n => n.id === nbId) || { id: nbId } };
     }
-    return null;
-  })();
+    return { section: null, notebook: null };
+  }, [task?._listName, notebooks, sectionsMap]);
+  const sectionId = section?.id || null;
   const [loading, setLoading]         = useState(true);
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft]   = useState(task.title);
@@ -120,18 +126,6 @@ export default function TaskDetailPanel({ task, notebooks = [], sectionsMap = {}
   const [waitingSince, setWaitingSince] = useState(/** @type {string|null} */ (null));
   const [savingStatus, setSavingStatus] = useState(false);
   const estimate = parseEstimate(notes) ?? DEFAULT_ESTIMATE_MIN;
-
-  // Sezione OneNote collegata alla lista ToDo del task (per nome, come nel
-  // resto dell'app) — usata per mostrare qui sotto i riquadri OneNote/OneDrive.
-  const { section, notebook } = useMemo(() => {
-    const lower = (task._listName || '').toLowerCase();
-    if (!lower) return { section: null, notebook: null };
-    for (const [nbId, sects] of Object.entries(sectionsMap)) {
-      const sec = sects.find(s => s.displayName.toLowerCase() === lower);
-      if (sec) return { section: sec, notebook: notebooks.find(n => n.id === nbId) || { id: nbId } };
-    }
-    return { section: null, notebook: null };
-  }, [task._listName, notebooks, sectionsMap]);
 
   useEffect(() => { setTitleDraft(task.title); setEditingTitle(false); load(); }, [task.id]); // eslint-disable-line
 
@@ -512,7 +506,7 @@ export default function TaskDetailPanel({ task, notebooks = [], sectionsMap = {}
             {task.title}
           </div>
         )}
-        <div className="planner-task-detail-meta">{task._listName}</div>
+        <div className="planner-task-detail-meta">{listLabel(task._listName)}</div>
         <div className="planner-task-detail-due">
           <span>📅 Scadenza</span>
           <input
@@ -689,7 +683,7 @@ export default function TaskDetailPanel({ task, notebooks = [], sectionsMap = {}
                   taskId: task.id,
                   taskTitle: task.title,
                   sectionId,
-                  sectionName: task._listName || null,
+                  sectionName: section?.displayName || null,
                   durationMin: 25,
                 });
                 navigate(`/sezioni/${sectionId}`);
@@ -697,7 +691,7 @@ export default function TaskDetailPanel({ task, notebooks = [], sectionsMap = {}
               <span className="planner-pomodoro-dot" />
               Avvia pomodoro
               <span className="planner-pomodoro-caption">
-                apre Sezioni sul workbook {task._listName || 'della sezione'}
+                apre Sezioni sul workbook {section?.displayName || 'della sezione'}
               </span>
             </button>
           )}

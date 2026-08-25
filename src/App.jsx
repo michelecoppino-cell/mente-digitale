@@ -1,12 +1,13 @@
-import { useState, useEffect, useRef, lazy, Suspense } from 'react';
+import { useState, useEffect, useMemo, useRef, lazy, Suspense } from 'react';
 import { Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { initAuth, getAccount, login, trySsoSilent, getLastAuthDebug, onInteractionRequired, isInteractionRequired, reconnect } from './auth';
-import { getNotebooks, getSections, getTodoLists, getTodoTasks, getPages, getRecentEmails, getPageContentHtml, markOneNoteTagDone, getReminders, createTask, getCalendarEvents, getTasksForDeadlineDedup, invalidateCalendarsCache, loadColorSettings, saveColorSettings, migrateLegacyDriveFiles, loadPlannerConfig, loadDailyPlans, saveDailyPlans, updateTaskStatus, completeTask } from './api';
+import { getNotebooks, getSections, getTodoLists, getTodoTasks, getPages, getRecentEmails, getPageContentHtml, markOneNoteTagDone, getReminders, createTask, getCalendarEvents, getTasksForDeadlineDedup, invalidateCalendarsCache, loadColorSettings, saveColorSettings, migrateLegacyDriveFiles, loadPlannerConfig, loadDailyPlans, saveDailyPlans, updateTaskStatus, completeTask, createTodoList, renameTodoList } from './api';
 import { getMarker, setMarker, clearMarkers } from './markers';
 import { queryClient, qk, STALE } from './queryClient';
 import { extractEmailCandidates, extractOneNoteCandidates } from './dailyReview';
 import { parseReminderSubject, reminderMarker, hasReminderMarker } from './deadlineReminders';
 import { shadeColor, DEFAULT_CONFIG } from './plannerShared';
+import { listsForSection, sectionNameForList } from './paraConfig';
 import MindMap from './MindMap';
 import IdentityPanel from './IdentityPanel';
 import SearchOverlay from './SearchOverlay';
@@ -175,7 +176,6 @@ export default function App() {
   const [notebooks, setNotebooks] = useState([]);
   const [sectionsMap, setSectionsMap] = useState({});
   const [todoListsMap, setTodoListsMap] = useState({});
-  const [todoCountMap, setTodoCountMap] = useState({});
   const [selected, setSelected] = useState(null);
   const [sync, setSync] = useState({ state: 'idle', label: 'Non connesso' });
   // La sessione Microsoft è scaduta e serve un accesso interattivo. Non è più
@@ -228,6 +228,36 @@ export default function App() {
   const preloadQueueRef = useRef([]);
   const preloadRunningRef = useRef(false);
   const todoListsRef = useRef([]);
+
+  // Tutti i nomi di sezione conosciuti: servono a capire a quale commessa
+  // appartiene una lista annidata (`2573.A60` → sezione `2573-ABS`), e la
+  // risposta dipende da tutte le sezioni insieme — un prefisso che ne trova
+  // due non vale.
+  const allSectionNames = useMemo(
+    () => Object.values(sectionsMap).flat().map(s => s.displayName),
+    [sectionsMap]
+  );
+
+  // Quante attività aperte per lista e per sezione. Il badge della Mappa è per
+  // sezione: se la commessa ha le consegne annidate, il conto è la loro somma,
+  // altrimenti una sezione con tre consegne mostrerebbe zero. Derivato dal pool
+  // invece che salvato: è la stessa cosa, contata dove i task già stanno.
+  const todoCountMap = useMemo(() => {
+    /** @type {Record<string, number>} */
+    const counts = {};
+    for (const t of scheduledTasks || []) {
+      const listName = (t._listName || '').toLowerCase();
+      if (!listName) continue;
+      counts[listName] = (counts[listName] || 0) + 1;
+    }
+    for (const l of todoLists) {
+      const section = sectionNameForList(l.displayName, allSectionNames);
+      if (!section || section.toLowerCase() === l.displayName.toLowerCase()) continue;
+      const n = counts[l.displayName.toLowerCase()] || 0;
+      if (n) counts[section.toLowerCase()] = (counts[section.toLowerCase()] || 0) + n;
+    }
+    return counts;
+  }, [scheduledTasks, todoLists, allSectionNames]);
 
   const navigate = useNavigate();
   const location = useLocation();
@@ -557,14 +587,12 @@ export default function App() {
 
   async function preloadAllTasks(lists, forceRefresh = false) {
     const allTasks = [];
-    const counts = {};
     let anyError = false;
     for (const l of lists) {
       try {
         const tasks = await fetchCached(qk.tasks(l.id), () => getTodoTasks(l.id), STALE.tasks, forceRefresh);
         tasksCache.current[l.id] = tasks;
         tasks.forEach(t => allTasks.push({ ...t, _listName: l.displayName, _listId: l.id }));
-        if (tasks.length > 0) counts[l.displayName.toLowerCase()] = tasks.length;
         await new Promise(r => setTimeout(r, 200));
       } catch (e) {
         console.error('preload tasks', l.displayName, e);
@@ -576,12 +604,10 @@ export default function App() {
         if (stale) {
           tasksCache.current[l.id] = stale;
           stale.forEach(t => allTasks.push({ ...t, _listName: l.displayName, _listId: l.id }));
-          if (stale.length > 0) counts[l.displayName.toLowerCase()] = stale.length;
         }
       }
     }
     setScheduledTasks(allTasks);
-    setTodoCountMap(counts);
     if (anyError) {
       setSync({ state: 'error', label: 'Errore aggiornamento task — dati non aggiornati' });
     }
@@ -669,14 +695,55 @@ export default function App() {
     applyColorSettings({ notebooks: cur.notebooks, sections: nextSections });
   }
 
-  function findTodoList(sectionName) {
-    return todoListsMap[sectionName.toLowerCase()] || null;
+  // Le liste To-Do di una sezione: quella omonima di sempre, più le consegne
+  // annidate sotto la commessa (`2573.A60-260831` sta in `2573-ABS`, vedi
+  // paraConfig.js). Sono N, non una: una commessa con tre consegne ha tre
+  // liste, e il pannello le deve vedere tutte.
+  function findTodoLists(sectionName) {
+    return listsForSection(sectionName, todoLists, allSectionNames);
   }
 
   function handleSelectSection(section, nb, appKey = 'onenote') {
     if (!section) { setSelected(null); return; }
-    const todoList = findTodoList(section.displayName);
-    setSelected({ type: 'section', data: section, nb, listId: todoList?.id || null, listName: todoList?.displayName || null, initialTab: appKey.toLowerCase() });
+    const lists = findTodoLists(section.displayName);
+    // `listId`/`listName` restano la lista principale — dove nasce un'attività
+    // creata dal pannello, cioè la lista omonima se c'è, altrimenti la prima
+    // consegna. Chi sa gestire più consegne legge `lists`.
+    const primary = lists[0] || null;
+    setSelected({
+      type: 'section', data: section, nb,
+      lists,
+      listId: primary?.id || null,
+      listName: primary?.displayName || null,
+      initialTab: appKey.toLowerCase(),
+    });
+  }
+
+  // Una consegna nuova (o rinominata per spostarne la scadenza) cambia
+  // l'elenco delle liste: senza rileggerlo, comparirebbe solo al reload.
+  async function refreshTodoLists() {
+    const lists = await fetchCached(qk.todolists(), getTodoLists, STALE.todolists, true);
+    todoListsRef.current = lists;
+    setTodoLists(lists);
+    const map = {};
+    lists.forEach(l => { map[l.displayName.toLowerCase()] = { id: l.id, displayName: l.displayName }; });
+    setTodoListsMap(map);
+    return lists;
+  }
+
+  async function handleCreateDeliverable(displayName) {
+    const created = await createTodoList(displayName);
+    await refreshTodoLists();
+    return created;
+  }
+
+  async function handleRenameDeliverable(listId, displayName) {
+    const renamed = await renameTodoList(listId, displayName);
+    await refreshTodoLists();
+    // I task portano con sé il nome della lista (`_listName`): dopo una
+    // rinomina quello vecchio direbbe la scadenza sbagliata.
+    setScheduledTasks(prev => (prev || []).map(t => t._listId === listId ? { ...t, _listName: displayName } : t));
+    return renamed;
   }
 
   // Aggiorna la lista globale dei task (e la cache del Panel di sezione) dopo
@@ -838,7 +905,6 @@ export default function App() {
     notebooksRef.current = [];
     setSectionsMap({});
     setScheduledTasks(null);
-    setTodoCountMap({});
     await load(true);
   }
 
@@ -965,6 +1031,7 @@ export default function App() {
               preloadedTasks={scheduledTasks || []}
               notebooks={notebooks}
               sectionsMap={sectionsMap}
+              todoLists={todoLists}
               pagesCache={pagesCache}
               autoAddTask={pendingPlannerTask}
               onAutoAdded={() => setPendingPlannerTask(null)}
@@ -1004,7 +1071,7 @@ export default function App() {
             <SectionsView
               notebooks={notebooks}
               sectionsMap={sectionsMap}
-              todoListsMap={todoListsMap}
+              todoLists={todoLists}
               tasks={scheduledTasks || []}
               pagesCache={pagesCache}
               plans={dailyPlans}
@@ -1012,6 +1079,8 @@ export default function App() {
               onTaskRemoved={handleTaskRemoved}
               onTaskPatched={handleTaskPatched}
               onTaskRestored={handleTaskRestored}
+              onCreateDeliverable={handleCreateDeliverable}
+              onRenameDeliverable={handleRenameDeliverable}
             />
           } />
 

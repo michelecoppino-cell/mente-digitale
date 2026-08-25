@@ -263,6 +263,34 @@ export async function getTodoLists() {
   return callPagedValues('/me/todo/lists');
 }
 
+// Creare e rinominare una lista To-Do: è così che nasce una consegna dentro una
+// commessa (`GRUPPO.Consegna-YYMMDD`, vedi paraConfig.js) e così che se ne
+// cambia la scadenza — la data sta nel nome, quindi spostarla è una rinomina.
+// Stesso permesso già usato per creare attività (Tasks.ReadWrite): nessuno
+// scope nuovo.
+/**
+ * @param {string} displayName
+ * @returns {Promise<import('./types').TodoList>}
+ */
+export async function createTodoList(displayName) {
+  return call('/me/todo/lists', {
+    method: 'POST',
+    body: JSON.stringify({ displayName })
+  });
+}
+
+/**
+ * @param {string} listId
+ * @param {string} displayName
+ * @returns {Promise<import('./types').TodoList>}
+ */
+export async function renameTodoList(listId, displayName) {
+  return call(`/me/todo/lists/${listId}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ displayName })
+  });
+}
+
 /**
  * @param {string} listId
  * @returns {Promise<import('./types').TodoTask[]>}

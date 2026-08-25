@@ -20,7 +20,9 @@
 
 import { createInterface } from 'readline';
 import * as mente from './mente-comandi.mjs';
-import { TASK_STATUSES, CONTEXTS, STATI_SCRIVIBILI, STATI_CREABILI, TIPI_DIARIO } from './mente-comandi.mjs';
+import {
+  TASK_STATUSES, CONTEXTS, STATI_SCRIVIBILI, STATI_CREABILI, TIPI_DIARIO, GRANULARITY_MEMO_LINE,
+} from './mente-comandi.mjs';
 
 const SERVER = { name: 'mente-digitale', version: '1.0.0' };
 const PROTOCOL_DEFAULT = '2025-06-18';
@@ -68,7 +70,9 @@ const TOOLS = [
     name: 'sezioni',
     description:
       'Le sezioni PARA: le liste di Microsoft To-Do con quante attività aperte hanno, e i taccuini ' +
-      'OneNote con le loro sezioni. Utile per sapere quali nomi di sezione esistono prima di filtrare o creare.',
+      'OneNote con le loro sezioni. Utile per sapere quali nomi di sezione esistono prima di filtrare o creare. ' +
+      'Le liste sono raccolte per commessa: una commessa può avere più consegne, una lista ciascuna ' +
+      '(nome GRUPPO.Consegna-YYMMDD), e ogni consegna porta la sua scadenza.',
     sola_lettura: true,
     schema: { type: 'object', properties: {} },
     run: () => mente.sezioni(),
@@ -76,14 +80,17 @@ const TOOLS = [
   {
     name: 'attivita_lista',
     description:
-      'Le attività con il loro stato nel flusso GTD, sezione, contesto, stima, scadenza, note e sottoattività. ' +
-      `Stati: ${TASK_STATUSES.join(', ')}. Ogni attività porta un id: serve per cambiarle stato.`,
+      'Le attività con il loro stato nel flusso GTD, sezione, consegna, contesto, stima, scadenza, note e ' +
+      `sottoattività. Stati: ${TASK_STATUSES.join(', ')}. Ogni attività porta un id: serve per cambiarle stato. ` +
+      "Quando la commessa ha più consegne, ogni attività dice a quale appartiene e quando quella consegna scade.",
     sola_lettura: true,
     schema: {
       type: 'object',
       properties: {
         stato: { type: 'string', enum: [...TASK_STATUSES], description: 'Filtra per stato del flusso.' },
-        sezione: stringa('Filtra per sezione (nome anche parziale della lista To-Do).'),
+        sezione: stringa(
+          'Filtra per sezione (nome anche parziale della lista To-Do). Il nome di una commessa ' +
+          'vale per tutte le sue consegne: «2573» prende anche 2573.A60 e 2573.B10.'),
         contesto: { type: 'string', enum: CONTEXTS.map(c => c.key), description: 'Filtra per contesto.' },
         includiFatte: { type: 'boolean', description: 'Include anche le attività completate. Default false.' },
       },
@@ -94,14 +101,18 @@ const TOOLS = [
     name: 'attivita_crea',
     description:
       "Crea un'attività su Microsoft To-Do. Senza sezione finisce in Inbox con il solo titolo, che è il modo " +
-      'giusto di catturare al volo; con una sezione può nascere già chiarita (stato, stima, contesto, scadenza).',
+      'giusto di catturare al volo; con una sezione può nascere già chiarita (stato, stima, contesto, scadenza). ' +
+      GRANULARITY_MEMO_LINE,
     sola_lettura: false,
     schema: {
       type: 'object',
       required: ['titolo'],
       properties: {
         titolo: stringa("Titolo dell'attività."),
-        sezione: stringa('Sezione in cui creare (nome anche parziale della lista To-Do). Serve fuori da Inbox.'),
+        sezione: stringa(
+          'Sezione in cui creare (nome anche parziale della lista To-Do). Serve fuori da Inbox. ' +
+          'Se la commessa ha più consegne va indicata la consegna: «tutta la commessa» non è un posto ' +
+          'in cui scrivere.'),
         stato: { type: 'string', enum: [...STATI_CREABILI], description: 'Default: inbox senza sezione, next con sezione.' },
         stimaMin: { type: 'integer', description: 'Stima di durata in minuti.' },
         scadenza: stringa('Scadenza, YYYY-MM-DD.'),
@@ -259,7 +270,10 @@ async function gestisci(req) {
         instructions:
           'La mente digitale di Michele: attività (Microsoft To-Do), piano del giorno, calendario, ' +
           'diario e taccuini OneNote. Si scrive solo in due punti — una voce di diario, ' +
-          "un'attività (creazione e cambio di stato). Tutto il resto è in sola lettura.",
+          "un'attività (creazione e cambio di stato). Tutto il resto è in sola lettura. " +
+          'Una sezione è una lista To-Do; una commessa può averne più di una, una per consegna, ' +
+          'chiamata GRUPPO.Consegna-YYMMDD, dove le ultime sei cifre sono la scadenza. ' +
+          GRANULARITY_MEMO_LINE,
       });
 
     case 'ping':

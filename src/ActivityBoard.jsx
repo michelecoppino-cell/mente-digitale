@@ -20,9 +20,9 @@ import {
   parseWaitingFor, waitingDays, CONTEXTS, isSlipped,
 } from './taskModel';
 import {
-  DEFAULT_CONFIG, findProject, buildListColorMap, formatDueDate, dueDateSortValue, isTaskOverdue,
+  DEFAULT_CONFIG, findProject, buildListColorMap, listColor, formatDueDate, dueDateSortValue, isTaskOverdue,
 } from './plannerShared';
-import { paraSectionLabel } from './paraConfig';
+import { listLabel } from './paraConfig';
 import { completeTask, updateTaskStatus } from './api';
 import { pushUndo } from './undo';
 import { useMediaQuery } from './useMediaQuery';
@@ -246,12 +246,18 @@ export default function ActivityBoard({
 
   // Il colore di ogni sezione, lo stesso che il Piano dà ai blocchi: qui tinge
   // il bordo della riga e il pallino del gruppo.
-  const listColorMap = useMemo(() => buildListColorMap(notebooks, sectionsMap), [notebooks, sectionsMap]);
+  // Le liste servono anche al colore: una consegna annidata (`2573.A60`, vedi
+  // paraConfig.js) prende una sfumatura del colore della sua commessa, e senza
+  // le liste non si saprebbe di chi è figlia.
+  const listColorMap = useMemo(
+    () => buildListColorMap(notebooks, sectionsMap, todoLists),
+    [notebooks, sectionsMap, todoLists]
+  );
 
   /** @param {import('./types').TodoTask} t */
   function colorForTask(t) {
     const proj = findProject(t, config);
-    return proj?.color || listColorMap[(t._listName || '').toLowerCase()] || '#888';
+    return proj?.color || listColor(t._listName || '', listColorMap);
   }
 
   // Lo stato del flusso dell'attività aperta nel dettaglio: la board lo sa —
@@ -318,7 +324,7 @@ export default function ActivityBoard({
         if (!groups.has(key)) {
           groups.set(key, {
             key,
-            name: proj?.name || paraSectionLabel(t._listName) || 'Altro',
+            name: proj?.name || listLabel(t._listName) || 'Altro',
             color: colorForTask(t),
             tasks: [],
           });
@@ -432,10 +438,10 @@ export default function ActivityBoard({
           <button
             key={l.id}
             className={`ab-filter${listFilter === l.id ? ' active' : ''}`}
-            style={/** @type {import('react').CSSProperties} */ ({ '--chip': listColorMap[l.name.toLowerCase()] })}
-            title={`Solo le attività della lista ${l.name}`}
+            style={/** @type {import('react').CSSProperties} */ ({ '--chip': listColor(l.name, listColorMap) })}
+            title={`Solo le attività della lista ${listLabel(l.name)}`}
             onClick={() => setParam({ lista: listFilter === l.id ? '' : l.id })}>
-            {paraSectionLabel(l.name)}
+            {listLabel(l.name)}
             <span className="ab-filter-count">{l.count}</span>
           </button>
         ))}
@@ -549,7 +555,7 @@ export default function ActivityBoard({
                 </button>
                 <span className={`ab-due${isTaskOverdue(t.dueDateTime) ? ' overdue' : ''}`}>{formatDueDate(t.dueDateTime)}</span>
                 <span className="ab-deadline-title">{t.title}</span>
-                <span className="ab-deadline-list">{paraSectionLabel(t._listName)}</span>
+                <span className="ab-deadline-list">{listLabel(t._listName)}</span>
               </div>
             ))}
           </div>

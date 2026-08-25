@@ -12,7 +12,9 @@
  */
 
 import * as mente from './mente-comandi.mjs';
-import { TASK_STATUSES, CONTEXTS, STATI_SCRIVIBILI, STATI_CREABILI, TIPI_DIARIO } from './mente-comandi.mjs';
+import {
+  TASK_STATUSES, CONTEXTS, STATI_SCRIVIBILI, STATI_CREABILI, TIPI_DIARIO, GRANULARITY_MEMO_LINE,
+} from './mente-comandi.mjs';
 
 // ── Argomenti ────────────────────────────────────────────────────────────────
 
@@ -144,7 +146,8 @@ Lettura
   oggi [--data YYYY-MM-DD]        agenda, piano e conteggi del giorno
   agenda [--giorni N]             eventi del calendario (default 7 giorni)
   piano [--data YYYY-MM-DD]       i blocchi del piano di un giorno
-  sezioni                         liste To-Do (con quante attività aperte) e sezioni OneNote
+  sezioni                         liste To-Do per commessa (con consegne, scadenze e
+                                  attività aperte) e sezioni OneNote
   note pagine <sezione>           le pagine OneNote di una sezione
   note leggi <id | titolo --sezione X>
   bussola | visione               i documenti identitari
@@ -168,6 +171,14 @@ Globali
 Stati del flusso: ${TASK_STATUSES.join(', ')}. Calendario, OneNote, Bussola e
 piani si leggono soltanto: da qui non si scrivono, per non poter rovinare quello
 che non si ricostruisce da solo.
+
+Una commessa può avere più consegne, una lista To-Do ciascuna con la sua
+scadenza (nome GRUPPO.Consegna-YYMMDD). --sezione accetta sia il nome della
+commessa — e allora vale per tutte le sue consegne — sia quello di una consegna
+sola. Per creare un'attività la consegna va indicata: «tutta la commessa» non è
+un posto in cui scrivere.
+
+Le taglie, orientativamente: ${GRANULARITY_MEMO_LINE.replace('Orientativamente: ', '')}
 
 Le stesse operazioni sono disponibili come server MCP (scripts/mente-mcp.mjs),
 per usarle da una chat invece che da un terminale.

@@ -8,6 +8,12 @@
  * compongono le note di un'attività — stanno qui una volta sola, così le due
  * strade non possono divergere.
  *
+ * «Sezione» qui vuol dire una lista di Microsoft To-Do. Una commessa può averne
+ * più d'una: una per consegna, chiamata `GRUPPO.Consegna-YYMMDD` (la convenzione
+ * sta in `src/paraConfig.js`). Quindi un nome può indicare una consegna sola
+ * oppure tutta la commessa — cercare `2573` con tre consegne aperte vale «tutte
+ * e tre», non è un errore di ambiguità.
+ *
  * Ogni funzione prende un oggetto di opzioni già normalizzate e restituisce
  * `{ data, text }`: `data` è la forma strutturata (per --json e per i tool MCP),
  * `text` la resa leggibile in un terminale.
@@ -26,8 +32,12 @@ import {
 import {
   taskStatus, inboxListId, indexScheduled, taskEstimateMin, noteText,
   taskContext, withEstimateMarker, withWaitingFor, withContext,
-  graphStatusFor, STATUS_LABELS, TASK_STATUSES, CONTEXTS,
+  graphStatusFor, STATUS_LABELS, TASK_STATUSES, CONTEXTS, GRANULARITY_MEMO_LINE,
 } from '../src/taskModel.js';
+
+import {
+  listGroupKey, listDeliverableLabel, listDueDate, listLabel, sortDeliverableLists,
+} from '../src/paraConfig.js';
 
 import {
   makeEntry, dateKey, monthKey, filterEntries, humanDate, DIARY_TYPES,
@@ -40,7 +50,7 @@ import {
 export const STATI_SCRIVIBILI = ['next', 'waiting', 'someday', 'done'];
 export const STATI_CREABILI = ['inbox', 'next', 'waiting', 'someday'];
 export const TIPI_DIARIO = Object.keys(DIARY_TYPES);
-export { TASK_STATUSES, CONTEXTS, STATUS_LABELS };
+export { TASK_STATUSES, CONTEXTS, STATUS_LABELS, GRANULARITY_MEMO_LINE };
 
 // ── Formattazione ────────────────────────────────────────────────────────────
 
@@ -105,17 +115,52 @@ async function collectTasks(opts = {}) {
 }
 
 /**
- * Trova una lista To-Do — cioè una sezione — dal nome, anche parziale.
+ * Le liste che somigliano a un nome, anche parziale: prima quelle con il nome
+ * esatto, altrimenti tutte quelle che lo contengono. Nessun errore — serve ai
+ * filtri, dove «niente che somigli» è un elenco vuoto, non un problema.
+ * @param {any[]} lists
+ * @param {string} query
+ * @returns {any[]}
+ */
+function matchLists(lists, query) {
+  const q = query.toLowerCase();
+  const exact = lists.filter(l => (l.displayName || '').toLowerCase() === q);
+  return exact.length ? exact : lists.filter(l => (l.displayName || '').toLowerCase().includes(q));
+}
+
+/**
+ * Le liste To-Do indicate da un nome, dove almeno una ci deve essere. Di solito
+ * è una sola — una lista è una sezione — ma quando i risultati sono tutti
+ * consegne della stessa commessa (`2573.A60`, `2573.B10`…) valgono per la
+ * commessa intera: chi scrive `2573` intende quel lavoro, non una consegna a
+ * caso. Gruppi diversi restano un'ambiguità, e un'ambiguità resta un errore.
+ * @param {any[]} lists
+ * @param {string} query
+ * @returns {any[]} almeno una lista, tutte della stessa commessa
+ */
+function findLists(lists, query) {
+  const found = matchLists(lists, query);
+  if (!found.length) throw new Error(`Nessuna sezione che somigli a "${query}".`);
+  if (found.length === 1) return found;
+
+  const gruppi = new Set(found.map(l => (listGroupKey(l.displayName) || l.displayName).toLowerCase()));
+  if (gruppi.size > 1) {
+    throw new Error(`"${query}" corrisponde a più sezioni: ${found.map(l => l.displayName).join(', ')}`);
+  }
+  return sortDeliverableLists(found);
+}
+
+/**
+ * Come findLists, ma dove ne serve una sola — creare un'attività va fatto in
+ * una lista precisa, e «tutta la commessa» non è un posto.
  * @param {any[]} lists
  * @param {string} query
  */
 function findList(lists, query) {
-  const q = query.toLowerCase();
-  const exact = lists.filter(l => (l.displayName || '').toLowerCase() === q);
-  const found = exact.length ? exact : lists.filter(l => (l.displayName || '').toLowerCase().includes(q));
-  if (!found.length) throw new Error(`Nessuna sezione che somigli a "${query}".`);
+  const found = findLists(lists, query);
   if (found.length > 1) {
-    throw new Error(`"${query}" corrisponde a più sezioni: ${found.map(l => l.displayName).join(', ')}`);
+    const consegne = found.map(l => `${listDeliverableLabel(l.displayName)} (${l.displayName})`).join(', ');
+    throw new Error(`"${query}" è una commessa con ${found.length} consegne: indica quale — ${consegne}`);
   }
   return found[0];
 }
@@ -141,7 +186,9 @@ function findTask(tasks, query) {
 /** @param {any} t @returns {string} una riga di elenco per un'attività */
 function taskLine(t) {
   const meta = [];
-  if (t._listName) meta.push(t._listName);
+  // «commessa · consegna», mai il nome grezzo: la scadenza della consegna sta
+  // dentro il nome della lista come `-YYMMDD`, ma è un campo, non testo.
+  if (t._listName) meta.push(listLabel(t._listName));
   const ctx = taskContext(t);
   if (ctx) meta.push(CONTEXTS.find(c => c.key === ctx)?.label || ctx);
   meta.push(`${taskEstimateMin(t)}m`);
@@ -152,11 +199,18 @@ function taskLine(t) {
 
 /** @param {any} t */
 function riassuntoTask(t) {
+  const consegna = listGroupKey(t._listName) ? listDeliverableLabel(t._listName) : null;
+  const scadenzaConsegna = listDueDate(t._listName);
   return {
     id: t.id,
     titolo: t.title,
     stato: t._status,
-    sezione: t._listName,
+    // `sezione` resta la commessa (o la lista, se non è annidata): è la chiave
+    // con cui si filtra. La consegna è un campo a parte, con la sua scadenza.
+    sezione: listGroupKey(t._listName) || t._listName,
+    consegna,
+    scadenzaConsegna: scadenzaConsegna ? scadenzaConsegna.toISOString().slice(0, 10) : null,
+    lista: t._listName,
     contesto: taskContext(t),
     stimaMin: taskEstimateMin(t),
     scadenza: t.dueDateTime?.dateTime?.slice(0, 10) || null,
@@ -280,10 +334,16 @@ export async function attivitaLista(opts = {}) {
     throw new Error(`Stato sconosciuto: ${stato} (${TASK_STATUSES.join(', ')})`);
   }
 
-  const { tasks } = await collectTasks({ includeDone: !!opts.includiFatte });
+  const { lists, tasks } = await collectTasks({ includeDone: !!opts.includiFatte });
   let sel = stato ? tasks.filter(t => t._status === stato) : tasks;
   const sezione = testo(opts.sezione);
-  if (sezione) sel = sel.filter(t => (t._listName || '').toLowerCase().includes(sezione.toLowerCase()));
+  if (sezione) {
+    // Un nome che pesca più consegne della stessa commessa vale per tutte: è
+    // la stessa regola di findLists, e qui filtrare non è mai un errore —
+    // se non c'è niente che somigli, l'elenco esce vuoto.
+    const ids = new Set(matchLists(lists, sezione).map(l => l.id));
+    sel = sel.filter(t => ids.has(t._listId));
+  }
   const contesto = testo(opts.contesto);
   if (contesto) sel = sel.filter(t => taskContext(t) === contesto.toLowerCase());
 
@@ -506,20 +566,68 @@ function voceText(e) {
 
 // ── Sezioni, OneNote, documenti identitari ───────────────────────────────────
 
+/**
+ * Le liste To-Do raccolte per commessa: quelle annidate
+ * (`GRUPPO.Consegna-YYMMDD`) stanno sotto il loro gruppo, con la scadenza
+ * accanto; le altre restano da sole, come sono sempre state.
+ * @param {any[]} lists
+ * @returns {{ nome: string, liste: any[] }[]}
+ */
+function listePerCommessa(lists) {
+  /** @type {Map<string, { nome: string, liste: any[] }>} */
+  const map = new Map();
+  for (const l of lists) {
+    const gruppo = listGroupKey(l.displayName);
+    const key = (gruppo || l.displayName).toLowerCase();
+    if (!map.has(key)) map.set(key, { nome: gruppo || l.displayName, liste: [] });
+    map.get(key)?.liste.push(l);
+  }
+  for (const c of map.values()) c.liste = sortDeliverableLists(c.liste);
+  return Array.from(map.values());
+}
+
 /** @returns {Promise<{ data: any, text: string }>} */
 export async function sezioni() {
   const [{ lists, tasks }, notebooks] = await Promise.all([collectTasks(), getNotebooks()]);
   const sezioniPerTaccuino = await Promise.all(notebooks.map(n => getSections(n.id)));
 
   const conteggio = /** @param {string} id */ id => tasks.filter(t => t._listId === id).length;
-  const listeText = lists.map(l =>
-    `${String(conteggio(l.id)).padStart(3)} aperte  ${l.displayName}` +
-    (l.wellknownListName === 'defaultList' ? '  (Inbox)' : ''));
+  const commesse = listePerCommessa(lists);
+
+  /** @param {any} l @returns {string} */
+  const rigaLista = l => {
+    const scadenza = listDueDate(l.displayName);
+    const coda = [
+      scadenza ? `scade ${scadenza.toISOString().slice(0, 10)}` : null,
+      l.wellknownListName === 'defaultList' ? '(Inbox)' : null,
+    ].filter(Boolean).join('  ');
+    const nome = listGroupKey(l.displayName) ? `  · ${listDeliverableLabel(l.displayName)}` : l.displayName;
+    return `${String(conteggio(l.id)).padStart(3)} aperte  ${nome}${coda ? '  ' + coda : ''}`;
+  };
+
+  const listeText = commesse.flatMap(c => (
+    // Una commessa con una consegna sola non ha bisogno di un'intestazione: la
+    // riga è già il suo nome.
+    c.liste.length === 1 && !listGroupKey(c.liste[0].displayName)
+      ? [rigaLista(c.liste[0])]
+      : [`${c.nome}`, ...c.liste.map(rigaLista)]
+  ));
   const taccuiniText = notebooks.map((n, i) =>
     `${n.displayName}: ${(sezioniPerTaccuino[i] || []).map(s => s.displayName).join(', ') || '—'}`);
 
   return {
     data: {
+      commesse: commesse.map(c => ({
+        nome: c.nome,
+        liste: c.liste.map(l => ({
+          id: l.id,
+          nome: l.displayName,
+          consegna: listGroupKey(l.displayName) ? listDeliverableLabel(l.displayName) : null,
+          scadenza: listDueDate(l.displayName)?.toISOString().slice(0, 10) || null,
+          aperte: conteggio(l.id),
+        })),
+      })),
+      // `liste` resta piatta: è la forma che usa chi vuole solo i nomi.
       liste: lists.map(l => ({ id: l.id, nome: l.displayName, aperte: conteggio(l.id) })),
       taccuini: notebooks.map((n, i) => ({
         nome: n.displayName,
