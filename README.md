@@ -347,10 +347,42 @@ poter fare pochissimo: solo mail e calendario, per la sincronizzazione. Quel fil
 è la chiave del OneDrive personale — vale quanto la password, e non va copiato in
 posti in cui non metteresti la password.
 
-**Su un secondo computer** si rifà il giro — Node, clone, token, `claude mcp add`
-— e si genera un token **nuovo** invece di copiare il file: il refresh token ruota
+**Su un secondo computer** (es. il PC dell'ufficio) si rifà il giro da capo — non
+si copia nulla dalla macchina di casa, neanche il token: il refresh token ruota
 a ogni uso, e due macchine che si passano la stessa copia finiscono prima o poi
-con una delle due che si ritrova in mano un token già rinnovato altrove.
+con una delle due che si ritrova in mano un token già scaduto perché rinnovato
+altrove.
+
+1. **App web (dashboard)** — nessuna installazione: si apre l'indirizzo di
+   Cloudflare Pages nel browser del PC dell'ufficio e si fa login col proprio
+   account Microsoft. Il `REDIRECT_URI` (`src/config.js`) è l'origin corrente,
+   quindi non c'è niente da configurare per macchina — funziona al primo colpo
+   come sul PC di casa.
+2. **Node 18+** — se non c'è già, si installa sul PC dell'ufficio.
+3. **Clone del repo**:
+   ```bash
+   git clone https://github.com/michelecoppino-cell/mente-digitale.git
+   cd mente-digitale
+   npm install
+   ```
+4. **Token per il CLI/MCP** — si genera un token nuovo, non si copia quello
+   dell'altro computer:
+   ```bash
+   node scripts/get-refresh-token.mjs --mente
+   ```
+   Il token finisce in `scripts/.mente-refresh-token` (ignorato da git, resta
+   solo su questa macchina) oppure va esportato come `MENTE_REFRESH_TOKEN`.
+5. **Registrazione del server MCP** in Claude Code, su questa stessa macchina:
+   ```bash
+   claude mcp add --scope user mente -- node /percorso/assoluto/scripts/mente-mcp.mjs
+   claude mcp list                        # deve dire "✔ Connected"
+   ```
+   Il percorso deve essere quello assoluto sul PC dell'ufficio, non quello del
+   PC di casa: ogni macchina ha la propria registrazione in `~/.claude.json`.
+
+Da qui in poi i due computer sono indipendenti: ciascuno ha il proprio token,
+la propria registrazione MCP e il proprio checkout del codice. L'unica cosa in
+comune sono i dati su OneDrive, letti e scritti da entrambi via Microsoft Graph.
 
 Il codice, invece, non si aggiorna da solo: il server esegue i file che stanno su
 quel disco. Dopo un `git pull` va riavviata la sessione, perché il client avvia il
