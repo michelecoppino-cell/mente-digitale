@@ -720,6 +720,29 @@
 .diary-lightbox-nav.prev { left: 2px; }
 .diary-lightbox-nav.next { right: 2px; }
 
+/* ── Umore/energia rapidi ─────────────────────────────────────────────────── */
+.diary-quick-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 460;
+  background: rgba(3, 4, 6, 0.72);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+.diary-quick-modal {
+  width: min(360px, 100%);
+  max-height: 90vh;
+  overflow-y: auto;
+  background: var(--surface);
+  border: 1px solid var(--border2);
+  border-radius: 12px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.4);
+}
+.diary-quick-modal .diary-body { padding: 16px 18px 18px; }
+.diary-quick-modal .diary-writer-actions { padding-top: 4px; }
+
 /* ── Importazione dall'iPhone ────────────────────────────────────────────── */
 .diary-import-entry { text-align: center; margin: 10px 0 2px; }
 
