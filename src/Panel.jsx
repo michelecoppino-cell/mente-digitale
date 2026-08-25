@@ -4,12 +4,19 @@ import { filterEventsBySectionPrefix, parseReminderSubject } from './deadlineRem
 import Skeleton from './Skeleton';
 import OneDriveBox from './OneDriveBox';
 import { formatDueDate } from './plannerShared';
+import { listDeliverableLabel } from './paraConfig';
 import { openProtocol } from './protocolLink';
 
 // calendarEvents: elenco già precaricato in App.jsx (preloadSectionCalendarEvents,
 // un'unica chiamata Graph in coda dopo task/pagine) — qui si filtra solo
 // localmente per prefisso "[NomeSezione]", nessuna nuova richiesta di rete a
 // ogni apertura del pannello (era il collo di bottiglia lento lamentato).
+//
+// `selected.lists` sono le liste To-Do della sezione: quella omonima e le sue
+// consegne (`GRUPPO.Nome-YYMMDD`, vedi paraConfig.js). Il pannello le legge
+// tutte; `selected.listId` resta la principale, ed è lì che nasce un'attività
+// creata da qui — una consegna la si sceglie dalla plancia Sezioni, non da una
+// striscia laterale.
 export default function Panel({ selected, pagesCache, tasksCache, calendarEvents, onClose }) {
   const [pages, setPages] = useState([]);
   const [tasks, setTasks] = useState([]);
@@ -27,7 +34,10 @@ export default function Panel({ selected, pagesCache, tasksCache, calendarEvents
     if (!selected) return;
     setTimeout(() => {
       loadPages(selected.data.id);
-      if (selected.listId) loadTasks(selected.listId);
+      const lists = selected.lists?.length
+        ? selected.lists
+        : (selected.listId ? [{ id: selected.listId, displayName: selected.listName }] : []);
+      if (lists.length) loadTasks(lists);
     }, 0);
   }, [selected]);
 
@@ -46,16 +56,19 @@ export default function Panel({ selected, pagesCache, tasksCache, calendarEvents
     setLoadingPages(false);
   }
 
-  async function loadTasks(listId) {
-    if (tasksCache?.current?.[listId]) {
-      splitTasks(tasksCache.current[listId]);
-      return;
-    }
-    setLoadingTasks(true);
+  // Le attività di tutte le liste della sezione in un elenco solo: ogni task si
+  // porta dietro la lista da cui viene, perché la riga possa dire di quale
+  // consegna è.
+  async function loadTasks(lists) {
+    if (lists.some(l => !tasksCache?.current?.[l.id])) setLoadingTasks(true);
     try {
-      const all = await getTodoTasks(listId);
-      if (tasksCache?.current) tasksCache.current[listId] = all;
-      splitTasks(all);
+      const perList = await Promise.all(lists.map(async l => {
+        const cached = tasksCache?.current?.[l.id];
+        const all = cached || await getTodoTasks(l.id);
+        if (!cached && tasksCache?.current) tasksCache.current[l.id] = all;
+        return all.map(t => ({ ...t, _listId: l.id, _listName: l.displayName }));
+      }));
+      splitTasks(perList.flat());
     } catch(e) { console.error(e); }
     setLoadingTasks(false);
   }
@@ -74,7 +87,8 @@ export default function Panel({ selected, pagesCache, tasksCache, calendarEvents
     if (!newTask.trim() || !selected?.listId) return;
     setAdding(true);
     try {
-      const task = await createTask(selected.listId, newTask.trim());
+      const created = await createTask(selected.listId, newTask.trim());
+      const task = { ...created, _listId: selected.listId, _listName: selected.listName };
       setNoDeadlineTasks(prev => [task, ...prev]);
       if (tasksCache?.current?.[selected.listId])
         tasksCache.current[selected.listId] = [task, ...tasksCache.current[selected.listId]];
@@ -84,13 +98,14 @@ export default function Panel({ selected, pagesCache, tasksCache, calendarEvents
   }
 
   async function handleComplete(task) {
-    if (!selected?.listId) return;
+    const listId = task._listId || selected?.listId;
+    if (!listId) return;
     try {
-      await completeTask(selected.listId, task.id);
+      await completeTask(listId, task.id);
       setTasks(prev => prev.filter(t => t.id !== task.id));
       setNoDeadlineTasks(prev => prev.filter(t => t.id !== task.id));
-      if (tasksCache?.current?.[selected.listId])
-        tasksCache.current[selected.listId] = tasksCache.current[selected.listId].filter(t => t.id !== task.id);
+      if (tasksCache?.current?.[listId])
+        tasksCache.current[listId] = tasksCache.current[listId].filter(t => t.id !== task.id);
     } catch(e) { console.error(e); }
   }
 
@@ -98,9 +113,20 @@ export default function Panel({ selected, pagesCache, tasksCache, calendarEvents
 
   const { data, nb, listId } = selected;
   const color = data?._color || nb?._color || '#d4a44a';
+  // Con più consegne la riga deve dire di quale è: con una sola sarebbe la
+  // ripetizione del titolo del pannello.
+  const manyLists = (selected.lists?.length || 0) > 1;
   const allTasks = [...tasks, ...noDeadlineTasks];
-  const sortedEvents = filterEventsBySectionPrefix(calendarEvents, data.displayName)
-    .sort((a, b) => (a.start?.dateTime || a.start?.date || '').localeCompare(b.start?.dateTime || b.start?.date || ''));
+  // Le scadenze ricorrenti sono eventi intitolati "[NomeLista] Titolo": con le
+  // consegne annidate le liste sono più d'una, quindi si guardano tutte —
+  // insieme al nome della sezione, che è come si chiamano gli eventi di sempre.
+  const eventPrefixes = [data.displayName, ...(selected.lists || []).map(l => l.displayName)]
+    .filter((n, i, all) => n && all.indexOf(n) === i);
+  const sortedEvents = Object.values(Object.fromEntries(
+    eventPrefixes
+      .flatMap(name => filterEventsBySectionPrefix(calendarEvents, name))
+      .map(ev => [ev.id, ev])
+  )).sort((a, b) => (a.start?.dateTime || a.start?.date || '').localeCompare(b.start?.dateTime || b.start?.date || ''));
 
   return (
     <div className="panel open">
@@ -133,8 +159,8 @@ export default function Panel({ selected, pagesCache, tasksCache, calendarEvents
               {loadingTasks && <Skeleton rows={4} />}
               <div className="panel-col-body">
                 {sortedEvents.map(ev => <CalendarEventRow key={ev.id} event={ev} color={color} />)}
-                {tasks.map(t => <TaskRow key={t.id} task={t} color={color} onComplete={handleComplete} />)}
-                {noDeadlineTasks.map(t => <TaskRow key={t.id} task={t} color={color} onComplete={handleComplete} />)}
+                {tasks.map(t => <TaskRow key={t.id} task={t} color={color} showList={manyLists} onComplete={handleComplete} />)}
+                {noDeadlineTasks.map(t => <TaskRow key={t.id} task={t} color={color} showList={manyLists} onComplete={handleComplete} />)}
                 {!loadingTasks && !allTasks.length && !sortedEvents.length && (
                   <div className="panel-empty">Nessuna attività</div>
                 )}
@@ -262,7 +288,7 @@ function CalendarEventRow({ event, color }) {
   );
 }
 
-function TaskRow({ task, color, onComplete }) {
+function TaskRow({ task, color, onComplete, showList = false }) {
   const [completing, setCompleting] = useState(false);
   const isImportant = task.importance === 'high';
   const appUrl = `ms-to-do://tasks/id/${task.id}`;
@@ -287,7 +313,12 @@ function TaskRow({ task, color, onComplete }) {
           {isImportant && <span className="task-important">★ </span>}
           {task.title}
         </div>
-        {due && <div className="task-due">{due}</div>}
+        {(due || (showList && task._listName)) && (
+          <div className="task-due">
+            {[showList && task._listName ? listDeliverableLabel(task._listName) : null, due]
+              .filter(Boolean).join(' · ')}
+          </div>
+        )}
       </div>
     </div>
   );

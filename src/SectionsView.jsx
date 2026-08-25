@@ -14,13 +14,23 @@
 //
 // È anche dove atterra il Pomodoro: avviarlo dal Piano porta qui, sulla
 // plancia della sezione a cui appartiene l'attività.
+//
+// La colonna ATTIVITÀ non guarda più una lista To-Do sola. Una commessa può
+// avere più consegne — una lista ciascuna, chiamata `GRUPPO.Consegna-YYMMDD`
+// (la convenzione sta in paraConfig.js) — e qui si vedono tutte, raggruppate
+// per consegna, ognuna con la sua scadenza e richiudibile. Una sezione senza
+// liste col punto resta esattamente com'era: un elenco piatto di attività.
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { getPages } from './api';
-import { paraSectionLabel, sectionRole } from './paraConfig';
-import { buildListColorMap } from './plannerShared';
+import {
+  paraSectionLabel, sectionRole, listsForSection, listGroupKey, listDeliverableLabel,
+  listDueDate, buildListName, groupKeyForSection, sectionNameForList, toDateInputValue,
+} from './paraConfig';
+import { buildListColorMap, listColor, formatDeliverableDue, daysUntil, daysUntilLabel } from './plannerShared';
+import { useFolds } from './viewPrefs';
 import { usePomodoro } from './pomodoroContext';
-import { taskContext, contextColor, parseEstimate } from './taskModel';
+import { taskContext, contextColor, parseEstimate, GRANULARITY_MEMO_LINE } from './taskModel';
 import SectionPaths from './SectionPaths';
 import SectionTimeline from './SectionTimeline';
 import Skeleton from './Skeleton';
@@ -46,6 +56,14 @@ const ROLE_LABELS = Object.fromEntries(ROLES.map(r => [r.key, r.label]));
 /** L'archivio parte chiuso: c'è per essere ritrovato, non per stare fra i
  *  piedi ogni volta che si cerca una sezione viva. */
 const DEFAULT_FOLDED = { archive: true };
+
+/** Le consegne richiuse a mano, ricordate fra una visita e l'altra. */
+const DELIVERABLE_FOLDS_KEY = 'md_sv_deliverable_folds_v1';
+
+/** Sotto questa soglia la scadenza di una consegna si accende: una settimana
+ *  è quanto basta perché «fra sei giorni» smetta di essere un'informazione e
+ *  diventi una cosa da guardare. */
+const DUE_SOON_DAYS = 7;
 
 /** La stima scritta nelle note, come la si legge in fondo alla riga
  *  dell'attività. Solo quella davvero scritta: mostrare la mezz'ora di
@@ -79,7 +97,8 @@ function flattenSections(notebooks, sectionsMap) {
  * @param {Object} props
  * @param {import('./types').Notebook[]} props.notebooks
  * @param {Record<string, import('./types').Section[]>} props.sectionsMap
- * @param {Record<string, {id: string, displayName: string}>} props.todoListsMap
+ * @param {import('./types').TodoList[]} props.todoLists  tutte le liste To-Do: da qui
+ *        escono le consegne della sezione aperta
  * @param {import('./types').TodoTask[]} props.tasks
  * @param {{ current: Record<string, import('./types').Page[]> }} props.pagesCache
  * @param {Record<string, {blocks?: any[]}>} [props.plans]  i piani giornalieri, per la colonna Oggi
@@ -88,10 +107,14 @@ function flattenSections(notebooks, sectionsMap) {
  * @param {(listId: string, taskId: string) => void} [props.onTaskRemoved]
  * @param {(listId: string, taskId: string, patch: Object) => void} [props.onTaskPatched]
  * @param {(listId: string, task: import('./types').TodoTask) => void} [props.onTaskRestored]
+ * @param {(displayName: string) => Promise<any>} [props.onCreateDeliverable]  crea una
+ *        lista To-Do per una nuova consegna
+ * @param {(listId: string, displayName: string) => Promise<any>} [props.onRenameDeliverable]
+ *        rinomina una consegna: è così che se ne sposta la scadenza
  */
 export default function SectionsView({
-  notebooks, sectionsMap, todoListsMap, tasks, pagesCache, plans, onPlansChanged,
-  onTaskRemoved, onTaskPatched, onTaskRestored,
+  notebooks, sectionsMap, todoLists = [], tasks, pagesCache, plans, onPlansChanged,
+  onTaskRemoved, onTaskPatched, onTaskRestored, onCreateDeliverable, onRenameDeliverable,
 }) {
   const { sectionId } = useParams();
   const navigate = useNavigate();
@@ -121,8 +144,35 @@ export default function SectionsView({
   }, [sections, query]);
 
   // I colori delle sezioni sono gli stessi del Piano e della vista Attività:
-  // una sezione ha un colore solo, ovunque la si incontri.
-  const colorMap = useMemo(() => buildListColorMap(notebooks, sectionsMap), [notebooks, sectionsMap]);
+  // una sezione ha un colore solo, ovunque la si incontri — e le sue consegne
+  // ne prendono sfumature diverse, perché si distinguano restando parenti.
+  const colorMap = useMemo(
+    () => buildListColorMap(notebooks, sectionsMap, todoLists),
+    [notebooks, sectionsMap, todoLists]
+  );
+
+  // I nomi di tutte le sezioni: servono a decidere a quale commessa appartiene
+  // una lista annidata, e la risposta dipende da tutte insieme (un prefisso che
+  // ne trova due non vale, vedi sectionNameForList).
+  const sectionNames = useMemo(() => sections.map(s => s.displayName), [sections]);
+
+  // Quante attività aperte per sezione, consegne comprese: l'elenco a sinistra
+  // conta la commessa intera, non la sola lista omonima.
+  const openBySection = useMemo(() => {
+    /** @type {Record<string, string>} */
+    const sectionByListId = {};
+    for (const l of todoLists) {
+      const section = sectionNameForList(l.displayName, sectionNames);
+      if (section) sectionByListId[l.id] = section.toLowerCase();
+    }
+    /** @type {Record<string, number>} */
+    const counts = {};
+    for (const t of tasks || []) {
+      const key = sectionByListId[t._listId || ''];
+      if (key) counts[key] = (counts[key] || 0) + 1;
+    }
+    return counts;
+  }, [todoLists, sectionNames, tasks]);
 
   // Le pagine della sezione aperta: prima dalla cache già popolata dal
   // preload, poi da Graph se non c'è.
@@ -147,13 +197,41 @@ export default function SectionsView({
     return () => { cancelled = true; };
   }, [sectionId, pagesCache]);
 
-  // Le attività della sezione sono quelle della lista To-Do omonima: una lista
-  // è una sezione, è la convenzione su cui poggia tutta l'app.
-  const list = active ? todoListsMap?.[active.displayName.toLowerCase()] : null;
-  const sectionTasks = useMemo(
-    () => (tasks || []).filter(t => list && t._listId === list.id),
-    [tasks, list]
+  // Le liste To-Do della sezione: quella omonima — la convenzione su cui poggia
+  // tutta l'app — e le consegne annidate sotto la stessa commessa.
+  const sectionLists = useMemo(
+    () => (active ? listsForSection(active.displayName, todoLists, sectionNames) : []),
+    [active, todoLists, sectionNames]
   );
+  const sectionListIds = useMemo(() => new Set(sectionLists.map(l => l.id)), [sectionLists]);
+  const sectionTasks = useMemo(
+    () => (tasks || []).filter(t => sectionListIds.has(t._listId || '')),
+    [tasks, sectionListIds]
+  );
+
+  // Una consegna per gruppo, nell'ordine in cui listsForSection le mette
+  // (scadenza più vicina per prima). Con una lista sola e senza punto nel nome
+  // il gruppo è uno solo e la colonna resta l'elenco piatto di prima.
+  const deliverables = useMemo(() => sectionLists.map(l => {
+    const due = listDueDate(l.displayName);
+    const days = daysUntil(due);
+    return {
+      list: l,
+      nested: !!listGroupKey(l.displayName),
+      label: listDeliverableLabel(l.displayName),
+      due,
+      days,
+      color: listColor(l.displayName, colorMap, 'var(--line)'),
+      tasks: sectionTasks.filter(t => t._listId === l.id),
+    };
+  }), [sectionLists, sectionTasks, colorMap]);
+
+  // Le consegne chiuse restano chiuse anche domani, come le altre preferenze
+  // di vista. Chiave per id di lista: rinominare una consegna (cioè spostarne
+  // la scadenza) non la deve riaprire.
+  const [isFolded, toggleFold] = useFolds(DELIVERABLE_FOLDS_KEY);
+  // Il form della consegna nuova, aperto dal `+` in testata alla colonna.
+  const [newOpen, setNewOpen] = useState(false);
 
   // I task che hanno già un blocco nel piano di oggi: la riga lo segna, così
   // non li si trascina due volte. È la stessa cosa che il pool del Piano fa
@@ -207,8 +285,7 @@ export default function SectionsView({
                 <p className="sv-group-hint">{g.hint}</p>
                 {g.items.length === 0 && <p className="sv-group-empty">Nessuna sezione</p>}
                 {g.items.map(s => {
-                  const l = todoListsMap?.[s.displayName.toLowerCase()];
-                  const open = (tasks || []).filter(t => l && t._listId === l.id).length;
+                  const open = openBySection[s.displayName.toLowerCase()] || 0;
                   return (
                     <button
                       key={s.id}
@@ -307,37 +384,84 @@ export default function SectionsView({
             <SectionPaths sectionId={active.id} />
           </section>
 
-          {/* Attività della sezione */}
+          {/* Attività della sezione, una consegna per gruppo */}
           <section className="sv-col sv-col-tasks">
             <div className="sv-col-head">
               <span className="eyebrow sv-col-label">Attività</span>
+              <span className="sv-col-memo" title={GRANULARITY_MEMO_LINE} aria-label={GRANULARITY_MEMO_LINE}>ⓘ</span>
+              {onCreateDeliverable && (
+                <button
+                  className={`sv-icon-btn${newOpen ? ' active' : ''}`}
+                  onClick={() => setNewOpen(o => !o)}
+                  title="Nuova consegna in questa commessa"
+                  aria-label="Nuova consegna in questa commessa"
+                  aria-expanded={newOpen}>
+                  +
+                </button>
+              )}
             </div>
             <div className="sv-col-body">
-              {!list && <p className="sv-empty">Nessuna lista To-Do con questo nome</p>}
-              {list && sectionTasks.length === 0 && <p className="sv-empty">Nessuna attività aperta</p>}
-              {sectionTasks.map(t => {
-                const est = estimateLabel(t);
+              {newOpen && onCreateDeliverable && (
+                <NewDeliverableForm
+                  sectionName={active.displayName}
+                  sectionNames={sectionNames}
+                  onCancel={() => setNewOpen(false)}
+                  onCreate={onCreateDeliverable}
+                />
+              )}
+
+              {deliverables.length === 0 && (
+                <p className="sv-empty">
+                  Nessuna lista To-Do per questa commessa: serve una lista che si chiami
+                  «{active.displayName}», oppure una consegna «{groupKeyForSection(active.displayName)}.Nome».
+                </p>
+              )}
+
+              {deliverables.map(d => {
+                // Con una sola consegna, e senza punto nel nome, non c'è niente
+                // da raggruppare: l'elenco resta piatto come è sempre stato.
+                const plain = deliverables.length === 1 && !d.nested;
+                const folded = !plain && isFolded(d.list.id);
                 return (
-                  <button
-                    className={`sv-task${t.id === detailTask?.id ? ' selected' : ''}${t.id === pomodoroTaskId ? ' current' : ''}${scheduledTaskIds.has(t.id) ? ' scheduled' : ''}`}
-                    key={t.id}
-                    draggable
-                    onDragStart={e => {
-                      // Lo stesso payload del pool del Piano: la colonna Oggi
-                      // qui accanto e la griglia del Piano leggono lo stesso
-                      // trascinamento.
-                      e.dataTransfer.setData('text/plain', JSON.stringify({ type: 'task', task: t }));
-                      e.dataTransfer.effectAllowed = 'move';
-                    }}
-                    onClick={() => setSelectedTaskId(t.id)}
-                    title="Apri note, sottoattività e stato · trascina su Oggi per programmarla">
-                    <span
-                      className="sv-task-dot"
-                      style={/** @type {import('react').CSSProperties} */ ({ background: contextColor(taskContext(t)) })}
-                    />
-                    <span className="sv-task-title">{t.title}</span>
-                    {est && <span className="sv-task-est">{est}</span>}
-                  </button>
+                  <div className={`sv-deliverable${folded ? ' folded' : ''}`} key={d.list.id}>
+                    {!plain && (
+                      <DeliverableHead
+                        deliverable={d}
+                        folded={folded}
+                        onToggle={() => toggleFold(d.list.id)}
+                        sectionName={active.displayName}
+                        onRename={onRenameDeliverable}
+                      />
+                    )}
+                    {!folded && d.tasks.length === 0 && (
+                      <p className="sv-empty">Nessuna attività aperta</p>
+                    )}
+                    {!folded && d.tasks.map(t => {
+                      const est = estimateLabel(t);
+                      return (
+                        <button
+                          className={`sv-task${t.id === detailTask?.id ? ' selected' : ''}${t.id === pomodoroTaskId ? ' current' : ''}${scheduledTaskIds.has(t.id) ? ' scheduled' : ''}`}
+                          key={t.id}
+                          draggable
+                          onDragStart={e => {
+                            // Lo stesso payload del pool del Piano: la colonna Oggi
+                            // qui accanto e la griglia del Piano leggono lo stesso
+                            // trascinamento.
+                            e.dataTransfer.setData('text/plain', JSON.stringify({ type: 'task', task: t }));
+                            e.dataTransfer.effectAllowed = 'move';
+                          }}
+                          onClick={() => setSelectedTaskId(t.id)}
+                          title="Apri note, sottoattività e stato · trascina su Oggi per programmarla">
+                          <span
+                            className="sv-task-dot"
+                            style={/** @type {import('react').CSSProperties} */ ({ background: contextColor(taskContext(t)) })}
+                          />
+                          <span className="sv-task-title">{t.title}</span>
+                          {est && <span className="sv-task-est">{est}</span>}
+                        </button>
+                      );
+                    })}
+                  </div>
                 );
               })}
             </div>
@@ -376,8 +500,8 @@ export default function SectionsView({
           <section className="sv-col sv-col-timeline">
             <SectionTimeline
               plans={plans}
-              listName={active.displayName}
-              color={colorMap[active.displayName.toLowerCase()]}
+              listNames={sectionLists.map(l => l.displayName)}
+              color={listColor(active.displayName, colorMap)}
               onPlansChanged={onPlansChanged}
               onPickTask={setSelectedTaskId}
             />
@@ -385,5 +509,172 @@ export default function SectionsView({
         </div>
       </div>
     </div>
+  );
+}
+
+/**
+ * L'intestazione a tendina di una consegna: nome, scadenza con quanto manca,
+ * quante attività sono ancora aperte. La data si mostra sempre formattata e
+ * mai dentro il nome — nel nome della lista ci sta come `-YYMMDD`, ma quello
+ * è il modo in cui To-Do la conserva, non il modo in cui si legge.
+ * @param {Object} props
+ * @param {any} props.deliverable
+ * @param {boolean} props.folded
+ * @param {() => void} props.onToggle
+ * @param {string} props.sectionName
+ * @param {(listId: string, displayName: string) => Promise<any>} [props.onRename]
+ */
+function DeliverableHead({ deliverable: d, folded, onToggle, sectionName, onRename }) {
+  // La data aperta in modifica: cambiarla rinomina la lista, ma il nome
+  // composto non si vede mai — si tocca solo il campo data.
+  const [editingDue, setEditingDue] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState(/** @type {string|null} */ (null));
+
+  const dueLabel = formatDeliverableDue(d.due);
+  const daysLabel = daysUntilLabel(d.days);
+  const overdue = d.days !== null && d.days < 0;
+  const soon = d.days !== null && d.days >= 0 && d.days <= DUE_SOON_DAYS;
+  // La scadenza si può spostare solo dove sta: nel nome di una consegna
+  // annidata. Rinominare la lista omonima romperebbe il legame con la sezione.
+  const canEditDue = !!onRename && d.nested;
+
+  async function saveDue(/** @type {string} */ value) {
+    setSaving(true);
+    setError(null);
+    try {
+      await onRename?.(d.list.id, buildListName({
+        gruppo: listGroupKey(d.list.displayName) || groupKeyForSection(sectionName),
+        consegna: d.label,
+        scadenza: value || null,
+      }));
+      setEditingDue(false);
+    } catch (e) {
+      console.error('rinomina consegna', e);
+      setError(e instanceof Error ? e.message : 'Non è riuscita');
+    }
+    setSaving(false);
+  }
+
+  return (
+    <div className="sv-deliverable-head">
+      <button
+        className="sv-deliverable-toggle"
+        onClick={onToggle}
+        aria-expanded={!folded}
+        title={folded ? 'Mostra le attività della consegna' : 'Richiudi la consegna'}>
+        <span className="sv-deliverable-caret" aria-hidden="true">{folded ? '▸' : '▾'}</span>
+        <span className="sv-deliverable-dot" style={{ background: d.color }} />
+        <span className="sv-deliverable-name">{d.label}</span>
+        {dueLabel && !editingDue && (
+          <span className={`sv-deliverable-due${overdue ? ' overdue' : soon ? ' soon' : ''}`}>
+            {dueLabel}{daysLabel ? ` · ${daysLabel}` : ''}
+          </span>
+        )}
+        <span className="sv-deliverable-count" title="Attività aperte">{d.tasks.length}</span>
+      </button>
+
+      {canEditDue && (
+        editingDue ? (
+          <input
+            className="sv-deliverable-date"
+            type="date"
+            autoFocus
+            disabled={saving}
+            defaultValue={toDateInputValue(d.due)}
+            onBlur={() => !saving && setEditingDue(false)}
+            onKeyDown={e => { if (e.key === 'Escape') setEditingDue(false); }}
+            onChange={e => saveDue(e.target.value)}
+          />
+        ) : (
+          <button
+            className="sv-icon-btn sv-deliverable-date-btn"
+            onClick={() => setEditingDue(true)}
+            title={dueLabel ? `Sposta la scadenza (ora ${dueLabel})` : 'Dai una scadenza alla consegna'}
+            aria-label="Cambia la scadenza della consegna">
+            🗓
+          </button>
+        )
+      )}
+      {error && <span className="sv-deliverable-error" role="alert">{error}</span>}
+    </div>
+  );
+}
+
+/**
+ * Il form della consegna nuova: due campi separati, nome e data. La commessa è
+ * quella della sezione aperta e la convenzione la scrive il codice — chi la usa
+ * non digita mai un `GRUPPO.Nome-YYMMDD`.
+ * @param {Object} props
+ * @param {string} props.sectionName
+ * @param {string[]} props.sectionNames
+ * @param {() => void} props.onCancel
+ * @param {(displayName: string) => Promise<any>} props.onCreate
+ */
+function NewDeliverableForm({ sectionName, sectionNames, onCancel, onCreate }) {
+  const [nome, setNome] = useState('');
+  const [scadenza, setScadenza] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState(/** @type {string|null} */ (null));
+
+  const gruppo = groupKeyForSection(sectionName);
+
+  async function submit(/** @type {import('react').FormEvent} */ e) {
+    e.preventDefault();
+    if (!nome.trim() || saving) return;
+    setSaving(true);
+    setError(null);
+    try {
+      const displayName = buildListName({ gruppo, consegna: nome, scadenza: scadenza || null });
+      // Una commessa che non ritrova la propria sezione creerebbe una lista
+      // orfana: senza colore, senza attività in colonna e senza un modo ovvio
+      // di capire perché. Meglio dirlo prima di scrivere su To-Do.
+      const resolved = sectionNameForList(displayName, sectionNames);
+      if ((resolved || '').toLowerCase() !== sectionName.toLowerCase()) {
+        throw new Error(`«${gruppo}» non identifica questa sezione da sola: rinomina la sezione o la commessa.`);
+      }
+      await onCreate(displayName);
+      onCancel();
+    } catch (e) {
+      console.error('nuova consegna', e);
+      setError(e instanceof Error ? e.message : 'Non è riuscita');
+      setSaving(false);
+    }
+  }
+
+  return (
+    <form className="sv-new-deliverable" onSubmit={submit}>
+      <div className="sv-new-deliverable-row">
+        <input
+          className="sv-new-deliverable-name"
+          autoFocus
+          placeholder="Nome della consegna"
+          value={nome}
+          disabled={saving}
+          onChange={e => setNome(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Escape') onCancel(); }}
+        />
+        <input
+          className="sv-new-deliverable-date"
+          type="date"
+          value={scadenza}
+          disabled={saving}
+          title="Scadenza della consegna"
+          onChange={e => setScadenza(e.target.value)}
+        />
+      </div>
+      <div className="sv-new-deliverable-row">
+        <span className="sv-new-deliverable-hint">
+          In {paraSectionLabel(sectionName)} · {GRANULARITY_MEMO_LINE}
+        </span>
+        <button type="button" className="sv-new-deliverable-cancel" onClick={onCancel} disabled={saving}>
+          Annulla
+        </button>
+        <button type="submit" className="sv-new-deliverable-ok" disabled={saving || !nome.trim()}>
+          {saving ? '…' : 'Crea'}
+        </button>
+      </div>
+      {error && <p className="sv-deliverable-error" role="alert">{error}</p>}
+    </form>
   );
 }

@@ -16,7 +16,8 @@ import TaskPool from './TaskPool';
 import { useMediaQuery } from './useMediaQuery';
 import WorkbookPool from './WorkbookPool';
 import TaskDetailPanel from './TaskDetailPanel';
-import { DEFAULT_CONFIG, findProject, shadeColor, hexToRgba } from './plannerShared';
+import { DEFAULT_CONFIG, findProject, hexToRgba, buildListColorMap, listColor } from './plannerShared';
+import { listLabel } from './paraConfig';
 import { ESTIMATE_CHOICES, DEFAULT_ESTIMATE_MIN, taskEstimateMin } from './taskModel';
 import { pushUndo } from './undo';
 import './PlannerView.css';
@@ -125,8 +126,7 @@ function liveBlockColor(block, config, listColorMap) {
     const proj = (config.projects || []).find(p => p.key === block.projectKey);
     if (proj) return proj.color;
   }
-  const live = listColorMap[(block.listName ?? '').toLowerCase()];
-  return live ?? block.projectColor;
+  return listColor(block.listName ?? '', listColorMap, block.projectColor);
 }
 // La griglia della timeline copre sempre l'intera giornata (scorrimento libero
 // con la rotella): il workday configurato serve solo a posizionare lo scroll
@@ -252,7 +252,7 @@ function VerticalTitle({ text, layout, className }) {
 
 // ── Main PlannerView ──────────────────────────────────────────────────────────
 export default function PlannerView({
-  open, onClose, preloadedTasks = [], notebooks = [], sectionsMap = {}, pagesCache = null, autoAddTask = null, onAutoAdded,
+  open, onClose, preloadedTasks = [], notebooks = [], sectionsMap = {}, todoLists = [], pagesCache = null, autoAddTask = null, onAutoAdded,
   onTaskCompleted, onTaskDeleted, onTaskRenamed, onTaskDueChanged, onTaskPatched, onTaskRestored,
   onStartFocus, onEndFocus, calendarDirtyToken = 0,
 }) {
@@ -1073,7 +1073,7 @@ export default function PlannerView({
 
   function makeBlock(task, startTime) {
     const proj    = findProject(task, configRef.current);
-    const color   = proj?.color ?? listColorMapRef.current[(task._listName ?? '').toLowerCase()] ?? '#888';
+    const color   = proj?.color ?? listColor(task._listName ?? '', listColorMapRef.current);
     const endMin  = Math.min(t2m(startTime) + blockMinutesFor(task), DAY_END_MIN);
     return {
       id: genId(), taskId: task.id, taskTitle: task.title,
@@ -1796,16 +1796,13 @@ export default function PlannerView({
     return { bySub, byWorkbookDirect, totalMin };
   })();
 
-  // Map each section/list name → a shade of its notebook color
-  const listColorMap = useMemo(() => {
-    const map = {};
-    for (const nb of notebooks) {
-      (sectionsMap[nb.id] || []).forEach((s, i) => {
-        map[s.displayName.toLowerCase()] = s._color || shadeColor(nb._color || '#888', i);
-      });
-    }
-    return map;
-  }, [notebooks, sectionsMap]);
+  // Il colore di ogni sezione — e di ogni consegna annidata, che prende una
+  // sfumatura della sua commessa. È la stessa mappa di TaskPool e di Sezioni:
+  // un blocco del piano e il task da cui è nato hanno lo stesso colore.
+  const listColorMap = useMemo(
+    () => buildListColorMap(notebooks, sectionsMap, todoLists),
+    [notebooks, sectionsMap, todoLists]
+  );
   const listColorMapRef = useRef({});
   listColorMapRef.current = listColorMap;
 
@@ -2035,6 +2032,7 @@ export default function PlannerView({
               config={config}
               notebooks={notebooks}
               sectionsMap={sectionsMap}
+              todoLists={todoLists}
               scheduledIds={weekScheduledIds}
               draggable={!locked}
             />
@@ -2097,6 +2095,7 @@ export default function PlannerView({
               config={config}
               notebooks={notebooks}
               sectionsMap={sectionsMap}
+              todoLists={todoLists}
               scheduledIds={scheduledIds}
               selectedTaskId={selectedTask?.id ?? null}
               draggable={!locked}
@@ -2408,7 +2407,7 @@ export default function PlannerView({
                   {isVertical ? (
                     <>
                       <div className="planner-block-label-col">
-                        {block.listName && <span className="planner-block-label-section">{block.listName}</span>}
+                        {block.listName && <span className="planner-block-label-section">{listLabel(block.listName)}</span>}
                         <div className="planner-block-label-title-wrap">
                           <VerticalTitle text={block.taskTitle} layout={titleLayout} className="planner-block-title" />
                         </div>
@@ -2431,7 +2430,7 @@ export default function PlannerView({
                       </div>
                       <div className="planner-block-meta">
                         <span>{block.startTime}–{block.endTime}</span>
-                        {block.listName && <span>{block.listName}</span>}
+                        {block.listName && <span>{listLabel(block.listName)}</span>}
                       </div>
                       {subStepsOverlay}
                     </>
@@ -3165,7 +3164,7 @@ function WeeklyTimeline({
                     }}>
                     {isVertical ? (
                       <div className="planner-block-label-col">
-                        {block.listName && <span className="planner-block-label-section">{block.listName}</span>}
+                        {block.listName && <span className="planner-block-label-section">{listLabel(block.listName)}</span>}
                         <div className="planner-block-label-title-wrap">
                           <VerticalTitle text={block.taskTitle} layout={titleLayout} className="planner-block-title" />
                         </div>

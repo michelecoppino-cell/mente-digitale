@@ -23,7 +23,9 @@ Microsoft To-Do e al calendario Outlook, e un diario con supporto AI via copia-i
   il collegamento, tutte le altre copiano il percorso), attività della sezione — che si
   trascinano sulla giornata per programmarle, come nel Piano e sullo stesso piano — il
   dettaglio di quella scelta e la giornata di oggi. L'elenco delle sezioni si toglie di mezzo
-  appena se ne apre una.
+  appena se ne apre una. Una commessa con più **consegne** (liste To-Do annidate per nome,
+  vedi sotto) le mostra come gruppi a tendina, ognuno con la sua scadenza, e il `+` in testata
+  ne crea una nuova.
   È dove atterra il Pomodoro avviato dal Piano.
 - **Attività** — le cinque colonne del flusso GTD (Inbox · Prossime azioni · In attesa · Programmate · Un giorno):
   la colonna *è* lo stato, e trascinare una card fra colonne lo cambia su Microsoft To-Do. Un clic su una
@@ -183,6 +185,73 @@ Due cose sole non hanno una casa nativa in To-Do. La **stima di durata** sta
 nelle note come marker `[MIN:45]`. La **persona che si aspetta**, quando un'attività
 è in attesa, sta nella prima riga delle note come `In attesa da: Nome` — scritta
 per esteso e non come codice, perché chi apre il task da To-Do legga una frase.
+
+### Quanto dev'essere grande una cosa
+
+Un promemoria, non un controllo: nessun avviso, nessun blocco. È il metro con
+cui si decide se una cosa va spezzata, e sta scritto una volta sola in
+`src/taskModel.js` (`GRANULARITY_MEMO`), da dove lo leggono il form della
+consegna, la colonna Attività e le descrizioni degli strumenti MCP.
+
+| Livello | Orientativamente |
+|---|---|
+| Sottoattività (`checklistItem`) | meno di **2 ore** |
+| Attività (task To-Do) | meno di **2 giorni** |
+| Consegna (lista annidata) | meno di **1 mese** |
+
+Il senso è la scala: ogni livello è circa dieci volte quello sotto, così
+guardando una lista si capisce a che altezza si sta ragionando. Una consegna che
+dura più di un mese è un'altra commessa; un'attività da tre giorni sono più
+attività travestite.
+
+## Consegne dentro una commessa
+
+Una lista To-Do è una sezione OneNote, per uguaglianza di nome. Ma una commessa
+ha più consegne, ognuna con la sua data, e i gruppi di Microsoft To-Do non
+servono a niente qui: **Graph non li espone** — `todoTaskList` non ha una
+proprietà di gruppo padre, e non c'è un endpoint né in v1.0 né in beta. Quindi
+la gerarchia sta nel nome, come già i prefissi PARA e il marker `[MIN:n]`:
+
+```
+GRUPPO.Consegna[-YYMMDD]
+
+2573.A60-Fondazioni-260831   →  commessa 2573, consegna «A60-Fondazioni»,
+                                scadenza 31/08/2026
+```
+
+- **Senza punto** il comportamento è quello di sempre, 1:1 col nome della
+  sezione. La convenzione è opt-in: una commessa che non vuole consegne separate
+  non cambia di una virgola, e nessuna lista viene mai rinominata o migrata
+  automaticamente.
+- **Con il punto**, la commessa è quel che sta prima del primo `.`, il resto è la
+  consegna.
+- La **scadenza** è solo l'ultimo segmento dopo l'ultimo `-`, e solo se è
+  esattamente `\d{6}` ed è una data vera: il trattino è già dentro i nomi
+  (`Coldbox-revB`), quindi tutto il resto fa parte del nome. La data non si
+  mostra mai come pezzo di nome — è un campo, e si legge formattata con i giorni
+  che mancano.
+- **Appartenenza alla sezione**: la sezione che si chiama come la commessa,
+  oppure che comincia con la commessa seguita da un carattere non alfanumerico
+  (`2573` trova `2573-ABS`, `257` no). Prima il nome esatto, poi il prefisso; se
+  restano più candidati non c'è collegamento — mai indovinare.
+
+Tutto questo vive in `src/paraConfig.js` (`parseListName`, `listGroupKey`,
+`listDeliverableLabel`, `listDueDate`, `sectionMatchesGroup`, `listsForSection`
+e la composizione inversa `buildListName`): il nome si spezza in un punto solo.
+
+**Nell'app**: la colonna Attività di *Sezioni* mostra le consegne come gruppi a
+tendina — nome, scadenza con quanto manca (in scadenza si accende, scaduta di
+più), attività aperte — e lo stato aperto/chiuso resta come lo si è lasciato. Il
+`+` in testata crea una consegna con **due campi separati**, nome e data: il nome
+composto lo scrive il codice, non l'utente. Cambiare la data di una consegna è
+una rinomina della lista, fatta dallo stesso campo data. I colori seguono la
+commessa: ogni consegna è una sfumatura del colore della sezione, così si
+distinguono restando parenti.
+
+**Da riga di comando e via MCP**: `--sezione 2573` vale per l'intera commessa
+quando i risultati sono tutti consegne dello stesso gruppo (gruppi diversi
+restano un'ambiguità, cioè un errore). Per *creare* un'attività la consegna va
+indicata: «tutta la commessa» non è un posto in cui scrivere.
 
 ## Design token
 

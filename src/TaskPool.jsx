@@ -1,10 +1,30 @@
+// Vista «Task»: il serbatoio del Piano e il pannello Attività, un solo file.
+//
+// I task sono raggruppati per lista To-Do, e una lista può essere una sezione
+// OneNote o una consegna dentro una commessa (`GRUPPO.Consegna-YYMMDD`, vedi
+// paraConfig.js). Le consegne si separano da sole — sono liste diverse — ma
+// senza un'intestazione sopra sembrerebbero progetti diversi: quella riga, e
+// il fatto che si possa richiudere, sono tutto quello che serve.
 import { useMemo, useState } from 'react';
 import Skeleton from './Skeleton';
-import { DEFAULT_CONFIG, findProject, buildListColorMap, formatDueDate, dueDateSortValue, isTaskOverdue } from './plannerShared';
-import { sectionRole } from './paraConfig';
+import {
+  DEFAULT_CONFIG, findProject, buildListColorMap, listColor,
+  formatDueDate, dueDateSortValue, isTaskOverdue, formatDeliverableDue, daysUntil, daysUntilLabel,
+} from './plannerShared';
+import {
+  sectionRole, listGroupKey, listDeliverableLabel, listDueDate, listLabel,
+  sectionNameForList, paraSectionLabel,
+} from './paraConfig';
+import { useFolds } from './viewPrefs';
 import { taskEstimateMin } from './taskModel';
 
 const EMPTY_SET = new Set();
+
+/** Le commesse richiuse a mano nel serbatoio, ricordate fra una visita e l'altra. */
+const COMMESSA_FOLDS_KEY = 'md_pool_commessa_folds_v1';
+
+/** Come in Sezioni: sotto una settimana la scadenza di una consegna si accende. */
+const DUE_SOON_DAYS = 7;
 
 const PARA_OPTIONS = [
   { key: 'project',   label: 'Progetti' },
@@ -38,6 +58,7 @@ export default function TaskPool({
   config = DEFAULT_CONFIG,
   notebooks = [],
   sectionsMap = {},
+  todoLists = [],
   scheduledIds = EMPTY_SET,
   selectedTaskId = null,
   onTaskClick,
@@ -82,7 +103,12 @@ export default function TaskPool({
     setSectionFilter(null);
   }
 
-  const listColorMap = useMemo(() => buildListColorMap(notebooks, sectionsMap), [notebooks, sectionsMap]);
+  const listColorMap = useMemo(
+    () => buildListColorMap(notebooks, sectionsMap, todoLists),
+    [notebooks, sectionsMap, todoLists]
+  );
+
+  const [isFolded, toggleFold] = useFolds(COMMESSA_FOLDS_KEY);
 
   // Sezione OneNote (PARA + taccuino) associata a ogni lista To-Do, per nome
   // (case-insensitive) — permette di risalire da un task alla sua collocazione
@@ -94,6 +120,7 @@ export default function TaskPool({
         map[s.displayName.toLowerCase()] = {
           sectionKey: s.displayName.toLowerCase(),
           sectionName: s.displayName,
+          resolved: true,
           notebookId: nb.id,
           notebookName: nb.displayName,
           color: nb._color || '#888',
@@ -104,11 +131,31 @@ export default function TaskPool({
     return map;
   }, [notebooks, sectionsMap]);
 
+  // Da quale sezione viene ogni lista che compare nel pool. Per le liste 1:1 è
+  // il nome stesso; per le consegne annidate va sciolta la commessa, altrimenti
+  // i filtri PARA/taccuino/sezione le butterebbero tutte in «Altro» senza che
+  // niente lo segnali.
+  const sectionKeyByList = useMemo(() => {
+    const sectionNames = Object.values(sectionsMap).flat().map(s => s.displayName);
+    /** @type {Record<string, string>} */
+    const map = {};
+    for (const name of new Set(tasks.map(t => t._listName || ''))) {
+      if (!name) continue;
+      map[name.toLowerCase()] = (sectionNameForList(name, sectionNames) || '').toLowerCase();
+    }
+    return map;
+  }, [tasks, sectionsMap]);
+
   function resolveTaskSection(task) {
-    const key = (task._listName || '').toLowerCase();
+    const listKey = (task._listName || '').toLowerCase();
+    const key = sectionKeyByList[listKey] || listKey;
+    // Nessuna sezione: la lista non ne ha una omonima, o la commessa è ambigua.
+    // Il filtro resta per lista, e il nome mostrato è quello leggibile — la
+    // data della consegna non è un pezzo di nome nemmeno qui.
     return sectionInfoMap[key] || {
       sectionKey: key || '__other__',
-      sectionName: task._listName || 'Altro',
+      sectionName: task._listName ? listLabel(task._listName) : 'Altro',
+      resolved: false,
       notebookId: '__other__',
       notebookName: 'Altro',
       color: '#888',
@@ -155,16 +202,66 @@ export default function TaskPool({
   const poolByProject = {};
   for (const t of poolTasks) {
     const proj  = findProject(t, config);
-    const key   = proj?.key ?? `list:${t._listName ?? 'altro'}`;
-    const name  = proj?.name ?? t._listName ?? 'Altro';
-    const color = proj?.color ?? listColorMap[(t._listName ?? '').toLowerCase()] ?? '#888';
-    if (!poolByProject[key]) poolByProject[key] = { name, color, tasks: [] };
+    const listName = t._listName ?? '';
+    // Un gruppo che è un progetto custom non appartiene a una commessa: i suoi
+    // task possono venire da liste diverse, e raggrupparli sotto la sezione del
+    // primo sarebbe una bugia.
+    const info  = proj ? null : resolveTaskSection(t);
+    // Sotto l'intestazione di una commessa il nome della consegna basta — la
+    // commessa è già scritta sopra. Dove quell'intestazione non c'è (consegna
+    // che non trova la sua sezione) il nome va per esteso, o si perderebbe di
+    // chi è. La scadenza, comunque, è una data e non un pezzo di nome.
+    const nested = !!listGroupKey(listName);
+    const key   = proj?.key ?? `list:${listName || 'altro'}`;
+    const name  = proj?.name
+      ?? (nested ? (info?.resolved ? listDeliverableLabel(listName) : listLabel(listName)) : listName)
+      ?? 'Altro';
+    const color = proj?.color ?? listColor(listName, listColorMap);
+    if (!poolByProject[key]) {
+      poolByProject[key] = {
+        name, color, tasks: [],
+        commessa: info,
+        due: nested ? listDueDate(listName) : null,
+      };
+    }
     poolByProject[key].tasks.push(t);
   }
 
+  // I gruppi di una stessa commessa, uno sotto l'altro sotto la sua
+  // intestazione. Dove le consegne non ci sono l'intestazione non compare, e
+  // l'elenco è quello di sempre.
+  const poolCommesse = (() => {
+    /** @type {Map<string, { key: string, name: string, color: string, nested: boolean, groups: any[], count: number }>} */
+    const map = new Map();
+    for (const [key, group] of Object.entries(poolByProject)) {
+      const info = group.commessa;
+      const commessaKey = info ? `sec:${info.sectionKey}` : `grp:${key}`;
+      if (!map.has(commessaKey)) {
+        map.set(commessaKey, {
+          key: commessaKey,
+          name: info ? paraSectionLabel(info.sectionName) : group.name,
+          color: info ? listColor(info.sectionName, listColorMap, group.color) : group.color,
+          nested: false,
+          groups: [],
+          count: 0,
+        });
+      }
+      const commessa = map.get(commessaKey);
+      if (commessa) {
+        commessa.groups.push({ key, ...group });
+        commessa.count += group.tasks.length;
+        // L'intestazione ha senso solo se la commessa è davvero una sezione con
+        // dentro delle consegne: per una consegna che non trova la sua sezione
+        // (commessa ambigua) sarebbe una riga che ripete quella sotto.
+        if (info?.resolved && group.tasks.some(t => listGroupKey(t._listName))) commessa.nested = true;
+      }
+    }
+    return Array.from(map.values());
+  })();
+
   function colorForTask(t) {
     const proj = findProject(t, config);
-    return proj?.color ?? listColorMap[(t._listName ?? '').toLowerCase()] ?? '#888';
+    return proj?.color ?? listColor(t._listName ?? '', listColorMap);
   }
 
   const deadlineSortedTasks = [...poolTasks].sort((a, b) =>
@@ -262,27 +359,51 @@ export default function TaskPool({
 
       {poolViewMode === 'list' ? (
         <div className="planner-pool-body">
-          {Object.entries(poolByProject).map(([key, group]) => (
-            <div key={key} className="planner-pool-group">
-              <div className="planner-pool-group-label" style={{ color: group.color }}>
-                <span className="planner-group-dot" style={{ background: group.color }} />
-                {group.name}
-                <span className="planner-group-count">{group.tasks.length}</span>
+          {poolCommesse.map(commessa => {
+            const folded = commessa.nested && isFolded(commessa.key);
+            return (
+              <div key={commessa.key} className={`planner-pool-commessa${folded ? ' folded' : ''}`}>
+                {/* L'intestazione della commessa c'è solo quando ha davvero
+                    delle consegne: altrimenti sarebbe una riga in più che
+                    ripete il nome del gruppo sotto. */}
+                {commessa.nested && (
+                  <button
+                    className="planner-pool-commessa-head"
+                    style={{ color: commessa.color }}
+                    aria-expanded={!folded}
+                    title={folded ? 'Mostra le consegne' : 'Richiudi la commessa'}
+                    onClick={() => toggleFold(commessa.key)}>
+                    <span className="planner-pool-commessa-caret" aria-hidden="true">{folded ? '▸' : '▾'}</span>
+                    <span className="planner-group-dot" style={{ background: commessa.color }} />
+                    <span className="planner-pool-commessa-name">{commessa.name}</span>
+                    <span className="planner-group-count">{commessa.count}</span>
+                  </button>
+                )}
+                {!folded && commessa.groups.map(group => (
+                  <div key={group.key} className="planner-pool-group">
+                    <div className="planner-pool-group-label" style={{ color: group.color }}>
+                      <span className="planner-group-dot" style={{ background: group.color }} />
+                      {group.name}
+                      <DeliverableDue due={group.due} />
+                      <span className="planner-group-count">{group.tasks.length}</span>
+                    </div>
+                    {group.tasks.map(task => (
+                      <PoolTaskRow
+                        key={task.id}
+                        task={task}
+                        color={group.color}
+                        isScheduled={scheduledIds.has(task.id)}
+                        selected={selectedTaskId === task.id}
+                        draggable={draggable}
+                        onTaskClick={onTaskClick}
+                        onDragStart={handleDragStart}
+                      />
+                    ))}
+                  </div>
+                ))}
               </div>
-              {group.tasks.map(task => (
-                <PoolTaskRow
-                  key={task.id}
-                  task={task}
-                  color={group.color}
-                  isScheduled={scheduledIds.has(task.id)}
-                  selected={selectedTaskId === task.id}
-                  draggable={draggable}
-                  onTaskClick={onTaskClick}
-                  onDragStart={handleDragStart}
-                />
-              ))}
-            </div>
-          ))}
+            );
+          })}
 
           {poolTasks.length === 0 && (
             tasks.length === 0
@@ -317,6 +438,24 @@ export default function TaskPool({
   );
 }
 
+/** La scadenza di una consegna accanto al suo nome: la data per esteso e
+ *  quanto manca nel titolo, perché nella riga non ci sta. Scaduta e in
+ *  scadenza si accendono, come nella colonna Attività di Sezioni. */
+function DeliverableDue({ due }) {
+  if (!due) return null;
+  const days = daysUntil(due);
+  const label = formatDeliverableDue(due);
+  const overdue = days !== null && days < 0;
+  const soon = days !== null && days >= 0 && days <= DUE_SOON_DAYS;
+  return (
+    <span
+      className={`planner-group-due${overdue ? ' overdue' : soon ? ' soon' : ''}`}
+      title={[label, daysUntilLabel(days)].filter(Boolean).join(' · ')}>
+      {label}
+    </span>
+  );
+}
+
 /** "30m", "1h", "1h30" — la stima, nello spazio di una chip. */
 function fmtEstimate(min) {
   if (min < 60) return `${min}m`;
@@ -335,7 +474,9 @@ function PoolTaskRow({ task, color, isScheduled, selected, draggable, onTaskClic
       onDragStart={draggable && !isScheduled ? e => onDragStart(e, task, color) : undefined}>
       <span className="planner-task-dot" style={{ background: color }} />
       <span className="planner-task-title">{task.title}</span>
-      {showListName && task._listName && <span className="planner-pool-task-section">{task._listName}</span>}
+      {showListName && task._listName && (
+        <span className="planner-pool-task-section">{listLabel(task._listName)}</span>
+      )}
       {/* La stima serve prima del trascinamento, non dopo: è quella che dice
           se l'attività ci sta nel buco che si sta guardando. */}
       <span className="planner-task-estimate" title="Stima di durata">{fmtEstimate(taskEstimateMin(task))}</span>

@@ -289,6 +289,53 @@
 /* Pool groups */
 .planner-pool-group { margin-bottom: 12px; }
 
+/* ── Commesse e consegne ──────────────────────────────────────────────────
+   Una lista To-Do può essere una consegna dentro una commessa
+   (`GRUPPO.Nome-YYMMDD`, vedi paraConfig.js): i suoi gruppi stanno sotto
+   un'intestazione unica, richiudibile. Dove le consegne non ci sono
+   l'intestazione non compare e il serbatoio è quello di prima. */
+.planner-pool-commessa { margin-bottom: 4px; }
+
+.planner-pool-commessa-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 2px 0 4px;
+  background: none;
+  border: none;
+  font-family: var(--font-ui);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  text-align: left;
+  cursor: pointer;
+}
+.planner-pool-commessa-caret { flex: 0 0 auto; width: 9px; opacity: 0.7; }
+.planner-pool-commessa-name {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* Le consegne rientrano sotto la commessa: il rientro è quello che rende
+   leggibile l'annidamento, senza cornici in più. */
+.planner-pool-commessa .planner-pool-group { margin-left: 9px; }
+.planner-pool-commessa.folded { margin-bottom: 10px; }
+
+.planner-group-due {
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.planner-group-due.soon { color: var(--accent); }
+.planner-group-due.overdue { color: var(--danger); }
+
 .planner-pool-group-label {
   display: flex;
   align-items: center;

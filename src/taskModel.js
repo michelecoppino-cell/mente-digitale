@@ -15,7 +15,8 @@
 //   scheduled  ha un blocco nel piano del giorno (daily-plans su OneDrive)
 //
 //   context     categories        (Lavoro / Personale / Famiglia)
-//   sectionId   id della lista To-Do — una lista è una sezione PARA
+//   sectionId   id della lista To-Do — una lista è una sezione PARA, o una
+//               sua consegna se il nome è annidato (vedi paraConfig.js)
 //   subtasks    checklistItems
 //   note        body.content
 //   completedAt completedDateTime
@@ -66,6 +67,27 @@ export const CONTEXTS = [
   { key: 'personale',  label: 'Personale',  category: 'Personale',  color: 'var(--ctx-personale)' },
   { key: 'famiglia',   label: 'Famiglia',   category: 'Famiglia',   color: 'var(--ctx-famiglia)' },
 ];
+
+// Quanto dev'essere grande una cosa, orientativamente. Non è una regola che il
+// codice applica — nessun controllo, nessun avviso: è il metro con cui si
+// decide se una cosa va spezzata, scritto una volta e mostrato dove si crea o
+// si scompone (form della consegna, colonna Attività, `mente aiuto`).
+//
+//   sottoattività   meno di 2 ore     — sta dentro una giornata di lavoro
+//   attività        meno di 2 giorni  — oltre, sono più attività travestite
+//   consegna        meno di un mese   — oltre, è un'altra commessa
+//
+// Il senso è la scala: ogni livello è circa dieci volte quello sotto, così
+// guardando una lista si capisce sempre a che altezza si sta ragionando.
+export const GRANULARITY_MEMO = [
+  { key: 'sottoattivita', label: 'Sottoattività', limit: 'meno di 2 ore' },
+  { key: 'attivita',      label: 'Attività',      limit: 'meno di 2 giorni' },
+  { key: 'consegna',      label: 'Consegna',      limit: 'meno di un mese' },
+];
+
+/** Il memo in una riga sola, per un titolo o una nota a piè di form. */
+export const GRANULARITY_MEMO_LINE =
+  'Orientativamente: ' + GRANULARITY_MEMO.map(g => `${g.label.toLowerCase()} ${g.limit}`).join(', ') + '.';
 
 export const DEFAULT_ESTIMATE_MIN = 30;
 

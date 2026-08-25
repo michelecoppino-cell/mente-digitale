@@ -509,6 +509,154 @@
 .sv-task.selected .sv-task-title { color: var(--accent); }
 .sv-task.current .sv-task-dot { box-shadow: 0 0 0 2px var(--accent-tint); }
 
+/* ── Consegne ─────────────────────────────────────────────────────────────
+   Una commessa può avere più consegne (liste To-Do `GRUPPO.Nome-YYMMDD`, vedi
+   paraConfig.js). Ognuna è un gruppo a tendina con la sua scadenza: le
+   attività restano le righe di sempre, sopra ci va una riga che dice a quale
+   consegna appartengono e quanto manca. Con una consegna sola e senza
+   convenzione nel nome l'intestazione non c'è proprio, e la colonna è identica
+   a com'era prima. */
+.sv-deliverable { flex: 0 0 auto; display: flex; flex-direction: column; }
+.sv-deliverable + .sv-deliverable { margin-top: var(--sp-3); }
+
+.sv-deliverable-head {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  padding-top: var(--sp-1);
+}
+
+.sv-deliverable-toggle {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-1) var(--sp-2);
+  background: none;
+  border: none;
+  border-radius: var(--r-sm);
+  font-family: var(--font-ui);
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--t);
+}
+@media (hover: hover) {
+  .sv-deliverable-toggle:hover { background: rgba(255, 255, 255, 0.04); }
+}
+
+.sv-deliverable-caret { flex: 0 0 auto; width: 10px; font-size: var(--fs-micro); color: var(--disabled); }
+.sv-deliverable-dot { flex: 0 0 auto; width: 7px; height: 7px; border-radius: 2px; }
+.sv-deliverable-name {
+  flex: 0 1 auto;
+  min-width: 0;
+  font-size: var(--fs-meta);
+  color: var(--text-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sv-deliverable-due {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: var(--fs-micro);
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* In scadenza si accende, scaduta si accende di più: sono le due sole cose
+   che devono saltare all'occhio scorrendo la colonna. */
+.sv-deliverable-due.soon { color: var(--accent); }
+.sv-deliverable-due.overdue { color: var(--danger); }
+.sv-deliverable-count {
+  flex: 0 0 auto;
+  font-size: var(--fs-micro);
+  color: var(--disabled);
+  font-variant-numeric: tabular-nums;
+}
+.sv-deliverable-date-btn { font-size: 11px; }
+.sv-deliverable-date {
+  flex: 0 0 auto;
+  width: 130px;
+  padding: 2px var(--sp-2);
+  background: none;
+  border: 1px solid var(--accent-line);
+  border-radius: var(--r-sm);
+  color: var(--text-2);
+  font-family: var(--font-ui);
+  font-size: var(--fs-micro);
+}
+.sv-deliverable-error {
+  margin: 0;
+  padding: 0 var(--sp-2);
+  font-size: var(--fs-micro);
+  color: var(--danger);
+}
+
+/* Le attività di una consegna rientrano sotto la sua intestazione: il rientro
+   è quello che rende leggibile l'annidamento senza aggiungere cornici. */
+.sv-deliverable .sv-task { padding-left: calc(10px + var(--sp-2)); }
+.sv-deliverable .sv-empty { padding: 0 var(--sp-2) var(--sp-2) calc(10px + var(--sp-2)); }
+.sv-deliverable.folded .sv-deliverable-name { color: var(--muted); }
+
+/* Il memo delle taglie (sottoattività < 2h, attività < 2gg, consegna < 1 mese)
+   sta in un titolo: è un metro, non un avviso. */
+.sv-col-memo { flex: 0 0 auto; font-size: var(--fs-micro); color: var(--disabled); cursor: help; }
+
+/* ── Consegna nuova ───────────────────────────────────────────────────────
+   Due campi separati, nome e data: la convenzione del nome la scrive il
+   codice, e chi crea una consegna non la vede mai. */
+.sv-new-deliverable {
+  /* La colonna è un flex verticale che scorre: senza questo il form si
+     schiaccerebbe quando ci sono molte attività sotto. */
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  margin-bottom: var(--sp-3);
+  padding: var(--sp-3);
+  background: var(--accent-tint);
+  border-radius: var(--r-sm);
+}
+.sv-new-deliverable-row { display: flex; align-items: center; gap: var(--sp-2); }
+.sv-new-deliverable-name,
+.sv-new-deliverable-date {
+  padding: var(--sp-2);
+  background: none;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: var(--fs-meta);
+}
+.sv-new-deliverable-name { flex: 1; min-width: 0; }
+.sv-new-deliverable-date { flex: 0 0 auto; width: 130px; font-size: var(--fs-micro); }
+.sv-new-deliverable-hint {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--fs-micro);
+  line-height: 1.4;
+  color: var(--muted);
+}
+.sv-new-deliverable-cancel,
+.sv-new-deliverable-ok {
+  flex: 0 0 auto;
+  padding: var(--sp-1) var(--sp-3);
+  background: none;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  color: var(--muted);
+  font-family: var(--font-ui);
+  font-size: var(--fs-micro);
+  cursor: pointer;
+}
+.sv-new-deliverable-ok { border-color: var(--accent-line); color: var(--accent); }
+.sv-new-deliverable-ok:disabled,
+.sv-new-deliverable-cancel:disabled { opacity: .5; cursor: default; }
+
 /* ── Dettagli ─────────────────────────────────────────────────────────────
    Il pannello arriva dal Piano, dove è la terza colonna di una griglia larga.
    Qui la colonna è già il contenitore: si tolgono il fondo e i margini suoi,

@@ -12,6 +12,7 @@
 // sposta, che è quel che serve mentre si lavora a un progetto.
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { taskEstimateMin } from './taskModel';
+import { listLabel } from './paraConfig';
 
 const SLOT_MIN = 30;
 const SLOT_H = 24;      // altezza di mezz'ora, px
@@ -48,13 +49,14 @@ function blockMinutesFor(/** @type {any} */ task) {
 /**
  * @param {Object} props
  * @param {Record<string, {blocks?: any[]}>} [props.plans]  i piani giornalieri, per data
- * @param {string} [props.listName]  la sezione aperta: i suoi blocchi si accendono
+ * @param {string[]} [props.listNames]  le liste della sezione aperta — quella
+ *        omonima e le sue consegne: i blocchi di tutte si accendono
  * @param {string} [props.color]     il colore della sezione, per i blocchi nuovi
  * @param {(plans: Record<string, any>) => void} [props.onPlansChanged]  senza, la
  *        colonna è in sola lettura: niente da salvare, niente da trascinare
  * @param {(taskId: string) => void} [props.onPickTask]  clic su un blocco della sezione
  */
-export default function SectionTimeline({ plans, listName, color, onPlansChanged, onPickTask }) {
+export default function SectionTimeline({ plans, listNames = [], color, onPlansChanged, onPickTask }) {
   // Un tick al minuto: la lancetta dell'ora attuale è l'unica cosa che si
   // muove da sola in questa colonna.
   const [now, setNow] = useState(() => new Date());
@@ -77,6 +79,13 @@ export default function SectionTimeline({ plans, listName, color, onPlansChanged
   const today = ymd(now);
   const nowMin = now.getHours() * 60 + now.getMinutes();
   const editable = !!onPlansChanged;
+
+  // Un blocco è «della sezione» se la sua lista è una qualsiasi delle sue: con
+  // le consegne annidate il confronto non è più un nome contro un nome.
+  const mineNames = useMemo(
+    () => new Set(listNames.map(n => (n || '').toLowerCase()).filter(Boolean)),
+    [listNames]
+  );
 
   const blocks = useMemo(
     () => [...(plans?.[today]?.blocks || [])]
@@ -251,7 +260,7 @@ export default function SectionTimeline({ plans, listName, color, onPlansChanged
             const resizing = resize?.blockId === b.id;
             const endMin = (resizing && resize) ? resize.endMin : Math.min(DAY_END, t2m(b.endTime));
             if (endMin <= startMin) return null;
-            const mine = !!listName && (b.listName || '').toLowerCase() === listName.toLowerCase();
+            const mine = mineNames.has((b.listName || '').toLowerCase());
             return (
               <div
                 key={b.id}
@@ -265,7 +274,7 @@ export default function SectionTimeline({ plans, listName, color, onPlansChanged
                 onClick={() => { if (mine && b.taskId) onPickTask?.(b.taskId); }}
                 title={`${b.startTime}–${m2t(endMin)} · ${b.taskTitle || b.label || ''}${editable ? ' — trascina per spostare, il bordo in basso per allungare' : ''}`}>
                 <span className="sv-tl-block-meta">
-                  {[fmtDur(endMin - startMin), b.listName].filter(Boolean).join(' · ')}
+                  {[fmtDur(endMin - startMin), b.listName ? listLabel(b.listName) : null].filter(Boolean).join(' · ')}
                 </span>
                 <span className="sv-tl-block-title">{b.taskTitle || b.label || 'Blocco'}</span>
                 {editable && (

@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
 import { createTask, deleteTask, completeTask, createNotePage, createCalendarEvent, deleteCalendarEvent } from './api';
-import { sectionRole, paraSectionLabel } from './paraConfig';
+import { sectionRole, paraSectionLabel, listLabel } from './paraConfig';
 import { pushUndo } from './undo';
 import './GtdClarifyModal.css';
 
@@ -291,7 +291,7 @@ function GtdLeafPopup({ leaf, seedText, onConsume, onClose }) {
                 <label className="gtd-popup-field">
                   <span>Lista</span>
                   <select className="gtd-select" value={listId} onChange={e => setListId(e.target.value)}>
-                    {leaf.todoLists.map(l => <option key={l.id} value={l.id}>{l.displayName}</option>)}
+                    {leaf.todoLists.map(l => <option key={l.id} value={l.id}>{listLabel(l.displayName)}</option>)}
                   </select>
                 </label>
               )}
@@ -407,7 +407,7 @@ function GtdEventPopup({ leaf, seedText, onConsume, onEventCreated, onEventRemov
                 <span>{leaf.kind === 'list' ? 'Lista' : 'Taccuino'}</span>
                 <select className="gtd-select" value={targetId} onChange={e => setTargetId(e.target.value)}>
                   {(options || []).map(o => (
-                    <option key={o.id} value={o.id}>{leaf.kind === 'list' ? o.displayName : o.label}</option>
+                    <option key={o.id} value={o.id}>{leaf.kind === 'list' ? listLabel(o.displayName) : o.label}</option>
                   ))}
                 </select>
               </label>
