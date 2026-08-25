@@ -31,6 +31,7 @@ function clearDraft() {
 // solo mentre si scrive — lì l'interfaccia deve sparire, ed è il punto.
 export default function DiaryPanel() {
   const [view, setView] = useState('home');   // home | write | sera | ai | importa
+  const [quickMood, setQuickMood] = useState(false);
   const [writeType, setWriteType] = useState('svuota-testa');
   const [entries, setEntries] = useState([]);
   const [months, setMonths] = useState([]);        // mesi noti dall'indice
@@ -140,6 +141,7 @@ export default function DiaryPanel() {
           }}
           onOpenAi={() => setView('ai')}
           onOpenImport={() => setView('importa')}
+          onOpenQuickMood={() => setQuickMood(true)}
           onDelete={handleDelete}
         />
       )}
@@ -163,6 +165,12 @@ export default function DiaryPanel() {
           onImported={ricarica}
         />
       )}
+      {quickMood && (
+        <QuickMoodModal
+          onSave={async entry => { await persist(entry); setQuickMood(false); }}
+          onClose={() => setQuickMood(false)}
+        />
+      )}
     </div>
   );
 }
@@ -171,7 +179,7 @@ export default function DiaryPanel() {
 
 function DiaryHome({
   entries, loading, loadFailed, resumeDraft, hasOlder, monthsLeft, loadingAll,
-  onLoadOlder, onLoadAll, onStart, onResume, onDiscardDraft, onOpenAi, onOpenImport, onDelete,
+  onLoadOlder, onLoadAll, onStart, onResume, onDiscardDraft, onOpenAi, onOpenImport, onOpenQuickMood, onDelete,
 }) {
   const [query, setQuery] = useState('');
   const [tag, setTag] = useState(null);
@@ -189,6 +197,9 @@ function DiaryHome({
       <div className="diary-header">
         <span className="diary-title">Diario</span>
         <div className="diary-header-actions">
+          <button className="diary-ghost-btn" onClick={onOpenQuickMood} title="Registra solo umore ed energia, senza scrivere">
+            🎚️ Umore/energia
+          </button>
           <button className="diary-ghost-btn" onClick={onOpenAi} title="Prepara il testo da incollare in una chat AI">
             Copia per l'AI
           </button>
@@ -860,6 +871,49 @@ function Slider({ label, value, labels, onChange }) {
         onChange={e => onChange(Number(e.target.value))}
         className="diary-slider"
       />
+    </div>
+  );
+}
+
+// Finestra piccola per registrare solo umore ed energia, senza dover
+// scrivere: la stessa cosa che sta nel rituale della sera, ma raggiungibile
+// in ogni momento della giornata invece che solo a fine giornata.
+function QuickMoodModal({ onSave, onClose }) {
+  const [mood, setMood] = useState(3);
+  const [energy, setEnergy] = useState(3);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState(null);
+
+  async function handleSave() {
+    setSaving(true);
+    setError(null);
+    try {
+      await onSave(makeEntry({ type: 'stato', text: '', mood, energy }));
+    } catch {
+      setError('Non sono riuscito a salvare. Riprova.');
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="diary-quick-overlay" onClick={onClose}>
+      <div className="diary-quick-modal" onClick={e => e.stopPropagation()}>
+        <div className="diary-header">
+          <span className="diary-title">🎚️ Umore ed energia</span>
+          <button className="diary-close" onClick={onClose}>✕</button>
+        </div>
+        <div className="diary-body">
+          <Slider label="Umore" value={mood} labels={MOOD_LABELS} onChange={setMood} />
+          <Slider label="Energia" value={energy} labels={ENERGY_LABELS} onChange={setEnergy} />
+          {error && <div className="diary-error">{error}</div>}
+          <div className="diary-writer-actions">
+            <button className="diary-link-btn" onClick={onClose} disabled={saving}>Annulla</button>
+            <button className="diary-primary-btn" onClick={handleSave} disabled={saving}>
+              {saving ? '…' : 'Salva'}
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

@@ -15,6 +15,7 @@ export const DIARY_TYPES = {
   'svuota-testa': { label: 'Svuota testa', icon: '🌬️' },
   'sera':         { label: 'Rituale della sera', icon: '🕯️' },
   'libero':       { label: 'Scrittura libera', icon: '✍️' },
+  'stato':        { label: 'Umore ed energia', icon: '🎚️' },
 };
 
 export const MOOD_LABELS = ['', 'molto giù', 'giù', 'né su né giù', 'bene', 'molto bene'];
