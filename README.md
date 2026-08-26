@@ -516,3 +516,51 @@ e merge su `main`. La CI (type-check, lint, build) gira su ogni push e ogni PR.
 
 `src/config.js` contiene `CLIENT_ID` dell'app registrata su Entra ID e gli scope richiesti.
 Il redirect URI è l'origin corrente.
+
+### Quanto dura l'accesso (e perché su iPhone durava un'ora)
+
+L'access token di Microsoft vale un'ora, sempre. Quello che tiene viva la
+sessione oltre l'ora è il *refresh token*, che arriva grazie allo scope
+`offline_access` e viene speso in silenzio per farsi dare un access token
+nuovo. Se la sessione muore puntualmente al minuto sessanta, vuol dire che
+quel refresh token non è mai stato speso — non che manchi.
+
+Tre cose lo impedivano, e sono tutte e tre nel codice, non nel portale Azure:
+
+- **I rinnovi forzati in parallelo.** Allo scadere dell'ora tutte le chiamate
+  Graph in volo prendono 401 insieme e chiedono tutte un token fresco. I
+  refresh token rilasciati a una SPA sono monouso e ruotano: il primo riscatto
+  invalida gli altri, e quello che torna indietro è «serve interazione». Ora
+  passano tutti da una coda e ne condividono uno solo (`src/auth.js`).
+- **Si aspettava il 401.** Il rinnovo adesso parte da solo cinque minuti prima
+  della scadenza, e di nuovo al ritorno sull'app — su iPhone i timer non
+  scattano mentre la pagina è sospesa, quindi serve anche il
+  `visibilitychange` (`startTokenKeepAlive`).
+- **`ssoSilent` come rete di sicurezza.** L'iframe nascosto verso Microsoft
+  ha bisogno del cookie di sessione in contesto di terza parte, che Safari
+  blocca con «Impedisci tracciamento tra siti»: su iPhone quella strada non
+  porta da nessuna parte. Resta come tentativo, ma la sessione la tiene in
+  piedi il rinnovo programmato.
+
+Nel portale Azure c'è comunque una cosa da verificare una volta sola:
+**Registrazione app → Autenticazione**, l'URI di reindirizzamento deve stare
+sotto la piattaforma **Single-page application**, non sotto «Web». Sotto «Web»
+Entra non abilita il CORS sull'endpoint dei token e ogni rinnovo dal browser
+fallisce.
+
+Due tetti restano, e non si spostano da qui:
+
+- **24 ore.** È la vita massima di un refresh token rilasciato a una SPA — una
+  mitigazione anti-tracciamento di Entra, non un'impostazione. Una volta al
+  giorno il login interattivo ci vuole. Per andare oltre serve un client
+  riservato lato server (una Function di Cloudflare Pages) che tenga lui il
+  refresh token da 90 giorni, come già fanno gli script in `scripts/`.
+- **7 giorni.** Safari cancella `localStorage` dei siti non visitati per una
+  settimana (ITP). L'app aperta dall'icona sulla schermata Home ha il suo
+  spazio separato da quello di Safari: sono due sessioni distinte, ed è
+  normale doversi autenticare in tutte e due.
+
+La schermata di login mostra in fondo l'ultimo errore *e* l'ora dell'ultimo
+rinnovo riuscito: la distanza fra i due è la diagnosi. Un'ora tonda vuol dire
+che il refresh token non è entrato in gioco; un giorno vuol dire che è il
+tetto delle 24 ore.

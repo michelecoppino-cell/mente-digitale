@@ -17,14 +17,29 @@ const MSA_TENANT = '9188040d-6c67-4c5b-b112-36a304b66dad';
 // qui per poterlo mostrare nella schermata di login stessa.
 const AUTH_DEBUG_KEY = 'md_auth_debug';
 
+// Ultimo rinnovo silenzioso riuscito: da solo dice quasi tutto. Se la
+// disconnessione arriva sessanta minuti dopo l'ultimo rinnovo riuscito, il
+// refresh token non è mai stato usato; se arriva dopo un giorno, è il tetto
+// delle 24 ore dei refresh token SPA.
+const AUTH_OK_KEY = 'md_auth_last_ok';
+
 function logAuthRedirect(e) {
   try {
     localStorage.setItem(AUTH_DEBUG_KEY, JSON.stringify({
       t: new Date().toISOString(),
       errorCode: e?.errorCode || null,
+      // Il sotto-codice è quello che distingue «il refresh token è scaduto»
+      // da «Microsoft vuole rivederti in faccia»: senza, dalla schermata di
+      // login si legge sempre e solo `interaction_required`.
+      subError: e?.subError || null,
       message: e?.errorMessage || String(e),
+      lastOk: localStorage.getItem(AUTH_OK_KEY) || null,
     }));
   } catch { /* storage non disponibile */ }
+}
+
+function logAuthOk() {
+  try { localStorage.setItem(AUTH_OK_KEY, new Date().toISOString()); } catch { /* storage non disponibile */ }
 }
 
 export function getLastAuthDebug() {
@@ -150,21 +165,48 @@ export async function reconnect() {
   );
 }
 
-// Una sola acquisizione alla volta. Senza questo, le dieci chiamate Graph che
-// parte una schermata all'apertura facevano dieci acquireTokenSilent in
-// parallelo: dieci iframe verso Microsoft, che su Safari finiscono in timeout
-// a vicenda e producono l'errore che poi portava al login.
-/** @type {Promise<{token: string, expiresOn: number}>|null} */
+// Una sola richiesta di token alla volta, sempre. Senza questo, le dieci
+// chiamate Graph che parte una schermata all'apertura facevano dieci
+// acquireTokenSilent in parallelo: dieci iframe verso Microsoft, che su Safari
+// finiscono in timeout a vicenda e producono l'errore che poi portava al login.
+//
+// Il rinnovo forzato aveva una scappatoia da questa coda, ed è la scappatoia
+// che costava la sessione: allo scadere dell'ora tutte le chiamate in volo
+// prendono 401 insieme e chiedono tutte un token fresco: altrettanti riscatti
+// dello stesso refresh token nello stesso istante. I refresh token rilasciati
+// a una SPA sono monouso e ruotano — il primo riscatto invalida gli altri, e
+// quello che torna indietro è «serve interazione», cioè lo schermo di login
+// un'ora tondo dopo l'accesso. Adesso i forzati si accodano e, se ne sono
+// arrivati più d'uno, condividono lo stesso rinnovo.
+/** @typedef {{token: string, expiresOn: number}} TokenResult */
+/** @type {Promise<TokenResult>|null} */
 let inFlight = null;
+/** @type {Promise<TokenResult>|null} */
+let inFlightForced = null;
+/** @type {Promise<unknown>} */
+let chain = Promise.resolve();
+
+/** Esegue `fn` dopo che l'acquisizione precedente ha finito, comunque sia andata. */
+function enqueue(fn) {
+  const run = chain.then(fn, fn);
+  chain = run.then(() => {}, () => {});
+  return run;
+}
 
 /**
  * Access token per Graph, con la sua scadenza vera.
  * @param {boolean} [forceRefresh] ignora la cache MSAL e rinnova davvero
- * @returns {Promise<{token: string, expiresOn: number}>}
+ * @returns {Promise<TokenResult>}
  */
 export function getToken(forceRefresh = false) {
-  if (inFlight && !forceRefresh) return inFlight;
-  const p = acquire(forceRefresh).finally(() => { if (inFlight === p) inFlight = null; });
+  if (forceRefresh) {
+    if (inFlightForced) return inFlightForced;
+    const p = enqueue(() => acquire(true)).finally(() => { if (inFlightForced === p) inFlightForced = null; });
+    inFlightForced = p;
+    return p;
+  }
+  if (inFlight) return inFlight;
+  const p = enqueue(() => acquire(false)).finally(() => { if (inFlight === p) inFlight = null; });
   inFlight = p;
   return p;
 }
@@ -174,21 +216,82 @@ async function acquire(forceRefresh) {
   if (!account) throw new Error('Non autenticato');
   try {
     const r = await msal.acquireTokenSilent({ scopes: SCOPES, account, forceRefresh });
-    setInteractionRequired(false);
-    return { token: r.accessToken, expiresOn: r.expiresOn ? r.expiresOn.getTime() : Date.now() + 55 * 60_000 };
+    return onAcquired(r);
   } catch (e) {
     if (!(e instanceof InteractionRequiredAuthError)) throw e;
     // Secondo tentativo silenzioso per un'altra strada: se il cookie di
     // sessione Microsoft nel browser è ancora buono, ssoSilent riesce dove
     // il refresh token in cache ha smesso di funzionare — ed è invisibile.
+    // Su Safari con «Impedisci tracciamento tra siti» l'iframe non vede il
+    // cookie e questa strada non porta da nessuna parte: è il rinnovo
+    // programmato qui sotto che tiene in piedi la sessione, non lei.
     try {
       const r = await msal.ssoSilent({ scopes: SCOPES, loginHint: getLoginHint() });
       rememberAccount(r.account);
-      setInteractionRequired(false);
-      return { token: r.accessToken, expiresOn: r.expiresOn ? r.expiresOn.getTime() : Date.now() + 55 * 60_000 };
+      return onAcquired(r);
     } catch { /* niente da fare in silenzio */ }
     logAuthRedirect(e);
     setInteractionRequired(true);
     throw e;
   }
+}
+
+/**
+ * @param {{accessToken: string, expiresOn?: Date|null}} r
+ * @returns {TokenResult}
+ */
+function onAcquired(r) {
+  const expiresOn = r.expiresOn ? r.expiresOn.getTime() : Date.now() + 55 * 60_000;
+  setInteractionRequired(false);
+  logAuthOk();
+  scheduleRenew(expiresOn);
+  return { token: r.accessToken, expiresOn };
+}
+
+// ── Rinnovo prima della scadenza ────────────────────────────────────────────
+//
+// L'access token dura un'ora, il refresh token che c'è dietro molto di più: la
+// differenza fra le due cose si vede solo se qualcuno usa il secondo prima che
+// scada il primo. Finora nessuno lo faceva — si aspettava il 401 — e il 401
+// arriva sempre nel momento peggiore, cioè mentre la schermata sta caricando
+// tutto insieme. Qui il rinnovo parte cinque minuti prima, da solo.
+
+const RENEW_MARGIN_MS = 5 * 60_000;
+/** @type {ReturnType<typeof setTimeout>|null} */
+let renewTimer = null;
+let expiresAt = 0;
+
+function scheduleRenew(expiresOn) {
+  expiresAt = expiresOn;
+  if (renewTimer) clearTimeout(renewTimer);
+  // Mai sotto il mezzo minuto: se Microsoft restituisce un token già quasi
+  // scaduto, un rinnovo immediato in cascata non aiuterebbe nessuno.
+  const delay = Math.max(30_000, expiresOn - Date.now() - RENEW_MARGIN_MS);
+  renewTimer = setTimeout(() => { getToken(true).catch(() => {}); }, delay);
+}
+
+/**
+ * Tiene viva la sessione: rinnovo programmato prima della scadenza, e un
+ * rinnovo al ritorno sull'app. Il timer da solo non basta su iPhone — quando
+ * il telefono sospende la pagina i timer non scattano, e al ritorno il token
+ * è vecchio di ore. Da chiamare una volta sola, dopo initAuth.
+ * @returns {() => void}
+ */
+export function startTokenKeepAlive() {
+  function refreshIfStale() {
+    if (document.visibilityState !== 'visible') return;
+    if (!getAccount()) return;
+    // Rinnova prima che la schermata parta con le sue chiamate a Graph: il
+    // token vecchio le farebbe fallire tutte insieme in 401.
+    if (Date.now() < expiresAt - RENEW_MARGIN_MS) return;
+    getToken(true).catch(() => {});
+  }
+  document.addEventListener('visibilitychange', refreshIfStale);
+  window.addEventListener('online', refreshIfStale);
+  refreshIfStale();
+  return () => {
+    document.removeEventListener('visibilitychange', refreshIfStale);
+    window.removeEventListener('online', refreshIfStale);
+    if (renewTimer) clearTimeout(renewTimer);
+  };
 }

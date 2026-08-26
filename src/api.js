@@ -20,7 +20,10 @@ async function getTokenCached(forceRefresh = false) {
   if (!forceRefresh && _cachedToken && Date.now() < _cachedTokenExp) return _cachedToken;
   const { token, expiresOn } = await getToken(forceRefresh);
   _cachedToken = token;
-  _cachedTokenExp = expiresOn - 60_000;
+  // Due minuti di margine, non uno: su rete mobile una schermata che parte
+  // con dieci chiamate insieme può impiegarcene più di uno, e un token che
+  // scade a metà del giro le fa fallire tutte in 401 nello stesso istante.
+  _cachedTokenExp = expiresOn - 120_000;
   return token;
 }
 

@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef, lazy, Suspense } from 'react';
 import { Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom';
-import { initAuth, getAccount, login, trySsoSilent, getLastAuthDebug, onInteractionRequired, isInteractionRequired, reconnect } from './auth';
+import { initAuth, getAccount, login, trySsoSilent, getLastAuthDebug, onInteractionRequired, isInteractionRequired, reconnect, startTokenKeepAlive } from './auth';
 import { getNotebooks, getSections, getTodoLists, getTodoTasks, getPages, getRecentEmails, getPageContentHtml, markOneNoteTagDone, getReminders, createTask, getCalendarEvents, getTasksForDeadlineDedup, invalidateCalendarsCache, loadColorSettings, saveColorSettings, migrateLegacyDriveFiles, loadPlannerConfig, loadDailyPlans, saveDailyPlans, updateTaskStatus, completeTask, createTodoList, renameTodoList } from './api';
 import { getMarker, setMarker, clearMarkers } from './markers';
 import { queryClient, qk, STALE } from './queryClient';
@@ -274,10 +274,17 @@ export default function App() {
   const pomodoro = usePomodoro();
 
   useEffect(() => {
+    /** @type {(() => void)|null} */
+    let stopKeepAlive = null;
     initAuth().then(() => {
       const acc = getAccount();
       setAccount(acc);
       setReady(true);
+      // Il token si rinnova da solo cinque minuti prima di scadere e al
+      // ritorno sull'app: è quello che tiene viva la sessione su iPhone, dove
+      // aspettare il 401 vuol dire farsi trovare con dieci chiamate Graph in
+      // volo e un refresh token solo da spendere.
+      stopKeepAlive = startTokenKeepAlive();
       if (acc) {
         load(false);
       } else {
@@ -292,6 +299,7 @@ export default function App() {
         });
       }
     });
+    return () => { if (stopKeepAlive) stopKeepAlive(); };
   }, []);
 
   useEffect(() => onInteractionRequired(setNeedsReconnect), []);
@@ -939,7 +947,13 @@ export default function App() {
           <div className="login-note">Solo permessi di lettura · nessun dato salvato</div>
           {lastAuthDebug && (
             <div className="login-note" style={{ opacity: 0.6, marginTop: 4 }}>
-              Ultima disconnessione: {lastAuthDebug.errorCode || lastAuthDebug.message} ({new Date(lastAuthDebug.t).toLocaleTimeString('it-IT')})
+              Ultima disconnessione: {[lastAuthDebug.errorCode, lastAuthDebug.subError].filter(Boolean).join(' / ') || lastAuthDebug.message} ({new Date(lastAuthDebug.t).toLocaleTimeString('it-IT')})
+              {/* Quanto è durata la sessione è la diagnosi: un'ora tonda vuol
+                  dire che il refresh token non è mai entrato in gioco, un
+                  giorno vuol dire che è arrivato al suo tetto. */}
+              {lastAuthDebug.lastOk && (
+                <><br />Ultimo rinnovo riuscito: {new Date(lastAuthDebug.lastOk).toLocaleString('it-IT')}</>
+              )}
             </div>
           )}
         </div>
