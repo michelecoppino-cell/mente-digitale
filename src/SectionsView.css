@@ -596,6 +596,16 @@
   color: var(--danger);
 }
 
+/* Il gruppo che sta per ricevere l'attività trascinata: si accende tutto, non
+   solo la riga sotto il puntatore — è il gruppo il bersaglio, non un punto
+   preciso dell'elenco. */
+.sv-deliverable.drop-target {
+  background: var(--accent-tint);
+  box-shadow: inset 0 0 0 1px var(--accent-line);
+  border-radius: var(--r-sm);
+}
+.sv-deliverable.moving { opacity: 0.7; }
+
 /* Le attività di una consegna rientrano sotto la sua intestazione: il rientro
    è quello che rende leggibile l'annidamento senza aggiungere cornici. */
 .sv-deliverable .sv-task { padding-left: calc(10px + var(--sp-2)); }

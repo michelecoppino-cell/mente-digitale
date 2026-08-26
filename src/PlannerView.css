@@ -292,8 +292,13 @@
 /* ── Commesse e consegne ──────────────────────────────────────────────────
    Una lista To-Do può essere una consegna dentro una commessa
    (`GRUPPO.Nome-YYMMDD`, vedi paraConfig.js): i suoi gruppi stanno sotto
-   un'intestazione unica, richiudibile. Dove le consegne non ci sono
-   l'intestazione non compare e il serbatoio è quello di prima. */
+   un'intestazione unica. Dove le consegne non ci sono l'intestazione non
+   compare e il serbatoio è quello di prima.
+
+   Niente tendina: a nascondere le righe che non servono ci pensano i filtri in
+   cima alla colonna. Quello che distingue una consegna da una commessa è il
+   rientro — e il filo verticale che lo accompagna, perché a colonna stretta
+   pochi pixel di margine da soli non si leggono. */
 .planner-pool-commessa { margin-bottom: 4px; }
 
 .planner-pool-commessa-head {
@@ -301,18 +306,12 @@
   align-items: center;
   gap: 6px;
   width: 100%;
-  padding: 2px 0 4px;
-  background: none;
-  border: none;
-  font-family: var(--font-ui);
+  padding: 2px 0 5px;
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.07em;
   text-transform: uppercase;
-  text-align: left;
-  cursor: pointer;
 }
-.planner-pool-commessa-caret { flex: 0 0 auto; width: 9px; opacity: 0.7; }
 .planner-pool-commessa-name {
   flex: 0 1 auto;
   min-width: 0;
@@ -320,10 +319,20 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-/* Le consegne rientrano sotto la commessa: il rientro è quello che rende
-   leggibile l'annidamento, senza cornici in più. */
-.planner-pool-commessa .planner-pool-group { margin-left: 9px; }
-.planner-pool-commessa.folded { margin-bottom: 10px; }
+
+.planner-pool-commessa.nested .planner-pool-group {
+  margin-left: 3px;
+  padding-left: 11px;
+  border-left: 1px solid var(--line);
+}
+/* Il gruppo di una consegna è un sotto-elenco, non un elenco a sé: la sua
+   etichetta perde il maiuscoletto della commessa e resta più piccola. */
+.planner-pool-commessa.nested .planner-pool-group-label {
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  text-transform: none;
+  font-size: 12px;
+}
 
 .planner-group-due {
   font-size: 11px;
