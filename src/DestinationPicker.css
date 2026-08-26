@@ -45,3 +45,17 @@
   color: var(--muted);
   font-size: var(--fs-chip);
 }
+
+/* Intestazione di gruppo: separa le liste della sezione aperta da tutte le
+   altre. Non è cliccabile, è un'etichetta. */
+.dp-head {
+  position: sticky;
+  top: 0;
+  padding: var(--sp-2) var(--sp-4);
+  background: var(--bg-rail);
+  border-bottom: 1px solid var(--line-soft);
+  color: var(--muted);
+  font-size: var(--fs-micro);
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}

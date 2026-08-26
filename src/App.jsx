@@ -18,6 +18,7 @@ import ColorSettingsModal from './ColorSettingsModal';
 import DiaryPanel from './DiaryPanel';
 import ActivityBoard from './ActivityBoard';
 import QuickCapture from './QuickCapture';
+import { captureContextFor } from './captureContext';
 import AppShell from './AppShell';
 import { usePomodoro } from './pomodoroContext';
 import TodayView from './TodayView';
@@ -261,6 +262,14 @@ export default function App() {
 
   const navigate = useNavigate();
   const location = useLocation();
+
+  // La sezione che si sta guardando, se si sta guardando una: la cattura la
+  // propone come destinazione invece di chiedere dove va una cosa che è già
+  // scritta in testata. Si ricalcola alla rotta perché è la rotta a dirlo —
+  // `location.pathname` è `/sezioni/<id>` solo lì.
+  const captureContext = useMemo(
+    () => captureContextFor(location.pathname, notebooks, sectionsMap, todoLists),
+    [location.pathname, notebooks, sectionsMap, todoLists]);
   const pomodoro = usePomodoro();
 
   useEffect(() => {
@@ -1134,6 +1143,7 @@ export default function App() {
       <QuickCapture
         open={captureOpen}
         todoLists={todoLists}
+        context={captureContext}
         onClose={() => setCaptureOpen(false)}
         onCaptured={task => setScheduledTasks(prev => [...(prev || []), task])}
         onDecideNow={text => { setGtdSeedText(text); setGtdOpen(true); }}
