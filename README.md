@@ -177,6 +177,37 @@ colonna gli serve almeno una sezione. Da lì passano anche le diramazioni del
 metodo: sotto i due minuti si fa subito, dipende da altri diventa *In attesa*
 con la persona, non adesso diventa *Un giorno*.
 
+Quando però dove va la cosa **si sa già**, i due passi sono un giro a vuoto: si
+cattura in Inbox per ripescarla dopo e rimetterla dove si sapeva fin dall'inizio.
+Per questo la destinazione si può dire sulla stessa riga della cattura, e allora
+il task nasce direttamente in sezione, saltando il chiarimento:
+
+```
+Rivedere relazione fondazioni @2573 !domani ~45
+```
+
+| Token | Cosa dice | Esempi |
+|---|---|---|
+| `@nome` | la lista To-Do di destinazione | `@2573`, `@ris-auto`, `@casa` |
+| `!data` | la scadenza | `!oggi`, `!domani`, `!ven`, `!31/12`, `!2026-09-01` |
+| `~n` | la stima, che diventa `[MIN:n]` | `~45`, `~90m`, `~2h` |
+
+Scrivere `@` apre l'elenco delle sezioni, che si stringe man mano — frecce per
+scegliere, `Invio` per scegliere e catturare in un gesto solo. L'ordine a elenco
+vuoto è quello d'uso recente: le cose si buttano quasi sempre negli stessi tre o
+quattro posti.
+
+Dire la destinazione resta **facoltativo**, ed è il punto: chi non scrive niente
+batte `Invio` e cattura in Inbox esattamente come prima. Un token viene tolto dal
+titolo **solo se ha risolto** — `@mario` dove nessuna sezione si chiama così
+resta testo e il task va in Inbox — perché un parser che si mangia pezzi di
+titolo è peggio di un parser che non fa niente. La sintassi sta in
+`src/captureParse.js`, l'elenco in `src/DestinationPicker.jsx`.
+
+**Decidi ora**, nella finestra di cattura, resta per il caso opposto: non che si
+sappia dove va, ma che non si sappia. Apre il diagramma di chiarimento col testo
+già dentro.
+
 Allo stesso modo: il **contesto** (Lavoro / Personale / Famiglia) è in
 `categories`, la **sezione** è la lista To-Do stessa, le **sottoattività** sono
 i `checklistItems`, la **nota** è `body.content`.

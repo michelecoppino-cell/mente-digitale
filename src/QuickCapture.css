@@ -79,3 +79,64 @@
 @media (hover: hover) {
   .qc-btn.primary:hover:not(:disabled) { background: var(--accent-tint); }
 }
+
+/* Dove finisce, letto prima di premere Invio: la destinazione non deve mai
+   essere una sorpresa a cose fatte. */
+.qc-target-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+.qc-target {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+  max-width: 100%;
+  padding: var(--sp-2) var(--sp-3);
+  background: none;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  color: var(--text-3);
+  font-family: var(--font-ui);
+  font-size: var(--fs-chip);
+  cursor: pointer;
+  transition: border-color var(--t), color var(--t), background var(--t);
+}
+/* Con una sezione scelta la chip si accende: a colpo d'occhio dice che questa
+   cattura salta l'Inbox. */
+.qc-target.set {
+  border-color: var(--accent-line);
+  background: var(--accent-tint);
+  color: var(--accent);
+}
+@media (hover: hover) {
+  .qc-target:hover { border-color: var(--accent-line); color: var(--text); }
+}
+
+.qc-target-arrow { flex: none; opacity: .7; }
+.qc-target-caret { flex: none; opacity: .6; }
+.qc-target-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.qc-chip {
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  color: var(--text-3);
+  font-size: var(--fs-chip);
+  white-space: nowrap;
+}
+
+.qc-hint code {
+  padding: 0 3px;
+  border-radius: 3px;
+  background: var(--surface-2);
+  color: var(--text-3);
+  font-size: var(--fs-micro);
+}
