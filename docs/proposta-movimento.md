@@ -1,9 +1,12 @@
 # Proposta: la scheda «Movimento»
 
-> Documento di proposta. Nessuna riga di codice della scheda Movimento è ancora
-> scritta: oggi in `TodayView.jsx` c'è un `LockedCard` inerte, dichiarato come
-> segnaposto proprio perché non esiste una fonte dati sugli allenamenti.
-> Qui si decide quale fonte creare e che forma dare alla scheda.
+> **Approvata e costruita** (fasi 1–3). Il documento resta com'era scritto in
+> fase di proposta — è il ragionamento che ha portato alle scelte, e serve più
+> quello del riassunto di cosa è stato fatto. In fondo, sotto *Cosa è stato
+> costruito davvero*, ci sono i tre punti in cui il codice si è discostato.
+>
+> Il `LockedCard` inerte in `TodayView.jsx` non esiste più: era il segnaposto
+> messo lì proprio perché non c'era una fonte dati sugli allenamenti.
 >
 > Le immagini sono mockup costruiti con i token e i CSS veri dell'app
 > (`tokens.css`, `TodayView.css`), non disegni: i colori, le misure e la
@@ -213,3 +216,32 @@ come agenda e diario. Se un giorno cambiasse idea basta avvolgerlo in
 Le fasi 1–3 insieme sono la funzione come sta nei mockup. Le ultime due si
 valutano dopo qualche settimana d'uso — e la 5 solo se le prime viste risultano
 strette davvero.
+
+
+## Cosa è stato costruito davvero
+
+Fasi 1, 2 e 3, in `movimento.js` (logica pura), `api.js` (registro su OneDrive),
+`MovimentoCard.jsx` e `MovimentoQuickAdd.jsx`. Tre punti in cui il codice si è
+discostato da questo documento, e il perché:
+
+1. **Le impostazioni non sono una schermata.** Il mockup 3 mostra un pannello
+   con tre righe; nel codice c'è solo la scelta del calendario, e sta in testa
+   al riquadro — è l'etichetta col nome del calendario collegato, che si tocca
+   per cambiarlo. Le altre due righe («chiedi conferma a fine giornata»,
+   «mostra le voci nel Diario») appartengono alla fase 4, che non è stata
+   fatta: una schermata di impostazioni per un campo solo è un posto in cui non
+   si torna mai, e le Impostazioni generali dell'app sono i colori dei taccuini.
+2. **La preferenza vive nell'indice del registro**, non fra le impostazioni su
+   OneDrive come scritto sopra. È un campo solo, e chi legge il registro ha già
+   bisogno dell'indice: un file a parte sarebbe stata una seconda richiesta a
+   ogni apertura di «Oggi» per leggere una stringa.
+3. **La famiglia di una sessione programmata si indovina dal titolo**
+   (`famigliaEvento`). È l'unica euristica sul testo del documento, ed è meno
+   grave di quella che ho rifiutato: **quali** eventi contano lo decide il
+   calendario scelto — una proprietà del dato — e il titolo decide solo di che
+   colore disegnare una barra che comparirebbe comunque. Se sbaglia, sbaglia
+   una tinta; nessun evento entra o esce dal riquadro per colpa sua.
+
+Non fatte, come previsto: le voci in coda al Diario (fase 4) e la pagina
+`/movimento` con lo storico a mesi (fase 5). Si valutano dopo qualche settimana
+d'uso vero.

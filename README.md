@@ -16,8 +16,12 @@ Microsoft To-Do e al calendario Outlook, e un diario con supporto AI via copia-i
   piani salvati su OneDrive. Candidati task estratti da email ed email OneNote con euristiche
   locali (`src/dailyReview.js`), senza chiamate AI.
 - **Oggi** — la home. Cosa c'è adesso (o subito dopo), l'agenda del calendario in sola lettura, le
-  azioni programmate per il giorno, e a lato ricorrenze, diario e due riquadri ancora bloccati.
-  Non ha una lista propria: è tutto una query sul giorno corrente.
+  azioni programmate per il giorno, e a lato movimento, diario e due riquadri riservati dietro
+  il PIN (Bussola e Finanze). Non ha una lista propria: è tutto una query sul giorno corrente.
+- **Movimento** — allenamento, meditazione e yoga: la settimana a barre, la striscia, e il
+  confronto fra le sessioni programmate in un calendario dedicato e quelle davvero registrate.
+  Il registro sta su OneDrive (`mente-digitale-movimento-YYYY-MM.json`), il calendario si legge
+  soltanto.
 - **Sezioni** — la plancia operativa di una sezione PARA in cinque colonne: pagine OneNote,
   percorsi (cartelle, dischi di rete e link come pastiglie: le categorie OneDrive e Web aprono
   il collegamento, tutte le altre copiano il percorso), attività della sezione — che si
@@ -143,10 +147,26 @@ chiederebbe al server un file che non esiste. Con l'hash la rotta non lascia mai
 il client, e le due pagine-scorciatoia (`/gtd.html`, `/diario.html`) restano
 file veri.
 
-**Movimento** e **Finanze**, in Oggi, sono due riquadri bloccati per davvero:
-nel codebase non esiste una fonte dati né per gli allenamenti né per i conti,
-quindi mostrano la forma sotto un velo e dicono cosa manca, invece di inventare
-numeri. Non c'è nulla da premere finché una fonte non c'è.
+**Bussola** e **Finanze**, in Oggi, sono due riquadri *riservati*: partono
+oscurati e si aprono col PIN di Finanze — lo stesso codice, la stessa scadenza a
+trenta minuti, la stessa scheda del browser, quindi aprirne uno apre anche
+l'altro e la sezione. Un occhio sbarrato in testa al riquadro richiude tutto
+subito, senza aspettare la scadenza. Sono gli unici due riquadri privati di una
+pagina che sta aperta tutto il giorno su una scrivania; tutto il resto — agenda,
+azioni, movimento, diario — resta in chiaro, perché non c'è niente di male a
+farsi leggere alle spalle quante volte si è corso. Vedi `SensitiveCard.jsx` e
+`finanze/sblocco.ts`.
+
+**Movimento** era il terzo riquadro bloccato, e lo era per davvero: non esisteva
+nessuna fonte dati sugli allenamenti. Ora ce ne sono due, e la separazione fra
+loro è tutta la funzione — **il calendario tiene i programmi, un registro su
+OneDrive tiene quello che è successo**. Barre piene per le sessioni registrate,
+tratteggiate per quelle previste e non ancora fatte; «2 su 4» col denominatore
+dal calendario e il numeratore dal registro. Il minimo settimanale non si
+configura da nessuna parte: è la serie ricorrente che hai messo in agenda. Il
+calendario è di sola lettura — registrare una sessione non crea, non sposta e
+non cancella nessun evento. Vedi `movimento.js`, `MovimentoCard.jsx` e
+`docs/proposta-movimento.md`.
 
 Sopra il contenuto vive la **barra Pomodoro**: la sessione sta a livello di app
 (`PomodoroSession.jsx`), quindi il timer continua a girare — e la barra resta

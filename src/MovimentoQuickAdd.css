@@ -1,0 +1,148 @@
+/* Il modulo di registrazione. Da telefono è un foglio che sale dal fondo — è
+   lì che arriva il pollice; da desktop resta la stessa scatola, centrata. */
+
+.mq-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--sp-5);
+  background: rgba(0, 0, 0, .55);
+}
+
+.mq-sheet {
+  width: 100%;
+  max-width: 420px;
+  max-height: 90dvh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-5);
+  padding: var(--sp-6) var(--sp-5);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, .6);
+}
+
+.mq-head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--sp-4); }
+.mq-title { font-family: var(--font-title); font-size: 18px; color: var(--text); }
+.mq-date { font-size: var(--fs-micro); color: var(--muted); }
+
+/* Da «Fatta»: da dove arrivano tipo e durata già compilati. */
+.mq-preset {
+  font-size: var(--fs-micro);
+  line-height: 1.5;
+  color: var(--muted);
+  padding: var(--sp-3) var(--sp-4);
+  border-left: 2px solid var(--accent-line);
+  background: var(--accent-tint);
+  border-radius: 0 var(--r-sm) var(--r-sm) 0;
+}
+
+.mq-field { display: flex; flex-direction: column; gap: var(--sp-3); }
+
+.mq-label {
+  font-size: 10px;
+  letter-spacing: .09em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.mq-chips { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
+
+/* 32px e non 44: i chip stanno a coppie sulla stessa riga e un pollice li
+   distingue lo stesso, mentre 44px di altezza per cinque righe di chip
+   spingerebbero il tasto «Registra» fuori dallo schermo — che è il modo più
+   sicuro di rendere il modulo inutile proprio da telefono. */
+.mq-chip {
+  height: 32px;
+  padding: 0 var(--sp-4);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: none;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  color: var(--text-3);
+  font-family: var(--font-ui);
+  font-size: var(--fs-chip);
+  cursor: pointer;
+  transition: border-color var(--t), color var(--t), background var(--t);
+}
+.mq-chip.sel { border-color: var(--accent-line); color: var(--accent); background: var(--accent-tint); }
+.mq-pt { width: 6px; height: 6px; border-radius: 50%; }
+
+.mq-min {
+  width: 72px;
+  height: 32px;
+  padding: 0 var(--sp-3);
+  background: var(--bg);
+  border: 1px solid var(--accent-line);
+  border-radius: 16px;
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: var(--fs-chip);
+  text-align: center;
+}
+
+.mq-nota {
+  height: 38px;
+  padding: 0 var(--sp-4);
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: var(--fs-card);
+}
+.mq-nota::placeholder { color: var(--disabled); }
+.mq-nota:focus { outline: none; border-color: var(--accent-line); }
+
+.mq-recenti { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
+.mq-tag {
+  padding: 3px 9px;
+  background: none;
+  border: 1px solid var(--line-soft);
+  border-radius: 12px;
+  color: var(--muted);
+  font-family: var(--font-ui);
+  font-size: var(--fs-micro);
+  cursor: pointer;
+}
+@media (hover: hover) {
+  .mq-tag:hover { color: var(--text-3); border-color: var(--line); }
+}
+
+.mq-errore { font-size: var(--fs-micro); color: var(--danger); }
+
+.mq-actions { display: flex; gap: var(--sp-3); }
+
+.mq-annulla, .mq-salva {
+  height: var(--tap);
+  border-radius: var(--r);
+  font-family: var(--font-ui);
+  font-size: var(--fs-row);
+  cursor: pointer;
+  background: none;
+}
+.mq-annulla { flex: 0 0 auto; padding: 0 var(--sp-6); border: 1px solid var(--line); color: var(--text-3); }
+.mq-salva { flex: 1; border: 1px solid var(--accent-line); color: var(--accent); }
+.mq-salva:disabled { opacity: .45; cursor: default; }
+@media (hover: hover) {
+  .mq-salva:not(:disabled):hover { background: var(--accent-tint); }
+}
+
+/* Da telefono il modulo si aggancia al fondo: è lì che arriva il pollice, e
+   una scatola centrata lascia sotto una fascia morta alta un terzo di schermo. */
+@media (max-width: 640px) {
+  .mq-overlay { align-items: flex-end; padding: 0; }
+  .mq-sheet {
+    max-width: none;
+    border-radius: var(--r-lg) var(--r-lg) 0 0;
+    border-bottom: none;
+    padding-bottom: calc(var(--sp-6) + env(safe-area-inset-bottom, 0px));
+  }
+}

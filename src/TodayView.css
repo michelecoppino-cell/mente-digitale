@@ -226,24 +226,14 @@
   overflow: hidden;
 }
 
-/* ── Bussola e cento desideri ─────────────────────────────────────────── */
+/* ── Bussola ──────────────────────────────────────────────────────────────
+   Un riquadro solo: il desiderio del giorno, l'assaggio di Visione e le tre
+   porte. Erano due schede separate finché non sono finite entrambe dietro il
+   PIN — a quel punto erano due veli identici in fila. Fondo pieno di
+   .today-card e non solo bordo come Diario: è il riquadro che si guarda tutti
+   i giorni, e deve pesare più degli altri. */
 
-.today-compass,
-.today-wishes { gap: var(--sp-4); }
-
-/* La Bussola è una porta, non una scheda di dati: solo bordo, come Diario e
-   Finanze. I desideri invece hanno il fondo pieno di .today-card — è il
-   riquadro che si guarda tutti i giorni, e deve pesare più degli altri. */
-.today-compass {
-  background: none;
-  border: 1px solid var(--line);
-  transition: border-color var(--t);
-}
-@media (hover: hover) {
-  .today-compass:hover { border-color: var(--accent-line); }
-}
-
-.today-compass-note { font-size: var(--fs-micro); line-height: 1.55; color: var(--muted); }
+.today-bussola { gap: var(--sp-4); }
 
 .today-compass-wish {
   font-family: var(--font-title);
@@ -336,6 +326,36 @@
 
 .today-locked-note { font-size: var(--fs-micro); line-height: 1.55; color: var(--muted); }
 .today-locked-soon { font-size: var(--fs-micro); color: var(--disabled); }
+
+/* Testa di un riquadro riservato aperto: l'etichetta e il comando che lo
+   richiude. */
+.today-riservato-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+}
+
+/* «Nascondi»: spento come tutti i comandi di servizio, ma con un bersaglio da
+   dito — si usa di fretta, tipicamente perché sta arrivando qualcuno. */
+.today-hide-btn {
+  flex: 0 0 auto;
+  width: 26px;
+  height: 26px;
+  margin: -6px -4px -6px 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  border-radius: var(--r-sm);
+  color: var(--disabled);
+  cursor: pointer;
+  transition: color var(--t), background var(--t);
+}
+@media (hover: hover) {
+  .today-hide-btn:hover { color: var(--text-3); background: var(--surface-2); }
+}
 
 /* ── Riquadri riservati (PIN) ─────────────────────────────────────────────
    Cento desideri e Finanze partono oscurati e si aprono col PIN di Finanze.

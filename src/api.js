@@ -1040,6 +1040,80 @@ export async function deleteDiaryEntry(entry) {
   return updated;
 }
 
+// ── OneDrive Movimento ─────────────────────────────────────────────────────
+// Stessa impalcatura del Diario, e per la stessa ragione: è un dato che cresce
+// senza limite e che non si pota, quindi un file per mese invece di uno unico
+// da rileggere e riscrivere per intero a ogni sessione registrata.
+//
+// L'indice porta anche l'unica preferenza della scheda — quale calendario
+// contiene le sessioni programmate. Sta lì e non in un file suo perché è un
+// campo solo, e perché chi legge il registro ha già bisogno dell'indice: un
+// secondo file vorrebbe dire una seconda richiesta a ogni apertura di «Oggi».
+const OD_MOVIMENTO_INDEX_FILE = 'mente-digitale-movimento-index.json';
+
+/** @param {string} ym 'YYYY-MM' @returns {string} */
+function movimentoMonthFile(ym) {
+  return `mente-digitale-movimento-${ym}.json`;
+}
+
+/** @returns {Promise<import('./types').MovimentoIndex>} */
+export async function loadMovimentoIndex() {
+  const idx = await getDriveJson(OD_MOVIMENTO_INDEX_FILE, null);
+  return {
+    months: Array.isArray(idx?.months) ? idx.months : [],
+    calendarId: idx?.calendarId ?? null,
+    calendarName: idx?.calendarName ?? null,
+  };
+}
+
+/** @param {import('./types').MovimentoIndex} idx @returns {Promise<any>} */
+export async function saveMovimentoIndex(idx) {
+  return putDriveJson(OD_MOVIMENTO_INDEX_FILE, idx);
+}
+
+/** @param {string} ym @returns {Promise<import('./types').Movimento[]>} */
+export async function loadMovimentoMese(ym) {
+  const data = await getDriveJson(movimentoMonthFile(ym), []);
+  return Array.isArray(data) ? data : [];
+}
+
+/**
+ * Salva (o aggiorna, per id) una sessione nel file del suo mese e registra il
+ * mese nell'indice. Rilegge il mese prima di scrivere, così una sessione
+ * registrata dal telefono non viene persa da una registrata dal portatile
+ * nella stessa giornata.
+ * @param {import('./types').Movimento} voce
+ * @returns {Promise<import('./types').Movimento[]>} le voci del mese aggiornate
+ */
+export async function saveMovimento(voce) {
+  const ym = voce.date.slice(0, 7);
+  const esistenti = await loadMovimentoMese(ym);
+  const i = esistenti.findIndex(v => v.id === voce.id);
+  const aggiornate = i >= 0
+    ? esistenti.map(v => (v.id === voce.id ? voce : v))
+    : [...esistenti, voce];
+  aggiornate.sort((a, b) => a.date.localeCompare(b.date) || (a.createdAt || '').localeCompare(b.createdAt || ''));
+  await putDriveJson(movimentoMonthFile(ym), aggiornate);
+
+  const idx = await loadMovimentoIndex();
+  if (!idx.months.includes(ym)) {
+    await saveMovimentoIndex({ ...idx, months: [...idx.months, ym].sort() });
+  }
+  return aggiornate;
+}
+
+/**
+ * @param {import('./types').Movimento} voce
+ * @returns {Promise<import('./types').Movimento[]>} le voci del mese aggiornate
+ */
+export async function deleteMovimento(voce) {
+  const ym = voce.date.slice(0, 7);
+  const esistenti = await loadMovimentoMese(ym);
+  const aggiornate = esistenti.filter(v => v.id !== voce.id);
+  await putDriveJson(movimentoMonthFile(ym), aggiornate);
+  return aggiornate;
+}
+
 // ── Foto del diario ────────────────────────────────────────────────────────
 // Le immagini non stanno dentro il JSON del mese (un file di voci non deve
 // diventare da megabyte): vivono come file veri in una sottocartella, e la

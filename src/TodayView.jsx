@@ -16,6 +16,7 @@ import { parseWishes, wishSection, wishOfTheDay } from './wishes';
 import { monthKey, shiftMonth } from './diary';
 import { taskContext, contextColor } from './taskModel';
 import SensitiveCard from './SensitiveCard';
+import MovimentoCard from './MovimentoCard';
 import { useSbloccato } from './finanze/sblocco';
 import { caricaRiepilogoOggi } from './finanze/riepilogoOggi';
 import './TodayView.css';
@@ -316,17 +317,9 @@ export default function TodayView({ plans, tasks, calendarEvents, onCompleteBloc
 
         {/* ── Colonna destra ───────────────────────────────────────────── */}
         <aside className="today-aside">
-          <WishesCard docs={identityDocs} today={today} onOpenIdentity={onOpenIdentity} />
-          <CompassCard docs={identityDocs} onOpenIdentity={onOpenIdentity} />
+          <BussolaCard docs={identityDocs} today={today} onOpenIdentity={onOpenIdentity} />
 
-          {/* Movimento resta un riquadro senza fonte dati: nel codebase non
-              esiste niente sugli allenamenti. Sta qui come segnaposto inerte,
-              dichiarato, invece di essere finto con numeri inventati. */}
-          <LockedCard
-            title="Movimento"
-            eyebrow="Movimento"
-            note="Sette barre, una per giorno. Serve una fonte: un calendario dedicato agli allenamenti o una sezione PARA da cui contarli."
-          />
+          <MovimentoCard today={today} calendarEvents={calendarEvents} />
 
           <FinanzeCard />
 
@@ -391,12 +384,27 @@ function useIdentityDocs() {
 }
 
 /**
- * Bussola: chi sono, cosa faccio per me. È la porta, non il documento — sono
- * quattro schermate di testo, e metterle qui le ridurrebbe a un muro che si
- * smette di leggere dopo tre giorni.
- * @param {{ docs: any, onOpenIdentity?: (which: 'bussola'|'visione'|'desideri') => void }} props
+ * Bussola: il desiderio del giorno, dove sto andando, e le tre porte.
+ *
+ * Erano due riquadri: «I cento desideri» e «Bussola», uno sopra l'altro nella
+ * stessa colonna. Ma leggono lo stesso documento — i cento desideri sono una
+ * sezione della Bussola, non un altro testo — e da quando entrambi sono dietro
+ * il PIN, tenerli separati voleva dire due veli identici in fila, due bottoni
+ * «Inserisci il PIN» a due centimetri l'uno dall'altro, e due volte la stessa
+ * etichetta per la stessa cosa.
+ *
+ * Fusi, l'ordine dice quello che conta: il desiderio di oggi in alto, perché è
+ * la riga che si guarda tutti i giorni; l'assaggio di Visione sotto; e in
+ * fondo le tre porte, per quando si vuole leggere il documento intero.
+ *
+ * Ne compare un desiderio solo. Quaranta righe in colonna sono un elenco da
+ * scorrere; una riga sola è una cosa a cui pensare.
+ * @param {{ docs: any, today: string, onOpenIdentity?: (which: 'bussola'|'visione'|'desideri') => void }} props
  */
-function CompassCard({ docs, onOpenIdentity }) {
+function BussolaCard({ docs, today, onOpenIdentity }) {
+  const wishes = useMemo(() => parseWishes(wishSection(docs?.bussola)?.content || ''), [docs]);
+  const wish = wishOfTheDay(wishes, today);
+
   const visioneText = (docs?.visione?.sections || [])
     .map((/** @type {any} */ s) => (s.content || '').trim())
     .filter(Boolean)
@@ -404,42 +412,10 @@ function CompassCard({ docs, onOpenIdentity }) {
     .slice(0, 150);
 
   return (
-    <section className="today-card today-compass">
-      <span className="eyebrow">Bussola</span>
-      <p className="today-compass-note">
-        Chi sono, cosa faccio per me — e dove sto andando.
-      </p>
-      <div className="today-compass-links">
-        <button type="button" onClick={() => onOpenIdentity?.('bussola')}>La Bussola →</button>
-        <button type="button" onClick={() => onOpenIdentity?.('visione')}>La Visione →</button>
-      </div>
-      {visioneText && <p className="today-compass-vision">{visioneText}…</p>}
-    </section>
-  );
-}
-
-/**
- * I cento desideri, con la loro porta. Stanno in un riquadro loro e non in
- * fondo alla Bussola: sono l'unica parte di quel documento che si guarda tutti
- * i giorni, e sotto tre link e due paragrafi non la si guardava.
- *
- * Ne compare uno solo, quello di oggi. Quaranta righe in colonna sono un
- * elenco da scorrere; una riga sola è una cosa a cui pensare.
- *
- * Riservato: il desiderio del giorno è una frase scritta per sé, e Oggi resta
- * aperta su una scrivania in ufficio. Parte oscurato e si apre col PIN, lo
- * stesso di Finanze.
- * @param {{ docs: any, today: string, onOpenIdentity?: (which: 'bussola'|'visione'|'desideri') => void }} props
- */
-function WishesCard({ docs, today, onOpenIdentity }) {
-  const wishes = useMemo(() => parseWishes(wishSection(docs?.bussola)?.content || ''), [docs]);
-  const wish = wishOfTheDay(wishes, today);
-
-  return (
     <SensitiveCard
-      className="today-wishes"
-      eyebrow="I cento desideri"
-      nota="Il desiderio di oggi, e quanti ne mancano ai cento.">
+      className="today-bussola"
+      eyebrow="Bussola"
+      nota="Il desiderio di oggi, la Visione e i cento desideri.">
       {!docs && <p className="today-empty">…</p>}
       {docs && (
         wish
@@ -455,8 +431,13 @@ function WishesCard({ docs, today, onOpenIdentity }) {
           ].filter(Boolean).join(' · ')}
         </span>
       )}
+
+      {visioneText && <p className="today-compass-vision">{visioneText}…</p>}
+
       <div className="today-compass-links">
         <button type="button" onClick={() => onOpenIdentity?.('desideri')}>I cento desideri →</button>
+        <button type="button" onClick={() => onOpenIdentity?.('bussola')}>La Bussola →</button>
+        <button type="button" onClick={() => onOpenIdentity?.('visione')}>La Visione →</button>
       </div>
     </SensitiveCard>
   );
@@ -545,30 +526,5 @@ function FinRiga({ etichetta, valore, colore, forte }) {
       <span className="today-fin-etichetta">{etichetta}</span>
       <span className="today-fin-valore" style={colore ? { color: colore } : undefined}>{valore}</span>
     </div>
-  );
-}
-
-/**
- * Riquadro bloccato: il contenuto sfocato sotto un velo, con il perché.
- * @param {{ eyebrow: string, title: string, note: string }} props
- */
-function LockedCard({ eyebrow, title, note }) {
-  return (
-    <section className="today-card locked">
-      <span className="eyebrow">{eyebrow}</span>
-      <div className="today-locked-ghost" aria-hidden="true">
-        <span /><span /><span /><span /><span /><span /><span />
-      </div>
-      <div className="today-locked-veil">
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
-          <rect x="4.5" y="10.5" width="15" height="10" rx="2" />
-          <path d="M8 10.5V7.6a4 4 0 0 1 8 0v2.9" />
-        </svg>
-        <p className="today-locked-note">{note}</p>
-        {/* Inerte per davvero: non c'è niente da sbloccare finché non c'è una
-            fonte dati. Un bottone che non fa nulla sarebbe peggio del vuoto. */}
-        <span className="today-locked-soon">{title} arriva più avanti</span>
-      </div>
-    </section>
   );
 }

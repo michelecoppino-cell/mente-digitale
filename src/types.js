@@ -324,6 +324,31 @@ export {};
  */
 
 /**
+ * Una sessione di movimento, meditazione o yoga — qualcosa che è **stato
+ * fatto**. Quello che è solo programmato non sta qui: vive nel calendario
+ * «Allenamenti», e le due cose non si mescolano mai (vedi movimento.js).
+ * @typedef {Object} Movimento
+ * @property {string} id
+ * @property {string} date                     'YYYY-MM-DD' locale
+ * @property {string} famiglia                 'movimento' | 'meditazione' | 'yoga'
+ * @property {string} tipo                     Palestra, Corsa, Seduta, Flow…
+ * @property {number} durataMin
+ * @property {string} [nota]                   libera: «gambe + core», «6 km»
+ * @property {string} [daEvento]               id dell'evento di calendario che questa
+ *                                             sessione soddisfa, se registrata con «Fatta»
+ * @property {string} createdAt                ISO del momento di registrazione
+ */
+
+/**
+ * L'indice dei mesi che contengono voci di Movimento, più l'unica preferenza
+ * della scheda: quale calendario porta le sessioni programmate.
+ * @typedef {Object} MovimentoIndex
+ * @property {string[]} months
+ * @property {string|null} [calendarId]
+ * @property {string|null} [calendarName]
+ */
+
+/**
  * Riferimento a un'immagine in `mente-digitale/diario-foto/`: nel JSON del mese
  * viaggia solo il nome del file, mai i byte.
  * @typedef {Object} DiaryPhoto

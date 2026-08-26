@@ -1,0 +1,211 @@
+/* Il riquadro Movimento in «Oggi». */
+
+.mv-card { gap: var(--sp-4); }
+
+.mv-head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--sp-3); }
+/* L'etichetta non si accorcia mai: in una colonna stretta a cedere dev'essere
+   il nome del calendario, che è un dettaglio, non il titolo del riquadro. */
+.mv-head > .eyebrow { flex: 0 0 auto; }
+
+/* Il calendario collegato: un'etichetta discreta, non un bottone vero. È una
+   cosa che si tocca una volta e poi si legge per sapere da dove arrivano le
+   barre tratteggiate. */
+.mv-cal-btn {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 60%;
+  padding: 0;
+  background: none;
+  border: none;
+  color: var(--muted);
+  font-family: var(--font-ui);
+  font-size: var(--fs-micro);
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+@media (hover: hover) {
+  .mv-cal-btn:hover { color: var(--accent); }
+}
+
+/* ── La settimana: sette colonne, una per giorno ──────────────────────── */
+
+.mv-week { display: flex; gap: var(--sp-2); align-items: flex-end; height: 62px; }
+
+.mv-day {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--sp-2);
+  height: 100%;
+}
+
+.mv-stack {
+  flex: 1;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: 2px;
+  /* La linea di base c'è sotto tutti i giorni, non solo sotto quelli vuoti:
+     senza, una colonna senza sessione sembrava assente invece che a zero. */
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 2px;
+}
+
+.mv-seg { border-radius: 2px; flex: 0 0 auto; }
+
+/* Programmato e non ancora fatto: il contorno di una barra che non c'è. */
+.mv-seg.previsto {
+  background: none;
+  border: 1px dashed var(--muted);
+  opacity: .8;
+}
+
+.mv-day-label { font-size: 10px; color: var(--muted); letter-spacing: .04em; }
+.mv-day.oggi .mv-day-label { color: var(--accent); font-weight: 600; }
+
+.mv-meta { font-size: var(--fs-micro); line-height: 1.5; color: var(--muted); }
+
+/* ── Obiettivo della settimana, dal calendario ────────────────────────── */
+
+.mv-goal { display: flex; flex-direction: column; gap: var(--sp-2); }
+.mv-goal-row { display: flex; align-items: baseline; justify-content: space-between; gap: var(--sp-4); }
+.mv-goal-label {
+  font-size: var(--fs-micro);
+  color: var(--text-3);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mv-goal-val {
+  flex: 0 0 auto;
+  font-size: var(--fs-micro);
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.mv-goal-val b { color: var(--text); font-weight: 500; }
+
+.mv-bar { height: 4px; border-radius: 2px; background: var(--line); overflow: hidden; display: flex; }
+.mv-bar i { display: block; height: 100%; background: #c4643f; }
+.mv-bar i.previsto {
+  background: repeating-linear-gradient(90deg, var(--disabled) 0 2px, transparent 2px 5px);
+}
+
+/* ── «Programmata per oggi» ───────────────────────────────────────────── */
+
+.mv-today {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-4);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+}
+.mv-today-dot {
+  flex: 0 0 auto;
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  border: 1px dashed var(--muted);
+}
+.mv-today-txt {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--fs-micro);
+  color: var(--text-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mv-today-btn {
+  flex: 0 0 auto;
+  height: 26px;
+  padding: 0 var(--sp-4);
+  background: none;
+  border: 1px solid var(--accent-line);
+  border-radius: var(--r-sm);
+  color: var(--accent);
+  font-family: var(--font-ui);
+  font-size: var(--fs-micro);
+  cursor: pointer;
+}
+@media (hover: hover) {
+  .mv-today-btn:hover { background: var(--accent-tint); }
+}
+
+/* ── I tre bottoni di registrazione ───────────────────────────────────── */
+
+.mv-add { display: flex; gap: var(--sp-2); }
+
+.mv-add-btn {
+  flex: 1;
+  min-width: 0;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  background: none;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  color: var(--text-3);
+  font-family: var(--font-ui);
+  font-size: var(--fs-micro);
+  cursor: pointer;
+  transition: border-color var(--t), color var(--t);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mv-add-btn::before {
+  content: '';
+  flex: 0 0 auto;
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--fam);
+}
+@media (hover: hover) {
+  .mv-add-btn:hover { border-color: var(--accent-line); color: var(--text-2); }
+}
+
+/* ── Scelta del calendario ────────────────────────────────────────────── */
+
+.mv-picker { max-width: 380px; }
+.mv-picker-note { font-size: var(--fs-micro); line-height: 1.55; color: var(--muted); }
+.mv-picker-vuoto { font-size: var(--fs-micro); color: var(--disabled); }
+
+.mv-picker-list {
+  display: flex;
+  flex-direction: column;
+  max-height: 40dvh;
+  overflow-y: auto;
+}
+
+.mv-picker-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  min-height: var(--tap);
+  padding: 0 var(--sp-3);
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--line-soft);
+  color: var(--text-2);
+  font-family: var(--font-ui);
+  font-size: var(--fs-card);
+  text-align: left;
+  cursor: pointer;
+}
+.mv-picker-row:last-child { border-bottom: none; }
+.mv-picker-row.sel { color: var(--accent); }
+.mv-picker-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mv-picker-check { flex: 0 0 auto; font-size: var(--fs-micro); }
+@media (hover: hover) {
+  .mv-picker-row:hover { background: var(--surface-2); }
+}
