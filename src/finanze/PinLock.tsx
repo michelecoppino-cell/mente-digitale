@@ -8,46 +8,18 @@
 //
 // Lo sblocco vale per la scheda del browser e scade da solo: tornare dal caffè
 // e ritrovare i conti aperti perché due ore prima si era digitato il PIN
-// vanificherebbe l'esercizio.
+// vanificherebbe l'esercizio. Stato e scadenza stanno in ./sblocco, condivisi
+// con i riquadri riservati della vista Oggi.
 
 import { createContext, useContext, useEffect, useRef, useState } from "react";
 import { useApp } from "./store/AppStore";
 import { sha256 } from "./crypto";
 import { pinAttivo } from "./types";
+import { blocca as chiudiSblocco, sblocca, useSbloccato } from "./sblocco";
 
-const SS_SBLOCCO = "finanze.sbloccatoFino";
-const DURATA_SBLOCCO_MS = 30 * 60 * 1000;
-
-function sbloccoValido(): boolean {
-  try {
-    const fino = Number(sessionStorage.getItem(SS_SBLOCCO) ?? 0);
-    return Number.isFinite(fino) && Date.now() < fino;
-  } catch {
-    return false;
-  }
-}
-
-function segnaSblocco(): void {
-  try {
-    sessionStorage.setItem(SS_SBLOCCO, String(Date.now() + DURATA_SBLOCCO_MS));
-  } catch {
-    /* sessionStorage non disponibile: si resterà bloccati a ogni rientro */
-  }
-}
-
-function scadenzaVia(): void {
-  try {
-    sessionStorage.removeItem(SS_SBLOCCO);
-  } catch {
-    /* no-op */
-  }
-}
-
-// Il comando «blocca» passa da un contesto e non da una funzione esportata:
-// cancellare la chiave in sessionStorage non basta, perché lo stato di sblocco
-// vive in PinLock e nessuno lo costringerebbe a rileggerla. Il pulsante nella
-// barra delle schede deve poter richiudere davvero, non solo alla prossima
-// visita.
+// Il comando «blocca» passa da un contesto e non da una funzione esportata
+// così com'è: il pulsante nella barra delle schede deve poter richiudere
+// davvero, e il contesto è già il modo in cui le schede lo raggiungono.
 const LockCtx = createContext<{ blocca: () => void } | null>(null);
 
 /** Comando per richiudere la sezione, disponibile dentro l'area sbloccata. */
@@ -57,7 +29,7 @@ export function useLock(): { blocca: () => void } {
 
 export function PinLock({ children }: { children: React.ReactNode }) {
   const { dati, caricato } = useApp();
-  const [sbloccato, setSbloccato] = useState(sbloccoValido);
+  const sbloccato = useSbloccato();
   const [pin, setPin] = useState("");
   const [errore, setErrore] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -68,22 +40,8 @@ export function PinLock({ children }: { children: React.ReactNode }) {
     if (!sbloccato) inputRef.current?.focus();
   }, [sbloccato]);
 
-  // Ricontrolla la scadenza quando la scheda torna in primo piano: senza
-  // questo, una finestra lasciata aperta su /finanze resterebbe sbloccata
-  // all'infinito, perché nessun render la costringe a riguardare l'orologio.
-  useEffect(() => {
-    function alRitorno() {
-      if (document.visibilityState === "visible" && !sbloccoValido()) {
-        setSbloccato(false);
-      }
-    }
-    document.addEventListener("visibilitychange", alRitorno);
-    return () => document.removeEventListener("visibilitychange", alRitorno);
-  }, []);
-
   function blocca() {
-    scadenzaVia();
-    setSbloccato(false);
+    chiudiSblocco();
     setPin("");
   }
 
@@ -97,8 +55,7 @@ export function PinLock({ children }: { children: React.ReactNode }) {
   async function verifica(e: React.FormEvent) {
     e.preventDefault();
     if ((await sha256(pin)) === atteso) {
-      segnaSblocco();
-      setSbloccato(true);
+      sblocca();
       setErrore(false);
       setPin("");
     } else {
