@@ -19,6 +19,11 @@
 // sua unica regola di sicurezza (un token si toglie dal titolo solo se ha
 // risolto) stanno in captureParse.js.
 //
+// E quando la sezione è già aperta a schermo — la plancia di `/sezioni/:id` —
+// non serve nemmeno scriverla: viene proposta da sola, con le sue consegne in
+// testa all'elenco (`captureContext.js`). Proposta, non imposta: la chip resta
+// cliccabile e Inbox è sempre la prima voce.
+//
 // "Decidi ora" resta per il caso opposto: non è che si sa dove va, è che non
 // si sa — apre l'albero di decisione di sempre, col testo già scritto dentro.
 import { useMemo, useRef, useState } from 'react';
@@ -37,8 +42,9 @@ import './QuickCapture.css';
  * @param {() => void} props.onClose
  * @param {(task: import('./types').TodoTask) => void} props.onCaptured
  * @param {(text: string) => void} props.onDecideNow
+ * @param {import('./captureContext').CaptureContext|null} [props.context]  la sezione aperta, se si sta guardando una
  */
-export default function QuickCapture({ open, todoLists, onClose, onCaptured, onDecideNow }) {
+export default function QuickCapture({ open, todoLists, onClose, onCaptured, onDecideNow, context = null }) {
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -48,7 +54,9 @@ export default function QuickCapture({ open, todoLists, onClose, onCaptured, onD
   // frattempo dice un'altra cosa. `value: null` è Inbox scelta apposta.
   const [pick, setPick] = useState(/** @type {{ value: any, forQuery: string }|null} */ (null));
   const [pickerOpen, setPickerOpen] = useState(false);
-  const [activeIndex, setActiveIndex] = useState(-1);
+  // La riga evidenziata, insieme alla ricerca per cui è stata scelta: fuori da
+  // quella ricerca non vuol dire più niente (vedi `activeIndex` più sotto).
+  const [cursor, setCursor] = useState(/** @type {{ key: string, index: number }} */ ({ key: '', index: -1 }));
   const inputRef = useRef(/** @type {HTMLTextAreaElement|null} */ (null));
   // Il componente resta montato anche a finestra chiusa (`open` falso ⇒ render
   // nullo), quindi lo stato sopravvive fra un'apertura e l'altra: senza questo
@@ -58,7 +66,7 @@ export default function QuickCapture({ open, todoLists, onClose, onCaptured, onD
     setWasOpen(open);
     if (open) {
       setText(''); setBusy(false); setError('');
-      setPick(null); setPickerOpen(false); setActiveIndex(-1);
+      setPick(null); setPickerOpen(false); setCursor({ key: '', index: -1 });
     }
   }
 
@@ -84,20 +92,38 @@ export default function QuickCapture({ open, todoLists, onClose, onCaptured, onD
   // Il pannello si apre da solo appena si scrive `@`: è il gesto che chiede
   // «dove?», e chiederlo di nuovo con un clic sarebbe una domanda in più.
   const showPicker = pickerOpen || (probe.hasDestToken && !pickApplies);
-  const items = useMemo(
-    () => (probe.hasDestToken ? matchDestinations(probe.destQuery, byRecentUse(destinations)) : byRecentUse(destinations)),
-    [probe.hasDestToken, probe.destQuery, destinations]);
+
+  // Le liste della sezione aperta vanno in testa, e non ricompaiono più sotto:
+  // la stessa lista due volte nello stesso elenco è una scelta finta. Con una
+  // ricerca in corso invece l'elenco è piatto — chi scrive dopo `@` sta
+  // cercando altrove, o non avrebbe scritto niente.
+  const contextIds = useMemo(
+    () => new Set((context?.destinations || []).map(d => d.id)),
+    [context]);
+  const items = useMemo(() => {
+    if (probe.hasDestToken) return matchDestinations(probe.destQuery, byRecentUse(destinations));
+    const rest = byRecentUse(destinations).filter(d => !contextIds.has(d.id));
+    return [...byRecentUse(context?.destinations || []), ...rest];
+  }, [probe.hasDestToken, probe.destQuery, destinations, context, contextIds]);
+  const contextCount = probe.hasDestToken ? 0 : (context?.destinations || []).length;
 
   // La riga preselezionata riparte da capo ogni volta che cambia quello che si
-  // sta cercando — col token la prima corrispondenza, senza token Inbox. Il
-  // confronto è sulla query e non sull'indice che ne esce: due ricerche diverse
-  // possono volere entrambe la riga 0, e allora la freccia premuta sulla prima
-  // resterebbe puntata su una riga che nella seconda non c'è più.
+  // sta cercando — col token la prima corrispondenza, senza token Inbox — e la
+  // freccia premuta vale solo dentro quella ricerca. Il confronto è sulla query
+  // e non sull'indice che ne esce: due ricerche diverse possono volere entrambe
+  // la riga 0, e allora la freccia premuta sulla prima resterebbe puntata su
+  // una riga che nella seconda non c'è più.
+  //
+  // È un calcolo, non uno stato da risincronizzare: azzerarlo con una setState
+  // durante il render lasciava passare un fotogramma con l'indice vecchio, e in
+  // quel fotogramma la chip diceva «Inbox» mentre il token diceva già un'altra
+  // cosa — battendoci sopra Invio si catturava davvero in Inbox.
   const destKey = probe.hasDestToken ? `@${probe.destQuery}` : '';
-  const [indexFor, setIndexFor] = useState(destKey);
-  if (indexFor !== destKey) {
-    setIndexFor(destKey);
-    setActiveIndex(probe.hasDestToken && items.length ? 0 : -1);
+  const activeIndex = cursor.key === destKey ? cursor.index : (probe.hasDestToken && items.length ? 0 : -1);
+
+  /** @param {number} index */
+  function setActiveIndex(index) {
+    setCursor({ key: destKey, index });
   }
 
   if (!open) return null;
@@ -107,7 +133,15 @@ export default function QuickCapture({ open, todoLists, onClose, onCaptured, onD
   // destinazione e se ne legge un'altra. L'indice si rilegge sempre dentro
   // `items`, mai a memoria: la riga scelta può non esistere più.
   const highlighted = activeIndex >= 0 ? (items[activeIndex] || null) : null;
-  const target = showPicker ? highlighted : parsed.destination;
+  // Senza token e senza una scelta a mano decide la sezione aperta, se c'è: è
+  // la proposta, e vale finché non la si smentisce. Scrivere `@` la smentisce,
+  // sceglierne un'altra pure, e scegliere Inbox apposta (`pick.value` nullo)
+  // la smentisce allo stesso modo — altrimenti «no, in Inbox» non si potrebbe
+  // dire, e la proposta diventerebbe un obbligo.
+  const proposed = byRecentUse(context?.destinations || [])[0] || null;
+  const decided = probe.hasDestToken || pickApplies;
+  const target = showPicker ? highlighted : (decided ? parsed.destination : proposed);
+  const fromContext = !decided && !!proposed;
   const canSubmit = !!parsed.title && !busy;
 
   /** @param {import('./captureParse').Destination|null} dest */
@@ -143,11 +177,8 @@ export default function QuickCapture({ open, todoLists, onClose, onCaptured, onD
     if (e.target !== inputRef.current) return;
     if (showPicker && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
       e.preventDefault();
-      const last = items.length - 1;
-      setActiveIndex(i => {
-        const next = e.key === 'ArrowDown' ? i + 1 : i - 1;
-        return Math.min(last, Math.max(-1, next));
-      });
+      const next = activeIndex + (e.key === 'ArrowDown' ? 1 : -1);
+      setActiveIndex(Math.min(items.length - 1, Math.max(-1, next)));
       return;
     }
     if (showPicker && e.key === 'Tab') {
@@ -247,15 +278,19 @@ export default function QuickCapture({ open, todoLists, onClose, onCaptured, onD
           <DestinationPicker
             items={items}
             activeIndex={activeIndex}
+            contextCount={contextCount}
+            contextLabel={context?.label || ''}
             onPick={choose}
             onHover={setActiveIndex}
           />
         )}
 
         <p className="qc-hint">
-          {target
-            ? 'Va dritta in sezione: niente giro dall’Inbox.'
-            : 'Finisce in Inbox. La chiarisci dopo, da Attività.'}
+          {fromContext
+            ? 'Proposta dalla sezione che stai guardando. Cambiala se non è lì che va.'
+            : target
+              ? 'Va dritta in sezione: niente giro dall’Inbox.'
+              : 'Finisce in Inbox. La chiarisci dopo, da Attività.'}
           {' '}Scrivi <code>@</code> per la sezione, <code>!</code> per la scadenza, <code>~</code> per i minuti.
         </p>
 

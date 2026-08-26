@@ -197,6 +197,16 @@ scegliere, `Invio` per scegliere e catturare in un gesto solo. L'ordine a elenco
 vuoto è quello d'uso recente: le cose si buttano quasi sempre negli stessi tre o
 quattro posti.
 
+E quando la sezione è **già aperta a schermo** — la plancia di `#/sezioni/:id` —
+non serve nemmeno scriverla: viene proposta da sola, e la chip la mostra accesa
+col suo nome. La rotta dà una sezione OneNote, ma un task vive in una lista
+To-Do, e una commessa può avere più consegne: quindi non si propone «la lista
+della sezione», che spesso non esiste — si propongono **tutte le sue liste**, la
+più usata di recente in cima e le altre a una freccia di distanza, sotto
+l'intestazione della commessa. La proposta si smentisce come qualsiasi altra
+destinazione: scrivendo `@`, scegliendone un'altra, o scegliendo Inbox apposta.
+Il legame rotta → liste sta in `src/captureContext.js`.
+
 Dire la destinazione resta **facoltativo**, ed è il punto: chi non scrive niente
 batte `Invio` e cattura in Inbox esattamente come prima. Un token viene tolto dal
 titolo **solo se ha risolto** — `@mario` dove nessuna sezione si chiama così
