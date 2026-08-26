@@ -4,6 +4,10 @@
 > scritta: oggi in `TodayView.jsx` c'è un `LockedCard` inerte, dichiarato come
 > segnaposto proprio perché non esiste una fonte dati sugli allenamenti.
 > Qui si decide quale fonte creare e che forma dare alla scheda.
+>
+> Le immagini sono mockup costruiti con i token e i CSS veri dell'app
+> (`tokens.css`, `TodayView.css`), non disegni: i colori, le misure e la
+> tipografia sono già quelli che si vedrebbero a schermo.
 
 ## Cosa deve contenere
 
@@ -14,6 +18,10 @@ Tre famiglie di attività, non una:
 | **Movimento** | corsa, palestra (gambe, braccia, spalle…), bici, camminata | che sia stato fatto, quanto è durato, cosa si è allenato |
 | **Meditazione** | seduta del mattino, respirazione, body scan | che sia stata fatta, quanti minuti, la striscia |
 | **Yoga** | flow, yin, mobilità | che sia stato fatto, quanti minuti, il tipo |
+
+E, accanto alle tre, una quarta cosa che non è una famiglia ma un tempo verbale:
+il **programmato**, cioè quello che hai deciso di fare e non hai (ancora) fatto.
+Vive in un calendario, non nel registro — ci torno più sotto.
 
 Il minimo indispensabile per ognuna è lo stesso: **data + tipo + durata**. Tutto
 il resto (la nota «corsa 6 km», «palestra gambe», il come è andata) è
@@ -55,11 +63,12 @@ Le altre due strade, per completezza:
 - **IndexedDB come Finanze.** Va bene per i conti, che sono personali e legati a
   un computer; qui il dato si crea dal telefono dopo l'allenamento e si guarda
   dal portatile la mattina. Serve la sincronizzazione, quindi no.
-- **Calendario Microsoft.** Tentante — c'è già `getCalendarEvents` — ma un
-  allenamento *fatto* non è un evento *pianificato*: si finirebbe a distinguere
-  i due a colpi di parole chiave sul titolo, come già succede per le ricorrenze
-  in `TodayView`, e a sporcare l'agenda vera. Resta però un'idea buona come
-  **ingresso facoltativo** (vedi fase 3).
+- **Calendario Microsoft come registro.** Un allenamento *fatto* non è un
+  evento *pianificato*: tenerli nello stesso posto vuol dire distinguerli a
+  colpi di parole chiave sul titolo, come già succede per le ricorrenze in
+  `TodayView`. Il calendario però è **esattamente** il posto giusto per la
+  parte pianificata — vedi la sezione qui sotto, dove smette di essere un
+  ripiego e diventa metà della funzione.
 
 ## Il modello dati
 
@@ -75,6 +84,8 @@ Una voce per sessione, sullo stampo di `DiaryEntry`:
   "durataMin": 55,               // interi; il campo che alimenta i totali
   "nota": "gambe + core",        // libero, facoltativo: «corsa 6 km», «braccia»
   "tag": ["gambe", "core"],      // facoltativi, ricavati dalla nota o scelti
+  "daEvento": "AAMkAGI2...",       // facoltativo: l'evento del calendario
+                                   // da cui è nata, se registrata con «Fatta»
   "createdAt": "2026-08-26T19:40:11.000Z"
 }
 ```
@@ -85,6 +96,10 @@ Due scelte da spiegare:
   totali («3 movimento · 4 meditazioni questa settimana»); il tipo è quello che
   si sceglie davvero al momento di registrare. Con un campo solo, aggiungere
   «bici» vorrebbe dire toccare ogni punto che raggruppa.
+- **`daEvento`.** L'id dell'evento del calendario che questa sessione soddisfa.
+  Serve a una cosa sola ma indispensabile: non riproporre «Fatta» per una
+  sessione già registrata, e disegnare la barra piena al posto di quella
+  tratteggiata. Assente per le sessioni registrate a mano.
 - **`nota` libera + `tag` opzionali.** La richiesta è «volendo la possibilità di
   mettere qualche nota tipo corsa, palestra gambe, braccia»: la nota copre
   quello senza obbligare a nulla. I tag si suggeriscono dalle note già scritte
@@ -98,7 +113,55 @@ mente-digitale/mente-digitale-movimento-2026-08.json   // [] di voci del mese
 mente-digitale/mente-digitale-movimento-index.json     // { months: [...] }
 ```
 
+L'unica preferenza da salvare è l'id del calendario dei programmi (più i due
+interruttori del mockup 3): sta con le altre impostazioni su OneDrive, dove già
+vivono i colori dei taccuini — non merita un file suo.
+
+## Il collegamento col calendario: programmato ≠ fatto
+
+![Il calendario «Allenamenti», il riquadro che lo legge, e le impostazioni](img/movimento-3-calendario.png)
+
+**Il calendario tiene i programmi, il JSON tiene il registro.** Due cose
+diverse, due posti diversi, nessuna ambiguità da risolvere a parole chiave.
+
+1. **Un calendario Microsoft dedicato** (per esempio «Allenamenti»), creato una
+   volta sola dall'app del calendario. Ci si mettono le sessioni previste, anche
+   come serie ricorrente: «Palestra, lun/mer/ven, 18:30». **Quella serie è il
+   minimo**: non serve un campo «obiettivo settimanale» da configurare
+   nell'app, perché il numero di sessioni programmate nella settimana *è* già
+   l'obiettivo, e si cambia dove si cambiano tutti gli altri impegni.
+2. **Oggi legge quel calendario** con `getCalendarEvents`, già in `api.js` e già
+   usato dall'agenda. Nel riquadro le sessioni previste sono barre
+   **tratteggiate**, quelle fatte sono **piene**: a colpo d'occhio si vede la
+   differenza fra quello che avevi promesso e quello che hai fatto.
+3. **La riga «programmato per oggi»**: se c'è una sessione prevista per oggi non
+   ancora registrata, compare con il tasto **Fatta**. Un tocco apre il modulo
+   già compilato con tipo e durata presi dall'evento — il gesto costa un tocco
+   invece di quattro, ed è il caso più frequente di tutti.
+4. **La riga di obiettivo**: «2 su 4 programmate questa settimana», con la barra
+   che si riempie. Nessun numero inventato: il denominatore viene dal
+   calendario, il numeratore dal registro.
+
+Perché *un calendario dedicato* e non il calendario di tutti i giorni: perché il
+filtro dev'essere una proprietà del dato, non un'euristica sul titolo. Con un
+calendario a parte non c'è nessun «se il titolo contiene "palestra"» da
+mantenere, l'agenda normale resta pulita, e per smettere di tracciare basta
+deselezionare il calendario nelle impostazioni.
+
+**Se non scegli nessun calendario la scheda funziona lo stesso**, solo senza il
+confronto programmato / fatto: barre piene, striscia, totali. Il collegamento è
+un potenziamento, non un requisito — e questo mi sembra il punto importante:
+un giorno che non hai voglia di programmare niente, l'app non deve rinfacciartelo
+con un riquadro mezzo vuoto.
+
+Una nota su cosa **non** faccio: l'app non scrive nel calendario. Registrare una
+sessione non crea né sposta né cancella eventi. Il calendario è di sola lettura,
+come lo è già in agenda — così l'app non può rovinare i tuoi impegni veri, e la
+sincronizzazione resta a senso unico e prevedibile.
+
 ## Come si registra
+
+![Il modulo di registrazione, da telefono](img/movimento-2-registra.png)
 
 Il gesto deve costare meno del non farlo: si registra dal telefono, in piedi,
 con una mano.
@@ -116,6 +179,8 @@ Costo tipico: due tocchi per una meditazione da 15 minuti, quattro per
 «palestra, 55 min, gambe + core».
 
 ## Come si legge
+
+![Il riquadro Movimento in Oggi, tre stati](img/movimento-1-oggi.png)
 
 - **In Oggi** (il riquadro che oggi è finto): sette barrette, una per giorno,
   colorate per famiglia e alte in proporzione ai minuti; sotto, una riga di
@@ -140,9 +205,11 @@ come agenda e diario. Se un giorno cambiasse idea basta avvolgerlo in
 | Fase | Cosa | Dove |
 |---|---|---|
 | 1 | Modello + persistenza: `movimento.js` (tipi, id, striscia, totali) e `loadMovimentoMese` / `saveMovimento` in `api.js`, sullo stampo del Diario | `src/movimento.js`, `src/api.js` |
-| 2 | Il riquadro vero in Oggi + il modulo di registrazione | `src/TodayView.jsx`, `src/MovimentoQuickAdd.jsx` |
-| 3 | *Facoltativo:* importazione dal calendario — un calendario dedicato («Allenamenti») letto con `getCalendarEvents` e proposto come voci da confermare, come fa la campanella | `src/api.js`, Daily Review |
-| 4 | *Facoltativo:* pagina `/movimento` con lo storico | `src/MovimentoView.jsx` |
+| 2 | Il riquadro vero in Oggi + il modulo di registrazione, al posto del `LockedCard` finto | `src/TodayView.jsx`, `src/MovimentoQuickAdd.jsx` |
+| 3 | Il collegamento col calendario: scelta del calendario in Impostazioni, barre tratteggiate per il programmato, riga «Fatta» con modulo precompilato | `src/TodayView.jsx`, `src/ColorSettingsModal.jsx`, `src/api.js` |
+| 4 | *Facoltativo:* voci del giorno in coda al Diario | `src/DiaryPanel.jsx` |
+| 5 | *Facoltativo:* pagina `/movimento` con lo storico a mesi | `src/MovimentoView.jsx` |
 
-Le fasi 1 e 2 insieme sono la funzione completa: dopo quelle il riquadro finto
-sparisce e il dato esiste. Le altre due si valutano dopo qualche settimana d'uso.
+Le fasi 1–3 insieme sono la funzione come sta nei mockup. Le ultime due si
+valutano dopo qualche settimana d'uso — e la 5 solo se le prime viste risultano
+strette davvero.
