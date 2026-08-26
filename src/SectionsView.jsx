@@ -20,9 +20,15 @@
 // (la convenzione sta in paraConfig.js) — e qui si vedono tutte, raggruppate
 // per consegna, ognuna con la sua scadenza e richiudibile. Una sezione senza
 // liste col punto resta esattamente com'era: un elenco piatto di attività.
+//
+// Un'attività si sposta da una consegna all'altra trascinandola sul gruppo di
+// destinazione — lo stesso gesto con cui la si porta su Oggi. Su To-Do non
+// esiste una «move»: il task viene ricreato nella lista di arrivo e cancellato
+// da quella di partenza (api.js `moveTaskToList`), quindi cambia id, e per non
+// perdere le sottoattività va riletto per intero prima di spostarlo.
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { getPages } from './api';
+import { getPages, getTask, moveTaskToList } from './api';
 import {
   paraSectionLabel, sectionRole, listsForSection, listGroupKey, listDeliverableLabel,
   listDueDate, buildListName, groupKeyForSection, sectionNameForList, toDateInputValue,
@@ -36,6 +42,7 @@ import SectionTimeline from './SectionTimeline';
 import Skeleton from './Skeleton';
 import TaskDetailPanel from './TaskDetailPanel';
 import { PageTree } from './Panel';
+import { pushUndo } from './undo';
 import { openProtocol } from './protocolLink';
 import './SectionsView.css';
 
@@ -254,6 +261,63 @@ export default function SectionsView({
   // Il link `onenote:` che apre l'intera sezione nell'app desktop.
   const sectionClientUrl = active?.links?.oneNoteClientUrl?.href || null;
 
+  // Il trascinamento di un'attività fra consegne: quale si sta trascinando (per
+  // sapere quali gruppi possono accoglierla), su quale gruppo sta passando, e
+  // quale spostamento è in corso o è andato storto.
+  const [dragTask, setDragTask] = useState(/** @type {import('./types').TodoTask|null} */ (null));
+  const [dropListId, setDropListId] = useState(/** @type {string|null} */ (null));
+  const [movingListId, setMovingListId] = useState(/** @type {string|null} */ (null));
+  const [moveError, setMoveError] = useState(/** @type {{listId: string, message: string}|null} */ (null));
+
+  /** Sposta un'attività in un'altra lista: la ricrea di là e la toglie di qua.
+   *  @param {import('./types').TodoTask} task
+   *  @param {{ id: string, displayName: string }} toList */
+  async function moveTaskToDeliverable(task, toList) {
+    const fromListId = task._listId || '';
+    if (!fromListId || fromListId === toList.id) return;
+    // Se il dettaglio stava mostrando proprio questa attività deve seguirla:
+    // dopo lo spostamento l'id è un altro, e la colonna scivolerebbe su
+    // un'attività a caso.
+    const eraAperta = detailTask?.id === task.id;
+    setMovingListId(toList.id);
+    setMoveError(null);
+    try {
+      // Il pool tiene i task senza sottoattività (getTodoTasks non le espande):
+      // spostare quella copia le perderebbe per strada, in silenzio.
+      const full = await getTask(fromListId, task.id);
+      const moved = await moveTaskToList(fromListId, toList.id, full);
+      const decorato = { ...moved, _listId: toList.id, _listName: toList.displayName };
+      onTaskRemoved?.(fromListId, task.id);
+      onTaskRestored?.(toList.id, decorato);
+      if (eraAperta) setSelectedTaskId(decorato.id);
+      pushUndo({
+        label: `Spostata in ${listDeliverableLabel(toList.displayName)}`,
+        undo: async () => {
+          const back = await moveTaskToList(toList.id, fromListId, { ...full, id: decorato.id });
+          onTaskRemoved?.(toList.id, decorato.id);
+          onTaskRestored?.(fromListId, { ...back, _listId: fromListId, _listName: task._listName });
+          if (eraAperta) setSelectedTaskId(back.id);
+        },
+      });
+    } catch (e) {
+      console.error('sposta attività fra consegne', e);
+      setMoveError({ listId: toList.id, message: "Non è riuscito a spostarla" });
+    }
+    setMovingListId(null);
+  }
+
+  /** @param {any} e @param {{ id: string }} toList */
+  function handleTaskDrop(e, toList) {
+    e.preventDefault();
+    e.stopPropagation();
+    setDropListId(null);
+    setDragTask(null);
+    try {
+      const data = JSON.parse(e.dataTransfer.getData('text/plain'));
+      if (data?.type === 'task' && data.task) moveTaskToDeliverable(data.task, /** @type {any} */ (toList));
+    } catch { /* payload non nostro — ignora */ }
+  }
+
   const aside = (
     <nav className="sv-list" aria-label="Sezioni">
       <input
@@ -422,19 +486,47 @@ export default function SectionsView({
                 // da raggruppare: l'elenco resta piatto come è sempre stato.
                 const plain = deliverables.length === 1 && !d.nested;
                 const folded = !plain && isFolded(d.list.id);
+                // Un gruppo accoglie l'attività che si sta trascinando solo se
+                // non è già sua. Chi trascina da fuori questa colonna non lo
+                // sappiamo prima del rilascio: si accetta, e si controlla lì.
+                const canDrop = !dragTask || dragTask._listId !== d.list.id;
+                const moving = movingListId === d.list.id;
                 return (
-                  <div className={`sv-deliverable${folded ? ' folded' : ''}`} key={d.list.id}>
+                  <div
+                    className={`sv-deliverable${folded ? ' folded' : ''}${dropListId === d.list.id ? ' drop-target' : ''}${moving ? ' moving' : ''}`}
+                    key={d.list.id}
+                    onDragOver={e => {
+                      if (!canDrop) return;
+                      e.preventDefault();
+                      e.dataTransfer.dropEffect = 'move';
+                      setDropListId(d.list.id);
+                    }}
+                    onDragLeave={e => {
+                      // Passare sopra un figlio conta come uscita dal padre:
+                      // senza questo controllo l'evidenziazione lampeggerebbe.
+                      if (e.currentTarget.contains(/** @type {any} */ (e.relatedTarget))) return;
+                      setDropListId(prev => (prev === d.list.id ? null : prev));
+                    }}
+                    onDrop={e => handleTaskDrop(e, d.list)}>
                     {!plain && (
                       <DeliverableHead
                         deliverable={d}
                         folded={folded}
+                        moving={moving}
                         onToggle={() => toggleFold(d.list.id)}
                         sectionName={active.displayName}
                         onRename={onRenameDeliverable}
                       />
                     )}
+                    {moveError?.listId === d.list.id && (
+                      <p className="sv-deliverable-error" role="alert">{moveError.message}</p>
+                    )}
                     {!folded && d.tasks.length === 0 && (
-                      <p className="sv-empty">Nessuna attività aperta</p>
+                      <p className="sv-empty">
+                        {deliverables.length > 1
+                          ? 'Nessuna attività aperta · trascinane una qui per spostarla'
+                          : 'Nessuna attività aperta'}
+                      </p>
                     )}
                     {!folded && d.tasks.map(t => {
                       const est = estimateLabel(t);
@@ -449,9 +541,13 @@ export default function SectionsView({
                             // trascinamento.
                             e.dataTransfer.setData('text/plain', JSON.stringify({ type: 'task', task: t }));
                             e.dataTransfer.effectAllowed = 'move';
+                            setDragTask(t);
                           }}
+                          onDragEnd={() => { setDragTask(null); setDropListId(null); }}
                           onClick={() => setSelectedTaskId(t.id)}
-                          title="Apri note, sottoattività e stato · trascina su Oggi per programmarla">
+                          title={deliverables.length > 1
+                            ? "Apri note, sottoattività e stato · trascina su un'altra consegna per spostarla, o su Oggi per programmarla"
+                            : 'Apri note, sottoattività e stato · trascina su Oggi per programmarla'}>
                           <span
                             className="sv-task-dot"
                             style={/** @type {import('react').CSSProperties} */ ({ background: contextColor(taskContext(t)) })}
@@ -520,11 +616,12 @@ export default function SectionsView({
  * @param {Object} props
  * @param {any} props.deliverable
  * @param {boolean} props.folded
+ * @param {boolean} [props.moving]  un'attività la sta raggiungendo proprio ora
  * @param {() => void} props.onToggle
  * @param {string} props.sectionName
  * @param {(listId: string, displayName: string) => Promise<any>} [props.onRename]
  */
-function DeliverableHead({ deliverable: d, folded, onToggle, sectionName, onRename }) {
+function DeliverableHead({ deliverable: d, folded, moving = false, onToggle, sectionName, onRename }) {
   // La data aperta in modifica: cambiarla rinomina la lista, ma il nome
   // composto non si vede mai — si tocca solo il campo data.
   const [editingDue, setEditingDue] = useState(false);
@@ -571,7 +668,7 @@ function DeliverableHead({ deliverable: d, folded, onToggle, sectionName, onRena
             {dueLabel}{daysLabel ? ` · ${daysLabel}` : ''}
           </span>
         )}
-        <span className="sv-deliverable-count" title="Attività aperte">{d.tasks.length}</span>
+        <span className="sv-deliverable-count" title="Attività aperte">{moving ? '…' : d.tasks.length}</span>
       </button>
 
       {canEditDue && (

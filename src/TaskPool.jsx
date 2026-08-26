@@ -4,7 +4,11 @@
 // OneNote o una consegna dentro una commessa (`GRUPPO.Consegna-YYMMDD`, vedi
 // paraConfig.js). Le consegne si separano da sole — sono liste diverse — ma
 // senza un'intestazione sopra sembrerebbero progetti diversi: quella riga, e
-// il fatto che si possa richiudere, sono tutto quello che serve.
+// il rientro sotto, sono tutto quello che serve.
+//
+// Qui i gruppi non si richiudono: a nascondere quello che non serve ci pensano
+// già i filtri PARA/taccuino/sezione in cima alla colonna, e due modi di far
+// sparire le stesse righe si sarebbero solo dati fastidio.
 import { useMemo, useState } from 'react';
 import Skeleton from './Skeleton';
 import {
@@ -15,13 +19,9 @@ import {
   sectionRole, listGroupKey, listDeliverableLabel, listDueDate, listLabel,
   sectionNameForList, paraSectionLabel,
 } from './paraConfig';
-import { useFolds } from './viewPrefs';
 import { taskEstimateMin } from './taskModel';
 
 const EMPTY_SET = new Set();
-
-/** Le commesse richiuse a mano nel serbatoio, ricordate fra una visita e l'altra. */
-const COMMESSA_FOLDS_KEY = 'md_pool_commessa_folds_v1';
 
 /** Come in Sezioni: sotto una settimana la scadenza di una consegna si accende. */
 const DUE_SOON_DAYS = 7;
@@ -107,8 +107,6 @@ export default function TaskPool({
     () => buildListColorMap(notebooks, sectionsMap, todoLists),
     [notebooks, sectionsMap, todoLists]
   );
-
-  const [isFolded, toggleFold] = useFolds(COMMESSA_FOLDS_KEY);
 
   // Sezione OneNote (PARA + taccuino) associata a ogni lista To-Do, per nome
   // (case-insensitive) — permette di risalire da un task alla sua collocazione
@@ -359,51 +357,44 @@ export default function TaskPool({
 
       {poolViewMode === 'list' ? (
         <div className="planner-pool-body">
-          {poolCommesse.map(commessa => {
-            const folded = commessa.nested && isFolded(commessa.key);
-            return (
-              <div key={commessa.key} className={`planner-pool-commessa${folded ? ' folded' : ''}`}>
-                {/* L'intestazione della commessa c'è solo quando ha davvero
-                    delle consegne: altrimenti sarebbe una riga in più che
-                    ripete il nome del gruppo sotto. */}
-                {commessa.nested && (
-                  <button
-                    className="planner-pool-commessa-head"
-                    style={{ color: commessa.color }}
-                    aria-expanded={!folded}
-                    title={folded ? 'Mostra le consegne' : 'Richiudi la commessa'}
-                    onClick={() => toggleFold(commessa.key)}>
-                    <span className="planner-pool-commessa-caret" aria-hidden="true">{folded ? '▸' : '▾'}</span>
-                    <span className="planner-group-dot" style={{ background: commessa.color }} />
-                    <span className="planner-pool-commessa-name">{commessa.name}</span>
-                    <span className="planner-group-count">{commessa.count}</span>
-                  </button>
-                )}
-                {!folded && commessa.groups.map(group => (
-                  <div key={group.key} className="planner-pool-group">
-                    <div className="planner-pool-group-label" style={{ color: group.color }}>
-                      <span className="planner-group-dot" style={{ background: group.color }} />
-                      {group.name}
-                      <DeliverableDue due={group.due} />
-                      <span className="planner-group-count">{group.tasks.length}</span>
-                    </div>
-                    {group.tasks.map(task => (
-                      <PoolTaskRow
-                        key={task.id}
-                        task={task}
-                        color={group.color}
-                        isScheduled={scheduledIds.has(task.id)}
-                        selected={selectedTaskId === task.id}
-                        draggable={draggable}
-                        onTaskClick={onTaskClick}
-                        onDragStart={handleDragStart}
-                      />
-                    ))}
+          {poolCommesse.map(commessa => (
+            <div
+              key={commessa.key}
+              className={`planner-pool-commessa${commessa.nested ? ' nested' : ''}`}>
+              {/* L'intestazione della commessa c'è solo quando ha davvero delle
+                  consegne: altrimenti sarebbe una riga in più che ripete il
+                  nome del gruppo sotto. */}
+              {commessa.nested && (
+                <div className="planner-pool-commessa-head" style={{ color: commessa.color }}>
+                  <span className="planner-group-dot" style={{ background: commessa.color }} />
+                  <span className="planner-pool-commessa-name">{commessa.name}</span>
+                  <span className="planner-group-count">{commessa.count}</span>
+                </div>
+              )}
+              {commessa.groups.map(group => (
+                <div key={group.key} className="planner-pool-group">
+                  <div className="planner-pool-group-label" style={{ color: group.color }}>
+                    <span className="planner-group-dot" style={{ background: group.color }} />
+                    {group.name}
+                    <DeliverableDue due={group.due} />
+                    <span className="planner-group-count">{group.tasks.length}</span>
                   </div>
-                ))}
-              </div>
-            );
-          })}
+                  {group.tasks.map(task => (
+                    <PoolTaskRow
+                      key={task.id}
+                      task={task}
+                      color={group.color}
+                      isScheduled={scheduledIds.has(task.id)}
+                      selected={selectedTaskId === task.id}
+                      draggable={draggable}
+                      onTaskClick={onTaskClick}
+                      onDragStart={handleDragStart}
+                    />
+                  ))}
+                </div>
+              ))}
+            </div>
+          ))}
 
           {poolTasks.length === 0 && (
             tasks.length === 0

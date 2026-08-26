@@ -24,8 +24,8 @@ Microsoft To-Do e al calendario Outlook, e un diario con supporto AI via copia-i
   trascinano sulla giornata per programmarle, come nel Piano e sullo stesso piano — il
   dettaglio di quella scelta e la giornata di oggi. L'elenco delle sezioni si toglie di mezzo
   appena se ne apre una. Una commessa con più **consegne** (liste To-Do annidate per nome,
-  vedi sotto) le mostra come gruppi a tendina, ognuno con la sua scadenza, e il `+` in testata
-  ne crea una nuova.
+  vedi sotto) le mostra come gruppi a tendina, ognuno con la sua scadenza; il `+` in testata
+  ne crea una nuova, e un'attività si sposta da una consegna all'altra trascinandola.
   È dove atterra il Pomodoro avviato dal Piano.
 - **Attività** — le cinque colonne del flusso GTD (Inbox · Prossime azioni · In attesa · Programmate · Un giorno):
   la colonna *è* lo stato, e trascinare una card fra colonne lo cambia su Microsoft To-Do. Un clic su una
@@ -247,6 +247,18 @@ composto lo scrive il codice, non l'utente. Cambiare la data di una consegna è
 una rinomina della lista, fatta dallo stesso campo data. I colori seguono la
 commessa: ogni consegna è una sfumatura del colore della sezione, così si
 distinguono restando parenti.
+
+Un'attività **si sposta da una consegna all'altra trascinandola** sul gruppo di
+destinazione, che si accende quando la può accogliere — lo stesso gesto con cui
+la si porta su Oggi. Microsoft To-Do non ha una «move»: il task viene ricreato
+nella lista di arrivo e cancellato da quella di partenza (`moveTaskToList` in
+`src/api.js`), quindi cambia id — viene riletto per intero prima di partire, o
+le sottoattività resterebbero indietro. Lo spostamento si annulla dal solito
+avviso in basso.
+
+Nel serbatoio del *Piano* le consegne stanno sotto l'intestazione della loro
+commessa, rientrate: lì non si richiudono, perché a nascondere quello che non
+serve ci pensano già i filtri PARA/taccuino/sezione in cima alla colonna.
 
 **Da riga di comando e via MCP**: `--sezione 2573` vale per l'intera commessa
 quando i risultati sono tutti consegne dello stesso gruppo (gruppi diversi
