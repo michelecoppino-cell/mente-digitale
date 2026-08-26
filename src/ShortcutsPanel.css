@@ -1,0 +1,53 @@
+/* Pannello delle scorciatoie: la stessa scatola della campanella, ma con le
+   proprietà scritte per intero invece che sovrascritte sopra .bell-dropdown —
+   sono due classi di pari peso, e chi vince dipenderebbe dall'ordine in cui il
+   bundler mette i due CSS. Ancorata a destra: la (i) sta nell'angolo della
+   topbar, non al suo inizio. */
+
+.sc-scrim { position: fixed; inset: 0; z-index: 440; }
+
+.sc-dropdown {
+  position: absolute;
+  top: 34px;
+  right: 0;
+  width: min(320px, calc(100vw - 24px));
+  max-height: min(70vh, 520px);
+  overflow-y: auto;
+  padding-bottom: 6px;
+  background: var(--surface);
+  border: 1px solid var(--border2);
+  border-radius: 10px;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, .5);
+  z-index: 450;
+  font-family: var(--font-ui);
+}
+
+.sc-group { padding: 8px 14px 4px; }
+.sc-group + .sc-group { border-top: 1px solid var(--border); }
+
+.sc-group-title {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+
+.sc-row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 3px 0;
+}
+
+.sc-key {
+  flex: 0 0 62px;
+  font-family: var(--font-ui);
+  font-size: 11px;
+  color: var(--text);
+  text-align: right;
+  white-space: nowrap;
+}
+
+.sc-desc { font-size: 11px; line-height: 1.45; color: var(--muted); }

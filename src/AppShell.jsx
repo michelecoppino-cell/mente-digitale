@@ -240,14 +240,20 @@ export default function AppShell({ children, topbar, onCapture, onOpenSettings }
           <span className="rail-label">Menù</span>
         </button>
 
-        <button
-          className="rail-capture"
-          onClick={() => { onCapture(); setDrawerOpen(false); }}
-          title="Cattura un pensiero (⌘N)">
-          <Icon name="plus" />
-          <span className="rail-label">Cattura</span>
-          <kbd className="rail-kbd">⌘N</kbd>
-        </button>
+        {/* Da telefono la cattura non sta qui: è il comando che si usa più
+            spesso di tutti, e seppellirlo nel drawer voleva dire tre tocchi
+            (panino, Cattura, scrivi) per un gesto che dev'essere uno solo.
+            Sopra gli 860px il rail è sempre a schermo e il posto è questo. */}
+        {!narrow && (
+          <button
+            className="rail-capture"
+            onClick={() => { onCapture(); setDrawerOpen(false); }}
+            title="Cattura un pensiero (⌘N)">
+            <Icon name="plus" />
+            <span className="rail-label">Cattura</span>
+            <kbd className="rail-kbd">⌘N</kbd>
+          </button>
+        )}
 
         <div className="rail-nav">
           {DESTINATIONS.map(d => (
@@ -280,6 +286,18 @@ export default function AppShell({ children, topbar, onCapture, onOpenSettings }
           <button className="shell-drawer-btn tap-44" onClick={toggleMenu} title={menuBtnTitle}>
             <Icon name="menu" />
           </button>
+
+          {/* Il «+» del rail, portato in topbar da telefono: sempre a un tocco,
+              anche a sessione Pomodoro accesa (la topbar fusa lo tiene fra il
+              panino e il timer). */}
+          {narrow && (
+            <button
+              className="shell-capture-btn tap-44"
+              onClick={() => { onCapture(); setDrawerOpen(false); }}
+              title="Cattura un pensiero">
+              <Icon name="plus" />
+            </button>
+          )}
 
           {fused ? (
             <>

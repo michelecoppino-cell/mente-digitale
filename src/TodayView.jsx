@@ -15,6 +15,9 @@ import { loadDiaryIndex, loadDiaryMonth, loadIdentityDoc } from './api';
 import { parseWishes, wishSection, wishOfTheDay } from './wishes';
 import { monthKey, shiftMonth } from './diary';
 import { taskContext, contextColor } from './taskModel';
+import SensitiveCard from './SensitiveCard';
+import { useSbloccato } from './finanze/sblocco';
+import { caricaRiepilogoOggi } from './finanze/riepilogoOggi';
 import './TodayView.css';
 
 /** 'YYYY-MM-DD' locale. */
@@ -325,17 +328,7 @@ export default function TodayView({ plans, tasks, calendarEvents, onCompleteBloc
             note="Sette barre, una per giorno. Serve una fonte: un calendario dedicato agli allenamenti o una sezione PARA da cui contarli."
           />
 
-          {/* Finanze invece la sezione ce l'ha: saldo reale, tasse, fatture e
-              proiezione. Qui non compaiono cifre di proposito — i conti stanno
-              dietro il PIN, e Oggi è una pagina che resta aperta sulla
-              scrivania: questo è il collegamento, non un'anteprima. */}
-          <Link className="today-finanze" to="/finanze">
-            <span className="eyebrow">Finanze</span>
-            <p className="today-finanze-note">
-              Saldo reale, tasse, fatture e proiezione. I numeri restano nella sezione, dietro il PIN.
-            </p>
-            <span className="today-finanze-link">Apri Finanze →</span>
-          </Link>
+          <FinanzeCard />
 
           <Link className="today-diary" to="/diario">
             <span className="eyebrow">Diario</span>
@@ -432,6 +425,10 @@ function CompassCard({ docs, onOpenIdentity }) {
  *
  * Ne compare uno solo, quello di oggi. Quaranta righe in colonna sono un
  * elenco da scorrere; una riga sola è una cosa a cui pensare.
+ *
+ * Riservato: il desiderio del giorno è una frase scritta per sé, e Oggi resta
+ * aperta su una scrivania in ufficio. Parte oscurato e si apre col PIN, lo
+ * stesso di Finanze.
  * @param {{ docs: any, today: string, onOpenIdentity?: (which: 'bussola'|'visione'|'desideri') => void }} props
  */
 function WishesCard({ docs, today, onOpenIdentity }) {
@@ -439,8 +436,10 @@ function WishesCard({ docs, today, onOpenIdentity }) {
   const wish = wishOfTheDay(wishes, today);
 
   return (
-    <section className="today-card today-wishes">
-      <span className="eyebrow">I cento desideri</span>
+    <SensitiveCard
+      className="today-wishes"
+      eyebrow="I cento desideri"
+      nota="Il desiderio di oggi, e quanti ne mancano ai cento.">
       {!docs && <p className="today-empty">…</p>}
       {docs && (
         wish
@@ -459,7 +458,93 @@ function WishesCard({ docs, today, onOpenIdentity }) {
       <div className="today-compass-links">
         <button type="button" onClick={() => onOpenIdentity?.('desideri')}>I cento desideri →</button>
       </div>
-    </section>
+    </SensitiveCard>
+  );
+}
+
+// I colori delle cifre sono gli stessi della scheda Saldo — grigio per il
+// grezzo, blu per il netto tasse, verde per il patrimonio. Ripetuti qui a mano
+// e non importati: stanno in Saldo.tsx dentro il chunk di Finanze, e tirarsi
+// dietro mezzo megabyte di recharts per tre stringhe esadecimali sarebbe il
+// contrario di quello che fa `caricaRiepilogoOggi`.
+const COLORI_SALDO = {
+  grezzo: '#8a94a6',
+  nettoTasse: '#4c78a8',
+  totale: '#54a24b',
+};
+
+/** 'YYYY-MM-DD' → "12 mar 2026". */
+function fmtDataDato(/** @type {string} */ iso) {
+  return new Date(iso + 'T00:00:00')
+    .toLocaleDateString('it-IT', { day: 'numeric', month: 'short', year: 'numeric' })
+    .replace('.', '');
+}
+
+/**
+ * Finanze in Oggi: quattro cifre e la porta della sezione.
+ *
+ * Prima qui non compariva nessun numero — solo un invito a entrare — e il
+ * riquadro occupava spazio senza dire niente. Le cifre ci sono, ma dietro il
+ * PIN: sono le stesse del «Riepilogo (oggi)» della scheda Saldo, calcolate
+ * dalla stessa catena e caricate solo dopo lo sblocco.
+ */
+function FinanzeCard() {
+  const sbloccato = useSbloccato();
+  // Un solo stato e non due (dato + «sto caricando»): il caricamento è
+  // semplicemente «sbloccato ma esito ancora null», e tenerlo in un booleano
+  // a parte vorrebbe dire accenderlo dentro l'effetto, cioè un render in più
+  // a ogni sblocco.
+  /** @typedef {{ tipo: 'ok', riep: import('./finanze/riepilogoOggi').RiepilogoOggi } | { tipo: 'vuoto' } | { tipo: 'errore' }} EsitoFinanze */
+  const [esito, setEsito] = useState(/** @type {EsitoFinanze|null} */ (null));
+
+  useEffect(() => {
+    if (!sbloccato) return;
+    let annullato = false;
+    caricaRiepilogoOggi()
+      .then(r => { if (!annullato) setEsito(r ? { tipo: 'ok', riep: r } : { tipo: 'vuoto' }); })
+      .catch(e => {
+        console.error('riepilogo finanze', e);
+        if (!annullato) setEsito({ tipo: 'errore' });
+      });
+    return () => { annullato = true; };
+  }, [sbloccato]);
+
+  return (
+    <SensitiveCard
+      className="today-finanze-card"
+      eyebrow="Finanze"
+      nota="Patrimonio, saldo grezzo e netto tasse all'ultimo dato.">
+      {esito === null && <p className="today-empty">Calcolo in corso…</p>}
+      {esito?.tipo === 'errore' && <p className="today-empty">Non sono riuscito a leggere i dati.</p>}
+      {esito?.tipo === 'vuoto' && <p className="today-empty">Nessun movimento importato.</p>}
+      {esito?.tipo === 'ok' && (
+        <div className="today-fin-righe">
+          <FinRiga
+            etichetta="Patrimonio + immobili"
+            valore={esito.riep.totaleConImmobili}
+            colore={COLORI_SALDO.totale}
+            forte
+          />
+          <FinRiga etichetta="Saldo grezzo" valore={esito.riep.grezzo} colore={COLORI_SALDO.grezzo} />
+          <FinRiga etichetta="Netto tasse" valore={esito.riep.nettoTasse} colore={COLORI_SALDO.nettoTasse} />
+          <FinRiga etichetta="Ultimo dato" valore={fmtDataDato(esito.riep.ultimoDato)} />
+        </div>
+      )}
+      <Link className="today-finanze-link" to="/finanze">Apri Finanze →</Link>
+    </SensitiveCard>
+  );
+}
+
+/**
+ * Una riga del riepilogo: etichetta a sinistra, cifra a destra.
+ * @param {{ etichetta: string, valore: string, colore?: string, forte?: boolean }} props
+ */
+function FinRiga({ etichetta, valore, colore, forte }) {
+  return (
+    <div className={`today-fin-riga${forte ? ' forte' : ''}`}>
+      <span className="today-fin-etichetta">{etichetta}</span>
+      <span className="today-fin-valore" style={colore ? { color: colore } : undefined}>{valore}</span>
+    </div>
   );
 }
 

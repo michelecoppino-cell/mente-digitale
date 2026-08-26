@@ -168,6 +168,27 @@
   cursor: pointer;
 }
 
+/* Il «+» della cattura in topbar, da telefono. Contorno d'accento e non
+   un'icona spenta come il panino: è il comando principale della barra, non un
+   interruttore di navigazione. */
+.shell-capture-btn {
+  flex: 0 0 auto;
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: 1px solid var(--accent-line);
+  border-radius: var(--r-sm);
+  color: var(--accent);
+  cursor: pointer;
+  transition: background var(--t);
+}
+@media (hover: hover) {
+  .shell-capture-btn:hover { background: var(--accent-tint); }
+}
+
 /* ── Topbar fusa con la sessione Pomodoro (telefono) ──────────────────────
    48px di topbar più 52px di barra Pomodoro sono 100px su uno schermo da 667:
    quando la sessione gira le due righe diventano una. */

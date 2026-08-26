@@ -20,6 +20,7 @@ import ActivityBoard from './ActivityBoard';
 import QuickCapture from './QuickCapture';
 import { captureContextFor } from './captureContext';
 import AppShell from './AppShell';
+import ShortcutsPanel from './ShortcutsPanel';
 import { usePomodoro } from './pomodoroContext';
 import TodayView from './TodayView';
 import SectionsView from './SectionsView';
@@ -995,6 +996,9 @@ export default function App() {
           </div>
         )}
       </div>
+      {/* Le scorciatoie stanno accanto alla campanella e non in Impostazioni:
+          è un promemoria che si guarda una volta, non una preferenza. */}
+      <ShortcutsPanel />
       <button className="search-btn tap-44" onClick={() => setSearchOpen(true)} title="Cerca (⌘K)">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round">
           <circle cx="11" cy="11" r="7" />
