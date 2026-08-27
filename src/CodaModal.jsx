@@ -109,7 +109,9 @@ export default function CodaModal({ onSalvato, onChiudi }) {
     if (salvando || voci === null) return;
     setSalvando(true);
     setErrore('');
-    const pulite = voci.filter(v => v.titolo.trim()).map(v => ({ ...v, titolo: v.titolo.trim() }));
+    const pulite = voci
+      .filter((/** @type {import('./types').VoceCoda} */ v) => v.titolo.trim())
+      .map((/** @type {import('./types').VoceCoda} */ v) => ({ ...v, titolo: v.titolo.trim() }));
     try {
       await saveCoda(pulite);
       onSalvato(pulite);

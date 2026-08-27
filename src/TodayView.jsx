@@ -879,7 +879,7 @@ function useVoceDelGiorno(index, today, attivo) {
   // sono due cose diverse da dire, e la seconda è quella che invita a
   // scrivere.
   if (!mese) return null;
-  if (caricato?.mese !== mese) return undefined;
+  if (!caricato || caricato.mese !== mese) return undefined;
   return entryOfTheDay(caricato.voci, today);
 }
 
@@ -907,7 +907,7 @@ function DiarioCard({ diario, today }) {
 
   const date = useMemo(() => diario?.date || [], [diario]);
   const streak = useMemo(() => (diario ? diaryStreak(date) : null), [diario, date]);
-  const ultima = useMemo(() => (date.length ? [...date].sort().at(-1) : null), [date]);
+  const ultima = useMemo(() => (date.length ? [...date].sort()[date.length - 1] : null), [date]);
 
   // I sette giorni fino a oggi: una barretta piena per ogni giorno con una
   // voce. Sette e non trenta perché la domanda è «sto scrivendo in questi

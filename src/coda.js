@@ -112,7 +112,11 @@ export function inCoda(voci) {
     .sort((a, b) => (b.aggiunto || '').localeCompare(a.aggiunto || ''));
 }
 
-/** Le voci finite, dalla più recente: la memoria di quello che è stato letto. */
+/**
+ * Le voci finite, dalla più recente: la memoria di quello che è stato letto.
+ * @param {VoceCoda[]} voci
+ * @returns {VoceCoda[]}
+ */
 export function finite(voci) {
   return (voci || [])
     .filter(v => v.stato === 'finito')
