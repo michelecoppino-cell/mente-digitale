@@ -9,14 +9,42 @@
 // servono.
 //
 // Nessuna lista è "di Oggi": tutto è una query sul giorno corrente.
-import { useEffect, useMemo, useState } from 'react';
+//
+// ── La forma della scheda ──────────────────────────────────────────────────
+// Due metà. A sinistra la **giornata operativa**: adesso, l'agenda, le azioni
+// programmate — le cose che hanno un'ora. A destra la **vita**: gli obiettivi
+// del mese, il movimento, quello che c'è da leggere e vedere; e in una colonna
+// sua, più stretta, i tre riquadri che stanno dietro il PIN.
+//
+// Prima era una colonna sola di riquadri scollegati, e i giorni senza blocchi
+// programmati lasciavano mezza schermata vuota. La divisione non è estetica:
+// la metà sinistra invecchia nell'arco della giornata, la metà destra
+// nell'arco del mese, e tenerle vicine ma separate è quello che permette alla
+// scheda di avere sempre la stessa forma anche quando l'agenda è vuota.
+//
+// ── Cosa sta dietro il PIN ─────────────────────────────────────────────────
+// Bussola, Finanze e Diario. Sono i tre riquadri che non si vogliono leggere
+// alle spalle di chi lavora, e da quando sono tre stanno in una colonna sola:
+// un velo per colonna invece di tre veli sparsi in mezzo alle cose pubbliche.
+// Il Diario ci è entrato quando ha smesso di essere un invito e ha cominciato
+// a mostrare una voce vera — vedi DiarioCard.
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { loadDiaryIndex, loadDiaryMonth, loadIdentityDoc } from './api';
+import {
+  loadCoda, loadDiaryIndex, loadDiaryMonth, loadIdentityDoc, loadObiettivi,
+} from './api';
 import { parseWishes, wishSection, wishOfTheDay } from './wishes';
-import { monthKey, shiftMonth } from './diary';
-import { taskContext, contextColor } from './taskModel';
+import { entryOfTheDay, dailyIndex, excerpt, monthKey, shiftMonth } from './diary';
+import { taskContext, taskStatus, contextColor, inboxListId, indexScheduled } from './taskModel';
+import {
+  MAX_IN_CODA, MAX_IN_CORSO, dominio, etichettaAvanzamento, etichettaTipo, inCoda, inCorso, quota,
+} from './coda';
+import { giorniRestanti, meseDi, obiettiviDelMese, risolvi } from './obiettivi';
 import SensitiveCard from './SensitiveCard';
 import MovimentoCard from './MovimentoCard';
+import { useRegistroMovimento } from './registroMovimento';
+import ObiettiviModal from './ObiettiviModal';
+import CodaModal from './CodaModal';
 import { useSbloccato } from './finanze/sblocco';
 import { caricaRiepilogoOggi } from './finanze/riepilogoOggi';
 import './TodayView.css';
@@ -84,6 +112,13 @@ function fmtDayLabel(/** @type {string} */ ymd) {
     .replace('.', '');
 }
 
+/** "25 ago" — una data breve, per le righe di servizio. */
+function fmtBreve(/** @type {string} */ ymd) {
+  return new Date(ymd + 'T00:00:00')
+    .toLocaleDateString('it-IT', { day: 'numeric', month: 'short' })
+    .replace('.', '');
+}
+
 /** Giorni interi fra due 'YYYY-MM-DD'. */
 function daysBetween(/** @type {string} */ from, /** @type {string} */ to) {
   return Math.round((new Date(to + 'T00:00:00').getTime() - new Date(from + 'T00:00:00').getTime()) / 86_400_000);
@@ -96,7 +131,7 @@ function daysBetween(/** @type {string} */ from, /** @type {string} */ to) {
 // qualcosa.
 const AHEAD_APPOINTMENTS = 7;
 const AHEAD_RECURRENCES = 30;
-const AHEAD_MAX_ROWS = 7;
+const AHEAD_MAX_ROWS = 5;
 
 /**
  * Giorni consecutivi di diario che finiscono oggi (o ieri: la giornata non è
@@ -121,13 +156,19 @@ function diaryStreak(dates) {
   return n;
 }
 
-/** Carica quel tanto di diario che serve alla striscia: mese corrente e
- *  precedente. Oltre non serve — una striscia più lunga di due mesi si
- *  racconta lo stesso come «60 giorni di fila». */
-function useDiaryStreak(enabled = true) {
-  const [streak, setStreak] = useState(/** @type {number|null} */ (null));
+/**
+ * Carica quel tanto di diario che serve alla striscia: mese corrente e
+ * precedente. Oltre non serve — una striscia più lunga di due mesi si
+ * racconta lo stesso come «60 giorni di fila».
+ *
+ * Tiene solo le **date**, non i testi: servono alla striscia, alle sette
+ * barrette e all'obiettivo «diario ogni giorno», e nessuna delle tre ha
+ * bisogno di sapere cosa c'è scritto. Il testo si legge altrove e solo dopo il
+ * PIN (vedi useVoceDelGiorno).
+ */
+function useDiarioDate() {
+  const [stato, setStato] = useState(/** @type {{date: string[], index: any}|null} */ (null));
   useEffect(() => {
-    if (!enabled) return;
     let cancelled = false;
     (async () => {
       try {
@@ -137,28 +178,55 @@ function useDiaryStreak(enabled = true) {
         const dates = [];
         for (const m of months) {
           const entries = await loadDiaryMonth(m);
-          for (const e of entries || []) if (e?.date) dates.push(e.date);
+          for (const e of entries || []) if (e?.date && !e.sealed) dates.push(e.date);
         }
-        if (!cancelled) setStreak(diaryStreak(dates));
+        if (!cancelled) setStato({ date: dates, index });
       } catch (e) {
         console.error('striscia diario', e);
-        if (!cancelled) setStreak(0);
+        if (!cancelled) setStato({ date: [], index: null });
       }
     })();
     return () => { cancelled = true; };
-  }, [enabled]);
-  return streak;
+  }, []);
+  return stato;
+}
+
+/**
+ * Una lettura da OneDrive tenuta per tutta la sessione, con un modo di
+ * rileggerla dopo una scrittura.
+ *
+ * Serve due volte identica — obiettivi e coda — e sono due file che si aprono
+ * a ogni ingresso in «Oggi» e cambiano una volta ogni tanto: rileggerli
+ * passando da un'altra vista e tornando sarebbe una richiesta buttata via.
+ * @template T
+ * @param {() => Promise<T>} leggi
+ * @param {T} vuoto
+ * @returns {{ dato: T, aggiorna: (d: T) => void }}
+ */
+function useDatoOneDrive(leggi, vuoto) {
+  const [dato, setDato] = useState(/** @type {T} */ (vuoto));
+  useEffect(() => {
+    let annullato = false;
+    leggi()
+      .then(d => { if (!annullato) setDato(d); })
+      .catch(e => { console.error('lettura OneDrive', e); });
+    return () => { annullato = true; };
+    // `leggi` è una funzione importata, stabile fra i render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  return { dato, aggiorna: useCallback((/** @type {T} */ d) => setDato(d), []) };
 }
 
 /**
  * @param {Object} props
  * @param {Record<string, import('./types').DayPlan>} props.plans
  * @param {import('./types').TodoTask[]} props.tasks
+ * @param {import('./types').TodoList[]} [props.todoLists]
  * @param {import('./types').CalendarEvent[]} props.calendarEvents
  * @param {(block: any) => void} props.onCompleteBlock
  * @param {(which: 'bussola'|'visione'|'desideri') => void} props.onOpenIdentity
  */
-export default function TodayView({ plans, tasks, calendarEvents, onCompleteBlock, onOpenIdentity }) {
+export default function TodayView({ plans, tasks, todoLists, calendarEvents, onCompleteBlock, onOpenIdentity }) {
   const navigate = useNavigate();
   // Un tick al minuto: basta a far avanzare "restano 1h40" e a far passare la
   // card da ADESSO a PROSSIMO senza ricaricare.
@@ -169,9 +237,20 @@ export default function TodayView({ plans, tasks, calendarEvents, onCompleteBloc
   }, []);
 
   const today = todayStr(now);
+  const ym = meseDi(today);
   const { docs: identityDocs } = useIdentityDocs();
   const nowMin = now.getHours() * 60 + now.getMinutes();
-  const streak = useDiaryStreak();
+  const diario = useDiarioDate();
+
+  // Le sessioni di movimento si leggono qui e non dentro il riquadro: servono
+  // anche agli obiettivi del mese («Palestra 7/12»), e leggerle due volte
+  // vorrebbe dire due richieste per lo stesso file e due verità che possono
+  // divergere fra un riquadro e quello accanto.
+  const registro = useRegistroMovimento(today);
+  const { dato: obiettiviDoc, aggiorna: aggiornaObiettivi } = useDatoOneDrive(loadObiettivi, /** @type {any} */ ({}));
+  const { dato: coda, aggiorna: aggiornaCoda } = useDatoOneDrive(loadCoda, /** @type {import('./types').VoceCoda[]} */ ([]));
+
+  const [modale, setModale] = useState(/** @type {'obiettivi'|'coda'|null} */ (null));
 
   const blocks = useMemo(
     () => [...(plans?.[today]?.blocks || [])].sort((a, b) => t2m(a.startTime) - t2m(b.startTime)),
@@ -183,6 +262,28 @@ export default function TodayView({ plans, tasks, calendarEvents, onCompleteBloc
   const current = blocks.find(b => !b.completed && t2m(b.startTime) <= nowMin && nowMin < t2m(b.endTime));
   const upcoming = blocks.find(b => !b.completed && t2m(b.startTime) > nowMin);
   const focus = current || upcoming || null;
+  // Il blocco dopo quello in corso. Veniva già calcolato e poi buttato via
+  // ogni volta che c'era un `current`: sapere cosa viene dopo è metà del
+  // motivo per cui si guarda «Adesso» — l'altra metà è quanto manca.
+  const poi = current ? upcoming : null;
+
+  // Quante cose aspettano di essere chiarite: è il numero che decide se vale
+  // la pena passare dall'Inbox oggi. Sta in testata e non in un riquadro
+  // perché non è una cosa da leggere, è una cosa da fare (o da non fare).
+  const daChiarire = useMemo(() => {
+    const inbox = inboxListId(todoLists || []);
+    if (!inbox) return 0;
+    const scheduledIds = new Set(indexScheduled(plans).keys());
+    return (tasks || []).filter(t => taskStatus(t, { scheduledIds, inboxListId: inbox }) === 'inbox').length;
+  }, [tasks, todoLists, plans]);
+
+  // Le prossime azioni senza un blocco nel Piano: il serbatoio da cui si pesca
+  // quando la giornata si libera.
+  const nonProgrammate = useMemo(() => {
+    const inbox = inboxListId(todoLists || []);
+    const scheduledIds = new Set(indexScheduled(plans).keys());
+    return (tasks || []).filter(t => taskStatus(t, { scheduledIds, inboxListId: inbox }) === 'next').length;
+  }, [tasks, todoLists, plans]);
 
   // Agenda e Ricorrenze erano due riquadri lontani fra loro, ma sono la stessa
   // cosa: eventi del calendario Microsoft, tagliati su due finestre di tempo
@@ -190,24 +291,25 @@ export default function TodayView({ plans, tasks, calendarEvents, onCompleteBloc
   // nella colonna di destra, in mezzo a quelli fra tre settimane, invece che in
   // agenda accanto agli altri impegni della giornata. Qui c'è una sola
   // cronologia: prima oggi, poi quello che arriva.
-  const { events, ahead } = useMemo(() => {
+  const { events, ahead, aheadTotale } = useMemo(() => {
     const all = (calendarEvents || [])
       .map(e => ({ e, date: evDate(e.start?.dateTime), rec: isRecurrence(e) }))
       .filter(x => x.date >= today)
       .sort((a, b) => (a.e.start?.dateTime || '').localeCompare(b.e.start?.dateTime || ''));
+    const futuri = all.filter(x => {
+      const gap = daysBetween(today, x.date);
+      if (gap <= 0) return false;
+      return gap <= (x.rec ? AHEAD_RECURRENCES : AHEAD_APPOINTMENTS);
+    });
     return {
       events: all.filter(x => x.date === today),
-      ahead: all
-        .filter(x => {
-          const gap = daysBetween(today, x.date);
-          if (gap <= 0) return false;
-          return gap <= (x.rec ? AHEAD_RECURRENCES : AHEAD_APPOINTMENTS);
-        })
-        .slice(0, AHEAD_MAX_ROWS),
+      ahead: futuri.slice(0, AHEAD_MAX_ROWS),
+      aheadTotale: futuri.length,
     };
   }, [calendarEvents, today]);
 
   const plannedMin = blocks.reduce((sum, b) => sum + Math.max(0, t2m(b.endTime) - t2m(b.startTime)), 0);
+  const fatte = blocks.filter(b => b.completed).length;
   const dateLabel = now.toLocaleDateString('it-IT', { weekday: 'long', day: 'numeric', month: 'long' });
 
   const summary = [
@@ -216,6 +318,19 @@ export default function TodayView({ plans, tasks, calendarEvents, onCompleteBloc
     plannedMin ? `${fmtHours(plannedMin)} pianificate` : null,
   ].filter(Boolean).join(' · ');
 
+  // I registri da cui gli obiettivi derivabili prendono il loro numero: sono
+  // gli stessi dati che disegnano gli altri riquadri, non una seconda lettura.
+  const registri = useMemo(() => ({
+    movimento: registro.voci || [],
+    diario: diario?.date || [],
+    coda,
+  }), [registro.voci, diario, coda]);
+
+  const obiettivi = useMemo(
+    () => obiettiviDelMese(obiettiviDoc, ym).map(o => risolvi(o, registri, ym, today)),
+    [obiettiviDoc, ym, registri, today]
+  );
+
   return (
     <div className="today">
       <header className="today-head">
@@ -223,10 +338,19 @@ export default function TodayView({ plans, tasks, calendarEvents, onCompleteBloc
           <h1 className="today-date">{dateLabel[0].toUpperCase() + dateLabel.slice(1)}</h1>
           <p className="today-summary">{summary}</p>
         </div>
-        <Link className="today-plan-link" to="/piano">Apri il Piano →</Link>
+        <div className="today-head-right">
+          {daChiarire > 0 && (
+            <Link className="today-pill" to="/attivita">
+              <span className="today-pill-dot" />
+              {daChiarire} {daChiarire === 1 ? 'cosa da chiarire' : 'cose da chiarire'}
+            </Link>
+          )}
+          <Link className="today-plan-link" to="/piano">Apri il Piano →</Link>
+        </div>
       </header>
 
       <div className="today-grid">
+        {/* ── Metà operativa: le cose che hanno un'ora ────────────────────── */}
         <div className="today-col">
           {/* ── Adesso ─────────────────────────────────────────────────── */}
           {focus ? (
@@ -248,6 +372,9 @@ export default function TodayView({ plans, tasks, calendarEvents, onCompleteBloc
                 <button className="today-btn accent" onClick={() => onCompleteBlock(focus)}>Completa</button>
                 <button className="today-btn" onClick={() => navigate('/piano')}>Sposta</button>
               </div>
+              {poi && (
+                <p className="today-now-poi">Poi alle {poi.startTime} · {poi.taskTitle}</p>
+              )}
             </section>
           ) : (
             <section className="today-now empty">
@@ -273,13 +400,28 @@ export default function TodayView({ plans, tasks, calendarEvents, onCompleteBloc
                 {ahead.map(({ e, date, rec }) => (
                   <EventRow key={`${e.id}-${date}`} event={e} recurrence={rec} day={fmtDayLabel(date)} soon={daysBetween(today, date) <= 1} />
                 ))}
+                {/* Quello che non ci sta non sparisce: diventa un numero. Un
+                    riquadro che tronca in silenzio insegna a non fidarsi. */}
+                {aheadTotale > ahead.length && (
+                  <Link className="today-piu" to="/piano">
+                    Altri {aheadTotale - ahead.length} entro trenta giorni →
+                  </Link>
+                )}
               </>
             )}
           </section>
 
           {/* ── Azioni di oggi ─────────────────────────────────────────── */}
           <section className="today-block">
-            <span className="eyebrow">Azioni di oggi</span>
+            <div className="today-block-head">
+              <span className="eyebrow">Azioni di oggi</span>
+              {blocks.length > 0 && (
+                <span className="today-block-conta">
+                  {fatte} su {blocks.length} {fatte === 1 ? 'fatta' : 'fatte'}
+                  {plannedMin ? ` · ${fmtHours(plannedMin)}` : ''}
+                </span>
+              )}
+            </div>
             {blocks.length === 0 && (
               <p className="today-empty">
                 Nessuna azione programmata. <Link to="/attivita">Guarda le prossime azioni</Link>
@@ -312,26 +454,50 @@ export default function TodayView({ plans, tasks, calendarEvents, onCompleteBloc
                 </div>
               );
             })}
+            {nonProgrammate > 0 && (
+              <Link className="today-piu" to="/attivita">
+                {nonProgrammate} {nonProgrammate === 1 ? 'prossima azione non programmata' : 'prossime azioni non programmate'} →
+              </Link>
+            )}
           </section>
         </div>
 
-        {/* ── Colonna destra ───────────────────────────────────────────── */}
-        <aside className="today-aside">
-          <BussolaCard docs={identityDocs} today={today} onOpenIdentity={onOpenIdentity} />
+        {/* ── Metà vita: quello che invecchia nell'arco di un mese ────────── */}
+        <div className="today-vita">
+          <div className="today-col-vita">
+            <ObiettiviCard
+              obiettivi={obiettivi}
+              ym={ym}
+              oggi={today}
+              onCambia={() => setModale('obiettivi')}
+            />
 
-          <MovimentoCard today={today} calendarEvents={calendarEvents} />
+            <MovimentoCard today={today} calendarEvents={calendarEvents} registro={registro} />
 
-          <FinanzeCard />
+            <CodaCard voci={coda} onApri={() => setModale('coda')} />
+          </div>
 
-          <Link className="today-diary" to="/diario">
-            <span className="eyebrow">Diario</span>
-            <p className="today-diary-prompt">Due righe su com'è andata…</p>
-            <span className="today-diary-streak">
-              {streak === null ? '…' : streak > 0 ? `${streak} ${streak === 1 ? 'giorno' : 'giorni'} di fila` : 'Ricomincia la striscia'}
-            </span>
-          </Link>
-        </aside>
+          {/* Tre riquadri, un velo solo: quello che non si legge alle spalle
+              sta tutto nella stessa colonna. */}
+          <div className="today-col-riservati">
+            <BussolaCard docs={identityDocs} today={today} onOpenIdentity={onOpenIdentity} />
+            <FinanzeCard />
+            <DiarioCard diario={diario} today={today} />
+          </div>
+        </div>
       </div>
+
+      {modale === 'obiettivi' && (
+        <ObiettiviModal
+          oggi={today}
+          coda={coda}
+          onSalvato={aggiornaObiettivi}
+          onChiudi={() => setModale(null)}
+        />
+      )}
+      {modale === 'coda' && (
+        <CodaModal onSalvato={aggiornaCoda} onChiudi={() => setModale(null)} />
+      )}
     </div>
   );
 }
@@ -356,6 +522,137 @@ function EventRow({ event, recurrence, day, soon }) {
       <span className="today-event-title">{event.subject || '(senza titolo)'}</span>
       <span className="today-event-cal">{event._calName}</span>
     </div>
+  );
+}
+
+/**
+ * Una barra di avanzamento da tre pixel: la stessa forma per gli obiettivi,
+ * per le letture e per i cento desideri.
+ * @param {{ quota: number, colore?: string }} props
+ */
+function Barra({ quota, colore }) {
+  return (
+    <span className="today-barra">
+      <i style={{ width: `${Math.max(0, Math.min(1, quota)) * 100}%`, background: colore }} />
+    </span>
+  );
+}
+
+/**
+ * Gli obiettivi del mese: da tre a sei righe che dicono dove si vuole
+ * arrivare entro il trentuno.
+ *
+ * Non è un elenco di cose da fare — quelle stanno in To-Do e hanno una loro
+ * vista. È la domanda opposta: non «cosa faccio adesso» ma «di questo mese,
+ * cosa voglio poter dire alla fine». Per questo sta nella metà destra, con le
+ * cose che invecchiano lentamente, e per questo la riga di servizio dice i
+ * giorni che restano: è l'unica cosa che cambia da sola.
+ * @param {Object} props
+ * @param {ReturnType<typeof risolvi>[]} props.obiettivi
+ * @param {string} props.ym
+ * @param {string} props.oggi
+ * @param {() => void} props.onCambia
+ */
+function ObiettiviCard({ obiettivi, ym, oggi, onCambia }) {
+  const restano = giorniRestanti(ym, oggi);
+  const nomeMese = new Date(`${ym}-01T00:00:00`).toLocaleDateString('it-IT', { month: 'long' });
+
+  return (
+    <section className="today-card today-obiettivi">
+      <div className="today-card-head">
+        <span className="eyebrow">Obiettivi di {nomeMese}</span>
+        <span className="today-card-meta">
+          {restano > 0 ? `${restano} ${restano === 1 ? 'giorno' : 'gg'} alla fine` : 'mese chiuso'}
+        </span>
+      </div>
+
+      {obiettivi.length === 0 ? (
+        <p className="today-empty">Nessun obiettivo per questo mese.</p>
+      ) : (
+        <div className="today-ob-griglia">
+          {obiettivi.map(o => (
+            <div className="today-ob" key={o.id}>
+              <div className="today-ob-riga">
+                <span className="today-ob-titolo" title={o.titolo}>{o.titolo}</span>
+                <span className="today-ob-num">{o.fatti}/{o.totale}</span>
+              </div>
+              {/* Fuori passo è rosso, il resto è ocra. Non c'è un verde per
+                  «in anticipo»: essere avanti non è una notizia, essere
+                  indietro sì. */}
+              <Barra quota={o.quota} colore={o.fuoriPasso ? 'var(--danger)' : undefined} />
+            </div>
+          ))}
+        </div>
+      )}
+
+      <button className="today-link-btn" onClick={onCambia}>Cambia gli obiettivi →</button>
+    </section>
+  );
+}
+
+/**
+ * «Da leggere e vedere»: quello che si sta leggendo, e quello che aspetta.
+ *
+ * Erano due cose separate nella testa prima che nell'app — le letture da una
+ * parte, i link messi da parte dall'altra — ma la domanda è una: *cosa avevo
+ * detto che volevo leggere o vedere?*. In corso a sinistra perché è quello che
+ * si finisce; la coda a destra perché è quello che si sceglie.
+ * @param {{ voci: import('./types').VoceCoda[], onApri: () => void }} props
+ */
+function CodaCard({ voci, onApri }) {
+  const correnti = inCorso(voci).slice(0, MAX_IN_CORSO);
+  const attesa = inCoda(voci).slice(0, MAX_IN_CODA);
+  const nCorso = inCorso(voci).length;
+  const nCoda = inCoda(voci).length;
+
+  return (
+    <section className="today-card today-coda">
+      <div className="today-card-head">
+        <span className="eyebrow">Da leggere e vedere</span>
+        <span className="today-card-meta">{nCorso} in corso · {nCoda} in coda</span>
+      </div>
+
+      {voci.length === 0 ? (
+        <p className="today-empty">Niente in lettura. Un link incollato qui dentro diventa una riga.</p>
+      ) : (
+        <div className="today-coda-griglia">
+          <div className="today-coda-col">
+            <span className="today-sotto">In corso</span>
+            {correnti.length === 0 && <p className="today-empty">Niente aperto.</p>}
+            {correnti.map((v, i) => (
+              <div className="today-lettura" key={v.id}>
+                <div className="today-lettura-riga">
+                  <span className="today-lettura-titolo" title={v.titolo}>{v.titolo}</span>
+                  <span className="today-tag">{etichettaTipo(v.tipo)}</span>
+                </div>
+                <div className="today-lettura-meta">
+                  <span>{v.fonte || dominio(v.url) || ''}</span>
+                  <span>{etichettaAvanzamento(v)}</span>
+                </div>
+                {/* Piena solo la prima: è quella più vicina alla fine, e la
+                    fine è l'unico modo in cui una coda si accorcia. */}
+                <Barra quota={quota(v)} colore={i === 0 ? undefined : 'var(--accent-line)'} />
+              </div>
+            ))}
+          </div>
+
+          <div className="today-coda-col">
+            <span className="today-sotto">In coda</span>
+            {attesa.length === 0 && <p className="today-empty">Coda vuota.</p>}
+            {attesa.map(v => (
+              <div className="today-coda-riga" key={v.id}>
+                <span className={`today-coda-titolo${v.url ? '' : ' spenta'}`} title={v.titolo}>{v.titolo}</span>
+                {v.url
+                  ? <span className="today-coda-dom">{dominio(v.url)}</span>
+                  : <span className="today-tag">{etichettaTipo(v.tipo)}</span>}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <button className="today-link-btn" onClick={onApri}>Apri la coda →</button>
+    </section>
   );
 }
 
@@ -409,7 +706,7 @@ function BussolaCard({ docs, today, onOpenIdentity }) {
     .map((/** @type {any} */ s) => (s.content || '').trim())
     .filter(Boolean)
     .join(' ')
-    .slice(0, 150);
+    .slice(0, 130);
 
   return (
     <SensitiveCard
@@ -424,12 +721,18 @@ function BussolaCard({ docs, today, onOpenIdentity }) {
       )}
       {wish && (
         <span className="today-compass-count">
-          {[
-            wish.group,
-            `uno dei ${wishes.length}`,
-            wishes.length < 100 ? `ne mancano ${100 - wishes.length} ai cento` : null,
-          ].filter(Boolean).join(' · ')}
+          {[wish.group, `uno dei ${wishes.length}`].filter(Boolean).join(' · ')}
         </span>
+      )}
+
+      {/* Quanto manca ai cento. La barra dice in un colpo d'occhio quello che
+          prima era una frase in fondo alla riga sopra — e in una colonna
+          stretta una frase in più è una riga in meno per la Visione. */}
+      {wishes.length > 0 && (
+        <div className="today-compass-barra">
+          <Barra quota={wishes.length / 100} colore="var(--accent-line)" />
+          <span className="today-micro">{wishes.length} su 100 desideri scritti</span>
+        </div>
       )}
 
       {visioneText && <p className="today-compass-vision">{visioneText}…</p>}
@@ -462,7 +765,8 @@ function fmtDataDato(/** @type {string} */ iso) {
 }
 
 /**
- * Finanze in Oggi: quattro cifre e la porta della sezione.
+ * Finanze in Oggi: il patrimonio in evidenza, tre cifre di contorno e la porta
+ * della sezione.
  *
  * Prima qui non compariva nessun numero — solo un invito a entrare — e il
  * riquadro occupava spazio senza dire niente. Le cifre ci sono, ma dietro il
@@ -499,32 +803,157 @@ function FinanzeCard() {
       {esito?.tipo === 'errore' && <p className="today-empty">Non sono riuscito a leggere i dati.</p>}
       {esito?.tipo === 'vuoto' && <p className="today-empty">Nessun movimento importato.</p>}
       {esito?.tipo === 'ok' && (
-        <div className="today-fin-righe">
-          <FinRiga
-            etichetta="Patrimonio + immobili"
-            valore={esito.riep.totaleConImmobili}
-            colore={COLORI_SALDO.totale}
-            forte
-          />
-          <FinRiga etichetta="Saldo grezzo" valore={esito.riep.grezzo} colore={COLORI_SALDO.grezzo} />
-          <FinRiga etichetta="Netto tasse" valore={esito.riep.nettoTasse} colore={COLORI_SALDO.nettoTasse} />
-          <FinRiga etichetta="Ultimo dato" valore={fmtDataDato(esito.riep.ultimoDato)} />
-        </div>
+        <>
+          {/* Il patrimonio esce dalla fila e sale in cima, grande: è la cifra
+              per cui si sblocca il riquadro. Le altre tre la spiegano. */}
+          <div className="today-fin-forte">
+            <span className="today-micro">Patrimonio + immobili</span>
+            <span className="today-fin-grande" style={{ color: COLORI_SALDO.totale }}>
+              {esito.riep.totaleConImmobili}
+            </span>
+          </div>
+          <div className="today-fin-righe">
+            <FinRiga etichetta="Saldo grezzo" valore={esito.riep.grezzo} colore={COLORI_SALDO.grezzo} />
+            <FinRiga etichetta="Netto tasse" valore={esito.riep.nettoTasse} colore={COLORI_SALDO.nettoTasse} />
+            <FinRiga etichetta="Ultimo dato" valore={fmtDataDato(esito.riep.ultimoDato)} />
+          </div>
+        </>
       )}
-      <Link className="today-finanze-link" to="/finanze">Apri Finanze →</Link>
+      <Link className="today-link-btn" to="/finanze">Apri Finanze →</Link>
     </SensitiveCard>
   );
 }
 
 /**
  * Una riga del riepilogo: etichetta a sinistra, cifra a destra.
- * @param {{ etichetta: string, valore: string, colore?: string, forte?: boolean }} props
+ * @param {{ etichetta: string, valore: string, colore?: string }} props
  */
-function FinRiga({ etichetta, valore, colore, forte }) {
+function FinRiga({ etichetta, valore, colore }) {
   return (
-    <div className={`today-fin-riga${forte ? ' forte' : ''}`}>
+    <div className="today-fin-riga">
       <span className="today-fin-etichetta">{etichetta}</span>
       <span className="today-fin-valore" style={colore ? { color: colore } : undefined}>{valore}</span>
     </div>
+  );
+}
+
+/**
+ * Legge una voce di diario vera da rileggere oggi.
+ *
+ * Il mese da cui pescarla si sceglie con la data e non a caso, come il
+ * desiderio del giorno: due giorni diversi danno due mesi diversi, ma dentro
+ * la stessa giornata la voce non cambia sotto gli occhi. Pescare dall'indice
+ * intero e non dagli ultimi due mesi è metà del senso della cosa — l'interesse
+ * di rileggersi cresce con la distanza, e una voce di due anni fa vale dieci
+ * volte quella di martedì.
+ *
+ * Si carica **solo dopo il PIN**: è l'unico posto di «Oggi» in cui il testo del
+ * diario esce da OneDrive, e come per Finanze non deve uscirne affatto finché
+ * il riquadro è coperto.
+ * @param {any} index          l'indice dei mesi del diario
+ * @param {string} today
+ * @param {boolean} attivo     sbloccato
+ */
+function useVoceDelGiorno(index, today, attivo) {
+  const mese = useMemo(() => {
+    const mesi = index?.months || [];
+    return mesi.length ? mesi[dailyIndex(today, mesi.length)] : null;
+  }, [index, today]);
+
+  const [caricato, setCaricato] = useState(/** @type {{mese: string, voci: any[]}|null} */ (null));
+
+  useEffect(() => {
+    if (!attivo || !mese) return;
+    let annullato = false;
+    loadDiaryMonth(mese)
+      .then(voci => { if (!annullato) setCaricato({ mese, voci: voci || [] }); })
+      .catch(e => {
+        console.error('voce del giorno', e);
+        if (!annullato) setCaricato({ mese, voci: [] });
+      });
+    return () => { annullato = true; };
+  }, [mese, attivo]);
+
+  // `undefined` = sto ancora leggendo, `null` = non c'è niente da rileggere.
+  // Due stati e non uno perché «carico…» e «non hai ancora scritto niente»
+  // sono due cose diverse da dire, e la seconda è quella che invita a
+  // scrivere.
+  if (!mese) return null;
+  if (caricato?.mese !== mese) return undefined;
+  return entryOfTheDay(caricato.voci, today);
+}
+
+/**
+ * Diario: una voce di ieri o di due anni fa, e la striscia dei sette giorni.
+ *
+ * Era un invito e basta — «Due righe su com'è andata…» — cioè un bottone
+ * travestito da riquadro. Un invito non si legge due volte: dopo la prima
+ * settimana quello spazio non diceva più niente.
+ *
+ * Adesso dice una cosa vera: una delle voci già scritte, scelta con la data
+ * come il desiderio del giorno. È lo stesso meccanismo dei cento desideri e per
+ * la stessa ragione — l'archivio del diario esiste per essere riletto, e un
+ * archivio che si apre solo se lo si va a cercare non viene riletto mai.
+ *
+ * E per questo sta dietro il PIN insieme a Finanze e alla Bussola: nel momento
+ * in cui il riquadro ha smesso di mostrare un invito e ha cominciato a mostrare
+ * quello che si è scritto una sera, è diventato la cosa più privata della
+ * schermata che sta aperta tutto il giorno sulla scrivania.
+ * @param {{ diario: {date: string[], index: any}|null, today: string }} props
+ */
+function DiarioCard({ diario, today }) {
+  const sbloccato = useSbloccato();
+  const voce = useVoceDelGiorno(diario?.index, today, sbloccato);
+
+  const date = useMemo(() => diario?.date || [], [diario]);
+  const streak = useMemo(() => (diario ? diaryStreak(date) : null), [diario, date]);
+  const ultima = useMemo(() => (date.length ? [...date].sort().at(-1) : null), [date]);
+
+  // I sette giorni fino a oggi: una barretta piena per ogni giorno con una
+  // voce. Sette e non trenta perché la domanda è «sto scrivendo in questi
+  // giorni», non «quanto ho scritto quest'anno».
+  const settimana = useMemo(() => {
+    const set = new Set(date);
+    const out = [];
+    const d = new Date(today + 'T00:00:00');
+    d.setDate(d.getDate() - 6);
+    for (let i = 0; i < 7; i++) {
+      out.push({ g: todayStr(d), pieno: set.has(todayStr(d)) });
+      d.setDate(d.getDate() + 1);
+    }
+    return out;
+  }, [date, today]);
+
+  return (
+    <SensitiveCard
+      className="today-diario-card"
+      eyebrow="Diario"
+      nota="La striscia dei sette giorni e una voce da rileggere.">
+      <p className="today-diary-prompt">Due righe su com'è andata…</p>
+
+      <div className="today-diary-week" aria-hidden="true">
+        {settimana.map(x => (
+          <span key={x.g} className={`today-diary-tacca${x.pieno ? ' pieno' : ''}`} />
+        ))}
+      </div>
+
+      {voce === undefined && <p className="today-empty">…</p>}
+      {voce === null && <p className="today-empty">Ancora niente da rileggere.</p>}
+      {voce && (
+        <p className="today-diary-voce">
+          <span className="today-diary-quando">{fmtBreve(voce.date)}</span>
+          <span className="today-diary-testo">«{excerpt(voce.text, 110)}»</span>
+        </p>
+      )}
+
+      <span className="today-micro">
+        {[
+          streak === null ? '…' : streak > 0 ? `${streak} ${streak === 1 ? 'giorno' : 'giorni'} di fila` : 'Ricomincia la striscia',
+          ultima ? `ultima voce ${fmtBreve(ultima)}` : null,
+        ].filter(Boolean).join(' · ')}
+      </span>
+
+      <Link className="today-link-btn" to="/diario">Apri il Diario →</Link>
+    </SensitiveCard>
   );
 }

@@ -254,6 +254,59 @@ export const AI_PRESETS = [
   },
 ];
 
+/**
+ * Un indice stabile sul giorno, dentro un elenco lungo `n`.
+ *
+ * È la stessa funzione che sceglie il desiderio del giorno in wishes.js, e per
+ * la stessa ragione: un indice casuale cambierebbe a ogni render, e ricaricare
+ * la pagina per «trovarne una migliore» è il contrario di quello che serve.
+ * Una riga che resta ferma tutto il giorno è una cosa a cui pensare; una che
+ * cambia a ogni sguardo è rumore.
+ * @param {string} day  'YYYY-MM-DD'
+ * @param {number} n
+ * @param {number} [sale]  per pescare due cose diverse nello stesso giorno
+ * @returns {number}
+ */
+export function dailyIndex(day, n, sale = 0) {
+  if (n <= 0) return 0;
+  const giorno = Math.floor(new Date(day + 'T00:00:00').getTime() / 86_400_000) + sale;
+  return ((giorno % n) + n) % n;
+}
+
+/**
+ * La voce del giorno: una delle cose scritte in passato, riletta oggi.
+ *
+ * Le voci «nel cassetto» non entrano mai nel sorteggio. Sono roba messa via
+ * apposta: farla ricomparire da sola sulla home — la schermata che sta aperta
+ * tutto il giorno — sarebbe il contrario esatto di quello che si è chiesto
+ * mettendola lì.
+ * @param {DiaryEntry[]} entries
+ * @param {string} today 'YYYY-MM-DD'
+ * @returns {DiaryEntry|null}
+ */
+export function entryOfTheDay(entries, today) {
+  const buone = (entries || [])
+    .filter(e => e && !e.sealed && (e.text || '').trim())
+    .sort((a, b) => (a.ts || '').localeCompare(b.ts || ''));
+  if (!buone.length) return null;
+  return buone[dailyIndex(today, buone.length)];
+}
+
+/**
+ * Le prime parole di una voce, per starci in due righe. Si taglia sull'ultimo
+ * spazio e non a metà parola.
+ * @param {string} text
+ * @param {number} [max]
+ * @returns {string}
+ */
+export function excerpt(text, max = 120) {
+  const pulito = (text || '').replace(/\s+/g, ' ').trim();
+  if (pulito.length <= max) return pulito;
+  const tagliato = pulito.slice(0, max);
+  const spazio = tagliato.lastIndexOf(' ');
+  return `${(spazio > max * 0.6 ? tagliato.slice(0, spazio) : tagliato).trimEnd()}…`;
+}
+
 /** @param {string} isoDate 'YYYY-MM-DD' @returns {string} */
 export function humanDate(isoDate) {
   const d = new Date(`${isoDate}T12:00:00`);

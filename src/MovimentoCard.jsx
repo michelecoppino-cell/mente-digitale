@@ -1,36 +1,36 @@
 // @ts-check
-// Il riquadro Movimento in «Oggi»: la settimana, l'obiettivo, e tre bottoni
-// per registrare.
+// Il riquadro Movimento in «Oggi»: la settimana a sinistra, le tre famiglie
+// con il loro bersaglio a destra.
 //
-// Prima qui c'era un rettangolo bloccato e inerte, dichiarato come segnaposto
-// perché non esisteva nessuna fonte dati sugli allenamenti. Ora la fonte c'è,
-// ed è doppia — e la separazione fra le due è l'idea che regge tutto il
-// riquadro:
+// La separazione che regge tutto il riquadro non è cambiata:
 //
 //   il calendario tiene i PROGRAMMI, il registro su OneDrive tiene il FATTO.
 //
 // Le barre piene sono sessioni registrate, quelle tratteggiate sono sessioni
-// previste e non ancora fatte. Il denominatore di «2 su 4» viene dal
-// calendario, il numeratore dal registro: nessun obiettivo da configurare
-// nell'app, perché il minimo settimanale è già la serie ricorrente che hai
-// messo in agenda, e si cambia dove si cambiano tutti gli altri impegni.
+// previste e non ancora fatte.
+//
+// Quello che è cambiato è il modo di dire «quanto». Prima c'era una sola riga
+// «2 su 4» col denominatore preso dal calendario. Funzionava finché il
+// movimento era una cosa sola, ma un allenamento, una meditazione e un'ora di
+// yoga non sono intercambiabili: «4 su 6» può voler dire una settimana piena
+// oppure sei meditazioni da dieci minuti e nessun allenamento, e sono due
+// settimane molto diverse. Ora le famiglie hanno una riga ciascuna, con un
+// bersaglio settimanale che si sceglie una volta (sta nell'indice del
+// registro, accanto al calendario) e resta.
 //
 // Il calendario è di SOLA LETTURA. Registrare una sessione non crea, non
-// sposta e non cancella nessun evento: così l'app non può rovinare impegni
-// veri, e la sincronizzazione resta a senso unico e prevedibile.
-import { useCallback, useEffect, useMemo, useState } from 'react';
+// sposta e non cancella nessun evento.
+import { useEffect, useMemo, useState } from 'react';
+import { getCalendars, loadMovimentoIndex, saveMovimento, saveMovimentoIndex } from './api';
 import {
-  getCalendars, loadMovimentoIndex, loadMovimentoMese, saveMovimento, saveMovimentoIndex,
-} from './api';
-import {
-  FAMIGLIE, INIZIALI_GIORNI, ORDINE_FAMIGLIE, altezzaSegmento, coloreFamiglia,
-  fmtDurata, meseDi, mesePrecedente, settimanaDi, striscia, totali,
+  FAMIGLIE, INIZIALI_GIORNI, ORDINE_FAMIGLIE, altezzaSegmento, bersaglioDi, coloreFamiglia,
+  fmtDurata, settimanaDi, totali, totaliPerFamiglia,
 } from './movimento';
 import MovimentoQuickAdd from './MovimentoQuickAdd';
 import './MovimentoCard.css';
 
 /** Altezza della colonna più alta, in pixel. Vedi altezzaSegmento. */
-const MAX_PX = 42;
+const MAX_PX = 40;
 
 /** La data locale 'YYYY-MM-DD' di un evento Graph. */
 function dataEvento(/** @type {any} */ ev) {
@@ -79,47 +79,16 @@ function famigliaEvento(ev) {
 }
 
 /**
- * Legge il registro dei due mesi che servono: quello corrente per la settimana
- * e i totali, il precedente perché una striscia a cavallo del primo del mese
- * non deve azzerarsi per un motivo di archiviazione.
- * @param {string} oggi
- */
-function useRegistro(oggi) {
-  const [voci, setVoci] = useState(/** @type {import('./types').Movimento[]|null} */ (null));
-  const [indice, setIndice] = useState(/** @type {import('./types').MovimentoIndex|null} */ (null));
-
-  const ricarica = useCallback(async () => {
-    const ym = meseDi(oggi);
-    const idx = await loadMovimentoIndex();
-    const mesi = [mesePrecedente(ym), ym].filter(m => idx.months.length === 0 || idx.months.includes(m));
-    const caricate = await Promise.all(mesi.map(m => loadMovimentoMese(m).catch(() => [])));
-    return { voci: caricate.flat(), indice: idx };
-  }, [oggi]);
-
-  useEffect(() => {
-    let annullato = false;
-    ricarica()
-      .then(r => { if (!annullato) { setVoci(r.voci); setIndice(r.indice); } })
-      .catch(e => {
-        console.error('registro movimento', e);
-        if (!annullato) { setVoci([]); setIndice({ months: [], calendarId: null, calendarName: null }); }
-      });
-    return () => { annullato = true; };
-  }, [ricarica]);
-
-  return { voci, indice, setVoci, setIndice };
-}
-
-/**
  * @param {Object} props
  * @param {string} props.today                                'YYYY-MM-DD'
  * @param {import('./types').CalendarEvent[]} props.calendarEvents  già caricati da App
+ * @param {ReturnType<typeof import('./registroMovimento').useRegistroMovimento>} props.registro
  */
-export default function MovimentoCard({ today, calendarEvents }) {
-  const { voci, indice, setVoci, setIndice } = useRegistro(today);
+export default function MovimentoCard({ today, calendarEvents, registro }) {
+  const { voci, indice, setVoci, setIndice } = registro;
   // { famiglia, data, preset } — il modulo aperto, o null.
   const [modulo, setModulo] = useState(/** @type {any} */ (null));
-  const [sceltaCal, setSceltaCal] = useState(false);
+  const [impostazioni, setImpostazioni] = useState(false);
 
   const giorni = useMemo(() => settimanaDi(today), [today]);
 
@@ -148,20 +117,7 @@ export default function MovimentoCard({ today, calendarEvents }) {
   }, [calendarEvents, indice, voci]);
 
   const settimana = useMemo(() => totali(voci || [], giorni), [voci, giorni]);
-  const strisciaGiorni = useMemo(() => striscia((voci || []).map(v => v.date), today), [voci, today]);
-
-  // «2 su 4»: il denominatore è quanto avevi programmato per la settimana
-  // (previste rimaste + quelle già onorate), il numeratore quante ne hai
-  // chiuse. Conta solo le sessioni che nascono dal calendario: registrare tre
-  // corse a sorpresa non deve far risultare «5 su 4».
-  const obiettivo = useMemo(() => {
-    if (!indice?.calendarId) return null;
-    const inSettimana = new Set(giorni);
-    const rimaste = giorni.reduce((n, g) => n + (previstePerGiorno[g]?.length || 0), 0);
-    const onorate = (voci || []).filter(v => v.daEvento && inSettimana.has(v.date)).length;
-    const totale = rimaste + onorate;
-    return totale > 0 ? { fatte: onorate, totale } : null;
-  }, [indice, giorni, previstePerGiorno, voci]);
+  const perFamiglia = useMemo(() => totaliPerFamiglia(voci || [], giorni), [voci, giorni]);
 
   // La prima sessione prevista per oggi e non ancora registrata: è il caso più
   // frequente in assoluto, e merita una riga sua con un tasto solo.
@@ -175,10 +131,13 @@ export default function MovimentoCard({ today, calendarEvents }) {
     setVoci(prev => [...(prev || []), voce]);
   }
 
-  async function scegliCalendario(/** @type {{id: string, name: string}|null} */ cal) {
-    const scelta = { calendarId: cal?.id ?? null, calendarName: cal?.name ?? null };
-    setIndice(prev => ({ months: prev?.months || [], ...scelta }));
-    setSceltaCal(false);
+  /**
+   * @param {{ calendarId: string|null, calendarName: string|null }} cal
+   * @param {Record<string, number>} bersagli
+   */
+  async function salvaImpostazioni(cal, bersagli) {
+    setIndice(prev => ({ months: prev?.months || [], ...cal, bersagli }));
+    setImpostazioni(false);
     try {
       // L'elenco dei mesi si rilegge invece di riusare quello in memoria: nel
       // file c'è anche l'indice del registro, e sovrascriverlo con la copia
@@ -186,9 +145,9 @@ export default function MovimentoCard({ today, calendarEvents }) {
       // finito, o vecchia di una sessione registrata altrove — cancellerebbe
       // il modo di ritrovare i mesi già scritti.
       const attuale = await loadMovimentoIndex();
-      await saveMovimentoIndex({ ...attuale, ...scelta });
+      await saveMovimentoIndex({ ...attuale, ...cal, bersagli });
     } catch (e) {
-      console.error('salva calendario movimento', e);
+      console.error('salva impostazioni movimento', e);
     }
   }
 
@@ -198,78 +157,89 @@ export default function MovimentoCard({ today, calendarEvents }) {
     <section className="today-card mv-card">
       <div className="mv-head">
         <span className="eyebrow">Movimento</span>
-        <button
-          className="mv-cal-btn"
-          onClick={() => setSceltaCal(true)}
-          title={indice?.calendarId
-            ? `Sessioni programmate da «${indice.calendarName}»`
-            : 'Collega un calendario per vedere le sessioni programmate'}>
-          {indice?.calendarId ? indice.calendarName : 'Collega un calendario'}
-        </button>
-      </div>
-
-      <div className="mv-week" aria-hidden={caricando}>
-        {giorni.map((g, i) => {
-          const fatte = fattePerGiorno[g] || [];
-          const previste = previstePerGiorno[g] || [];
-          return (
-            <div className={`mv-day${g === today ? ' oggi' : ''}`} key={g}>
-              <div className="mv-stack" title={etichettaGiorno(g, fatte, previste)}>
-                {previste.map(ev => (
-                  <i
-                    key={ev.id}
-                    className="mv-seg previsto"
-                    style={{ height: altezzaSegmento(durataEvento(ev), MAX_PX) }} />
-                ))}
-                {fatte.map(v => (
-                  <i
-                    key={v.id}
-                    className="mv-seg"
-                    style={{
-                      height: altezzaSegmento(v.durataMin, MAX_PX),
-                      background: coloreFamiglia(v.famiglia),
-                    }} />
-                ))}
-              </div>
-              <span className="mv-day-label">{INIZIALI_GIORNI[i]}</span>
-            </div>
-          );
-        })}
-      </div>
-
-      <p className="mv-meta">
-        {caricando ? '…' : settimana.sessioni === 0
-          ? (indice?.calendarId
-            ? 'Nessuna sessione questa settimana.'
-            : 'Nessuna sessione questa settimana. Collega il calendario in cui programmi gli allenamenti e le sessioni previste compariranno qui.')
-          : [
-            `${settimana.sessioni} ${settimana.sessioni === 1 ? 'sessione' : 'sessioni'}`,
-            fmtDurata(settimana.minuti),
-            strisciaGiorni > 0 ? `${strisciaGiorni} ${strisciaGiorni === 1 ? 'giorno' : 'giorni'} di fila` : null,
-          ].filter(Boolean).join(' · ')}
-      </p>
-
-      {obiettivo && (
-        <div className="mv-goal">
-          <div className="mv-goal-row">
-            <span className="mv-goal-label">Programmate questa settimana</span>
-            <span className="mv-goal-val">
-              <b>{obiettivo.fatte}</b> su {obiettivo.totale}
-              {obiettivo.fatte >= obiettivo.totale ? ' · fatto' : ''}
-            </span>
-          </div>
-          <div className="mv-bar">
-            <i style={{ width: `${(obiettivo.fatte / obiettivo.totale) * 100}%` }} />
-            <i className="previsto" style={{ width: `${100 - (obiettivo.fatte / obiettivo.totale) * 100}%` }} />
-          </div>
+        <div className="mv-head-right">
+          <span className="mv-tot">
+            {caricando ? '…' : settimana.sessioni === 0
+              ? 'nessuna sessione'
+              : `${settimana.sessioni} ${settimana.sessioni === 1 ? 'sessione' : 'sessioni'} · ${fmtDurata(settimana.minuti)}`}
+          </span>
+          <button
+            className="mv-set-btn"
+            onClick={() => setImpostazioni(true)}
+            title={indice?.calendarId
+              ? `Sessioni programmate da «${indice.calendarName}». Cambia calendario e bersagli.`
+              : 'Scegli il calendario dei programmi e i bersagli della settimana'}
+            aria-label="Impostazioni del movimento">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round">
+              <circle cx="12" cy="12" r="3.2" />
+              <path d="M12 3v2.2M12 18.8V21M21 12h-2.2M5.2 12H3M18.4 5.6l-1.6 1.6M7.2 16.8l-1.6 1.6M18.4 18.4l-1.6-1.6M7.2 7.2 5.6 5.6" />
+            </svg>
+          </button>
         </div>
-      )}
+      </div>
+
+      <div className="mv-body">
+        {/* La settimana: una colonna per giorno, un segmento per sessione. */}
+        <div className="mv-week" aria-hidden={caricando}>
+          {giorni.map((g, i) => {
+            const fatte = fattePerGiorno[g] || [];
+            const previste = previstePerGiorno[g] || [];
+            const vuoto = fatte.length === 0 && previste.length === 0;
+            return (
+              <div className={`mv-day${g === today ? ' oggi' : ''}`} key={g}>
+                <div className="mv-stack" title={etichettaGiorno(g, fatte, previste)}>
+                  {previste.map(ev => (
+                    <i
+                      key={ev.id}
+                      className="mv-seg previsto"
+                      style={{ height: altezzaSegmento(durataEvento(ev), MAX_PX) }} />
+                  ))}
+                  {fatte.map(v => (
+                    <i
+                      key={v.id}
+                      className="mv-seg"
+                      style={{
+                        height: altezzaSegmento(v.durataMin, MAX_PX),
+                        background: coloreFamiglia(v.famiglia),
+                      }} />
+                  ))}
+                  {/* Un giorno senza niente non è una colonna vuota ma un
+                      trattino: la riga di base si vede, e la settimana resta
+                      leggibile come settimana invece che come tre barre in
+                      mezzo al nulla. */}
+                  {vuoto && <i className="mv-seg niente" />}
+                </div>
+                <span className="mv-day-label">{INIZIALI_GIORNI[i]}</span>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Le tre famiglie: quante ne hai fatte, su quante te ne eri date. */}
+        <div className="mv-fam">
+          {ORDINE_FAMIGLIE.map(f => {
+            const fatte = perFamiglia[f]?.sessioni || 0;
+            const bersaglio = bersaglioDi(indice, f);
+            return (
+              <button
+                key={f}
+                className={`mv-fam-riga${bersaglio && fatte >= bersaglio ? ' fatto' : ''}`}
+                onClick={() => setModulo({ famiglia: f, data: today, preset: null })}
+                title={`Registra una sessione di ${FAMIGLIE[f].label.toLowerCase()}`}>
+                <span className="mv-fam-dot" style={{ background: FAMIGLIE[f].colore }} />
+                <span className="mv-fam-nome">{FAMIGLIE[f].label}</span>
+                <span className="mv-fam-num">{bersaglio ? `${fatte}/${bersaglio}` : `${fatte}`}</span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
 
       {previstaOggi && (
         <div className="mv-today">
           <span className="mv-today-dot" />
           <span className="mv-today-txt">
-            {[previstaOggi.subject || 'Sessione', `oggi ${oraEvento(previstaOggi)}`, fmtDurata(durataEvento(previstaOggi))]
+            {[previstaOggi.subject || 'Sessione', `oggi ${oraEvento(previstaOggi)}`]
               .filter(Boolean).join(' · ')}
           </span>
           <button
@@ -289,17 +259,11 @@ export default function MovimentoCard({ today, calendarEvents }) {
         </div>
       )}
 
-      <div className="mv-add">
-        {ORDINE_FAMIGLIE.map(f => (
-          <button
-            key={f}
-            className={`mv-add-btn ${f}`}
-            style={/** @type {import('react').CSSProperties} */ ({ '--fam': FAMIGLIE[f].colore })}
-            onClick={() => setModulo({ famiglia: f, data: today, preset: null })}>
-            {FAMIGLIE[f].breve}
-          </button>
-        ))}
-      </div>
+      <button
+        className="today-link-btn"
+        onClick={() => setModulo({ famiglia: 'movimento', data: today, preset: null })}>
+        Registra una sessione →
+      </button>
 
       {modulo && (
         <MovimentoQuickAdd
@@ -313,11 +277,11 @@ export default function MovimentoCard({ today, calendarEvents }) {
         />
       )}
 
-      {sceltaCal && (
-        <CalendarioPicker
-          scelto={indice?.calendarId || null}
-          onScegli={scegliCalendario}
-          onChiudi={() => setSceltaCal(false)}
+      {impostazioni && (
+        <ImpostazioniMovimento
+          indice={indice}
+          onSalva={salvaImpostazioni}
+          onChiudi={() => setImpostazioni(false)}
         />
       )}
     </section>
@@ -334,16 +298,29 @@ function etichettaGiorno(/** @type {string} */ g, /** @type {any[]} */ fatte, /*
 }
 
 /**
- * La scelta del calendario dei programmi.
+ * Le due impostazioni della scheda: il calendario dei programmi e i bersagli
+ * settimanali.
  *
- * Sta qui dentro e non nelle Impostazioni generali per due motivi: quelle sono
- * «colori di taccuini e sezioni», e questa preferenza si cerca dove se ne
- * vedono gli effetti. È anche l'unica impostazione della scheda, e una schermata
- * di impostazioni per un campo solo è un posto in cui non si torna mai.
- * @param {{ scelto: string|null, onScegli: (cal: any) => void, onChiudi: () => void }} props
+ * Stanno qui dentro e non nelle Impostazioni generali per due motivi: quelle
+ * sono «colori di taccuini e sezioni», e una preferenza si cerca dove se ne
+ * vedono gli effetti. Sono anche due sole, e una schermata di impostazioni per
+ * due campi è un posto in cui non si torna mai.
+ * @param {Object} props
+ * @param {import('./types').MovimentoIndex|null} props.indice
+ * @param {(cal: {calendarId: string|null, calendarName: string|null}, bersagli: Record<string, number>) => void} props.onSalva
+ * @param {() => void} props.onChiudi
  */
-function CalendarioPicker({ scelto, onScegli, onChiudi }) {
+function ImpostazioniMovimento({ indice, onSalva, onChiudi }) {
   const [cals, setCals] = useState(/** @type {any[]|null} */ (null));
+  const [scelto, setScelto] = useState(/** @type {{id: string|null, name: string|null}} */ ({
+    id: indice?.calendarId || null, name: indice?.calendarName || null,
+  }));
+  const [bersagli, setBersagli] = useState(() => {
+    /** @type {Record<string, number>} */
+    const b = {};
+    for (const f of ORDINE_FAMIGLIE) b[f] = bersaglioDi(indice, f);
+    return b;
+  });
 
   useEffect(() => {
     let annullato = false;
@@ -363,12 +340,34 @@ function CalendarioPicker({ scelto, onScegli, onChiudi }) {
     <div className="mq-overlay" onClick={onChiudi}>
       <div className="mq-sheet mv-picker" onClick={e => e.stopPropagation()}>
         <div className="mq-head">
-          <span className="mq-title">Calendario dei programmi</span>
+          <span className="mq-title">Movimento</span>
         </div>
+
         <p className="mv-picker-note">
-          Da qui arrivano le sessioni previste. Un calendario dedicato — anche
-          con una serie ricorrente: quella serie è il tuo minimo settimanale.
-          L'app lo legge soltanto, non ci scrive mai.
+          Quante sessioni a settimana ti sei dato. Zero vuol dire «non me lo
+          conto»: la riga resta, e mostra soltanto quante ne hai fatte.
+        </p>
+        <div className="mv-bersagli">
+          {ORDINE_FAMIGLIE.map(f => (
+            <label className="mv-bersaglio" key={f}>
+              <span className="mv-fam-dot" style={{ background: FAMIGLIE[f].colore }} />
+              <span className="mv-bersaglio-nome">{FAMIGLIE[f].label}</span>
+              <input
+                type="number"
+                min="0"
+                max="21"
+                inputMode="numeric"
+                value={bersagli[f]}
+                onChange={e => setBersagli(b => ({ ...b, [f]: Math.max(0, Math.min(21, Number(e.target.value) || 0)) }))}
+              />
+              <span className="mv-bersaglio-unita">a settimana</span>
+            </label>
+          ))}
+        </div>
+
+        <p className="mv-picker-note">
+          Da questo calendario arrivano le sessioni previste — le barre
+          tratteggiate. L'app lo legge soltanto, non ci scrive mai.
         </p>
         {cals === null && <p className="mv-picker-vuoto">Carico i calendari…</p>}
         {cals?.length === 0 && <p className="mv-picker-vuoto">Nessun calendario disponibile.</p>}
@@ -376,18 +375,21 @@ function CalendarioPicker({ scelto, onScegli, onChiudi }) {
           {(cals || []).map(c => (
             <button
               key={c.id}
-              className={`mv-picker-row${c.id === scelto ? ' sel' : ''}`}
-              onClick={() => onScegli(c)}>
+              className={`mv-picker-row${c.id === scelto.id ? ' sel' : ''}`}
+              onClick={() => setScelto(s => (s.id === c.id ? { id: null, name: null } : { id: c.id, name: c.name }))}>
               <span className="mv-picker-name">{c.name}</span>
-              {c.id === scelto && <span className="mv-picker-check">✓</span>}
+              {c.id === scelto.id && <span className="mv-picker-check">✓</span>}
             </button>
           ))}
         </div>
+
         <div className="mq-actions">
-          {scelto && (
-            <button className="mq-annulla" onClick={() => onScegli(null)}>Scollega</button>
-          )}
-          <button className="mq-salva" onClick={onChiudi}>Chiudi</button>
+          <button className="mq-annulla" onClick={onChiudi}>Annulla</button>
+          <button
+            className="mq-salva"
+            onClick={() => onSalva({ calendarId: scelto.id, calendarName: scelto.name }, bersagli)}>
+            Salva
+          </button>
         </div>
       </div>
     </div>
