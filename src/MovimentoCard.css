@@ -4,34 +4,55 @@
 
 .mv-head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--sp-3); }
 /* L'etichetta non si accorcia mai: in una colonna stretta a cedere dev'essere
-   il nome del calendario, che è un dettaglio, non il titolo del riquadro. */
+   il totale, che è un dettaglio, non il titolo del riquadro. */
 .mv-head > .eyebrow { flex: 0 0 auto; }
 
-/* Il calendario collegato: un'etichetta discreta, non un bottone vero. È una
-   cosa che si tocca una volta e poi si legge per sapere da dove arrivano le
-   barre tratteggiate. */
-.mv-cal-btn {
-  flex: 0 1 auto;
+/* A destra dell'etichetta: il totale della settimana e la chiavetta delle due
+   impostazioni. Il totale è un dato, non un comando: sta in chiaro, e a
+   cedere in una colonna stretta è lui e non il titolo del riquadro. */
+.mv-head-right { display: flex; align-items: center; gap: var(--sp-3); min-width: 0; }
+
+.mv-tot {
   min-width: 0;
-  max-width: 60%;
-  padding: 0;
-  background: none;
-  border: none;
-  color: var(--muted);
-  font-family: var(--font-ui);
   font-size: var(--fs-micro);
-  cursor: pointer;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+.mv-set-btn {
+  flex: 0 0 auto;
+  width: 22px; height: 22px;
+  margin: -4px -4px -4px 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  border-radius: var(--r-sm);
+  color: var(--disabled);
+  cursor: pointer;
+  transition: color var(--t), background var(--t);
+}
 @media (hover: hover) {
-  .mv-cal-btn:hover { color: var(--accent); }
+  .mv-set-btn:hover { color: var(--text-3); background: var(--surface-2); }
+}
+
+/* ── Il corpo: la settimana a sinistra, le famiglie a destra ──────────── */
+
+.mv-body {
+  display: grid;
+  grid-template-columns: 1.15fr 1fr;
+  gap: var(--sp-5);
+  align-items: end;
+  min-width: 0;
 }
 
 /* ── La settimana: sette colonne, una per giorno ──────────────────────── */
 
-.mv-week { display: flex; gap: var(--sp-2); align-items: flex-end; height: 62px; }
+.mv-week { display: flex; gap: var(--sp-2); align-items: flex-end; height: 58px; min-width: 0; }
 
 .mv-day {
   flex: 1;
@@ -58,6 +79,10 @@
 
 .mv-seg { border-radius: 2px; flex: 0 0 auto; }
 
+/* Un giorno senza niente: un trattino a filo della linea di base, non il
+   vuoto. Dice «zero», che è un'informazione, invece di non dire niente. */
+.mv-seg.niente { height: 3px; background: var(--line); }
+
 /* Programmato e non ancora fatto: il contorno di una barra che non c'è. */
 .mv-seg.previsto {
   background: none;
@@ -68,33 +93,52 @@
 .mv-day-label { font-size: 10px; color: var(--muted); letter-spacing: .04em; }
 .mv-day.oggi .mv-day-label { color: var(--accent); font-weight: 600; }
 
-.mv-meta { font-size: var(--fs-micro); line-height: 1.5; color: var(--muted); }
+/* ── Le tre famiglie, una riga ciascuna ───────────────────────────────
+   Ogni riga è un bottone che apre il modulo di registrazione già sulla sua
+   famiglia: il posto in cui si legge «Yoga 1/2» è anche il posto in cui si
+   registra lo yoga, e non c'è una seconda fila di bottoni che ripete gli
+   stessi tre nomi. */
 
-/* ── Obiettivo della settimana, dal calendario ────────────────────────── */
+.mv-fam { display: flex; flex-direction: column; gap: var(--sp-3); min-width: 0; }
 
-.mv-goal { display: flex; flex-direction: column; gap: var(--sp-2); }
-.mv-goal-row { display: flex; align-items: baseline; justify-content: space-between; gap: var(--sp-4); }
-.mv-goal-label {
-  font-size: var(--fs-micro);
-  color: var(--text-3);
+.mv-fam-riga {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: 0;
+  background: none;
+  border: none;
+  color: inherit;
+  font-family: var(--font-ui);
+  text-align: left;
+  cursor: pointer;
   min-width: 0;
+}
+
+.mv-fam-dot { flex: 0 0 auto; width: 6px; height: 6px; border-radius: 2px; }
+
+.mv-fam-nome {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--fs-chip);
+  color: var(--text-2);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.mv-goal-val {
+
+.mv-fam-num {
   flex: 0 0 auto;
   font-size: var(--fs-micro);
   color: var(--muted);
   font-variant-numeric: tabular-nums;
-  white-space: nowrap;
 }
-.mv-goal-val b { color: var(--text); font-weight: 500; }
+/* Bersaglio raggiunto: la cifra si accende, la riga no. */
+.mv-fam-riga.fatto .mv-fam-num { color: var(--accent); }
 
-.mv-bar { height: 4px; border-radius: 2px; background: var(--line); overflow: hidden; display: flex; }
-.mv-bar i { display: block; height: 100%; background: #c4643f; }
-.mv-bar i.previsto {
-  background: repeating-linear-gradient(90deg, var(--disabled) 0 2px, transparent 2px 5px);
+@media (hover: hover) {
+  .mv-fam-riga:hover .mv-fam-nome { color: var(--text); }
+  .mv-fam-riga:hover .mv-fam-num { color: var(--text-3); }
 }
 
 /* ── «Programmata per oggi» ───────────────────────────────────────────── */
@@ -138,42 +182,7 @@
   .mv-today-btn:hover { background: var(--accent-tint); }
 }
 
-/* ── I tre bottoni di registrazione ───────────────────────────────────── */
-
-.mv-add { display: flex; gap: var(--sp-2); }
-
-.mv-add-btn {
-  flex: 1;
-  min-width: 0;
-  height: 32px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 5px;
-  background: none;
-  border: 1px solid var(--line);
-  border-radius: var(--r-sm);
-  color: var(--text-3);
-  font-family: var(--font-ui);
-  font-size: var(--fs-micro);
-  cursor: pointer;
-  transition: border-color var(--t), color var(--t);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.mv-add-btn::before {
-  content: '';
-  flex: 0 0 auto;
-  width: 6px; height: 6px;
-  border-radius: 50%;
-  background: var(--fam);
-}
-@media (hover: hover) {
-  .mv-add-btn:hover { border-color: var(--accent-line); color: var(--text-2); }
-}
-
-/* ── Scelta del calendario ────────────────────────────────────────────── */
+/* ── Impostazioni: bersagli e calendario ──────────────────────────────── */
 
 .mv-picker { max-width: 380px; }
 .mv-picker-note { font-size: var(--fs-micro); line-height: 1.55; color: var(--muted); }
@@ -209,3 +218,29 @@
 @media (hover: hover) {
   .mv-picker-row:hover { background: var(--surface-2); }
 }
+
+.mv-bersagli { display: flex; flex-direction: column; gap: var(--sp-2); }
+
+.mv-bersaglio {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  min-height: 34px;
+}
+.mv-bersaglio-nome { flex: 1; min-width: 0; font-size: var(--fs-meta); color: var(--text-2); }
+.mv-bersaglio input {
+  flex: 0 0 auto;
+  width: 52px;
+  height: 30px;
+  padding: 0 var(--sp-2);
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: var(--fs-card);
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.mv-bersaglio input:focus { outline: none; border-color: var(--accent-line); }
+.mv-bersaglio-unita { flex: 0 0 auto; font-size: var(--fs-micro); color: var(--muted); }

@@ -1045,6 +1045,7 @@ export default function App() {
             <TodayView
               plans={dailyPlans}
               tasks={scheduledTasks || []}
+              todoLists={todoLists}
               calendarEvents={sectionCalendarEvents}
               onCompleteBlock={handleCompleteBlock}
               onOpenIdentity={setIdentityOpen}

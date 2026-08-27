@@ -1066,6 +1066,7 @@ export async function loadMovimentoIndex() {
     months: Array.isArray(idx?.months) ? idx.months : [],
     calendarId: idx?.calendarId ?? null,
     calendarName: idx?.calendarName ?? null,
+    bersagli: (idx?.bersagli && typeof idx.bersagli === 'object') ? idx.bersagli : {},
   };
 }
 
@@ -1115,6 +1116,42 @@ export async function deleteMovimento(voce) {
   const aggiornate = esistenti.filter(v => v.id !== voce.id);
   await putDriveJson(movimentoMonthFile(ym), aggiornate);
   return aggiornate;
+}
+
+// ── OneDrive Obiettivi del mese ────────────────────────────────────────────
+// Un file solo, e non uno per mese come Diario e Movimento: gli obiettivi di
+// un mese sono sei righe, e dieci anni di sei righe restano un file che si
+// legge in una richiesta. La chiave è il mese 'YYYY-MM', così i mesi passati
+// restano leggibili senza doverli archiviare.
+const OD_OBIETTIVI_FILE = 'mente-digitale-obiettivi.json';
+
+/** @returns {Promise<Record<string, import('./types').Obiettivo[]>>} */
+export async function loadObiettivi() {
+  const doc = await getDriveJson(OD_OBIETTIVI_FILE, null);
+  return doc && typeof doc === 'object' && !Array.isArray(doc) ? doc : {};
+}
+
+/** @param {Record<string, import('./types').Obiettivo[]>} doc @returns {Promise<any>} */
+export async function saveObiettivi(doc) {
+  return putDriveJson(OD_OBIETTIVI_FILE, doc);
+}
+
+// ── OneDrive «Da leggere e vedere» ─────────────────────────────────────────
+// Anche questo un file solo, e per un motivo diverso: non è un registro che
+// cresce, è una coda che si accorcia. Quello che è finito ci resta come
+// memoria, ma se un giorno diventasse ingombrante si pota — che è esattamente
+// quello che a un registro di Diario non si può fare.
+const OD_CODA_FILE = 'mente-digitale-coda.json';
+
+/** @returns {Promise<import('./types').VoceCoda[]>} */
+export async function loadCoda() {
+  const voci = await getDriveJson(OD_CODA_FILE, null);
+  return Array.isArray(voci) ? voci : [];
+}
+
+/** @param {import('./types').VoceCoda[]} voci @returns {Promise<any>} */
+export async function saveCoda(voci) {
+  return putDriveJson(OD_CODA_FILE, voci);
 }
 
 // ── Foto del diario ────────────────────────────────────────────────────────

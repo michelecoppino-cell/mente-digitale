@@ -144,6 +144,45 @@ export function totali(voci, giorni) {
   return { sessioni, minuti };
 }
 
+/**
+ * Sessioni e minuti per famiglia, in un insieme di giorni.
+ *
+ * Serve al riquadro di «Oggi», che dice «Palestra 2/3» famiglia per famiglia:
+ * il totale unico non basta più, perché tre meditazioni da dieci minuti e tre
+ * allenamenti da un'ora sono la stessa riga solo se non si guarda.
+ * @param {import('./types').Movimento[]} voci
+ * @param {string[]} giorni
+ * @returns {Record<string, { sessioni: number, minuti: number }>}
+ */
+export function totaliPerFamiglia(voci, giorni) {
+  const set = new Set(giorni);
+  /** @type {Record<string, { sessioni: number, minuti: number }>} */
+  const out = {};
+  for (const f of ORDINE_FAMIGLIE) out[f] = { sessioni: 0, minuti: 0 };
+  for (const v of voci) {
+    if (!set.has(v.date)) continue;
+    const riga = (out[v.famiglia] ||= { sessioni: 0, minuti: 0 });
+    riga.sessioni++;
+    riga.minuti += v.durataMin || 0;
+  }
+  return out;
+}
+
+/**
+ * Il bersaglio settimanale di una famiglia: quello scelto, oppure zero.
+ *
+ * Zero non è «nessun dato mancante» ma una scelta legittima — chi non medita
+ * non deve darsi un bersaglio di meditazione per far funzionare il riquadro —
+ * e si legge come «3» senza denominatore invece che come «3/0».
+ * @param {import('./types').MovimentoIndex|null} indice
+ * @param {string} famiglia
+ * @returns {number}
+ */
+export function bersaglioDi(indice, famiglia) {
+  const n = indice?.bersagli?.[famiglia];
+  return typeof n === 'number' && n > 0 ? Math.round(n) : 0;
+}
+
 /** "2h15", "45min" — la durata come la direbbe una persona. */
 export function fmtDurata(/** @type {number} */ min) {
   if (!min) return '0min';

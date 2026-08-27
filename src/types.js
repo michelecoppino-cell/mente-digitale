@@ -340,12 +340,42 @@ export {};
  */
 
 /**
- * L'indice dei mesi che contengono voci di Movimento, più l'unica preferenza
- * della scheda: quale calendario porta le sessioni programmate.
+ * L'indice dei mesi che contengono voci di Movimento, più le due preferenze
+ * della scheda: quale calendario porta le sessioni programmate, e quante
+ * sessioni a settimana ci si è dati per famiglia.
  * @typedef {Object} MovimentoIndex
  * @property {string[]} months
  * @property {string|null} [calendarId]
  * @property {string|null} [calendarName]
+ * @property {Record<string, number>} [bersagli]  sessioni a settimana per famiglia
+ */
+
+/**
+ * Un obiettivo del mese. `fatti` e `fonte` si escludono: o il numero lo si
+ * scrive a mano, o lo si deriva da un registro che l'app già tiene (vedi
+ * obiettivi.js). Vivono tutti in un file solo su OneDrive, raccolti per mese:
+ * `{ "2026-08": [ ... ] }`.
+ * @typedef {Object} Obiettivo
+ * @property {string} id
+ * @property {string} titolo
+ * @property {number} totale                   il bersaglio del mese
+ * @property {number} [fatti]                  scritto a mano, quando non c'è fonte
+ * @property {string} [unita]                  'pagine', 'sessioni'… solo per leggere meglio
+ * @property {string} [fonte]                  'movimento' | 'movimento:yoga' | 'diario' | 'lettura:<id>'
+ */
+
+/**
+ * Una voce di «Da leggere e vedere»: un libro, una serie, un film, un corso,
+ * un articolo o un PDF. Tutte insieme in `coda.json` su OneDrive.
+ * @typedef {Object} VoceCoda
+ * @property {string} id
+ * @property {string} titolo
+ * @property {string} tipo                     'libro'|'serie'|'film'|'corso'|'articolo'|'pdf'
+ * @property {'corso'|'coda'|'finito'} stato
+ * @property {string} [fonte]                  autore, rete, dominio…
+ * @property {string} [url]
+ * @property {{ fatti: number, totale: number, unita: string }} [avanzamento]
+ * @property {string} aggiunto                 ISO del momento in cui è entrata
  */
 
 /**
