@@ -424,7 +424,7 @@ una riga, non una ricerca-e-sostituzione in dieci file.
 | Componente | Tecnologia |
 |---|---|
 | Frontend | React 19 + Vite, react-router (hash), D3 per la mappa |
-| Autenticazione | MSAL Browser (account Microsoft personale, scope Graph in sola lettura + To-Do/Files in scrittura) |
+| Autenticazione | MSAL Browser (account Microsoft personale, scope Graph in sola lettura + To-Do/Files in scrittura). Il CLI e il server MCP hanno un token proprio, con in più OneNote e Calendario in scrittura |
 | Dati | Microsoft Graph (OneNote, To-Do, Calendar, OneDrive, Mail) con cache localStorage a TTL. I file JSON dell'app stanno nella cartella `mente-digitale/` di OneDrive (quelli rimasti in root vengono spostati automaticamente al primo avvio) |
 | Backend | Nessuno: sito statico servito da Cloudflare Pages |
 | Automazioni | GitHub Actions (`sync-calendar`) |
@@ -514,12 +514,31 @@ elenca i server e il loro stato. Il segno che gli strumenti stanno funzionando
 davvero è che nella risposta compaiono chiamate a `oggi` o `attivita_lista`, e
 non comandi `node scripts/mente.mjs`.
 
-I dodici strumenti sono gli stessi comandi: `oggi`, `agenda`, `piano`, `sezioni`,
-`attivita_lista`, `attivita_crea`, `attivita_stato`, `diario_leggi`,
-`diario_scrivi`, `note_pagine`, `note_leggi`, `identita`. Quelli in sola lettura
-sono marcati come tali (`readOnlyHint`), così un client che chiede conferma prima
-di scrivere sa quando chiederla. Nessuno cancella niente: un'attività di prova si
-può spuntare, non eliminare.
+I ventuno strumenti sono gli stessi comandi. In lettura: `oggi`, `agenda`,
+`piano`, `piano_arco`, `obiettivi_leggi`, `sezioni`, `attivita_lista`,
+`diario_leggi`, `note_pagine`, `note_leggi`, `identita`. In scrittura:
+`attivita_crea`, `attivita_stato`, `sezione_crea`, `piano_aggiungi`,
+`piano_togli`, `obiettivi_scrivi`, `evento_crea`, `note_crea`, `note_aggiungi`,
+`diario_scrivi`. Quelli in sola lettura sono marcati come tali (`readOnlyHint`),
+così un client che chiede conferma prima di scrivere sa quando chiederla.
+
+Nessuno cancella niente, ed è una regola e non un'omissione: un'attività di prova
+si può spuntare, non eliminare; su OneNote si scrive solo in fondo a una pagina,
+mai sopra a quello che c'era; «togliere» un'attività dal piano vuol dire toglierle
+l'ora, non cancellarla. La Bussola e la Visione restano in sola lettura — sono i
+documenti che si scrivono pensandoci, non dettandoli a una chat.
+
+**Il piano, alle tre distanze.** Giornaliero, settimanale e mensile non sono tre
+piani ma tre distanze da cui si guarda lo stesso, come le tre viste del Piano
+nell'app. Si compilano tutti con `piano_aggiungi`, un giorno per volta, e si
+rileggono con `piano_arco`. Due blocchi che si accavallano sono un errore e non
+una sovrapposizione da disegnare: l'app, dove si trascina e si vede la griglia,
+può permetterselo; da una chat, dove si scrive alla cieca, no. Gli **obiettivi
+del mese** (`obiettivi_leggi` / `obiettivi_scrivi`) sono un'altra cosa ancora:
+dove si vuole arrivare entro il trentuno, non quando si fanno le cose. Si
+scrivono tutti insieme — da tre a sei, come nel riquadro di «Oggi» — perché sono
+un blocco solo, e aggiungerne uno per volta senza vedere gli altri è il modo di
+ritrovarsene nove a metà mese.
 
 #### Dove funziona e dove no
 
@@ -562,11 +581,18 @@ o simile — l'entrata è la stessa in forma JSON:
 
 Vale per entrambe le strade. Non c'è MSAL: si usa un refresh token, come
 `sync-calendar.mjs`. Se ne prende uno con gli scope giusti — tutto in lettura,
-scrittura su file e attività — e lo si tiene sulla propria macchina:
+scrittura su attività e liste To-Do, sui file dell'app, su OneNote e sul
+calendario — e lo si tiene sulla propria macchina:
 
 ```bash
 node scripts/get-refresh-token.mjs --mente
 ```
+
+> **Gli scope stanno dentro al token, non si chiedono a ogni chiamata.** Un token
+> preso quando OneNote e il calendario erano in sola lettura continua a leggerli
+> soltanto: gli strumenti nuovi risponderebbero `403` senza che nulla dica
+> perché. Dopo un aggiornamento che allarga `MENTE_SCOPE` (in
+> `scripts/mente-graph.mjs`) il token va rifatto con lo stesso comando qui sopra.
 
 Il token va in `scripts/.mente-refresh-token` (ignorato da git) oppure nella
 variabile `MENTE_REFRESH_TOKEN`, anche da un `.env` nella radice del progetto.

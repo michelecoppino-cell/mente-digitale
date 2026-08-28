@@ -46,7 +46,7 @@ const TOOLS = [
   },
   {
     name: 'agenda',
-    description: 'Gli eventi del calendario Outlook nei prossimi giorni. Sola lettura: da qui non si creano eventi.',
+    description: 'Gli eventi del calendario Outlook nei prossimi giorni. Per crearne uno c\'è evento_crea.',
     sola_lettura: true,
     schema: {
       type: 'object',
@@ -58,13 +58,146 @@ const TOOLS = [
     run: a => mente.agenda(a),
   },
   {
+    name: 'evento_crea',
+    description:
+      "Crea un evento sul calendario Outlook. Le ore si danno locali e locali restano: «giovedì " +
+      "alle 15» è le 15 sul calendario. Senza fine né durata dura un'ora; senza calendario va su " +
+      "quello di default. Un evento non è un'attività: qui va quello che ha un'ora fissa e " +
+      "riguarda anche altri (una riunione, un appuntamento). Quello che si deve fare e basta è " +
+      "un'attività, e si mette a piano con piano_aggiungi.",
+    sola_lettura: false,
+    schema: {
+      type: 'object',
+      required: ['oggetto'],
+      properties: {
+        oggetto: stringa("L'oggetto dell'evento."),
+        data: stringa('Giorno, YYYY-MM-DD. Default: oggi.'),
+        inizio: stringa("Ora d'inizio, HH:MM. Serve, se non è tutto il giorno."),
+        fine: stringa('Ora di fine, HH:MM. Alternativa a durataMin.'),
+        durataMin: { type: 'integer', description: 'Durata in minuti. Default 60.' },
+        tuttoIlGiorno: { type: 'boolean', description: 'Evento di giornata intera. Default false.' },
+        luogo: stringa('Luogo.'),
+        note: stringa("Testo nel corpo dell'evento."),
+        promemoriaMin: {
+          type: 'integer',
+          description: 'Minuti di preavviso del promemoria. Un numero negativo lo spegne. ' +
+            "Omesso, resta il default dell'account.",
+        },
+        calendario: stringa('Nome anche parziale del calendario. Default: quello di default.'),
+      },
+    },
+    run: a => mente.eventoCrea(a),
+  },
+  {
     name: 'piano',
     description:
       'I blocchi del piano di un giorno: orario, attività, sottopassi e cosa è già stato chiuso. ' +
-      'Sola lettura: programmare un\'attività si fa trascinandola nell\'app.',
+      'Per vedere una settimana o un mese interi c\'è piano_arco; per metterci dentro ' +
+      'un\'attività, piano_aggiungi.',
     sola_lettura: true,
     schema: { type: 'object', properties: { data: stringa('Giorno, YYYY-MM-DD. Default: oggi.') } },
     run: a => mente.piano(a),
+  },
+  {
+    name: 'piano_arco',
+    description:
+      'Il piano di una settimana o di un mese interi, giorno per giorno, con quante ore sono già ' +
+      'a piano in ciascuno e quali giorni sono ancora liberi. È la stessa cosa di «piano» letta ' +
+      'dalla distanza da cui si decide se la settimana sta in piedi. Sola lettura.',
+    sola_lettura: true,
+    schema: {
+      type: 'object',
+      properties: {
+        data: stringa('Un giorno qualunque della settimana da guardare, YYYY-MM-DD. Default: oggi.'),
+        mese: stringa('Un mese intero, YYYY-MM. Alternativo a data.'),
+      },
+    },
+    run: a => mente.pianoArco(a),
+  },
+  {
+    name: 'piano_aggiungi',
+    description:
+      "Mette un'attività nel piano di un giorno, a un'ora: è così che un'attività diventa " +
+      '«programmata». Il giorno può essere uno qualunque — è con questo, un giorno per volta, ' +
+      'che si compila il piano della settimana o del mese. Senza durata usa la stima ' +
+      "dell'attività. Due blocchi che si accavallano sono un errore, non una sovrapposizione: " +
+      "se all'ora chiesta c'è già qualcosa, lo dice e non scrive niente.",
+    sola_lettura: false,
+    schema: {
+      type: 'object',
+      required: ['attivita', 'ora'],
+      properties: {
+        attivita: stringa("Id (anche solo l'inizio) o pezzo di titolo dell'attività."),
+        ora: stringa("Ora d'inizio, HH:MM."),
+        data: stringa('Giorno, YYYY-MM-DD. Default: oggi.'),
+        durataMin: { type: 'integer', description: "Durata in minuti. Default: la stima dell'attività." },
+      },
+    },
+    run: a => mente.pianoAggiungi(a),
+  },
+  {
+    name: 'piano_togli',
+    description:
+      "Toglie un'attività dal piano di un giorno. Non la completa e non la cancella: torna solo " +
+      "a non avere un'ora. Serve anche per spostarla — si toglie e si rimette a un'altra ora.",
+    sola_lettura: false,
+    schema: {
+      type: 'object',
+      required: ['attivita'],
+      properties: {
+        attivita: stringa("Id o pezzo di titolo dell'attività da togliere."),
+        data: stringa('Giorno, YYYY-MM-DD. Default: oggi.'),
+      },
+    },
+    run: a => mente.pianoTogli(a),
+  },
+  {
+    name: 'obiettivi_leggi',
+    description:
+      'Gli obiettivi di un mese: da tre a sei righe che dicono dove si vuole arrivare entro il ' +
+      'trentuno, con quanto è già fatto. È il piano del mese nel senso che conta — non quando si ' +
+      'fanno le cose, che è la griglia dei giorni. Sola lettura.',
+    sola_lettura: true,
+    schema: { type: 'object', properties: { mese: stringa('Mese, YYYY-MM. Default: questo.') } },
+    run: a => mente.obiettiviLeggi(a),
+  },
+  {
+    name: 'obiettivi_scrivi',
+    description:
+      "Scrive gli obiettivi di un mese, tutti insieme: sostituiscono quelli che c'erano. Da tre a " +
+      'sei — sotto i tre è un elenco della spesa, sopra i sei non è più una scelta. Un obiettivo ' +
+      "che l'app già conta da sé (movimento, diario) dichiara una `fonte` invece di `fatti`, e il " +
+      'numero lo deriva. Prima di scrivere conviene leggere quelli che ci sono.',
+    sola_lettura: false,
+    schema: {
+      type: 'object',
+      required: ['obiettivi'],
+      properties: {
+        mese: stringa('Mese, YYYY-MM. Default: questo.'),
+        obiettivi: {
+          type: 'array',
+          minItems: 3,
+          maxItems: 6,
+          description: 'Gli obiettivi del mese, da tre a sei.',
+          items: {
+            type: 'object',
+            required: ['titolo', 'totale'],
+            properties: {
+              titolo: stringa("Cosa si vuole aver fatto entro fine mese."),
+              totale: { type: 'integer', description: 'Il traguardo: quante volte, quante ore, quanti pezzi.' },
+              fatti: { type: 'integer', description: 'Quanti già fatti. Default 0. Non si mette insieme a fonte.' },
+              unita: stringa('Come si chiamano ("sessioni", "giorni", "pagine"). Facoltativa.'),
+              fonte: {
+                type: 'string',
+                enum: ['movimento', 'movimento:movimento', 'movimento:meditazione', 'movimento:yoga', 'diario'],
+                description: "Il registro dell'app da cui derivare il numero fatto, invece di dirlo a mano.",
+              },
+            },
+          },
+        },
+      },
+    },
+    run: a => mente.obiettiviScrivi(a),
   },
   {
     name: 'sezioni',
@@ -76,6 +209,25 @@ const TOOLS = [
     sola_lettura: true,
     schema: { type: 'object', properties: {} },
     run: () => mente.sezioni(),
+  },
+  {
+    name: 'sezione_crea',
+    description:
+      'Crea una lista su Microsoft To-Do — che nella mente digitale è una sezione, o la consegna ' +
+      'di una commessa. Per una consegna si passano commessa, nome e scadenza, e il nome lo ' +
+      'compone la convenzione (GRUPPO.Consegna-YYMMDD): scritto a mano e sbagliato, non verrebbe ' +
+      'letto come consegna da nessuna parte e la scadenza sparirebbe in silenzio.',
+    sola_lettura: false,
+    schema: {
+      type: 'object',
+      properties: {
+        nome: stringa('Il nome per intero, per una sezione che non è una consegna.'),
+        commessa: stringa('La commessa (il gruppo). Insieme a consegna.'),
+        consegna: stringa('Il nome della consegna. Insieme a commessa.'),
+        scadenza: stringa('Scadenza della consegna, YYYY-MM-DD. Finisce nel nome della lista.'),
+      },
+    },
+    run: a => mente.sezioneCrea(a),
   },
   {
     name: 'attivita_lista',
@@ -206,6 +358,42 @@ const TOOLS = [
     run: a => mente.noteLeggi(a),
   },
   {
+    name: 'note_crea',
+    description:
+      'Crea una pagina nuova in una sezione OneNote. Il testo si passa semplice: le righe vuote ' +
+      'separano i paragrafi, le righe che cominciano con «- » diventano un elenco.',
+    sola_lettura: false,
+    schema: {
+      type: 'object',
+      required: ['sezione', 'titolo'],
+      properties: {
+        sezione: stringa('Nome anche parziale della sezione OneNote.'),
+        titolo: stringa('Titolo della pagina.'),
+        testo: stringa('Il contenuto. Righe vuote fra i paragrafi, «- » per gli elenchi.'),
+      },
+    },
+    run: a => mente.noteCrea(a),
+  },
+  {
+    name: 'note_aggiungi',
+    description:
+      'Aggiunge testo in fondo a una pagina OneNote che esiste già, per id oppure per titolo ' +
+      'indicando anche la sezione. Solo in fondo: da qui non si sostituisce e non si cancella ' +
+      'niente, perché una sostituzione sbagliata alla cieca porterebbe via appunti che non si ' +
+      'ricostruiscono.',
+    sola_lettura: false,
+    schema: {
+      type: 'object',
+      required: ['pagina', 'testo'],
+      properties: {
+        pagina: stringa('Id della pagina, oppure il suo titolo (in quel caso serve anche la sezione).'),
+        sezione: stringa('Sezione in cui cercare il titolo.'),
+        testo: stringa('Il testo da aggiungere.'),
+      },
+    },
+    run: a => mente.noteAggiungi(a),
+  },
+  {
     name: 'identita',
     description:
       'I documenti identitari salvati su OneDrive: la Bussola (chi sono, valori, pratiche) e la Visione. ' +
@@ -269,10 +457,17 @@ async function gestisci(req) {
         serverInfo: SERVER,
         instructions:
           'La mente digitale di Michele: attività (Microsoft To-Do), piano del giorno, calendario, ' +
-          'diario e taccuini OneNote. Si scrive solo in due punti — una voce di diario, ' +
-          "un'attività (creazione e cambio di stato). Tutto il resto è in sola lettura. " +
+          'diario, obiettivi del mese e taccuini OneNote. Si legge tutto e si scrive quasi ' +
+          'ovunque: attività e liste, blocchi del piano, eventi del calendario, pagine OneNote, ' +
+          'voci di diario, obiettivi. Nessuno strumento cancella niente, e su OneNote si scrive ' +
+          'solo in fondo a una pagina, mai sopra a quello che c\'era.\n' +
           'Una sezione è una lista To-Do; una commessa può averne più di una, una per consegna, ' +
-          'chiamata GRUPPO.Consegna-YYMMDD, dove le ultime sei cifre sono la scadenza. ' +
+          'chiamata GRUPPO.Consegna-YYMMDD, dove le ultime sei cifre sono la scadenza.\n' +
+          "Un'attività è una cosa da fare; un evento del calendario è un'ora fissa che riguarda " +
+          "anche altri. Piano del giorno, della settimana e del mese non sono tre piani ma tre " +
+          "distanze da cui si guarda lo stesso: si compilano tutti con piano_aggiungi, un giorno " +
+          'per volta, e si rileggono con piano_arco. Gli obiettivi del mese sono un\'altra cosa ' +
+          'ancora: dove si vuole arrivare, non quando si fanno le cose.\n' +
           GRANULARITY_MEMO_LINE,
       });
 
