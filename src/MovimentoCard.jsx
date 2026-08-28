@@ -27,6 +27,7 @@ import {
   fmtDurata, settimanaDi, totali, totaliPerFamiglia,
 } from './movimento';
 import MovimentoQuickAdd from './MovimentoQuickAdd';
+import { riassuntoDelGiorno } from './rituale';
 import './MovimentoCard.css';
 
 /** Altezza della colonna più alta, in pixel. Vedi altezzaSegmento. */
@@ -83,8 +84,10 @@ function famigliaEvento(ev) {
  * @param {string} props.today                                'YYYY-MM-DD'
  * @param {import('./types').CalendarEvent[]} props.calendarEvents  già caricati da App
  * @param {ReturnType<typeof import('./registroMovimento').useRegistroMovimento>} props.registro
+ * @param {Record<string, import('./types').RitualeGiorno>|null} [props.rituale]  le risposte del mattino
+ * @param {() => void} [props.onApriRituale]
  */
-export default function MovimentoCard({ today, calendarEvents, registro }) {
+export default function MovimentoCard({ today, calendarEvents, registro, rituale, onApriRituale }) {
   const { voci, indice, setVoci, setIndice } = registro;
   // { famiglia, data, preset } — il modulo aperto, o null.
   const [modulo, setModulo] = useState(/** @type {any} */ (null));
@@ -257,6 +260,25 @@ export default function MovimentoCard({ today, calendarEvents, registro }) {
             Fatta
           </button>
         </div>
+      )}
+
+      {/* Il mattino: com'è andata, e la porta per tornarci sopra.
+          La riga dice anche i no e il loro motivo — è l'unico posto della
+          scheda in cui un «non fatto» è un dato e non un vuoto, e nasconderlo
+          qui vorrebbe dire farlo esistere solo dentro un file. */}
+      {onApriRituale && (
+        <button
+          className="mv-rituale"
+          onClick={onApriRituale}
+          title="Movimento, meditazione e yoga di stamattina: correggi le risposte">
+          <span className="mv-rituale-eti">Il mattino</span>
+          <span className="mv-rituale-txt">
+            {rituale
+              ? riassuntoDelGiorno(rituale, today) || 'nessuna risposta oggi'
+              : '…'}
+          </span>
+          <span className="mv-rituale-freccia">→</span>
+        </button>
       )}
 
       <button

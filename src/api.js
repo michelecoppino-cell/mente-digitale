@@ -1154,6 +1154,52 @@ export async function saveCoda(voci) {
   return putDriveJson(OD_CODA_FILE, voci);
 }
 
+// ── OneDrive Rituale del mattino ───────────────────────────────────────────
+// Movimento, meditazione e yoga si fanno appena svegli, e quello che serve
+// saperne alla fine del mese non è soltanto quante volte sono stati fatti: è
+// **perché** nei giorni in cui non lo sono stati. Il registro del Movimento
+// tiene il fatto, questo file tiene la risposta quotidiana — anche quando la
+// risposta è «no, e per questo motivo».
+//
+// Un file solo e non uno per mese come il registro: una giornata sono tre
+// righe da poche decine di byte, e dieci anni restano un file che si legge in
+// una richiesta. Si pota comunque a due anni: la motivazione di un martedì di
+// tre anni fa non la rilegge nessuno.
+const OD_RITUALE_FILE = 'mente-digitale-rituale.json';
+
+/** Quanto indietro si conserva il rituale, in giorni. */
+const RITUALE_GIORNI = 730;
+
+/** @returns {Promise<Record<string, import('./types').RitualeGiorno>>} */
+export async function loadRituale() {
+  const doc = await getDriveJson(OD_RITUALE_FILE, null);
+  return doc && typeof doc === 'object' && !Array.isArray(doc) ? doc : {};
+}
+
+/**
+ * Scrive i giorni toccati, sopra quelli che ci sono già.
+ *
+ * Rilegge il file prima di scrivere, come il Diario e il Movimento: il
+ * pannello si compila la mattina dal telefono e si corregge la sera dal
+ * portatile, e la seconda compilazione non deve cancellare la prima.
+ * @param {Record<string, import('./types').RitualeGiorno>} giorni  solo i giorni toccati
+ * @returns {Promise<Record<string, import('./types').RitualeGiorno>>} il documento come è stato scritto
+ */
+export async function saveRituale(giorni) {
+  const esistente = await loadRituale();
+  const unito = { ...esistente, ...giorni };
+  const taglio = new Date();
+  taglio.setDate(taglio.getDate() - RITUALE_GIORNI);
+  const limite = `${taglio.getFullYear()}-${String(taglio.getMonth() + 1).padStart(2, '0')}-${String(taglio.getDate()).padStart(2, '0')}`;
+  /** @type {Record<string, import('./types').RitualeGiorno>} */
+  const potato = {};
+  for (const [data, giorno] of Object.entries(unito)) {
+    if (data >= limite) potato[data] = giorno;
+  }
+  await putDriveJson(OD_RITUALE_FILE, potato);
+  return potato;
+}
+
 // ── Foto del diario ────────────────────────────────────────────────────────
 // Le immagini non stanno dentro il JSON del mese (un file di voci non deve
 // diventare da megabyte): vivono come file veri in una sottocartella, e la

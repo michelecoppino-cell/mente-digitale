@@ -1,24 +1,24 @@
 // @ts-check
-// Riquadro riservato: parte oscurato, si apre col PIN di Finanze.
+// Riquadro riservato: parte visibile, si nasconde a mano, si riapre col PIN.
 //
 // «Oggi» è la schermata che resta aperta sulla scrivania tutto il giorno.
 // Quasi tutto quello che mostra — agenda, azioni, diario — è roba che si può
-// leggere alle spalle di chi lavora senza che importi; i conti e la Bussola
-// no. Sono gli unici due riquadri privati della vista, e prima stavano lì in
-// chiaro: quello dei desideri per intero, quello di Finanze scaricando il
-// problema alla sezione (cioè non mostrando niente).
+// leggere alle spalle di chi lavora senza che importi; i conti, la Bussola e
+// una voce di diario no. Sono i tre riquadri privati della vista, e questo è
+// l'involucro che condividono.
 //
-// Lo sblocco è lo stesso della sezione Finanze — stesso PIN, stessa scadenza a
-// 30 minuti, stessa scheda del browser: aprire un riquadro apre anche l'altro
-// e la sezione, che è l'unico comportamento che non fa digitare il codice tre
-// volte di fila.
+// Il verso del gesto sta in riservati.js: si vede, e si nasconde quando serve
+// — nel momento preciso in cui uno alza gli occhi e si accorge che sta
+// arrivando qualcuno, quando «chiudi la scheda del browser» non è una
+// risposta. Il bottone «nascondi» copre tutti e tre i riquadri insieme.
 //
-// Simmetrico anche in chiusura: il bottone «nascondi» richiude tutto subito,
-// senza aspettare i trenta minuti. Serve nel momento preciso in cui uno alza
-// gli occhi e si accorge che sta arrivando qualcuno — e in quel momento
-// «chiudi la scheda del browser» non è una risposta.
+// Da lì in poi ci vuole il PIN, che è quello della sezione Finanze — stesso
+// codice, stessa scadenza a 30 minuti, stessa scheda del browser: riaprire un
+// riquadro riapre anche gli altri due, che è l'unico comportamento che non fa
+// digitare il codice tre volte di fila.
 import { useEffect, useRef, useState } from 'react';
-import { blocca, sblocca, useSbloccato, verificaPin } from './finanze/sblocco';
+import { sblocca, verificaPin } from './finanze/sblocco';
+import { nascondi, useRiservatiVisibili } from './riservati';
 
 /** Il lucchetto del velo. */
 function LockIcon() {
@@ -50,22 +50,22 @@ function HideIcon() {
  * @param {import('react').ReactNode} props.children contenuto riservato
  */
 export default function SensitiveCard({ eyebrow, nota, className = '', children }) {
-  const sbloccato = useSbloccato();
+  const visibile = useRiservatiVisibili();
   const [chiedePin, setChiedePin] = useState(false);
 
-  if (sbloccato) {
+  if (visibile) {
     return (
       <section className={`today-card${className ? ` ${className}` : ''}`}>
         <div className="today-riservato-head">
           <span className="eyebrow">{eyebrow}</span>
-          {/* Richiude tutti i riquadri riservati e la sezione Finanze insieme:
-              blocca() tocca lo stato condiviso, non questo componente. Un
-              bottone per riquadro che ne richiude uno solo darebbe l'idea
-              sbagliata — di sblocchi separati che non esistono. */}
+          {/* Nasconde tutti i riquadri riservati e richiude la sezione Finanze
+              insieme: nascondi() tocca lo stato condiviso, non questo
+              componente. Un bottone per riquadro che ne coprisse uno solo
+              darebbe l'idea sbagliata — di tre veli separati che non ci sono. */}
           <button
             type="button"
             className="today-hide-btn"
-            onClick={() => blocca()}
+            onClick={() => nascondi()}
             title="Nascondi di nuovo (richiede il PIN al prossimo sguardo)"
             aria-label="Nascondi">
             <HideIcon />

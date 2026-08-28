@@ -182,6 +182,44 @@
   .mv-today-btn:hover { background: var(--accent-tint); }
 }
 
+/* La riga del rituale del mattino: com'è andata, e la porta per correggerla.
+   Sta sotto le famiglie e sopra «Registra una sessione» perché racconta la
+   giornata di oggi, mentre le barre raccontano la settimana. */
+.mv-rituale {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  width: 100%;
+  padding: var(--sp-3) var(--sp-4);
+  background: none;
+  border: 1px dashed var(--line);
+  border-radius: var(--r);
+  font-family: var(--font-ui);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color var(--t);
+}
+@media (hover: hover) {
+  .mv-rituale:hover { border-color: var(--accent-line); }
+}
+.mv-rituale-eti {
+  flex: 0 0 auto;
+  font-size: var(--fs-micro);
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--disabled);
+}
+.mv-rituale-txt {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--fs-micro);
+  color: var(--text-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mv-rituale-freccia { flex: 0 0 auto; font-size: var(--fs-micro); color: var(--accent); }
+
 /* ── Impostazioni: bersagli e calendario ──────────────────────────────── */
 
 .mv-picker { max-width: 380px; }
