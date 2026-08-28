@@ -27,6 +27,7 @@ import {
   fmtDurata, settimanaDi, totali, totaliPerFamiglia,
 } from './movimento';
 import MovimentoQuickAdd from './MovimentoQuickAdd';
+import { Matita } from './Matita';
 import { riassuntoDelGiorno } from './rituale';
 import './MovimentoCard.css';
 
@@ -159,7 +160,21 @@ export default function MovimentoCard({ today, calendarEvents, registro, rituale
   return (
     <section className="today-card mv-card">
       <div className="mv-head">
-        <span className="eyebrow">Movimento</span>
+        <div className="today-card-titolo">
+          <span className="eyebrow">Movimento</span>
+          {/* Il mattino. Era una riga larga quanto il riquadro, con dentro il
+              riassunto di oggi — «yoga fatto · movimento, meditazione no
+              (lavorato)» — e una freccia. Adesso il riassunto è il title della
+              matita: si legge passandoci sopra, che è il momento in cui uno se
+              lo sta chiedendo, e non occupa una riga per dirlo a chi non se lo
+              stava chiedendo affatto. */}
+          {onApriRituale && (
+            <Matita
+              onClick={onApriRituale}
+              title={`Il mattino${rituale ? `: ${riassuntoDelGiorno(rituale, today) || 'nessuna risposta oggi'}` : ''}`}
+            />
+          )}
+        </div>
         <div className="mv-head-right">
           <span className="mv-tot">
             {caricando ? '…' : settimana.sessioni === 0
@@ -262,30 +277,10 @@ export default function MovimentoCard({ today, calendarEvents, registro, rituale
         </div>
       )}
 
-      {/* Il mattino: com'è andata, e la porta per tornarci sopra.
-          La riga dice anche i no e il loro motivo — è l'unico posto della
-          scheda in cui un «non fatto» è un dato e non un vuoto, e nasconderlo
-          qui vorrebbe dire farlo esistere solo dentro un file. */}
-      {onApriRituale && (
-        <button
-          className="mv-rituale"
-          onClick={onApriRituale}
-          title="Movimento, meditazione e yoga di stamattina: correggi le risposte">
-          <span className="mv-rituale-eti">Il mattino</span>
-          <span className="mv-rituale-txt">
-            {rituale
-              ? riassuntoDelGiorno(rituale, today) || 'nessuna risposta oggi'
-              : '…'}
-          </span>
-          <span className="mv-rituale-freccia">→</span>
-        </button>
-      )}
-
-      <button
-        className="today-link-btn"
-        onClick={() => setModulo({ famiglia: 'movimento', data: today, preset: null })}>
-        Registra una sessione →
-      </button>
+      {/* Non c'è più un «Registra una sessione →» in fondo: registrava sempre
+          e comunque un movimento, mentre le tre righe qui sopra sono già tre
+          bottoni che aprono lo stesso modulo sulla famiglia giusta. Era una
+          quarta porta per la stessa stanza, con la serratura peggiore. */}
 
       {modulo && (
         <MovimentoQuickAdd

@@ -19,7 +19,7 @@
 // cui non ci si fida più.
 import { useEffect, useRef, useState } from 'react';
 import { saveRituale, saveMovimento, deleteMovimento } from './api';
-import { FAMIGLIE, ORDINE_FAMIGLIE } from './movimento';
+import { FAMIGLIE, ORDINE_FAMIGLIE, fmtDurata } from './movimento';
 import {
   MAX_GIORNI_SCOPERTI, MOTIVI, MOTIVO_DEFAULT, fraseScoperti, giorniScoperti, giornoPrima,
   giornoVuoto, pianoSalvataggio, statoIniziale,
@@ -59,7 +59,7 @@ export default function RitualeMattino({ oggi, doc, voci, auto, onSalvato, onChi
   const giorni = [oggi, ...passati];
 
   const [stato, setStato] = useState(() => {
-    /** @type {Record<string, Record<string, {fatto: boolean, motivo: string, registrate: number}>>} */
+    /** @type {Record<string, Record<string, {fatto: boolean, motivo: string, registrate: number, tipo: string, durataMin: number}>>} */
     const s = {};
     for (const g of giorni) s[g] = statoIniziale(doc, voci || [], g);
     return s;
@@ -87,7 +87,7 @@ export default function RitualeMattino({ oggi, doc, voci, auto, onSalvato, onChi
     return () => window.removeEventListener('keydown', suTasto);
   }, [onChiudi]);
 
-  /** @param {string} data @param {string} famiglia @param {Partial<{fatto: boolean, motivo: string}>} patch */
+  /** @param {string} data @param {string} famiglia @param {Partial<{fatto: boolean, motivo: string, tipo: string, durataMin: number}>} patch */
   function cambia(data, famiglia, patch) {
     setStato(s => ({
       ...s,
@@ -126,8 +126,8 @@ export default function RitualeMattino({ oggi, doc, voci, auto, onSalvato, onChi
 
         <p className="rt-nota">
           {auto
-            ? 'Movimento, meditazione e yoga: com’è andata stamattina. Le caselle partono da «non ho fatto» — spunta quello che invece hai fatto.'
-            : 'Spunta quello che hai fatto; per il resto, il motivo. Si può correggere anche più tardi, e nei giorni scorsi.'}
+            ? 'Movimento, meditazione e yoga: com’è andata stamattina. Le caselle partono da «non ho fatto» — spunta quello che invece hai fatto, e dì cosa e per quanto.'
+            : 'Spunta quello che hai fatto, con cosa e per quanto; per il resto, il motivo. Si può correggere anche più tardi, e nei giorni scorsi.'}
         </p>
 
         {scoperti.length > 0 && <p className="rt-recupero">{fraseScoperti(scoperti)}</p>}
@@ -154,12 +154,41 @@ export default function RitualeMattino({ oggi, doc, voci, auto, onSalvato, onChi
                       <span className="rt-nome">{FAMIGLIE[f].label}</span>
                     </label>
 
+                    {/* Spuntata, la riga chiede le due cose che il registro
+                        vuole sapere e che qui si davano per scontate: cosa, e
+                        per quanto. Prima la casella scriveva sempre «Palestra,
+                        30 minuti» — un valore inventato che poi restava lì, e
+                        una sessione con dentro un dato inventato è peggio di
+                        una sessione che manca. I campi compaiono solo quando
+                        servono: chi risponde di no non li vede mai, e la
+                        risposta più frequente resta un tocco solo.
+
+                        Se una sessione c'è già è un fatto scritto altrove, e
+                        non si corregge da qui: la riga lo dice e basta, il
+                        posto per cambiarla è la scheda Movimento. */}
                     {riga.fatto ? (
-                      <span className="rt-esito">
-                        {riga.registrate > 0
-                          ? `${riga.registrate === 1 ? 'sessione registrata' : `${riga.registrate} sessioni registrate`}`
-                          : 'fatto'}
-                      </span>
+                      riga.registrate > 0 ? (
+                        <span className="rt-esito">
+                          {riga.registrate === 1 ? 'sessione registrata' : `${riga.registrate} sessioni registrate`}
+                        </span>
+                      ) : (
+                        <div className="rt-campi">
+                          <select
+                            className="rt-tipo"
+                            value={riga.tipo}
+                            onChange={e => cambia(g, f, { tipo: e.target.value })}
+                            aria-label={`Cosa hai fatto — ${FAMIGLIE[f].label.toLowerCase()}`}>
+                            {FAMIGLIE[f].tipi.map(t => <option key={t} value={t}>{t}</option>)}
+                          </select>
+                          <select
+                            className="rt-durata"
+                            value={riga.durataMin}
+                            onChange={e => cambia(g, f, { durataMin: Number(e.target.value) })}
+                            aria-label={`Per quanto tempo — ${FAMIGLIE[f].label.toLowerCase()}`}>
+                            {FAMIGLIE[f].durate.map(d => <option key={d} value={d}>{fmtDurata(d)}</option>)}
+                          </select>
+                        </div>
+                      )
                     ) : (
                       <select
                         className="rt-motivo"

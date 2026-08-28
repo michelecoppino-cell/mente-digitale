@@ -270,24 +270,64 @@
   overflow: hidden;
 }
 
-/* Testata di un riquadro: l'etichetta e, a destra, la riga di servizio —
-   «restano 5 gg», «3 in corso · 8 in coda». È un dato, non un comando, e per
-   questo è spenta: dice quanto, non chiede niente. */
+/* Testata di un riquadro: l'etichetta con la sua matita, e sotto la riga di
+   servizio — «restano 5 gg», «3 in corso · 8 in coda». È un dato, non un
+   comando, e per questo è spenta: dice quanto, non chiede niente.
+   Stava a destra sulla stessa riga del titolo, ed è lì che andava a sbattere
+   contro la matita. Sotto è quello che è sempre stata: un sottotitolo. */
 .today-card-head {
   display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: var(--sp-3);
-}
-.today-card-head > .eyebrow { flex: 0 0 auto; }
-.today-card-meta {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
   min-width: 0;
+}
+.today-card-meta {
+  max-width: 100%;
   font-size: var(--fs-micro);
   color: var(--disabled);
-  text-align: right;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* La riga del titolo: l'etichetta e, attaccata, la porta del riquadro. */
+.today-card-titolo {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+.today-card-titolo > .eyebrow {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* La matita: la porta di un riquadro, al posto della riga ocra che stava in
+   fondo. Ocra come tutto quello che si tocca, e senza contorno — un contorno
+   ne farebbe un bottone accanto a un titolo, invece di un segno del titolo.
+   Il margine negativo tiene il bersaglio da dito (24px) senza far crescere la
+   riga: l'etichetta e la matita restano allineate come due parole. */
+.today-matita {
+  flex: 0 0 auto;
+  width: 24px;
+  height: 24px;
+  margin: -6px 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  background: none;
+  border: none;
+  border-radius: var(--r-sm);
+  color: var(--accent);
+  cursor: pointer;
+  transition: background var(--t);
+}
+@media (hover: hover) {
+  .today-matita:hover { background: var(--surface-2); }
 }
 
 .today-micro { font-size: var(--fs-micro); line-height: 1.5; color: var(--muted); }
@@ -301,24 +341,6 @@
   color: var(--disabled);
 }
 
-/* La porta in fondo a ogni riquadro. Bottone o link che sia, si legge uguale:
-   dalla scheda «Oggi» non si salva niente, si va da qualche parte. */
-.today-link-btn {
-  margin-top: auto;
-  align-self: flex-start;
-  padding: 0;
-  background: none;
-  border: none;
-  color: var(--accent);
-  font-family: var(--font-ui);
-  font-size: var(--fs-micro);
-  text-align: left;
-  text-decoration: none;
-  cursor: pointer;
-}
-@media (hover: hover) {
-  .today-link-btn:hover { text-decoration: underline; }
-}
 
 /* La barra di avanzamento: la stessa forma per gli obiettivi, per le letture
    e per i cento desideri. Tre pixel, non sei: è un margine di una riga di
@@ -439,11 +461,26 @@
   color: var(--text);
 }
 
-/* Gruppo e posizione — il contesto del desiderio del giorno, senza mostrare
-   tutti gli altri. */
-.today-compass-count { font-size: var(--fs-micro); line-height: 1.5; color: var(--muted); }
-
-.today-compass-barra { display: flex; flex-direction: column; gap: var(--sp-2); }
+/* Il contesto del desiderio del giorno: il gruppo a sinistra, quanti ne sono
+   scritti a destra. Ai due capi della riga perché sono due dati diversi — uno
+   dice di cosa parla questo desiderio, l'altro a che punto è l'elenco — e in
+   fila separati da un punto si leggevano come una frase sola. */
+.today-compass-count {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  font-size: var(--fs-micro);
+  line-height: 1.5;
+  color: var(--muted);
+}
+.today-compass-count > span:first-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.today-compass-num { flex: 0 0 auto; font-variant-numeric: tabular-nums; }
 
 /* Le tre porte in fila e non in colonna: erano tre righe di testo — «I cento
    desideri →», «La Bussola →», «La Visione →» — cioè tre righe di altezza
@@ -454,7 +491,8 @@
 .today-compass-links {
   display: flex;
   align-items: center;
-  gap: var(--sp-2);
+  justify-content: center;
+  gap: var(--sp-3);
   margin-top: auto;
   padding-top: var(--sp-2);
 }
@@ -474,6 +512,16 @@
 }
 @media (hover: hover) {
   .today-compass-links button:hover { border-color: var(--accent-line); background: var(--surface-2); }
+}
+
+/* «100»: un numero al posto di un simbolo. Sta nello stesso quadrato degli
+   altri due e nella stessa tinta, così i tre bottoni restano tre bottoni e
+   non due icone più una scritta. */
+.today-cento {
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: .02em;
+  font-variant-numeric: tabular-nums;
 }
 
 /* Cerchietto con le iniziali: il segno delle ricorrenze dentro l'agenda. */
@@ -621,22 +669,15 @@
 
 .today-pin-error { font-size: var(--fs-micro); color: var(--danger); }
 
-/* Finanze: il patrimonio in evidenza, tre cifre di contorno. Le stesse del
-   «Riepilogo (oggi)» della scheda Saldo, con gli stessi colori. */
-.today-fin-forte { display: flex; flex-direction: column; gap: var(--sp-1); }
-.today-fin-grande {
-  font-size: 20px;
-  font-weight: 500;
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-
+/* Finanze: quattro righe uguali — etichetta a sinistra, cifra a destra. Le
+   stesse del «Riepilogo (oggi)» della scheda Saldo, con gli stessi colori.
+   Il patrimonio stava sopra in corpo 20: ma il corpo grande dice «guarda
+   questa e non le altre», e le altre tre sono quelle che la spiegano. Gli
+   resta il verde, che basta a farlo trovare. */
 .today-fin-righe {
   display: flex;
   flex-direction: column;
   gap: var(--sp-2);
-  padding-top: var(--sp-3);
-  border-top: 1px solid var(--line);
 }
 
 .today-fin-riga {
@@ -657,21 +698,68 @@
    Non più un invito e basta: una voce vera, scelta con la data come il
    desiderio del giorno. È il motivo per cui è finito dietro il PIN. */
 
-.today-diary-prompt { font-family: var(--font-title); font-size: var(--fs-row); color: var(--text-3); }
-
 .today-diary-week { display: flex; gap: var(--sp-2); }
 .today-diary-tacca { flex: 1; height: 6px; border-radius: 2px; background: var(--line); }
 .today-diary-tacca.pieno { background: var(--accent); }
 
+/* La voce è un bottone: nel riquadro ci stanno centodieci lettere, e una sera
+   raccontata si taglia sempre a metà. Un bottone e non un link ocra in fondo
+   al riquadro — quello che si apre è la stessa cosa che si sta leggendo, e il
+   bersaglio giusto è quella, non una riga a due centimetri di distanza. */
 .today-diary-voce {
   display: flex;
   flex-direction: column;
   gap: var(--sp-1);
-  padding-top: var(--sp-3);
+  width: 100%;
+  padding: var(--sp-3) 0 0;
+  background: none;
+  border: none;
   border-top: 1px solid var(--line);
+  font-family: var(--font-ui);
+  text-align: left;
+  cursor: pointer;
 }
-.today-diary-quando { font-size: var(--fs-micro); color: var(--disabled); }
+.today-diary-quando {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  font-size: var(--fs-micro);
+  color: var(--disabled);
+}
 .today-diary-testo { font-size: var(--fs-micro); line-height: 1.6; color: var(--text-3); }
+
+/* Le due frecce che dicono «si apre»: spente finché non ci si passa sopra,
+   perché la riga da leggere è il testo, non il comando. */
+.today-diary-espandi { flex: 0 0 auto; display: flex; color: var(--disabled); transition: color var(--t); }
+@media (hover: hover) {
+  .today-diary-voce:hover .today-diary-espandi { color: var(--accent); }
+  .today-diary-voce:hover .today-diary-testo { color: var(--text-2); }
+}
+
+/* La voce intera, sopra la scheda. L'involucro è quello dei moduli di «Oggi»
+   (.mq-sheet); qui dentro c'è solo il testo, che si legge come si legge una
+   pagina — in colonna stretta e con i capoversi separati. */
+.today-voce-sheet { max-width: 560px; }
+.today-voce-testo {
+  max-height: 60vh;
+  overflow-y: auto;
+  padding-right: var(--sp-2);
+  font-size: var(--fs-card);
+  line-height: 1.7;
+  color: var(--text-2);
+}
+.today-voce-testo p + p { margin-top: var(--sp-4); }
+
+/* «Apri il Diario» è un link nella forma del bottone di conferma: l'altezza e
+   il contorno glieli dà .mq-salva, che è nata per un <button> — il centraggio
+   del testo dentro quell'altezza va detto qui. */
+.today-voce-sheet .mq-salva {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+}
 
 /* ── Schermi stretti ──────────────────────────────────────────────────────
    Sotto i 1200px la metà destra smette di stare in due colonne: la colonna

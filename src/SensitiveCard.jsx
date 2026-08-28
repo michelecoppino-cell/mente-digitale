@@ -19,6 +19,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { sblocca, verificaPin } from './finanze/sblocco';
 import { nascondi, useRiservatiVisibili } from './riservati';
+import { Matita } from './Matita';
 
 /** Il lucchetto del velo. */
 function LockIcon() {
@@ -46,10 +47,14 @@ function HideIcon() {
  * @param {Object} props
  * @param {string} props.eyebrow                    l'etichetta, sempre in chiaro
  * @param {string} props.nota                       cosa c'è sotto il velo
+ * @param {{onClick?: () => void, to?: string, title: string}} [props.azione]
+ *   la matita accanto al titolo — la porta del riquadro. Compare solo a
+ *   riquadro scoperto: sotto il velo non c'è niente da andare a modificare, e
+ *   una porta aperta accanto a un velo è un velo che non copre.
  * @param {string} [props.className]
  * @param {import('react').ReactNode} props.children contenuto riservato
  */
-export default function SensitiveCard({ eyebrow, nota, className = '', children }) {
+export default function SensitiveCard({ eyebrow, nota, azione, className = '', children }) {
   const visibile = useRiservatiVisibili();
   const [chiedePin, setChiedePin] = useState(false);
 
@@ -57,7 +62,10 @@ export default function SensitiveCard({ eyebrow, nota, className = '', children 
     return (
       <section className={`today-card${className ? ` ${className}` : ''}`}>
         <div className="today-riservato-head">
-          <span className="eyebrow">{eyebrow}</span>
+          <div className="today-card-titolo">
+            <span className="eyebrow">{eyebrow}</span>
+            {azione && <Matita {...azione} />}
+          </div>
           {/* Nasconde tutti i riquadri riservati e richiude la sezione Finanze
               insieme: nascondi() tocca lo stato condiviso, non questo
               componente. Un bottone per riquadro che ne coprisse uno solo
