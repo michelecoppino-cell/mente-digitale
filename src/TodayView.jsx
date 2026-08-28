@@ -16,8 +16,8 @@
 // alle 15:30, e tenerli in due riquadri voleva dire ricomporre a mente la
 // giornata leggendo due colonne. Sotto, «In arrivo»: i giorni che vengono.
 // A destra la **vita**: gli obiettivi del mese, il movimento, quello che c'è
-// da leggere e vedere; e in una colonna sua, più stretta, i tre riquadri
-// riservati.
+// da leggere e vedere; e in una colonna sua, della stessa larghezza, i tre
+// riquadri riservati.
 //
 // La metà sinistra sta in una schermata sola e non allunga la pagina: se
 // l'elenco non ci sta, scorre dentro il suo riquadro. Una scheda che si apre
@@ -34,7 +34,9 @@
 // ── I riquadri riservati ───────────────────────────────────────────────────
 // Bussola, Finanze e Diario. Sono i tre riquadri che non si vogliono lasciare
 // leggere alle spalle di chi lavora, e stanno in una colonna sola: un velo per
-// colonna invece di tre veli sparsi in mezzo alle cose pubbliche. Partono
+// colonna invece di tre veli sparsi in mezzo alle cose pubbliche. Larga come
+// quella accanto e non più stretta: sono i tre riquadri con dentro le cifre e
+// le frasi intere, e in 280px andavano a capo tutti. Partono
 // visibili e si coprono con un tocco — il verso del gesto, e il perché, stanno
 // in riservati.js.
 //
@@ -749,28 +751,62 @@ function CodaCard({ voci, onApri }) {
   );
 }
 
-// La Bussola e la Visione stanno su OneDrive e cambiano una volta ogni tanto:
-// una volta lette restano qui per tutta la sessione, così passare da Oggi a
-// un'altra vista e tornare non rifà due chiamate.
-/** @type {{bussola: any, visione: any}|null} */
+// La Bussola sta su OneDrive e cambia una volta ogni tanto: una volta letta
+// resta qui per tutta la sessione, così passare da Oggi a un'altra vista e
+// tornare non rifà la chiamata.
+//
+// Si legge un documento solo, e non più anche la Visione: da quando il
+// riquadro non ne mostra l'assaggio, quella lettura era mezza schermata di
+// testo scaricata per non mostrarla a nessuno. La porta della Visione resta —
+// apre il documento intero, che è il posto in cui si legge davvero.
+/** @type {{bussola: any}|null} */
 let identityMemo = null;
 
-/** @returns {{docs: {bussola: any, visione: any}|null}} */
+/** @returns {{docs: {bussola: any}|null}} */
 function useIdentityDocs() {
   const [docs, setDocs] = useState(identityMemo);
   useEffect(() => {
     if (identityMemo) return;
     let cancelled = false;
-    Promise.all([
-      loadIdentityDoc('bussola').catch(() => null),
-      loadIdentityDoc('visione').catch(() => null),
-    ]).then(([bussola, visione]) => {
-      identityMemo = { bussola, visione };
-      if (!cancelled) setDocs(identityMemo);
-    });
+    loadIdentityDoc('bussola')
+      .catch(() => null)
+      .then(bussola => {
+        identityMemo = { bussola };
+        if (!cancelled) setDocs(identityMemo);
+      });
     return () => { cancelled = true; };
   }, []);
   return { docs };
+}
+
+/** Bussola: la rosa dei venti — la porta del documento che dà il nome al riquadro. */
+function CompassIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="8.5" />
+      <path d="M15.2 8.8l-1.9 4.5-4.5 1.9 1.9-4.5z" />
+    </svg>
+  );
+}
+
+/** Visione: un occhio — quello che si vede da qui a dieci anni. */
+function VisionIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M2.5 12S6 6.2 12 6.2 21.5 12 21.5 12 18 17.8 12 17.8 2.5 12 2.5 12z" />
+      <circle cx="12" cy="12" r="2.6" />
+    </svg>
+  );
+}
+
+/** I cento desideri: un elenco puntato — cento righe, una sotto l'altra. */
+function ListIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M9 7h11M9 12h11M9 17h11" />
+      <path d="M4.6 7h.01M4.6 12h.01M4.6 17h.01" />
+    </svg>
+  );
 }
 
 /**
@@ -784,28 +820,27 @@ function useIdentityDocs() {
  * etichetta per la stessa cosa.
  *
  * Fusi, l'ordine dice quello che conta: il desiderio di oggi in alto, perché è
- * la riga che si guarda tutti i giorni; l'assaggio di Visione sotto; e in
- * fondo le tre porte, per quando si vuole leggere il documento intero.
+ * la riga che si guarda tutti i giorni; e in fondo le tre porte, per quando si
+ * vuole leggere un documento intero.
  *
  * Ne compare un desiderio solo. Quaranta righe in colonna sono un elenco da
  * scorrere; una riga sola è una cosa a cui pensare.
+ *
+ * L'assaggio di Visione — le prime 130 lettere del documento — non c'è più.
+ * Era sempre lo stesso incipit, tagliato a metà parola, e dopo una settimana
+ * non lo si leggeva più: tre righe di altezza spese per una frase imparata a
+ * memoria, in una colonna in cui il Diario finiva fuori schermo.
  * @param {{ docs: any, today: string, onOpenIdentity?: (which: 'bussola'|'visione'|'desideri') => void }} props
  */
 function BussolaCard({ docs, today, onOpenIdentity }) {
   const wishes = useMemo(() => parseWishes(wishSection(docs?.bussola)?.content || ''), [docs]);
   const wish = wishOfTheDay(wishes, today);
 
-  const visioneText = (docs?.visione?.sections || [])
-    .map((/** @type {any} */ s) => (s.content || '').trim())
-    .filter(Boolean)
-    .join(' ')
-    .slice(0, 130);
-
   return (
     <SensitiveCard
       className="today-bussola"
       eyebrow="Bussola"
-      nota="Il desiderio di oggi, la Visione e i cento desideri.">
+      nota="Il desiderio di oggi e le porte dei documenti.">
       {!docs && <p className="today-empty">…</p>}
       {docs && (
         wish
@@ -819,8 +854,7 @@ function BussolaCard({ docs, today, onOpenIdentity }) {
       )}
 
       {/* Quanto manca ai cento. La barra dice in un colpo d'occhio quello che
-          prima era una frase in fondo alla riga sopra — e in una colonna
-          stretta una frase in più è una riga in meno per la Visione. */}
+          prima era una frase in fondo alla riga sopra. */}
       {wishes.length > 0 && (
         <div className="today-compass-barra">
           <Barra quota={wishes.length / 100} colore="var(--accent-line)" />
@@ -828,12 +862,10 @@ function BussolaCard({ docs, today, onOpenIdentity }) {
         </div>
       )}
 
-      {visioneText && <p className="today-compass-vision">{visioneText}…</p>}
-
       <div className="today-compass-links">
-        <button type="button" onClick={() => onOpenIdentity?.('desideri')}>I cento desideri →</button>
-        <button type="button" onClick={() => onOpenIdentity?.('bussola')}>La Bussola →</button>
-        <button type="button" onClick={() => onOpenIdentity?.('visione')}>La Visione →</button>
+        <button type="button" onClick={() => onOpenIdentity?.('bussola')} title="La Bussola" aria-label="La Bussola"><CompassIcon /></button>
+        <button type="button" onClick={() => onOpenIdentity?.('visione')} title="La Visione" aria-label="La Visione"><VisionIcon /></button>
+        <button type="button" onClick={() => onOpenIdentity?.('desideri')} title="I cento desideri" aria-label="I cento desideri"><ListIcon /></button>
       </div>
     </SensitiveCard>
   );
@@ -940,6 +972,18 @@ function FinRiga({ etichetta, valore, colore }) {
  * di rileggersi cresce con la distanza, e una voce di due anni fa vale dieci
  * volte quella di martedì.
  *
+ * Se il mese scelto non ha niente da rileggere si passa al successivo, e si
+ * gira in tondo fino a farne il giro. È il motivo per cui il riquadro era
+ * tornato a dire «Ancora niente da rileggere» pur avendo un archivio pieno:
+ * un mese può esistere nell'indice ed essere vuoto — voci tutte nel cassetto,
+ * un mese aperto e mai scritto, una riga rimasta senza testo — e con un
+ * tentativo solo bastava che la data ne pescasse uno per mandare via la voce
+ * del giorno fino all'indomani.
+ *
+ * I mesi si leggono uno alla volta e ci si ferma al primo che dà una voce: il
+ * caso normale è che sia il primo, e leggerli tutti insieme vorrebbe dire
+ * scaricare dieci anni di diario per mostrarne tre righe.
+ *
  * Si carica **solo se il riquadro è scoperto**: è l'unico posto di «Oggi» in
  * cui il testo del diario esce da OneDrive, e come per Finanze non deve
  * uscirne affatto finché il riquadro è coperto.
@@ -948,32 +992,56 @@ function FinRiga({ etichetta, valore, colore }) {
  * @param {boolean} attivo     il riquadro è visibile
  */
 function useVoceDelGiorno(index, today, attivo) {
-  const mese = useMemo(() => {
-    const mesi = index?.months || [];
-    return mesi.length ? mesi[dailyIndex(today, mesi.length)] : null;
+  // I mesi in ordine di tentativo: si parte da quello che sceglie la data —
+  // così due giorni diversi danno due mesi diversi — e si prosegue in tondo.
+  const mesi = useMemo(() => {
+    const tutti = index?.months || [];
+    if (!tutti.length) return [];
+    const primo = dailyIndex(today, tutti.length);
+    return tutti.map((/** @type {any} */ _, /** @type {number} */ i) => tutti[(primo + i) % tutti.length]);
   }, [index, today]);
-
-  const [caricato, setCaricato] = useState(/** @type {{mese: string, voci: any[]}|null} */ (null));
-
-  useEffect(() => {
-    if (!attivo || !mese) return;
-    let annullato = false;
-    loadDiaryMonth(mese)
-      .then(voci => { if (!annullato) setCaricato({ mese, voci: voci || [] }); })
-      .catch(e => {
-        console.error('voce del giorno', e);
-        if (!annullato) setCaricato({ mese, voci: [] });
-      });
-    return () => { annullato = true; };
-  }, [mese, attivo]);
 
   // `undefined` = sto ancora leggendo, `null` = non c'è niente da rileggere.
   // Due stati e non uno perché «carico…» e «non hai ancora scritto niente»
   // sono due cose diverse da dire, e la seconda è quella che invita a
   // scrivere.
-  if (!mese) return null;
-  if (!caricato || caricato.mese !== mese) return undefined;
-  return entryOfTheDay(caricato.voci, today);
+  // Il risultato porta con sé la chiave della ricerca che l'ha prodotto: se il
+  // giorno cambia a mezzanotte, o l'indice arriva dopo, la voce vecchia non
+  // vale più — e dirlo con un confronto durante il render costa meno di un
+  // setState in cima all'effetto, che sarebbe un render buttato via a ogni
+  // giro.
+  const chiave = mesi.length ? `${today}|${mesi[0]}|${mesi.length}` : '';
+  const [trovato, setTrovato] = useState(/** @type {{chiave: string, voce: any}|null} */ (null));
+
+  useEffect(() => {
+    if (!attivo || !chiave) return;
+    let annullato = false;
+    (async () => {
+      for (const mese of mesi) {
+        /** @type {any} */
+        let voce = null;
+        try {
+          voce = entryOfTheDay(await loadDiaryMonth(mese) || [], today);
+        } catch (e) {
+          console.error('voce del giorno', e);
+        }
+        if (annullato) return;
+        if (voce) { setTrovato({ chiave, voce }); return; }
+      }
+      setTrovato({ chiave, voce: null });
+    })();
+    return () => { annullato = true; };
+    // `mesi` è ricalcolato dagli stessi ingressi di `chiave`.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chiave, today, attivo]);
+
+  // Indice non ancora arrivato: si sta leggendo, non è vuoto. Prima qui si
+  // rispondeva `null`, e il riquadro dichiarava l'archivio vuoto per la
+  // frazione di secondo prima che l'indice atterrasse.
+  if (!index) return undefined;
+  if (!mesi.length) return null;
+  if (trovato?.chiave !== chiave) return undefined;
+  return trovato.voce;
 }
 
 /**
