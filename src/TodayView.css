@@ -7,12 +7,15 @@
  * un telefono in verticale «una schermata sola» vorrebbe dire sei riquadri
  * alti due centimetri.
  *
- * La griglia esterna è 1.12fr / 1fr; la metà destra si divide a sua volta in
- * 1.5fr / 1fr, e la colonna più stretta è quella dei tre riquadri col PIN.
- * I numeri non sono tondi apposta: la colonna operativa ha righe lunghe
- * (titoli di attività, nomi di calendario) e ha bisogno di un filo più di
- * spazio; la colonna riservata ha cifre e barre, e sotto i 280px le cifre
- * cominciano ad andare a capo. */
+ * La griglia esterna è 1fr / 1.3fr, e la metà destra si divide in due colonne
+ * uguali: le tre colonne che ne escono sono la giornata operativa (la più
+ * larga delle tre, ma di poco) e due colonne di riquadri della stessa misura.
+ * Erano 1.12fr / 1fr e 1.5fr / 1fr, e la colonna riservata finiva sotto i
+ * 300px: Bussola, Finanze e Diario hanno cifre, barre e frasi intere, e in una
+ * colonna così stretta andavano a capo dappertutto. Lo spazio glielo dà la
+ * colonna operativa, che di righe lunghe ne ha (titoli di attività, nomi di
+ * calendario) ma le tronca con i puntini, e una riga troncata costa meno di
+ * una cifra spezzata in due. */
 
 .today {
   flex: 1;
@@ -73,7 +76,7 @@
   flex: 1;
   min-height: 0;
   display: grid;
-  grid-template-columns: 1.12fr 1fr;
+  grid-template-columns: 1fr 1.3fr;
   gap: var(--sp-7);
   align-items: stretch;
 }
@@ -83,7 +86,7 @@
 /* La metà destra: la vita, e accanto i riquadri col PIN. */
 .today-vita {
   display: grid;
-  grid-template-columns: 1.5fr 1fr;
+  grid-template-columns: 1fr 1fr;
   gap: var(--sp-5);
   min-width: 0;
 }
@@ -127,10 +130,15 @@
   padding-right: var(--sp-2);
 }
 
-/* Le due sezioni si dividono l'altezza: l'agenda di oggi ne prende il doppio
-   di «In arrivo», che è una lista di controllo, non una giornata. */
-.today-oggi { flex: 2 1 0; }
-.today-arrivo { flex: 1 1 0; }
+/* Le due sezioni prendono l'altezza che serve al loro contenuto, non una
+   quota fissa della colonna. Dividendo l'altezza in due terzi e un terzo, una
+   giornata con un evento solo lasciava mezza colonna nera e spingeva «In
+   arrivo» in fondo allo schermo: uno spazio vuoto che non diceva niente e
+   allontanava l'unica altra cosa da leggere.
+   `0 1 auto`: non crescono oltre il contenuto, ma si stringono quando le due
+   insieme non ci stanno — e quello che avanza scorre dentro .today-lista. */
+.today-oggi { flex: 0 1 auto; }
+.today-arrivo { flex: 0 1 auto; }
 
 /* Quello che è già passato non sparisce — un pomeriggio si guarda anche per
    ricordarsi cosa c'è stato la mattina — ma si spegne, così l'occhio cade su
@@ -437,29 +445,35 @@
 
 .today-compass-barra { display: flex; flex-direction: column; gap: var(--sp-2); }
 
-/* Le tre porte in colonna e non in fila: la colonna riservata è larga meno di
-   300px, e in fila andavano a capo storte. */
-.today-compass-links { display: flex; flex-direction: column; gap: var(--sp-2); }
+/* Le tre porte in fila e non in colonna: erano tre righe di testo — «I cento
+   desideri →», «La Bussola →», «La Visione →» — cioè tre righe di altezza
+   spese per dire tre volte «vai a leggere». Adesso sono tre simboli su una
+   riga sola, con il nome nel titolo e in aria-label: le due righe risparmiate
+   vanno al Diario, che sotto stava fuori dallo schermo.
+   In fila ci stanno da quando la colonna è larga come quella accanto. */
+.today-compass-links {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin-top: auto;
+  padding-top: var(--sp-2);
+}
 .today-compass-links button {
+  flex: 0 0 auto;
+  width: 30px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   background: none;
-  border: none;
-  padding: 0;
-  text-align: left;
-  font-family: var(--font-ui);
-  font-size: var(--fs-micro);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
   color: var(--accent);
   cursor: pointer;
+  transition: border-color var(--t), background var(--t);
 }
 @media (hover: hover) {
-  .today-compass-links button:hover { text-decoration: underline; }
-}
-
-.today-compass-vision {
-  padding-top: var(--sp-4);
-  border-top: 1px solid var(--line);
-  font-size: var(--fs-micro);
-  line-height: 1.6;
-  color: var(--muted);
+  .today-compass-links button:hover { border-color: var(--accent-line); background: var(--surface-2); }
 }
 
 /* Cerchietto con le iniziali: il segno delle ricorrenze dentro l'agenda. */
