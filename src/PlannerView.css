@@ -1990,6 +1990,32 @@ input[type="time"].planner-modal-select::-webkit-calendar-picker-indicator {
 }
 .planner-estimate-chip:disabled { opacity: 0.5; cursor: default; }
 
+/* L'ora esatta della sveglia, in fila con le pastiglie «fra 15 min»: le
+   pastiglie sono il gesto veloce, questo campo è quello che si usa quando
+   l'ora la si sa già. Stessa altezza e stesso bordo, così la riga resta una. */
+.planner-sveglia-input {
+  min-height: 32px;
+  padding: 0 var(--sp-3);
+  background: none;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  color: var(--accent);
+  font-family: var(--font-ui);
+  font-size: var(--fs-chip);
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  color-scheme: dark;   /* o l'orologino del browser esce bianco su bianco */
+}
+.planner-sveglia-input:disabled { opacity: 0.5; cursor: default; }
+.planner-sveglia-input:focus { outline: none; border-color: var(--accent-line); }
+
+.planner-sveglia-hint {
+  margin: var(--sp-2) 0 0;
+  font-size: var(--fs-micro);
+  color: var(--muted);
+  line-height: 1.45;
+}
+
 /* Chi si aspetta, sotto la pastiglia «In attesa»: il nome finisce nella prima
    riga delle note come «In attesa da: Nome», ma da qui non serve saperlo. */
 .planner-waiting {

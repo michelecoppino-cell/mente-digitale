@@ -143,6 +143,50 @@ export function taskEstimateMin(task) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Sveglia — marker [SVEGLIA:hh:mm] nelle note
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Un'ora del giorno, non una data: la sveglia serve a farsi richiamare oggi,
+// «alle 15:30 questa cosa», non a ricordarsi di una scadenza — per quella c'è
+// già il campo scadenza di To-Do. Sta nelle note come marker perché è lì che
+// vivono già la stima e l'attesa, e perché così arriva su To-Do e torna
+// indietro da sola: nessun file nostro da tenere in pari.
+const ALARM_MARKER_RE = /\[SVEGLIA:([01]\d|2[0-3]):([0-5]\d)\]/;
+
+/**
+ * L'ora della sveglia scritta nelle note, "HH:MM", o null se non ce n'è.
+ * @param {string|null|undefined} bodyContent
+ * @returns {string|null}
+ */
+export function parseAlarm(bodyContent) {
+  const m = (bodyContent || '').match(ALARM_MARKER_RE);
+  return m ? `${m[1]}:${m[2]}` : null;
+}
+
+/**
+ * Inserisce, sostituisce o (con `hhmm` nullo) toglie il marker, lasciando
+ * intatto il resto delle note.
+ * @param {string|null|undefined} bodyContent
+ * @param {string|null} hhmm  "HH:MM"
+ * @returns {string}
+ */
+export function withAlarm(bodyContent, hhmm) {
+  const rest = (bodyContent || '').replace(ALARM_MARKER_RE, '').replace(/^[ \t]+/, '').replace(/[ \t]+$/, '');
+  if (!hhmm) return rest;
+  const marker = `[SVEGLIA:${hhmm}]`;
+  return rest ? `${marker} ${rest}` : marker;
+}
+
+/**
+ * L'ora della sveglia di un task, letta dal suo body.
+ * @param {import('./types').TodoTask} task
+ * @returns {string|null}
+ */
+export function taskAlarm(task) {
+  return parseAlarm(task?.body?.content);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // In attesa di qualcuno
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -198,6 +242,7 @@ export function noteText(bodyContent) {
   return (bodyContent || '')
     .replace(LEGACY_EIS_MARKER_RE, '')
     .replace(MIN_MARKER_RE, '')
+    .replace(ALARM_MARKER_RE, '')
     .replace(WAITING_RE, '')
     .replace(/^[ \t\n]+/, '')
     .trimEnd();

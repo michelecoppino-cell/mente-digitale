@@ -1,0 +1,164 @@
+/* La sveglia. Qui la regola dell'accento — «una linea, un bordo, una velatura,
+   mai una campitura piena» — si rompe di proposito, ed è l'unico posto
+   dell'app in cui succede. Un avviso che rispetta il tono del resto è un
+   avviso che si confonde col resto: questa cosa deve interrompere. */
+
+.sveglia-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 900;   /* sopra tutto: modali, fogli, toast */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--sp-5);
+  background: rgba(10, 8, 4, .82);
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+  animation: sveglia-entra 180ms ease-out;
+}
+
+@keyframes sveglia-entra {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+.sveglia-panel {
+  width: min(520px, 100%);
+  max-height: 90dvh;
+  overflow-y: auto;
+  box-sizing: border-box;
+  padding: var(--sp-8) var(--sp-7) var(--sp-7);
+  background: var(--bg-rail);
+  border: 2px solid var(--accent);
+  border-radius: var(--r-xl);
+  text-align: center;
+  /* L'alone pulsa: da un'altra stanza, o con la coda dell'occhio, è il
+     movimento che si nota — non il testo. */
+  animation: sveglia-pulsa 1.4s ease-in-out infinite;
+}
+
+@keyframes sveglia-pulsa {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(212, 164, 74, .45), 0 24px 70px rgba(0, 0, 0, .7); }
+  50%      { box-shadow: 0 0 0 16px rgba(212, 164, 74, 0), 0 24px 70px rgba(0, 0, 0, .7); }
+}
+
+.sveglia-ring {
+  font-size: 42px;
+  line-height: 1;
+  animation: sveglia-scuote 1.1s ease-in-out infinite;
+  transform-origin: 50% 12%;
+}
+
+@keyframes sveglia-scuote {
+  0%, 60%, 100% { transform: rotate(0deg); }
+  10%, 30%, 50% { transform: rotate(-11deg); }
+  20%, 40%      { transform: rotate(11deg); }
+}
+
+/* Chi tiene le animazioni spente sul proprio sistema le tiene spente anche
+   qui: la sveglia resta comunque un pannello ocra sopra tutto lo schermo. */
+@media (prefers-reduced-motion: reduce) {
+  .sveglia-panel, .sveglia-ring { animation: none; }
+  .sveglia-panel { box-shadow: 0 0 0 6px rgba(212, 164, 74, .28), 0 24px 70px rgba(0, 0, 0, .7); }
+}
+
+.sveglia-now {
+  margin-top: var(--sp-4);
+  font-family: var(--font-title);
+  font-size: 46px;
+  line-height: 1;
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+}
+
+.sveglia-eyebrow {
+  margin: var(--sp-3) 0 var(--sp-6);
+  font-size: var(--fs-meta);
+  color: var(--text-3);
+  text-transform: uppercase;
+  letter-spacing: .08em;
+}
+
+.sveglia-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+
+.sveglia-item {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-4);
+  padding: var(--sp-4);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  text-align: left;
+}
+
+.sveglia-item-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.sveglia-item-title {
+  font-size: var(--fs-row);
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.sveglia-item-meta {
+  font-size: var(--fs-micro);
+  color: var(--muted);
+}
+
+.sveglia-item-actions {
+  flex: 0 0 auto;
+  display: flex;
+  gap: var(--sp-2);
+}
+
+.sveglia-btn {
+  min-height: var(--tap);
+  padding: 0 var(--sp-5);
+  background: none;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  color: var(--text-3);
+  font-family: var(--font-ui);
+  font-size: var(--fs-meta);
+  cursor: pointer;
+  transition: border-color var(--t), color var(--t), background var(--t);
+}
+@media (hover: hover) {
+  .sveglia-btn:hover { border-color: var(--accent-line); color: var(--text); }
+}
+
+.sveglia-btn.primary {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #14110d;
+  font-weight: 500;
+}
+@media (hover: hover) {
+  .sveglia-btn.primary:hover { filter: brightness(1.08); }
+}
+
+.sveglia-btn.wide {
+  width: 100%;
+  margin-top: var(--sp-4);
+}
+
+/* Da telefono le due azioni vanno sotto il titolo: affiancate, su 360px di
+   larghezza, lasciavano al titolo una colonna di quattro caratteri. */
+@media (max-width: 460px) {
+  .sveglia-item { flex-direction: column; align-items: stretch; }
+  .sveglia-item-actions { justify-content: flex-end; }
+  .sveglia-now { font-size: 38px; }
+}

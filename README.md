@@ -299,10 +299,40 @@ Allo stesso modo: il **contesto** (Lavoro / Personale / Famiglia) è in
 `categories`, la **sezione** è la lista To-Do stessa, le **sottoattività** sono
 i `checklistItems`, la **nota** è `body.content`.
 
-Due cose sole non hanno una casa nativa in To-Do. La **stima di durata** sta
-nelle note come marker `[MIN:45]`. La **persona che si aspetta**, quando un'attività
+Tre cose sole non hanno una casa nativa in To-Do. La **stima di durata** sta
+nelle note come marker `[MIN:45]`. La **sveglia** — vedi sotto — come
+`[SVEGLIA:15:30]`. La **persona che si aspetta**, quando un'attività
 è in attesa, sta nella prima riga delle note come `In attesa da: Nome` — scritta
 per esteso e non come codice, perché chi apre il task da To-Do legga una frase.
+
+### La sveglia di un'attività
+
+Sorella di «Quanto ci vuole», nel pannello di dettaglio: là si dice quanto una
+cosa dura, qui a che ora si vuole essere richiamati. Non è una scadenza — quella
+è un giorno, e To-Do ce l'ha già — ma un'ora del giorno: «alle 15:30 questa
+cosa». Le pastiglie dicono *fra quanto* (5, 15, 30 minuti, un'ora) perché è così
+che la si pensa; il campo accanto tiene l'ora esatta, che è quella che finisce
+scritta nelle note come `[SVEGLIA:hh:mm]` — e da lì si legge anche dall'app To-Do
+del telefono.
+
+Quando l'ora arriva, sul PC succedono tre cose insieme, perché la mente digitale
+quasi mai è la finestra davanti:
+
+- un **pannello a tutto schermo** che copre ogni vista, pulsa e non si chiude
+  con Esc o con un clic fuori — se il gesto per zittirla fosse lo stesso con cui
+  si scarta una finestra qualunque, la si zittirebbe senza averla letta;
+- una **notifica di sistema**, che arriva anche da dietro un'altra finestra. Il
+  permesso si chiede alla prima sveglia messa, non all'avvio dell'app;
+- un **suono** di tre rintocchi, sintetizzato al volo (nessun file da servire).
+
+Il controllo gira ogni venti secondi guardando che ore sono, e non con un timer
+piazzato sull'ora esatta: un `setTimeout` di due ore non sopravvive né allo
+standby del portatile né alla scheda messa a dormire dal browser. Una sveglia in
+ritardo di dieci minuti suona ancora; una in ritardo di due ore no — a quel punto
+non è più un avviso, è un rimprovero. Di aver già suonato ci si ricorda su
+`localStorage`, quindi per macchina: una suonata sul portatile non zittisce
+quella sul fisso. Vedi `sveglie.js` (la logica), `useSveglie.js` (il ciclo) e
+`SvegliaAlert.jsx` (il pannello).
 
 ### Quanto dev'essere grande una cosa
 

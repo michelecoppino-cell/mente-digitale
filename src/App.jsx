@@ -27,6 +27,8 @@ import { graphStatusFor, STATUS_LABELS } from './taskModel';
 import { pushUndo } from './undo';
 import { COLORS } from './config';
 import UndoToast from './UndoToast';
+import SvegliaAlert from './SvegliaAlert';
+import { useSveglie } from './useSveglie';
 import './App.css';
 
 const FinanzeSection = lazy(() => import('./finanze/FinanzeSection'));
@@ -719,6 +721,23 @@ export default function App() {
     return listsForSection(sectionName, todoLists, allSectionNames);
   }
 
+  // Le sveglie guardano lo stesso pool di attività di tutto il resto: l'ora
+  // sta nelle note del task (marker `[SVEGLIA:hh:mm]`), quindi non c'è niente
+  // da caricare a parte — chi ha il pool ha già le sveglie.
+  const sveglie = useSveglie(scheduledTasks);
+
+  // «Vai» sull'avviso: porta alla sezione dell'attività, che è il posto da cui
+  // la si fa. Se la sua lista non ha una sezione — l'Inbox, per dirne una —
+  // resta la vista Attività, dove comunque si trova.
+  function apriTaskDaSveglia(task) {
+    const sectionName = sectionNameForList(task?._listName, allSectionNames);
+    const sec = sectionName
+      ? Object.values(sectionsMap || {}).flat()
+          .find(x => (x.displayName || '').toLowerCase() === sectionName.toLowerCase())
+      : null;
+    navigate(sec ? `/sezioni/${sec.id}` : '/attivita');
+  }
+
   function handleSelectSection(section, nb, appKey = 'onenote') {
     if (!section) { setSelected(null); return; }
     const lists = findTodoLists(section.displayName);
@@ -1195,6 +1214,15 @@ export default function App() {
         onResetSectionColor={resetSectionColor}
       />
       <UndoToast />
+
+      {/* La sveglia sta qui, in fondo e fuori da ogni rotta: deve poter
+          coprire qualunque vista, compreso il Piano a schermo intero. */}
+      <SvegliaAlert
+        sveglie={sveglie.attive}
+        onChiudi={sveglie.chiudi}
+        onChiudiTutte={sveglie.chiudiTutte}
+        onApri={apriTaskDaSveglia}
+      />
     </>
   );
 }
