@@ -11,10 +11,19 @@
 // Nessuna lista è "di Oggi": tutto è una query sul giorno corrente.
 //
 // ── La forma della scheda ──────────────────────────────────────────────────
-// Due metà. A sinistra la **giornata operativa**: adesso, l'agenda, le azioni
-// programmate — le cose che hanno un'ora. A destra la **vita**: gli obiettivi
-// del mese, il movimento, quello che c'è da leggere e vedere; e in una colonna
-// sua, più stretta, i tre riquadri che stanno dietro il PIN.
+// Due metà. A sinistra la **giornata operativa**: quello che ha un'ora, in un
+// elenco solo — un appuntamento e un'azione programmata sono la stessa cosa
+// alle 15:30, e tenerli in due riquadri voleva dire ricomporre a mente la
+// giornata leggendo due colonne. Sotto, «In arrivo»: i giorni che vengono.
+// A destra la **vita**: gli obiettivi del mese, il movimento, quello che c'è
+// da leggere e vedere; e in una colonna sua, più stretta, i tre riquadri
+// riservati.
+//
+// La metà sinistra sta in una schermata sola e non allunga la pagina: se
+// l'elenco non ci sta, scorre dentro il suo riquadro. Una scheda che si apre
+// la mattina e resta aperta tutto il giorno deve avere sempre la stessa forma,
+// e una pagina che si allunga di mezzo schermo il martedì è una pagina in cui
+// ci si perde.
 //
 // Prima era una colonna sola di riquadri scollegati, e i giorni senza blocchi
 // programmati lasciavano mezza schermata vuota. La divisione non è estetica:
@@ -22,16 +31,21 @@
 // nell'arco del mese, e tenerle vicine ma separate è quello che permette alla
 // scheda di avere sempre la stessa forma anche quando l'agenda è vuota.
 //
-// ── Cosa sta dietro il PIN ─────────────────────────────────────────────────
-// Bussola, Finanze e Diario. Sono i tre riquadri che non si vogliono leggere
-// alle spalle di chi lavora, e da quando sono tre stanno in una colonna sola:
-// un velo per colonna invece di tre veli sparsi in mezzo alle cose pubbliche.
-// Il Diario ci è entrato quando ha smesso di essere un invito e ha cominciato
-// a mostrare una voce vera — vedi DiarioCard.
+// ── I riquadri riservati ───────────────────────────────────────────────────
+// Bussola, Finanze e Diario. Sono i tre riquadri che non si vogliono lasciare
+// leggere alle spalle di chi lavora, e stanno in una colonna sola: un velo per
+// colonna invece di tre veli sparsi in mezzo alle cose pubbliche. Partono
+// visibili e si coprono con un tocco — il verso del gesto, e il perché, stanno
+// in riservati.js.
+//
+// ── Il rituale del mattino ─────────────────────────────────────────────────
+// L'unico pannello che si apre da solo: la prima volta che si entra qui in una
+// giornata, chiede se movimento, meditazione e yoga sono stati fatti. Il perché
+// del momento e delle caselle già despuntate sta in rituale.js.
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import {
-  loadCoda, loadDiaryIndex, loadDiaryMonth, loadIdentityDoc, loadObiettivi,
+  loadCoda, loadDiaryIndex, loadDiaryMonth, loadIdentityDoc, loadObiettivi, loadRituale,
 } from './api';
 import { parseWishes, wishSection, wishOfTheDay } from './wishes';
 import { entryOfTheDay, dailyIndex, excerpt, monthKey, shiftMonth } from './diary';
@@ -45,7 +59,9 @@ import MovimentoCard from './MovimentoCard';
 import { useRegistroMovimento } from './registroMovimento';
 import ObiettiviModal from './ObiettiviModal';
 import CodaModal from './CodaModal';
-import { useSbloccato } from './finanze/sblocco';
+import RitualeMattino from './RitualeMattino';
+import { useRiservatiVisibili } from './riservati';
+import { readPref, writePref } from './viewPrefs';
 import { caricaRiepilogoOggi } from './finanze/riepilogoOggi';
 import './TodayView.css';
 
@@ -60,13 +76,6 @@ function t2m(/** @type {string} */ t) {
   return h * 60 + (m || 0);
 }
 
-/** "1h40", "25 min" — quanto resta, detto come lo direbbe una persona. */
-function fmtLeft(/** @type {number} */ min) {
-  if (min < 60) return `${min} min`;
-  const h = Math.floor(min / 60), m = min % 60;
-  return m ? `${h}h${String(m).padStart(2, '0')}` : `${h}h`;
-}
-
 function fmtHours(/** @type {number} */ min) {
   const h = Math.floor(min / 60), m = min % 60;
   if (!h) return `${m}min`;
@@ -78,6 +87,13 @@ function evTime(/** @type {any} */ iso) {
   if (!iso) return '';
   const d = new Date(iso.endsWith('Z') ? iso : iso + 'Z');
   return d.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
+}
+
+/** I minuti da mezzanotte di un evento Graph; -1 se dura tutto il giorno. */
+function evMin(/** @type {any} */ iso) {
+  if (!iso) return -1;
+  const d = new Date(iso.endsWith('Z') ? iso : iso + 'Z');
+  return d.getHours() * 60 + d.getMinutes();
 }
 
 /** La data locale 'YYYY-MM-DD' di un evento Graph. */
@@ -217,6 +233,35 @@ function useDatoOneDrive(leggi, vuoto) {
   return { dato, aggiorna: useCallback((/** @type {T} */ d) => setDato(d), []) };
 }
 
+/** Il giorno in cui il rituale del mattino è già stato proposto. */
+const PREF_RITUALE = 'oggi.rituale.propostoIl.v1';
+
+/**
+ * Il rituale del mattino, letto una volta per sessione.
+ *
+ * Ha un hook suo e non usa useDatoOneDrive per un motivo che conta: qui `null`
+ * deve restare distinguibile da `{}`. Il pannello che si apre da solo decide
+ * quali giorni tappare guardando quello che manca nel documento, e aprirlo
+ * prima che il documento sia arrivato vorrebbe dire dichiarare scoperti dei
+ * giorni già compilati — e riscriverli come «non fatto».
+ */
+function useRituale() {
+  const [doc, setDoc] = useState(/** @type {Record<string, import('./types').RitualeGiorno>|null} */ (null));
+  useEffect(() => {
+    let annullato = false;
+    loadRituale()
+      .then(d => { if (!annullato) setDoc(d); })
+      .catch(e => {
+        console.error('rituale', e);
+        // Un errore di lettura non deve far scrivere: con un documento finto
+        // vuoto il pannello tapperebbe tre giorni che magari erano compilati.
+        if (!annullato) setDoc(null);
+      });
+    return () => { annullato = true; };
+  }, []);
+  return { doc, setDoc };
+}
+
 /**
  * @param {Object} props
  * @param {Record<string, import('./types').DayPlan>} props.plans
@@ -227,9 +272,8 @@ function useDatoOneDrive(leggi, vuoto) {
  * @param {(which: 'bussola'|'visione'|'desideri') => void} props.onOpenIdentity
  */
 export default function TodayView({ plans, tasks, todoLists, calendarEvents, onCompleteBlock, onOpenIdentity }) {
-  const navigate = useNavigate();
-  // Un tick al minuto: basta a far avanzare "restano 1h40" e a far passare la
-  // card da ADESSO a PROSSIMO senza ricaricare.
+  // Un tick al minuto: basta a far passare la giornata sotto le righe — quali
+  // sono già passate, e il cambio di data a mezzanotte — senza ricaricare.
   const [now, setNow] = useState(() => new Date());
   useEffect(() => {
     const id = setInterval(() => setNow(new Date()), 60_000);
@@ -249,8 +293,37 @@ export default function TodayView({ plans, tasks, todoLists, calendarEvents, onC
   const registro = useRegistroMovimento(today);
   const { dato: obiettiviDoc, aggiorna: aggiornaObiettivi } = useDatoOneDrive(loadObiettivi, /** @type {any} */ ({}));
   const { dato: coda, aggiorna: aggiornaCoda } = useDatoOneDrive(loadCoda, /** @type {import('./types').VoceCoda[]} */ ([]));
+  const { doc: rituale, setDoc: setRituale } = useRituale();
 
   const [modale, setModale] = useState(/** @type {'obiettivi'|'coda'|null} */ (null));
+
+  // Il rituale del mattino si apre da solo una volta per giornata. La
+  // condizione si calcola durante il render e non dentro un effetto: aprire un
+  // pannello non è sincronizzarsi con un sistema esterno, è una conseguenza di
+  // quello che si sa già — il giorno di oggi, il giorno dell'ultima proposta, e
+  // se i due file sono arrivati.
+  //
+  // Si aspettano davvero: aprirlo con il registro ancora in volo vorrebbe dire
+  // caselle despuntate su sessioni già registrate, cioè chiedere di rispondere
+  // a una domanda a cui si è già risposto.
+  const [propostoIl, setPropostoIl] = useState(() => readPref(PREF_RITUALE, null));
+  // `auto` distingue il pannello che si apre da solo la mattina da quello
+  // riaperto a mano: cambia la frase in cima, non il resto.
+  const [ritualeAMano, setRitualeAMano] = useState(false);
+
+  const ritualePronto = rituale !== null && registro.voci !== null;
+  const ritualeAperto = ritualeAMano
+    ? { auto: false }
+    : (ritualePronto && propostoIl !== today ? { auto: true } : null);
+
+  function chiudiRituale() {
+    // La giornata si segna alla chiusura e non all'apertura: chi ricarica la
+    // pagina prima di rispondere se lo ritrova davanti, che è il
+    // comportamento giusto per una domanda che va fatta una volta al giorno.
+    writePref(PREF_RITUALE, today);
+    setPropostoIl(today);
+    setRitualeAMano(false);
+  }
 
   const blocks = useMemo(
     () => [...(plans?.[today]?.blocks || [])].sort((a, b) => t2m(a.startTime) - t2m(b.startTime)),
@@ -258,14 +331,6 @@ export default function TodayView({ plans, tasks, todoLists, calendarEvents, onC
   );
 
   const taskById = useMemo(() => new Map((tasks || []).map(t => [t.id, t])), [tasks]);
-
-  const current = blocks.find(b => !b.completed && t2m(b.startTime) <= nowMin && nowMin < t2m(b.endTime));
-  const upcoming = blocks.find(b => !b.completed && t2m(b.startTime) > nowMin);
-  const focus = current || upcoming || null;
-  // Il blocco dopo quello in corso. Veniva già calcolato e poi buttato via
-  // ogni volta che c'era un `current`: sapere cosa viene dopo è metà del
-  // motivo per cui si guarda «Adesso» — l'altra metà è quanto manca.
-  const poi = current ? upcoming : null;
 
   // Quante cose aspettano di essere chiarite: è il numero che decide se vale
   // la pena passare dall'Inbox oggi. Sta in testata e non in un riquadro
@@ -275,14 +340,6 @@ export default function TodayView({ plans, tasks, todoLists, calendarEvents, onC
     if (!inbox) return 0;
     const scheduledIds = new Set(indexScheduled(plans).keys());
     return (tasks || []).filter(t => taskStatus(t, { scheduledIds, inboxListId: inbox }) === 'inbox').length;
-  }, [tasks, todoLists, plans]);
-
-  // Le prossime azioni senza un blocco nel Piano: il serbatoio da cui si pesca
-  // quando la giornata si libera.
-  const nonProgrammate = useMemo(() => {
-    const inbox = inboxListId(todoLists || []);
-    const scheduledIds = new Set(indexScheduled(plans).keys());
-    return (tasks || []).filter(t => taskStatus(t, { scheduledIds, inboxListId: inbox }) === 'next').length;
   }, [tasks, todoLists, plans]);
 
   // Agenda e Ricorrenze erano due riquadri lontani fra loro, ma sono la stessa
@@ -307,6 +364,35 @@ export default function TodayView({ plans, tasks, todoLists, calendarEvents, onC
       aheadTotale: futuri.length,
     };
   }, [calendarEvents, today]);
+
+  // La giornata in un elenco solo. Un appuntamento delle 15:30 e un'azione
+  // programmata alle 15:30 sono la stessa cosa per chi legge: due riquadri
+  // separati obbligavano a ricomporre la giornata a mente, alternando lo
+  // sguardo fra due colonne di orari. Gli eventi di tutto il giorno stanno in
+  // cima, che è dove stanno anche in un calendario.
+  const righeOggi = useMemo(() => {
+    /** @type {{chiave: string, min: number, evento: any, rec: boolean, blocco: any}[]} */
+    const righe = [
+      ...events.map(({ e, rec }) => ({
+        chiave: `ev-${e.id}`,
+        min: e.isAllDay ? -1 : evMin(e.start?.dateTime),
+        evento: e,
+        rec,
+        blocco: null,
+      })),
+      ...blocks.map(b => ({
+        chiave: `az-${b.id}`,
+        min: t2m(b.startTime),
+        evento: null,
+        rec: false,
+        blocco: b,
+      })),
+    ];
+    // A parità di ora l'appuntamento viene prima dell'azione: l'ora di un
+    // evento è un vincolo preso con qualcun altro, quella di un blocco è una
+    // decisione che si può ancora spostare.
+    return righe.sort((a, b) => a.min - b.min || ((a.blocco ? 1 : 0) - (b.blocco ? 1 : 0)));
+  }, [events, blocks]);
 
   const plannedMin = blocks.reduce((sum, b) => sum + Math.max(0, t2m(b.endTime) - t2m(b.startTime)), 0);
   const fatte = blocks.filter(b => b.completed).length;
@@ -345,76 +431,16 @@ export default function TodayView({ plans, tasks, todoLists, calendarEvents, onC
               {daChiarire} {daChiarire === 1 ? 'cosa da chiarire' : 'cose da chiarire'}
             </Link>
           )}
-          <Link className="today-plan-link" to="/piano">Apri il Piano →</Link>
         </div>
       </header>
 
       <div className="today-grid">
         {/* ── Metà operativa: le cose che hanno un'ora ────────────────────── */}
         <div className="today-col">
-          {/* ── Adesso ─────────────────────────────────────────────────── */}
-          {focus ? (
-            <section className="today-now">
-              <span className="eyebrow eyebrow-accent">
-                {current ? `Adesso · ${now.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })}` : 'Prossimo'}
-              </span>
-              <h2 className="today-now-title">{focus.taskTitle}</h2>
-              <p className="today-now-meta">
-                {[
-                  `${focus.startTime}–${focus.endTime}`,
-                  focus.listName,
-                  current
-                    ? `restano ${fmtLeft(t2m(focus.endTime) - nowMin)}`
-                    : `fra ${fmtLeft(t2m(focus.startTime) - nowMin)}`,
-                ].filter(Boolean).join(' · ')}
-              </p>
-              <div className="today-now-actions">
-                <button className="today-btn accent" onClick={() => onCompleteBlock(focus)}>Completa</button>
-                <button className="today-btn" onClick={() => navigate('/piano')}>Sposta</button>
-              </div>
-              {poi && (
-                <p className="today-now-poi">Poi alle {poi.startTime} · {poi.taskTitle}</p>
-              )}
-            </section>
-          ) : (
-            <section className="today-now empty">
-              <span className="eyebrow">Adesso</span>
-              <p className="today-empty">
-                Niente in programma per il resto della giornata.{' '}
-                <Link to="/piano">Programma qualcosa</Link>
-              </p>
-            </section>
-          )}
-
-          {/* ── Agenda ─────────────────────────────────────────────────── */}
-          <section className="today-block">
-            <span className="eyebrow">Agenda</span>
-            {events.length === 0 && <p className="today-empty">Nessun appuntamento oggi</p>}
-            {events.map(({ e, rec }) => (
-              <EventRow key={`${e.id}-${today}`} event={e} recurrence={rec} />
-            ))}
-
-            {ahead.length > 0 && (
-              <>
-                <span className="today-ahead-sep">In arrivo</span>
-                {ahead.map(({ e, date, rec }) => (
-                  <EventRow key={`${e.id}-${date}`} event={e} recurrence={rec} day={fmtDayLabel(date)} soon={daysBetween(today, date) <= 1} />
-                ))}
-                {/* Quello che non ci sta non sparisce: diventa un numero. Un
-                    riquadro che tronca in silenzio insegna a non fidarsi. */}
-                {aheadTotale > ahead.length && (
-                  <Link className="today-piu" to="/piano">
-                    Altri {aheadTotale - ahead.length} entro trenta giorni →
-                  </Link>
-                )}
-              </>
-            )}
-          </section>
-
-          {/* ── Azioni di oggi ─────────────────────────────────────────── */}
-          <section className="today-block">
+          {/* ── Oggi: agenda e azioni, in un elenco solo ────────────────── */}
+          <section className="today-block today-oggi">
             <div className="today-block-head">
-              <span className="eyebrow">Azioni di oggi</span>
+              <span className="eyebrow">Oggi · agenda e azioni</span>
               {blocks.length > 0 && (
                 <span className="today-block-conta">
                   {fatte} su {blocks.length} {fatte === 1 ? 'fatta' : 'fatte'}
@@ -422,43 +448,44 @@ export default function TodayView({ plans, tasks, todoLists, calendarEvents, onC
                 </span>
               )}
             </div>
-            {blocks.length === 0 && (
-              <p className="today-empty">
-                Nessuna azione programmata. <Link to="/attivita">Guarda le prossime azioni</Link>
-              </p>
-            )}
-            {blocks.map(b => {
-              const ctx = taskContext(taskById.get(b.taskId) || /** @type {any} */ ({}));
-              return (
-                <div className={`today-action${b.completed ? ' done' : ''}`} key={b.id}>
-                  <button
-                    className="today-check"
-                    onClick={() => !b.completed && onCompleteBlock(b)}
-                    disabled={b.completed}
-                    aria-label={b.completed ? 'Completata' : 'Segna come completata'}>
-                    {b.completed && (
-                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-                        <polyline points="4 12.5 9.5 18 20 6.5" />
-                      </svg>
-                    )}
-                  </button>
-                  <span className="today-action-title">{b.taskTitle}</span>
-                  {b.listName && (
-                    <span
-                      className="today-action-chip"
-                      style={/** @type {import('react').CSSProperties} */ ({ '--chip': contextColor(ctx) })}>
-                      {b.listName}
-                    </span>
-                  )}
-                  <span className="today-action-time">{b.startTime}</span>
-                </div>
-              );
-            })}
-            {nonProgrammate > 0 && (
-              <Link className="today-piu" to="/attivita">
-                {nonProgrammate} {nonProgrammate === 1 ? 'prossima azione non programmata' : 'prossime azioni non programmate'} →
-              </Link>
-            )}
+            <div className="today-lista">
+              {righeOggi.length === 0 && (
+                <p className="today-empty">Niente in agenda, e nessuna azione programmata.</p>
+              )}
+              {righeOggi.map(riga => (
+                riga.evento
+                  ? <EventRow key={riga.chiave} event={riga.evento} recurrence={riga.rec} passato={riga.min >= 0 && riga.min < nowMin} />
+                  : <AzioneRow
+                      key={riga.chiave}
+                      blocco={riga.blocco}
+                      task={taskById.get(riga.blocco.taskId)}
+                      passato={riga.min < nowMin}
+                      onCompleta={onCompleteBlock}
+                    />
+              ))}
+            </div>
+          </section>
+
+          {/* ── In arrivo ──────────────────────────────────────────────── */}
+          <section className="today-block today-arrivo">
+            <div className="today-block-head">
+              <span className="eyebrow">In arrivo</span>
+              {aheadTotale > ahead.length && (
+                <span className="today-block-conta">{aheadTotale} entro trenta giorni</span>
+              )}
+            </div>
+            <div className="today-lista">
+              {ahead.length === 0 && <p className="today-empty">Niente nei prossimi giorni.</p>}
+              {ahead.map(({ e, date, rec }) => (
+                <EventRow
+                  key={`${e.id}-${date}`}
+                  event={e}
+                  recurrence={rec}
+                  day={fmtDayLabel(date)}
+                  soon={daysBetween(today, date) <= 1}
+                />
+              ))}
+            </div>
           </section>
         </div>
 
@@ -472,7 +499,13 @@ export default function TodayView({ plans, tasks, todoLists, calendarEvents, onC
               onCambia={() => setModale('obiettivi')}
             />
 
-            <MovimentoCard today={today} calendarEvents={calendarEvents} registro={registro} />
+            <MovimentoCard
+              today={today}
+              calendarEvents={calendarEvents}
+              registro={registro}
+              rituale={rituale}
+              onApriRituale={() => setRitualeAMano(true)}
+            />
 
             <CodaCard voci={coda} onApri={() => setModale('coda')} />
           </div>
@@ -498,6 +531,24 @@ export default function TodayView({ plans, tasks, todoLists, calendarEvents, onC
       {modale === 'coda' && (
         <CodaModal onSalvato={aggiornaCoda} onChiudi={() => setModale(null)} />
       )}
+      {ritualeAperto && rituale !== null && (
+        <RitualeMattino
+          oggi={today}
+          doc={rituale}
+          voci={registro.voci || []}
+          auto={ritualeAperto.auto}
+          onSalvato={({ doc, creati, cancellati }) => {
+            setRituale(doc);
+            // Il registro si aggiorna in locale invece di rileggerlo: i file
+            // li abbiamo appena scritti noi, e una seconda richiesta a
+            // OneDrive per sapere quello che sappiamo già farebbe aspettare
+            // le barre della settimana a metà animazione.
+            const tolti = new Set(cancellati.map(v => v.id));
+            registro.setVoci(prev => [...(prev || []).filter(v => !tolti.has(v.id)), ...creati]);
+          }}
+          onChiudi={chiudiRituale}
+        />
+      )}
     </div>
   );
 }
@@ -512,15 +563,57 @@ export default function TodayView({ plans, tasks, todoLists, calendarEvents, onC
  * @param {boolean} props.recurrence
  * @param {string} [props.day]  etichetta del giorno, per le righe «in arrivo»
  * @param {boolean} [props.soon]
+ * @param {boolean} [props.passato]  già passato: nell'elenco di oggi si spegne
  */
-function EventRow({ event, recurrence, day, soon }) {
+function EventRow({ event, recurrence, day, soon, passato }) {
   const when = day || (event.isAllDay ? 'tutto il giorno' : evTime(event.start?.dateTime));
   return (
-    <div className={`today-event${recurrence ? ' recurrence' : ''}${day ? ' ahead' : ''}`}>
+    <div className={`today-event${recurrence ? ' recurrence' : ''}${day ? ' ahead' : ''}${passato ? ' passato' : ''}`}>
       <span className={`today-event-time${soon ? ' soon' : ''}`}>{when}</span>
       {recurrence && <span className="today-rec-badge">{initials(event.subject || '')}</span>}
       <span className="today-event-title">{event.subject || '(senza titolo)'}</span>
       <span className="today-event-cal">{event._calName}</span>
+    </div>
+  );
+}
+
+/**
+ * Una riga di azione programmata, nello stesso elenco degli appuntamenti.
+ *
+ * L'ora sta a sinistra come negli eventi, nella stessa colonna larga uguale:
+ * è quello che permette di leggere la giornata scorrendo una colonna sola,
+ * invece di cercare l'orario ora a destra ora a sinistra. Quello che distingue
+ * le due righe è la casella — un evento non si completa, un'azione sì.
+ * @param {Object} props
+ * @param {any} props.blocco
+ * @param {import('./types').TodoTask} [props.task]
+ * @param {boolean} [props.passato]
+ * @param {(block: any) => void} props.onCompleta
+ */
+function AzioneRow({ blocco, task, passato, onCompleta }) {
+  const ctx = taskContext(task || /** @type {any} */ ({}));
+  return (
+    <div className={`today-action${blocco.completed ? ' done' : ''}${passato && !blocco.completed ? ' passato' : ''}`}>
+      <span className="today-action-time">{blocco.startTime}</span>
+      <button
+        className="today-check"
+        onClick={() => !blocco.completed && onCompleta(blocco)}
+        disabled={blocco.completed}
+        aria-label={blocco.completed ? 'Completata' : 'Segna come completata'}>
+        {blocco.completed && (
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="4 12.5 9.5 18 20 6.5" />
+          </svg>
+        )}
+      </button>
+      <span className="today-action-title">{blocco.taskTitle}</span>
+      {blocco.listName && (
+        <span
+          className="today-action-chip"
+          style={/** @type {import('react').CSSProperties} */ ({ '--chip': contextColor(ctx) })}>
+          {blocco.listName}
+        </span>
+      )}
     </div>
   );
 }
@@ -774,7 +867,7 @@ function fmtDataDato(/** @type {string} */ iso) {
  * dalla stessa catena e caricate solo dopo lo sblocco.
  */
 function FinanzeCard() {
-  const sbloccato = useSbloccato();
+  const visibile = useRiservatiVisibili();
   // Un solo stato e non due (dato + «sto caricando»): il caricamento è
   // semplicemente «sbloccato ma esito ancora null», e tenerlo in un booleano
   // a parte vorrebbe dire accenderlo dentro l'effetto, cioè un render in più
@@ -783,7 +876,7 @@ function FinanzeCard() {
   const [esito, setEsito] = useState(/** @type {EsitoFinanze|null} */ (null));
 
   useEffect(() => {
-    if (!sbloccato) return;
+    if (!visibile) return;
     let annullato = false;
     caricaRiepilogoOggi()
       .then(r => { if (!annullato) setEsito(r ? { tipo: 'ok', riep: r } : { tipo: 'vuoto' }); })
@@ -792,7 +885,7 @@ function FinanzeCard() {
         if (!annullato) setEsito({ tipo: 'errore' });
       });
     return () => { annullato = true; };
-  }, [sbloccato]);
+  }, [visibile]);
 
   return (
     <SensitiveCard
@@ -847,12 +940,12 @@ function FinRiga({ etichetta, valore, colore }) {
  * di rileggersi cresce con la distanza, e una voce di due anni fa vale dieci
  * volte quella di martedì.
  *
- * Si carica **solo dopo il PIN**: è l'unico posto di «Oggi» in cui il testo del
- * diario esce da OneDrive, e come per Finanze non deve uscirne affatto finché
- * il riquadro è coperto.
+ * Si carica **solo se il riquadro è scoperto**: è l'unico posto di «Oggi» in
+ * cui il testo del diario esce da OneDrive, e come per Finanze non deve
+ * uscirne affatto finché il riquadro è coperto.
  * @param {any} index          l'indice dei mesi del diario
  * @param {string} today
- * @param {boolean} attivo     sbloccato
+ * @param {boolean} attivo     il riquadro è visibile
  */
 function useVoceDelGiorno(index, today, attivo) {
   const mese = useMemo(() => {
@@ -895,15 +988,16 @@ function useVoceDelGiorno(index, today, attivo) {
  * la stessa ragione — l'archivio del diario esiste per essere riletto, e un
  * archivio che si apre solo se lo si va a cercare non viene riletto mai.
  *
- * E per questo sta dietro il PIN insieme a Finanze e alla Bussola: nel momento
- * in cui il riquadro ha smesso di mostrare un invito e ha cominciato a mostrare
- * quello che si è scritto una sera, è diventato la cosa più privata della
- * schermata che sta aperta tutto il giorno sulla scrivania.
+ * E per questo sta fra i riquadri riservati insieme a Finanze e alla Bussola:
+ * nel momento in cui ha smesso di mostrare un invito e ha cominciato a
+ * mostrare quello che si è scritto una sera, è diventato la cosa più privata
+ * della schermata che sta aperta tutto il giorno sulla scrivania — quella da
+ * coprire con un tocco quando si alza lo sguardo e sta arrivando qualcuno.
  * @param {{ diario: {date: string[], index: any}|null, today: string }} props
  */
 function DiarioCard({ diario, today }) {
-  const sbloccato = useSbloccato();
-  const voce = useVoceDelGiorno(diario?.index, today, sbloccato);
+  const visibile = useRiservatiVisibili();
+  const voce = useVoceDelGiorno(diario?.index, today, visibile);
 
   const date = useMemo(() => diario?.date || [], [diario]);
   const streak = useMemo(() => (diario ? diaryStreak(date) : null), [diario, date]);

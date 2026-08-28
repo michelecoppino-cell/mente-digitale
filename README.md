@@ -15,14 +15,19 @@ Microsoft To-Do e al calendario Outlook, e un diario con supporto AI via copia-i
   vista giorno/settimana, eventi del calendario in sola lettura, sottostep ridimensionabili,
   piani salvati su OneDrive. Candidati task estratti da email ed email OneNote con euristiche
   locali (`src/dailyReview.js`), senza chiamate AI.
-- **Oggi** — la home, divisa in due metà. A sinistra la **giornata operativa**: cosa c'è adesso
-  (e cosa viene poi), l'agenda del calendario in sola lettura, le azioni programmate. A destra la
-  **vita**: gli obiettivi del mese, il movimento, quello che c'è da leggere e vedere; e in una
-  colonna sua i tre riquadri dietro il PIN — Bussola, Finanze e Diario. Non ha una lista propria:
-  è tutto una query sul giorno corrente.
+- **Oggi** — la home, divisa in due metà. A sinistra la **giornata operativa**: «Oggi · agenda e
+  azioni», cioè appuntamenti del calendario e azioni programmate in un elenco solo ordinato per
+  ora, e sotto «In arrivo» con i giorni che vengono. A destra la **vita**: gli obiettivi del mese,
+  il movimento, quello che c'è da leggere e vedere; e in una colonna sua i tre riquadri riservati
+  — Bussola, Finanze e Diario. Da desktop la scheda sta in una schermata sola: quello che non ci
+  sta scorre dentro il suo elenco, la pagina non si allunga. Non ha una lista propria: è tutto
+  una query sul giorno corrente.
 - **Obiettivi del mese** — da tre a sei righe con una barra ciascuna, liberi e diversi ogni mese.
   Quello che l'app già conta (sessioni di movimento, giorni di diario, pagine di un libro) non si
-  scrive a mano: l'obiettivo dichiara una `fonte` e il numero si deriva. Su OneDrive in
+  scrive a mano: l'obiettivo dichiara una `fonte` e il numero si deriva. Le frecce in testata al
+  modulo spostano il mese: fino a un anno avanti, per scrivere un obiettivo quando ci si pensa
+  invece di aspettare il primo del mese, e fino a sei mesi indietro per correggere un numero
+  contato a mano. In «Oggi» compaiono sempre e solo quelli del mese corrente. Su OneDrive in
   `mente-digitale-obiettivi.json`, raccolti per mese.
 - **Da leggere e vedere** — libri, serie, film, corsi, articoli e PDF in un elenco solo, diviso
   fra «in corso» e «in coda». Un indirizzo incollato diventa una riga da sé: dominio come fonte,
@@ -31,6 +36,14 @@ Microsoft To-Do e al calendario Outlook, e un diario con supporto AI via copia-i
   per famiglia, e il confronto fra le sessioni programmate in un calendario dedicato e quelle
   davvero registrate. Il registro sta su OneDrive (`mente-digitale-movimento-YYYY-MM.json`), il
   calendario si legge soltanto.
+- **Rituale del mattino** — l'unico pannello che si apre da solo: la prima volta che si entra in
+  «Oggi» in una giornata chiede se movimento, meditazione e yoga sono stati fatti. Le tre caselle
+  nascono despuntate con la motivazione già scelta («non sono riuscito», o «sono andato a dormire
+  troppo tardi», «lavorato», «Claude»): confermare un no costa un tocco, e un no motivato è un
+  dato, non un silenzio. Spuntare una casella scrive una sessione vera nel registro del Movimento.
+  Si corregge in qualunque momento della giornata dalla riga «Il mattino» nel riquadro Movimento,
+  e i giorni in cui l'app non è stata aperta (fino a tre indietro) vengono compilati come «non
+  fatto» — dichiarandolo in cima al pannello. Su OneDrive in `mente-digitale-rituale.json`.
 - **Sezioni** — la plancia operativa di una sezione PARA in cinque colonne: pagine OneNote,
   percorsi (cartelle, dischi di rete e link come pastiglie: le categorie OneDrive e Web aprono
   il collegamento, tutte le altre copiano il percorso), attività della sezione — che si
@@ -143,7 +156,7 @@ Sei destinazioni, ognuna con un indirizzo proprio. Il menù è il rail a sinistr
 
 | Rotta | Vista |
 |---|---|
-| `#/oggi` | Home di sola lettura: adesso, agenda, azioni di oggi, obiettivi, movimento, coda, riservati |
+| `#/oggi` | Home: agenda e azioni di oggi in un elenco, in arrivo, obiettivi, movimento, coda, riservati |
 | `#/piano` | Il Piano: serbatoio, giornata a blocchi, capacità della giornata, pannello di dettaglio |
 | `#/attivita` | Le cinque colonne del flusso, con la lente Scadenza (`?vista=`, `?ctx=`) |
 | `#/sezioni/:id` | Plancia della sezione: OneNote, percorsi, attività, dettaglio, oggi |
@@ -157,13 +170,19 @@ il client, e le due pagine-scorciatoia (`/gtd.html`, `/diario.html`) restano
 file veri.
 
 **Bussola**, **Finanze** e **Diario**, in Oggi, sono i tre riquadri *riservati*:
-stanno in una colonna sola, partono oscurati e si aprono col PIN di Finanze — lo
-stesso codice, la stessa scadenza a trenta minuti, la stessa scheda del browser,
-quindi aprirne uno apre anche gli altri e la sezione. Un occhio sbarrato in testa
-al riquadro richiude tutto subito, senza aspettare la scadenza. Tutto il resto —
-agenda, azioni, obiettivi, movimento, coda di letture — resta in chiaro, perché
-non c'è niente di male a farsi leggere alle spalle quante volte si è corso. Vedi
-`SensitiveCard.jsx` e `finanze/sblocco.ts`.
+stanno in una colonna sola e **partono visibili**. Il gesto è al contrario di
+com'era: si vede, e si copre con l'occhio sbarrato in testa al riquadro — nel
+momento preciso in cui si alza lo sguardo e sta arrivando qualcuno, quando
+«chiudi la scheda» non è una risposta. Partivano oscurati, ma la prudenza la
+pagava la persona sbagliata: chiedere il PIN a ogni apertura per proteggersi
+dalle due volte al mese in cui passa qualcuno vuol dire tre riquadri ciechi per
+tutto il resto del tempo. Una volta nascosti ci vuole il PIN di Finanze per
+riaprirli — lo stesso codice, la stessa scadenza a trenta minuti, la stessa
+scheda del browser, quindi riaprirne uno riapre anche gli altri e la sezione. La
+sezione Finanze, quella, resta protetta dal PIN come prima. Tutto il resto —
+agenda, azioni, obiettivi, movimento, coda di letture — è in chiaro comunque,
+perché non c'è niente di male a farsi leggere alle spalle quante volte si è
+corso. Vedi `riservati.js`, `SensitiveCard.jsx` e `finanze/sblocco.ts`.
 
 Il **Diario** ci è entrato quando ha smesso di essere un invito. Prima diceva
 «Due righe su com'è andata…» e basta, cioè era un bottone travestito da riquadro:
@@ -173,7 +192,7 @@ meccanismo e stessa ragione, perché un archivio che si apre solo se lo si va a
 cercare non viene riletto mai. Il mese da cui pescarla si sceglie dall'indice
 intero e non dagli ultimi due: rileggersi vale di più con la distanza. Le voci
 «nel cassetto» (`sealed`) non entrano mai nel sorteggio, e il testo esce da
-OneDrive **solo dopo il PIN** — come le cifre di Finanze. Le date, che servono
+OneDrive **solo se il riquadro è scoperto** — come le cifre di Finanze. Le date, che servono
 alla striscia e alle sette barrette, si leggono comunque: dicono quando hai
 scritto, non cosa.
 
@@ -191,6 +210,21 @@ vuol dire «non me lo conto», e la riga mostra solo quante ne hai fatte. Il
 calendario è di sola lettura — registrare una sessione non crea, non sposta e
 non cancella nessun evento. Vedi `movimento.js`, `MovimentoCard.jsx` e
 `docs/proposta-movimento.md`.
+
+Il **rituale del mattino** è la parte del Movimento che non si vede nelle barre:
+il registro sa contare quello che è successo, ma un mese con quattro allenamenti
+e ventisei silenzi è indistinguibile da un mese in cui la scheda non è stata
+aperta. Da qui il pannello che si apre da solo alla prima apertura della
+giornata, con le tre caselle già despuntate e la motivazione già scelta — perché
+la risposta più frequente è «no, non sono riuscito» e confermarla deve costare un
+tocco solo. La verità però resta una sola: spuntare una casella non scrive
+«fatto» in un file suo, scrive una **sessione vera** nel registro (marcata
+`daRituale`, così despuntandola si può togliere), che è quella da cui la scheda e
+gli obiettivi prendono i numeri; nel file del rituale resta solo quello che il
+registro non sa dire, cioè il perché di un no. I giorni saltati si recuperano
+fino a tre indietro, compilati come «non fatto» e **dichiarati** in cima al
+pannello: un registro che si compila da solo in silenzio è un registro di cui non
+ci si fida più. Vedi `rituale.js` e `RitualeMattino.jsx`.
 
 Sopra il contenuto vive la **barra Pomodoro**: la sessione sta a livello di app
 (`PomodoroSession.jsx`), quindi il timer continua a girare — e la barra resta

@@ -336,7 +336,29 @@ export {};
  * @property {string} [nota]                   libera: «gambe + core», «6 km»
  * @property {string} [daEvento]               id dell'evento di calendario che questa
  *                                             sessione soddisfa, se registrata con «Fatta»
+ * @property {boolean} [daRituale]             creata spuntando la casella del rituale del
+ *                                             mattino, e quindi cancellabile despuntandola
  * @property {string} createdAt                ISO del momento di registrazione
+ */
+
+/**
+ * La risposta di una giornata al rituale del mattino: per ognuna delle tre
+ * famiglie, se è stata fatta e — quando non lo è stata — perché.
+ *
+ * Vive in `rituale.json` su OneDrive, raccolto per data: `{ "2026-08-28": {…} }`.
+ * Il «fatto» qui dentro è una comodità di lettura, non la verità: la verità è
+ * il registro del Movimento, e spuntare una casella ci scrive una sessione
+ * vera (vedi rituale.js).
+ * @typedef {Object} RitualeGiorno
+ * @property {Record<string, RitualeVoce>} famiglie   chiave: 'movimento'|'meditazione'|'yoga'
+ * @property {boolean} [auto]                  compilato dall'app perché non si era aperta
+ * @property {string} compilatoIl              ISO
+ */
+
+/**
+ * @typedef {Object} RitualeVoce
+ * @property {boolean} fatto
+ * @property {string} [motivo]                 chiave dei MOTIVI, solo quando non è stato fatto
  */
 
 /**

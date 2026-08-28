@@ -12,6 +12,54 @@
 .tm-larga { max-width: 640px; }
 
 .tm-nota { font-size: var(--fs-micro); line-height: 1.55; color: var(--muted); }
+
+/* «Stai scrivendo un mese che deve ancora cominciare»: la riga che impedisce
+   di credere di stare correggendo il mese in corso. Compare solo quando il
+   mese mostrato non è quello di oggi. */
+.tm-avviso {
+  padding: var(--sp-3) var(--sp-4);
+  background: var(--accent-tint);
+  border-left: 2px solid var(--accent-line);
+  border-radius: var(--r-sm);
+  font-size: var(--fs-micro);
+  line-height: 1.55;
+  color: var(--text-3);
+}
+
+.tm-torna {
+  padding: 0;
+  background: none;
+  border: none;
+  font-family: var(--font-ui);
+  font-size: var(--fs-micro);
+  color: var(--accent);
+  cursor: pointer;
+}
+@media (hover: hover) {
+  .tm-torna:hover { text-decoration: underline; }
+}
+
+/* Le due frecce del mese: piccole e in testata, accanto al titolo che
+   cambiano. */
+.tm-mesi { display: flex; align-items: center; gap: var(--sp-2); }
+
+.tm-mese-btn {
+  width: 28px;
+  height: 28px;
+  background: none;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  color: var(--text-3);
+  font-family: var(--font-ui);
+  font-size: var(--fs-meta);
+  line-height: 1;
+  cursor: pointer;
+  transition: border-color var(--t), color var(--t);
+}
+@media (hover: hover) {
+  .tm-mese-btn:hover:not(:disabled) { border-color: var(--accent-line); color: var(--accent); }
+}
+.tm-mese-btn:disabled { opacity: .35; cursor: default; }
 .tm-vuoto { font-size: var(--fs-micro); color: var(--disabled); }
 .tm-errore { font-size: var(--fs-micro); color: var(--danger); }
 

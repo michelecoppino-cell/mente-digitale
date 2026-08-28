@@ -1,5 +1,12 @@
 /* Oggi — due metà: la giornata operativa a sinistra, la vita a destra.
  *
+ * Da desktop la scheda sta in una schermata sola e non allunga la pagina:
+ * `.today` non scorre, la griglia riempie l'altezza, e quello che non ci sta
+ * scorre dentro il suo elenco (.today-lista, .today-col-vita,
+ * .today-col-riservati). Sotto i 1000px si torna a una pagina che scorre: su
+ * un telefono in verticale «una schermata sola» vorrebbe dire sei riquadri
+ * alti due centimetri.
+ *
  * La griglia esterna è 1.12fr / 1fr; la metà destra si divide a sua volta in
  * 1.5fr / 1fr, e la colonna più stretta è quella dei tre riquadri col PIN.
  * I numeri non sono tondi apposta: la colonna operativa ha righe lunghe
@@ -10,7 +17,9 @@
 .today {
   flex: 1;
   min-height: 0;
-  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   padding: var(--sp-7);
 }
 
@@ -60,29 +69,16 @@
 }
 .today-pill-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--accent); }
 
-.today-plan-link {
-  flex: 0 0 auto;
-  display: flex;
-  align-items: center;
-  height: 36px;
-  padding: 0 var(--sp-4);
-  border-radius: var(--r);
-  color: var(--accent);
-  font-size: var(--fs-meta);
-  text-decoration: none;
-}
-@media (hover: hover) {
-  .today-plan-link:hover { background: var(--accent-tint); }
-}
-
 .today-grid {
+  flex: 1;
+  min-height: 0;
   display: grid;
   grid-template-columns: 1.12fr 1fr;
   gap: var(--sp-7);
   align-items: stretch;
 }
 
-.today-col { display: flex; flex-direction: column; gap: var(--sp-6); min-width: 0; }
+.today-col { display: flex; flex-direction: column; gap: var(--sp-6); min-width: 0; min-height: 0; }
 
 /* La metà destra: la vita, e accanto i riquadri col PIN. */
 .today-vita {
@@ -98,6 +94,11 @@
   flex-direction: column;
   gap: var(--sp-5);
   min-width: 0;
+  /* Scorrono per conto loro: la scheda intera non si allunga, e i riquadri
+     della vita sono più alti della colonna operativa su uno schermo basso. */
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: var(--sp-1);
 }
 
 /* I riquadri col PIN riempiono l'altezza della loro colonna, e «Da leggere e
@@ -109,69 +110,33 @@
 .today-col-riservati > .today-card { flex: 1 0 auto; }
 .today-col-vita > .today-coda { flex: 1 0 auto; }
 
-/* ── Adesso ───────────────────────────────────────────────────────────── */
-
-.today-now {
-  display: flex;
-  flex-direction: column;
-  gap: var(--sp-3);
-  padding: var(--sp-6);
-  background: rgba(212, 164, 74, .07);
-  border: 1px solid rgba(212, 164, 74, .25);
-  border-radius: var(--r-lg);
-}
-.today-now.empty { background: none; border-color: var(--line); }
-
-.today-now-title {
-  font-family: var(--font-title);
-  font-size: 19px;
-  font-weight: 400;
-  color: var(--text);
-}
-
-.today-now-meta { font-size: var(--fs-chip); color: var(--text-3); }
-
-.today-now-actions { display: flex; gap: var(--sp-3); margin-top: var(--sp-2); }
-
-/* «Poi alle 17:30 · …» — il blocco dopo quello in corso. Veniva già calcolato
-   e buttato via: sapere cosa viene dopo è metà del motivo per cui si guarda
-   questo riquadro. Sotto un filo, perché è un'altra cosa. */
-.today-now-poi {
-  margin-top: var(--sp-1);
-  padding-top: var(--sp-4);
-  border-top: 1px solid var(--accent-line);
-  font-size: var(--fs-chip);
-  color: var(--muted);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.today-btn {
-  height: 36px;
-  min-width: 96px;
-  padding: 0 var(--sp-4);
-  background: none;
-  border: 1px solid var(--line);
-  border-radius: var(--r);
-  color: var(--text-3);
-  font-family: var(--font-ui);
-  font-size: var(--fs-meta);
-  cursor: pointer;
-  transition: border-color var(--t), color var(--t), background var(--t);
-}
-@media (hover: hover) {
-  .today-btn:hover { border-color: var(--accent-line); color: var(--text); }
-}
-.today-btn.accent { border-color: var(--accent-line); color: var(--accent); }
-@media (hover: hover) {
-  .today-btn.accent:hover { background: var(--accent-tint); }
-}
-
 /* ── Blocchi di elenco ────────────────────────────────────────────────── */
 
-.today-block { display: flex; flex-direction: column; gap: var(--sp-2); }
+.today-block { display: flex; flex-direction: column; gap: var(--sp-2); min-height: 0; }
 .today-block > .eyebrow { margin-bottom: var(--sp-2); }
+
+/* L'elenco scorre, la testata no: «Oggi · agenda e azioni» e il suo contatore
+   restano in vista anche con venti righe sotto. Il padding a destra è lo
+   spazio della barra di scorrimento, così le righe non ballano quando compare. */
+.today-lista {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: var(--sp-2);
+}
+
+/* Le due sezioni si dividono l'altezza: l'agenda di oggi ne prende il doppio
+   di «In arrivo», che è una lista di controllo, non una giornata. */
+.today-oggi { flex: 2 1 0; }
+.today-arrivo { flex: 1 1 0; }
+
+/* Quello che è già passato non sparisce — un pomeriggio si guarda anche per
+   ricordarsi cosa c'è stato la mattina — ma si spegne, così l'occhio cade su
+   quello che deve ancora succedere. */
+.today-event.passato,
+.today-action.passato { opacity: .5; }
 
 .today-block-head {
   display: flex;
@@ -186,20 +151,6 @@
 .today-empty a { color: var(--accent); text-decoration: none; }
 @media (hover: hover) {
   .today-empty a:hover { text-decoration: underline; }
-}
-
-/* «Altri 4 entro trenta giorni →», «7 prossime azioni non programmate →»:
-   quello che non ci sta non sparisce, diventa un numero. Un elenco che tronca
-   in silenzio insegna a non fidarsi di quello che mostra. */
-.today-piu {
-  margin-top: var(--sp-3);
-  padding-left: var(--sp-2);
-  font-size: var(--fs-micro);
-  color: var(--accent);
-  text-decoration: none;
-}
-@media (hover: hover) {
-  .today-piu:hover { text-decoration: underline; }
 }
 
 /* Eventi: di sola lettura, e si vede — bordo punteggiato e un filo spenti. */
@@ -233,27 +184,7 @@
    il cerchietto delle iniziali al posto del bordo punteggiato. */
 .today-event.recurrence { border-left-style: solid; border-left-color: var(--accent-line); }
 
-/* «In arrivo»: le stesse righe, un gradino più indietro — non è roba di oggi.
-   Il separatore è una parola in mezzo a una linea, non un'altra testata: due
-   eyebrow di fila dentro la stessa sezione la spezzerebbero in due riquadri,
-   che è esattamente quello che c'era prima. */
-.today-ahead-sep {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-4);
-  margin: var(--sp-4) 0 var(--sp-1);
-  font-size: var(--fs-micro);
-  letter-spacing: .08em;
-  text-transform: uppercase;
-  color: var(--disabled);
-}
-.today-ahead-sep::after {
-  content: '';
-  flex: 1;
-  height: 1px;
-  background: var(--line-soft);
-}
-
+/* «In arrivo»: le stesse righe, un gradino più indietro — non è roba di oggi. */
 .today-event.ahead {
   min-height: 42px;
   background: none;
@@ -293,6 +224,7 @@
 .today-check:disabled { cursor: default; border-color: var(--accent-line); }
 
 .today-action-title { flex: 1; min-width: 0; font-size: var(--fs-row); color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.today-action-chip { margin-left: auto; }
 
 .today-action.done .today-action-title { text-decoration: line-through; color: #7b808c; }
 
@@ -306,7 +238,16 @@
   white-space: nowrap;
 }
 
-.today-action-time { flex: 0 0 auto; font-size: var(--fs-chip); color: var(--muted); font-variant-numeric: tabular-nums; }
+/* Stessa larghezza della colonna degli eventi: è quello che permette di
+   leggere la giornata scorrendo una colonna sola di orari, invece di cercarli
+   ora a sinistra ora a destra. */
+.today-action-time {
+  flex: 0 0 auto;
+  width: 82px;
+  font-size: var(--fs-chip);
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
 
 /* ── Riquadri ─────────────────────────────────────────────────────────── */
 
@@ -728,8 +669,16 @@
   .today-col-riservati { display: grid; grid-template-columns: repeat(3, 1fr); }
 }
 
+/* Sotto i 1000px la pagina torna a scorrere tutta insieme: su un telefono in
+   verticale «una schermata sola» vorrebbe dire sei riquadri alti due
+   centimetri, ognuno con la sua barra di scorrimento. */
 @media (max-width: 1000px) {
-  .today { padding: var(--sp-5); }
+  .today { display: block; overflow-y: auto; padding: var(--sp-5); }
+  .today-lista,
+  .today-col-vita,
+  .today-col-riservati { overflow: visible; padding-right: 0; }
+  .today-oggi,
+  .today-arrivo { flex: none; }
   .today-grid { grid-template-columns: 1fr; }
   .today-col-riservati { grid-template-columns: 1fr; }
   .today-head { flex-wrap: wrap; }

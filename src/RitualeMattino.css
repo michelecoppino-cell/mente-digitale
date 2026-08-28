@@ -1,0 +1,101 @@
+/* Il rituale del mattino.
+ *
+ * Riusa l'involucro di MovimentoQuickAdd (.mq-overlay / .mq-sheet / .mq-head /
+ * .mq-actions): è già il modo in cui questa app apre un modulo sopra la
+ * scheda, e un quarto aspetto per la quarta finestrella sarebbe stato un
+ * quarto modo di chiudere e di salvare.
+ *
+ * Qui sotto c'è solo quello che ha in più: righe con una casella a sinistra e
+ * una tendina a destra, ripetute per giorno. */
+
+.rt-sheet { max-width: 480px; }
+
+.rt-nota { font-size: var(--fs-micro); line-height: 1.55; color: var(--muted); }
+
+/* Il recupero si dichiara, e si vede: è l'unico punto dell'app in cui un dato
+   viene scritto senza che nessuno l'abbia toccato. */
+.rt-recupero {
+  padding: var(--sp-3) var(--sp-4);
+  background: var(--accent-tint);
+  border-left: 2px solid var(--accent-line);
+  border-radius: var(--r-sm);
+  font-size: var(--fs-micro);
+  line-height: 1.55;
+  color: var(--text-3);
+}
+
+.rt-giorni {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-5);
+  max-height: 52dvh;
+  overflow-y: auto;
+  padding-right: var(--sp-2);
+}
+
+.rt-giorno { display: flex; flex-direction: column; gap: var(--sp-2); }
+
+.rt-giorno-titolo {
+  margin-bottom: var(--sp-1);
+  font-size: var(--fs-micro);
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--disabled);
+}
+
+.rt-riga {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  min-height: 40px;
+  padding-bottom: var(--sp-2);
+  border-bottom: 1px solid var(--line-soft);
+}
+.rt-riga:last-child { border-bottom: none; }
+
+.rt-casella {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  min-width: 140px;
+  cursor: pointer;
+}
+.rt-casella input {
+  width: 17px;
+  height: 17px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.rt-pt { width: 7px; height: 7px; border-radius: 50%; }
+
+.rt-nome { font-size: var(--fs-card); color: var(--text-2); }
+.rt-riga.fatto .rt-nome { color: var(--text); }
+
+/* La tendina prende tutto lo spazio che resta: le etichette sono frasi intere
+   («sono andato a dormire troppo tardi»), e troncarle vorrebbe dire scegliere
+   un motivo a memoria. */
+.rt-motivo {
+  flex: 1;
+  min-width: 0;
+  height: 30px;
+  padding: 0 var(--sp-2);
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  color: var(--text-3);
+  font-family: var(--font-ui);
+  font-size: var(--fs-micro);
+}
+.rt-motivo:focus { outline: none; border-color: var(--accent-line); }
+
+.rt-esito {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--fs-micro);
+  color: var(--muted);
+  text-align: right;
+}
+
+.rt-errore { font-size: var(--fs-micro); color: var(--danger); }
