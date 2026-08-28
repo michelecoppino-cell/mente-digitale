@@ -5,13 +5,11 @@ import {
   completeTask, getCalendarEvents, getCalendars, updateCalendarColor,
   createCalendarEvent, updateCalendarEvent, deleteCalendarEvent, moveCalendarEvent,
   patchCalendarEvent, graphDateTime, getTask,
-  loadPomodoroStats, savePomodoroStats,
   loadWorkbooks, saveWorkbooks, getWorkbookCalendarId, getWorkbookEvents, WORKBOOK_CALENDAR_NAME,
   loadIdealWeek, saveIdealWeek,
 } from './api';
 import { queryClient, qk, STALE } from './queryClient';
 import Skeleton from './Skeleton';
-import PomodoroTimer from './PomodoroTimer';
 import TaskPool from './TaskPool';
 import { useMediaQuery } from './useMediaQuery';
 import WorkbookPool from './WorkbookPool';
@@ -175,11 +173,6 @@ function isoToLocalDateStr(iso) {
 function isAllDay(ev) {
   return ev.isAllDay || (!ev.start?.dateTime && !!ev.start?.date);
 }
-// Totale di giornata nell'header della colonna Timeline — formato ore:minuti.
-function fmtFocusTotal(min) {
-  const m = Math.max(0, Math.round(min || 0));
-  return `${Math.floor(m / 60)}:${String(m % 60).padStart(2, '0')}`;
-}
 // Durata di un blocco/evento in layout verticale, mostrata in basso nella
 // colonna etichetta — formato compatto "2h" oppure "2h30" senza minuti a zero.
 function fmtBlockDuration(min) {
@@ -187,37 +180,6 @@ function fmtBlockDuration(min) {
   const h = Math.floor(m / 60);
   const rest = m % 60;
   return rest === 0 ? `${h}h` : `${h}h${String(rest).padStart(2, '0')}`;
-}
-const SESSION_TYPE_LABELS = {
-  focus: 'concentrato',
-  personal: 'pausa personale',
-  office: 'interruzione ufficio',
-  client: 'interruzione cliente',
-};
-const FOCUS_SESSION_TYPES = ['focus', 'personal', 'office', 'client'];
-// Durata di default di una fascia aggiunta a mano, per tipo — un pomodoro
-// intero per il lavoro, una pausa breve per le interruzioni.
-const FOCUS_ADD_DURATION = { focus: 25, personal: 5, office: 5, client: 5 };
-
-// Converte "minuti dalla mezzanotte" (fuso locale) di un giorno in un
-// dateTime ISO in UTC — coerente col formato già salvato da
-// PomodoroTimer.jsx (new Date(...).toISOString()).
-function dateTimeFromMinutes(dayStr, min) {
-  const d = new Date(dayStr + 'T00:00:00');
-  d.setMinutes(min);
-  return d.toISOString();
-}
-
-// Riscrive la lista di sessioni pomodoro di un giorno sul file OneDrive,
-// ricaricando prima lo stato più recente per non perdere modifiche
-// concorrenti fatte da altre schede/dispositivi.
-async function persistPomodoroSessions(day, sessions) {
-  try {
-    const stats = await loadPomodoroStats();
-    const prevDay = stats[day] || { pomodori: 0, focusedMinutes: 0, interruptions: 0, sessions: [] };
-    stats[day] = { ...prevDay, sessions };
-    await savePomodoroStats(stats);
-  } catch (e) { console.error('persist pomodoro sessions', e); }
 }
 function getWeekDays(dateStr) {
   const d = new Date(dateStr + 'T12:00:00');
@@ -254,29 +216,15 @@ function VerticalTitle({ text, layout, className }) {
 export default function PlannerView({
   open, onClose, preloadedTasks = [], notebooks = [], sectionsMap = {}, todoLists = [], pagesCache = null, autoAddTask = null, onAutoAdded,
   onTaskCompleted, onTaskDeleted, onTaskRenamed, onTaskDueChanged, onTaskPatched, onTaskRestored,
-  onStartFocus, onEndFocus, calendarDirtyToken = 0,
+  calendarDirtyToken = 0,
 }) {
   const [currentDate, setCurrentDate]       = useState(todayStr);
   const [plans, setPlans]                   = useState({});
   const [config, setConfig]                 = useState(DEFAULT_CONFIG);
   const [todayPlan, setTodayPlan]           = useState({ date: todayStr(), blocks: [], emailExtractedActions: [] });
   const [calEvents, setCalEvents]           = useState([]);
-  const [pomodoroStatsMap, setPomodoroStatsMap] = useState({});
-  // Il Pomodoro è solo un indicatore di concentrazione, scollegato da
-  // qualunque task/blocco: si avvia/ferma dal pulsante volante, non da un
-  // task specifico.
-  const [pomodoroActive, setPomodoroActive] = useState(false);
-  const [pomodoroRunning, setPomodoroRunning] = useState(true);
-  // Fascia oraria ancora aperta (non persistita) del Pomodoro in corso —
-  // usata per disegnare nella colonna Timeline la barra che cresce live
-  // verso "adesso", invece di apparire solo a fascia chiusa.
-  const [activeInterval, setActiveInterval] = useState(null); // { start, type } | null
-  // Orologio che avanza ogni 15s: fa crescere la barra live e sposta la
-  // linea ocra dell'ora corrente.
+  // Orologio che avanza ogni 15s: sposta la linea ocra dell'ora corrente.
   const [nowTick, setNowTick] = useState(() => Date.now());
-  // Bloccata solo mentre il Pomodoro è effettivamente in corso (non in pausa):
-  // premere "Pausa" riporta alla normale modalità Piano, sbloccata.
-  const locked = pomodoroActive && pomodoroRunning;
   const [saveStatus, setSaveStatus]         = useState('idle');
   const [breakdownModal, setBreakdownModal] = useState(null);
   const [dragOverTime, setDragOverTime]     = useState(null);
@@ -297,9 +245,6 @@ export default function PlannerView({
   const [calFilterOpen, setCalFilterOpen]   = useState(false);
   const [calColorPickerFor, setCalColorPickerFor] = useState(null); // id del calendario con lo swatch colori aperto
   const [calModal, setCalModal]             = useState(null); // { mode: 'create'|'edit', event }
-  // Popup di modifica/aggiunta di una fascia della colonna Pomodoro —
-  // { mode: 'edit', idx, x, y } oppure { mode: 'add', startMin, x, y }.
-  const [focusPopup, setFocusPopup]         = useState(null);
 
   // ── Workbook (pianificazione settimanale "a spettro ampio") ──
   // Stato del tutto parallelo/indipendente da quello dei task/blocchi sopra:
@@ -324,8 +269,7 @@ export default function PlannerView({
   const configLoadedRef  = useRef(false);
   const resizingRef      = useRef(null);
   const subResizingRef   = useRef(null);
-  const focusDragRef     = useRef(null);
-  // Un vero trascinamento (resize blocco/fascia, ridimensiona pannello…) può
+  // Un vero trascinamento (resize di un blocco, ridimensiona pannello…) può
   // terminare con un mouseup sopra lo sfondo vuoto della Timeline, generando
   // un click nativo lì: questo flag lo fa ignorare invece di aprire "Nuovo
   // evento" per sbaglio. Si autoresetta dopo un istante nel caso quel click
@@ -346,8 +290,6 @@ export default function PlannerView({
   // setState (che in StrictMode girano due volte).
   const todayPlanRef     = useRef(todayPlan);
   todayPlanRef.current   = todayPlan;
-  const pomodoroStatsRef = useRef(pomodoroStatsMap);
-  pomodoroStatsRef.current = pomodoroStatsMap;
 
   const workbooksRef           = useRef([]);
   const workbooksLoadedRef     = useRef(false);
@@ -361,7 +303,7 @@ export default function PlannerView({
   useEffect(() => {
     if (!open) return;
     Promise.all([
-      initConfig(), initPlans(), initPomodoroStats(), initCalendarsList(),
+      initConfig(), initPlans(), initCalendarsList(),
       initWorkbooks(), initWorkbookCalendar(), initIdealWeek(),
     ]);
     requestAnimationFrame(() => {
@@ -400,7 +342,7 @@ export default function PlannerView({
     onAutoAdded?.();
   }, [open, autoAddTask]); // eslint-disable-line
 
-  // Fa avanzare la linea dell'ora corrente e la barra live del Pomodoro.
+  // Fa avanzare la linea dell'ora corrente.
   useEffect(() => {
     if (!open) return;
     const id = setInterval(() => setNowTick(Date.now()), 15000);
@@ -429,15 +371,6 @@ export default function PlannerView({
       console.error('planner plans load', e);
       setSaveStatus('error');
     }
-  }
-
-  // Statistiche giornaliere Pomodoro (minuti concentrati) — mostrate come
-  // colonna a sx delle ore e totale nell'header della Timeline.
-  async function initPomodoroStats() {
-    try {
-      const stats = await loadPomodoroStats();
-      setPomodoroStatsMap(stats || {});
-    } catch (e) { console.error('pomodoro stats load', e); }
   }
 
   async function initWorkbooks() {
@@ -1026,8 +959,7 @@ export default function PlannerView({
 
   // ── DnD ─────────────────────────────────────────────────────────────────────
   function handleTimelineDragOver(e) {
-    if (locked) return;
-    e.preventDefault();
+        e.preventDefault();
     e.dataTransfer.dropEffect = 'move';
     if (!timelineBodyRef.current) return;
     const rect = timelineBodyRef.current.getBoundingClientRect();
@@ -1039,7 +971,7 @@ export default function PlannerView({
 
   function handleTimelineDrop(e) {
     e.preventDefault();
-    if (locked || !dragOverTime) return;
+    if (!dragOverTime) return;
     try {
       const data = JSON.parse(e.dataTransfer.getData('text/plain'));
       if (data.type === 'task')   addBlock(data.task, dragOverTime);
@@ -1060,9 +992,8 @@ export default function PlannerView({
   // Clic su uno spazio vuoto della Timeline: apre "Nuovo evento" precompilato
   // con la data corrente e l'ora del punto cliccato (arrotondata al mezz'ora).
   function handleTimelineClick(e) {
-    if (locked) return;
-    if (suppressClickRef.current) { suppressClickRef.current = false; return; }
-    if (e.target.closest('.planner-block, .planner-cal-event, .planner-day-workbook-block, .planner-focus-bar, .planner-focus-column, .planner-focus-daytotal')) return;
+        if (suppressClickRef.current) { suppressClickRef.current = false; return; }
+    if (e.target.closest('.planner-block, .planner-cal-event, .planner-day-workbook-block')) return;
     if (!timelineBodyRef.current) return;
     const rect = timelineBodyRef.current.getBoundingClientRect();
     const relY = e.clientY - rect.top + timelineBodyRef.current.scrollTop;
@@ -1482,158 +1413,6 @@ export default function PlannerView({
     mutatePlan(prev => ({ ...prev, blocks: prev.blocks.filter(b => b.id !== blockId) }));
   }
 
-  // Un pomodoro intero (25 min di lavoro) si è completato: aggiorna i totali
-  // giornalieri. La fascia oraria in sé arriva già via recordSessionClosed,
-  // non aspetta più questo evento.
-  function recordPomodoroSession({ focusedMinutes, interruptions } = {}) {
-    setPomodoroStatsMap(prev => {
-      const prevDay = prev[currentDateRef.current] || { pomodori: 0, focusedMinutes: 0, interruptions: 0, sessions: [] };
-      return {
-        ...prev,
-        [currentDateRef.current]: {
-          ...prevDay,
-          pomodori: prevDay.pomodori + 1,
-          focusedMinutes: prevDay.focusedMinutes + (focusedMinutes || 0),
-          interruptions: prevDay.interruptions + (interruptions || 0),
-        },
-      };
-    });
-  }
-
-  // Una fascia oraria (lavoro o pausa) si è chiusa e va disegnata subito
-  // sulla timeline, senza aspettare il completamento di un pomodoro intero.
-  function recordSessionClosed(session) {
-    const day = localDateStr(new Date(session.start));
-    setPomodoroStatsMap(prev => {
-      const prevDay = prev[day] || { pomodori: 0, focusedMinutes: 0, interruptions: 0, sessions: [] };
-      return {
-        ...prev,
-        [day]: { ...prevDay, sessions: [...(prevDay.sessions || []), session] },
-      };
-    });
-  }
-
-  // ── Colonna Pomodoro: correzione a posteriori delle fasce orarie ───────────
-  // Le fasce sono registrate automaticamente dal timer, ma un tipo scelto per
-  // errore o un orario impreciso vanno corretti a mano: trascinare sposta la
-  // fascia, le due manigliette agli estremi ne ridimensionano inizio/fine, un
-  // clic apre il menu per cambiarne il tipo o cancellarla, un clic su uno
-  // spazio vuoto della colonna ne aggiunge una nuova.
-  function persistCurrentFocusSessions() {
-    persistPomodoroSessions(currentDate, pomodoroStatsRef.current[currentDate]?.sessions || []);
-  }
-
-  function updateFocusSessionTimes(idx, newStartMin, newEndMin) {
-    setPomodoroStatsMap(prev => {
-      const prevDay = prev[currentDate] || { pomodori: 0, focusedMinutes: 0, interruptions: 0, sessions: [] };
-      const sessions = (prevDay.sessions || []).map((s, i) => i === idx
-        ? { ...s, start: dateTimeFromMinutes(currentDate, newStartMin), end: dateTimeFromMinutes(currentDate, newEndMin) }
-        : s);
-      return { ...prev, [currentDate]: { ...prevDay, sessions } };
-    });
-  }
-
-  function changeFocusSessionType(idx, type) {
-    setPomodoroStatsMap(prev => {
-      const prevDay = prev[currentDate] || { pomodori: 0, focusedMinutes: 0, interruptions: 0, sessions: [] };
-      const sessions = (prevDay.sessions || []).map((s, i) => i === idx ? { ...s, type } : s);
-      persistPomodoroSessions(currentDate, sessions);
-      return { ...prev, [currentDate]: { ...prevDay, sessions } };
-    });
-    setFocusPopup(null);
-  }
-
-  function deleteFocusSession(idx) {
-    setPomodoroStatsMap(prev => {
-      const prevDay = prev[currentDate] || { pomodori: 0, focusedMinutes: 0, interruptions: 0, sessions: [] };
-      const sessions = (prevDay.sessions || []).filter((_, i) => i !== idx);
-      persistPomodoroSessions(currentDate, sessions);
-      return { ...prev, [currentDate]: { ...prevDay, sessions } };
-    });
-    setFocusPopup(null);
-  }
-
-  function addFocusSession(startMin, type) {
-    const duration = FOCUS_ADD_DURATION[type] || 15;
-    const start = Math.max(0, Math.min(24 * 60 - duration, startMin));
-    const session = {
-      start: dateTimeFromMinutes(currentDate, start),
-      end: dateTimeFromMinutes(currentDate, start + duration),
-      type,
-    };
-    setPomodoroStatsMap(prev => {
-      const prevDay = prev[currentDate] || { pomodori: 0, focusedMinutes: 0, interruptions: 0, sessions: [] };
-      const sessions = [...(prevDay.sessions || []), session];
-      persistPomodoroSessions(currentDate, sessions);
-      return { ...prev, [currentDate]: { ...prevDay, sessions } };
-    });
-    setFocusPopup(null);
-  }
-
-  // mode: 'move' trascina l'intera fascia, 'resize-start'/'resize-end' ne
-  // spostano solo un estremo. Un mousedown senza trascinamento (spostamento
-  // sotto soglia) viene trattato come un clic e apre il menu di modifica.
-  function handleFocusSessionMouseDown(e, idx, mode) {
-    e.preventDefault();
-    e.stopPropagation();
-    const sessions = pomodoroStatsMap[currentDate]?.sessions || [];
-    const session = sessions[idx];
-    if (!session) return;
-    const sStart = new Date(session.start);
-    const sEnd   = new Date(session.end);
-    const drag = {
-      idx, mode, moved: false, startY: e.clientY,
-      origStart: sStart.getHours() * 60 + sStart.getMinutes(),
-      origEnd:   sEnd.getHours() * 60 + sEnd.getMinutes(),
-    };
-    focusDragRef.current = drag;
-
-    function onMove(ev) {
-      const d = focusDragRef.current;
-      if (!d) return;
-      if (Math.abs(ev.clientY - d.startY) > 3) { d.moved = true; markDragSuppressClick(); }
-      const deltaMin = Math.round(((ev.clientY - d.startY) / SLOT_HEIGHT * 30) / 5) * 5;
-      let newStart = d.origStart, newEnd = d.origEnd;
-      if (d.mode === 'move') {
-        newStart = d.origStart + deltaMin;
-        newEnd   = d.origEnd + deltaMin;
-        if (newStart < 0) { newEnd -= newStart; newStart = 0; }
-        if (newEnd > 24 * 60) { newStart -= (newEnd - 24 * 60); newEnd = 24 * 60; }
-      } else if (d.mode === 'resize-start') {
-        newStart = Math.max(0, Math.min(d.origEnd - 5, d.origStart + deltaMin));
-      } else {
-        newEnd = Math.min(24 * 60, Math.max(d.origStart + 5, d.origEnd + deltaMin));
-      }
-      updateFocusSessionTimes(idx, newStart, newEnd);
-    }
-
-    function onUp(ev) {
-      document.removeEventListener('mousemove', onMove);
-      document.removeEventListener('mouseup', onUp);
-      const d = focusDragRef.current;
-      focusDragRef.current = null;
-      if (!d) return;
-      if (!d.moved && d.mode === 'move') {
-        setFocusPopup({ mode: 'edit', idx, x: ev.clientX, y: ev.clientY });
-        return;
-      }
-      if (d.moved) persistCurrentFocusSessions();
-    }
-
-    document.addEventListener('mousemove', onMove);
-    document.addEventListener('mouseup', onUp);
-  }
-
-  // Clic su uno spazio vuoto della colonna Pomodoro: apre il menu per
-  // scegliere il tipo della nuova fascia, ancorata all'orario cliccato.
-  function handleFocusColumnClick(e) {
-    e.stopPropagation();
-    const rect = e.currentTarget.getBoundingClientRect();
-    const rawMin = ((e.clientY - rect.top) / SLOT_HEIGHT) * 30;
-    const startMin = Math.max(0, Math.min(24 * 60 - 5, Math.round(rawMin / 5) * 5));
-    setFocusPopup({ mode: 'add', startMin, x: e.clientX, y: e.clientY });
-  }
-
   function handleResizeStart(e, block) {
     e.preventDefault();
     e.stopPropagation();
@@ -1812,7 +1591,6 @@ export default function PlannerView({
   const workbookCalHidden = getHiddenCalendarIds().includes(WORKBOOK_CAL_ID);
 
   const workStart = t2m(config.workdayStart);
-  const dayFocusMinutes = pomodoroStatsMap[currentDate]?.focusedMinutes || 0;
 
   function saveLabel() {
     const now = new Date().toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
@@ -1822,13 +1600,9 @@ export default function PlannerView({
     return '';
   }
 
-  // Il piano resta montato (invisibile via CSS, non smontato) mentre un
-  // Pomodoro è in corso: così il timer e le sue statistiche sopravvivono alla
-  // chiusura della vista Piano quando si passa alla modalità "focus" (Attività
-  // a sx, Mente Digitale al centro, sezione a dx).
-  if (!open && !pomodoroActive) return null;
+  if (!open) return null;
 
-  // Note, sottoattività, stima e «Avvia pomodoro» del task selezionato. Uno
+  // Note, sottoattività e stima del task selezionato. Uno
   // solo, montato o nella terza colonna (desktop) o nel foglio dal basso
   // (telefono): due istanze vorrebbero dire due caricamenti da Graph.
   const detailBody = selectedTask ? (
@@ -1858,7 +1632,7 @@ export default function PlannerView({
         <span>📋 Dettagli</span>
         <span className={`planner-save-status ${saveStatus}`}>{saveLabel()}</span>
       </div>
-      <div className={`planner-ai-body${pomodoroActive ? ' pomodoro-clearance' : ''}`}>
+      <div className="planner-ai-body">
         {detailBody}
       </div>
     </div>
@@ -1887,7 +1661,7 @@ export default function PlannerView({
       {/* Header */}
       <div className="planner-header">
         <div className="planner-header-left">
-          <button className="planner-nav-btn" disabled={locked} onClick={() => {
+          <button className="planner-nav-btn" onClick={() => {
             const d = new Date(currentDate + 'T12:00:00');
             if (viewMode === 'month') { setCurrentDate(localDateStr(new Date(d.getFullYear(), d.getMonth() - 1, 1))); return; }
             d.setDate(d.getDate() - (viewMode === 'week' ? 7 : 1));
@@ -1904,25 +1678,25 @@ export default function PlannerView({
                 weekday: 'long', day: 'numeric', month: 'long',
               })}
           </span>
-          <button className="planner-nav-btn" disabled={locked} onClick={() => {
+          <button className="planner-nav-btn" onClick={() => {
             const d = new Date(currentDate + 'T12:00:00');
             if (viewMode === 'month') { setCurrentDate(localDateStr(new Date(d.getFullYear(), d.getMonth() + 1, 1))); return; }
             d.setDate(d.getDate() + (viewMode === 'week' ? 7 : 1));
             setCurrentDate(localDateStr(d));
           }}>▶</button>
           {currentDate !== todayStr() && (
-            <button className="planner-today-btn" disabled={locked} onClick={() => setCurrentDate(todayStr())}>Oggi</button>
+            <button className="planner-today-btn" onClick={() => setCurrentDate(todayStr())}>Oggi</button>
           )}
           <div className="planner-view-toggle">
-            <button disabled={locked} className={viewMode === 'day' ? 'active' : ''} onClick={() => setViewMode('day')}>Giorno</button>
-            <button disabled={locked} className={viewMode === 'week' ? 'active' : ''} onClick={() => setViewMode('week')}>Settimana</button>
-            <button disabled={locked} className={viewMode === 'month' ? 'active' : ''} onClick={() => setViewMode('month')}>Mese</button>
+            <button className={viewMode === 'day' ? 'active' : ''} onClick={() => setViewMode('day')}>Giorno</button>
+            <button className={viewMode === 'week' ? 'active' : ''} onClick={() => setViewMode('week')}>Settimana</button>
+            <button className={viewMode === 'month' ? 'active' : ''} onClick={() => setViewMode('month')}>Mese</button>
           </div>
         </div>
         <div className="planner-header-actions">
           <DayCapacity blocks={todayPlan.blocks || []} config={config} />
           <div className="planner-cal-filter-wrap">
-            <button className="planner-action-btn" disabled={locked} onClick={() => setCalFilterOpen(v => !v)} title="Filtra calendari">
+            <button className="planner-action-btn" onClick={() => setCalFilterOpen(v => !v)} title="Filtra calendari">
               Calendari ▾
             </button>
             {calFilterOpen && (
@@ -1983,19 +1757,19 @@ export default function PlannerView({
           </div>
           {viewMode === 'week' && (
             <>
-              <button className="planner-action-btn" disabled={locked} onClick={saveAsIdealWeek} title="Salva i workbook di questa settimana come template ricorrente">
+              <button className="planner-action-btn" onClick={saveAsIdealWeek} title="Salva i workbook di questa settimana come template ricorrente">
                 💾 Settimana ideale
               </button>
-              <button className="planner-action-btn" disabled={locked || !idealWeek?.blocks?.length} onClick={importIdealWeek} title="Copia i workbook della settimana ideale in questa settimana">
+              <button className="planner-action-btn" disabled={!idealWeek?.blocks?.length} onClick={importIdealWeek} title="Copia i workbook della settimana ideale in questa settimana">
                 📥 Importa ideale
               </button>
-              <button className="planner-action-btn danger" disabled={locked || !weekDays.some(d => workbookPlans[d]?.blocks?.length)} onClick={clearWorkbookWeek} title="Elimina tutti i blocchi Workbook (solo calendario Workbook) di questa settimana">
+              <button className="planner-action-btn danger" disabled={!weekDays.some(d => workbookPlans[d]?.blocks?.length)} onClick={clearWorkbookWeek} title="Elimina tutti i blocchi Workbook (solo calendario Workbook) di questa settimana">
                 🗑️ Svuota Workbook
               </button>
             </>
           )}
-          <button className="planner-action-btn accent" disabled={locked} onClick={() => openCreateEventModal(currentDate)} title="Nuovo evento calendario">+ Evento</button>
-          <button className="planner-close-btn" disabled={locked} onClick={onClose} title={locked ? 'Metti in pausa il Pomodoro per chiudere' : 'Chiudi pianificatore'}>✕</button>
+          <button className="planner-action-btn accent" onClick={() => openCreateEventModal(currentDate)} title="Nuovo evento calendario">+ Evento</button>
+          <button className="planner-close-btn" onClick={onClose} title="Chiudi pianificatore">✕</button>
         </div>
       </div>
 
@@ -2017,7 +1791,7 @@ export default function PlannerView({
 
         {/* ── Task/Workbook Pool a sx, ridotto — stesso pool della vista
             Giorno, ridimensionabile e trascinabile sui giorni della settimana. */}
-        <div className={`planner-pool planner-week-pool${locked ? ' locked' : ''}`} style={{ width: weekPoolWidth }}>
+        <div className={`planner-pool planner-week-pool`} style={{ width: weekPoolWidth }}>
           <div className="planner-col-header">
             <span>Pannello</span>
             <div className="planner-view-toggle">
@@ -2034,10 +1808,10 @@ export default function PlannerView({
               sectionsMap={sectionsMap}
               todoLists={todoLists}
               scheduledIds={weekScheduledIds}
-              draggable={!locked}
+              draggable
             />
           ) : (
-            <WorkbookPool workbooks={workbooks} onChange={persistWorkbooks} draggable={!locked} notebooks={notebooks} stats={workbookMinuteStats} />
+            <WorkbookPool workbooks={workbooks} onChange={persistWorkbooks} draggable notebooks={notebooks} stats={workbookMinuteStats} />
           )}
         </div>
         <div className="planner-col-resize" onMouseDown={handleWeekPoolResizeStart} title="Ridimensiona" />
@@ -2051,7 +1825,6 @@ export default function PlannerView({
           workbookCalHidden={workbookCalHidden}
           workdayStartMin={workStart}
           timeSlots={timeSlots}
-          locked={locked}
           suppressClickRef={suppressClickRef}
           config={config}
           listColorMap={listColorMap}
@@ -2076,11 +1849,8 @@ export default function PlannerView({
         />
       </>) : (<>
 
-        {/* ── Column 1: Task/Workbook Pool ──
-            Durante il blocco Pomodoro resta visibile ma del tutto non
-            interagibile: solo il task già aperto nel pannello Dettagli
-            si può modificare. */}
-        <div className={`planner-pool${locked ? ' locked' : ''}`} style={{ width: poolWidth }}>
+        {/* ── Column 1: Task/Workbook Pool ── */}
+        <div className={`planner-pool`} style={{ width: poolWidth }}>
           <div className="planner-col-header">
             <span>Pannello</span>
             <div className="planner-view-toggle">
@@ -2098,11 +1868,11 @@ export default function PlannerView({
               todoLists={todoLists}
               scheduledIds={scheduledIds}
               selectedTaskId={selectedTask?.id ?? null}
-              draggable={!locked}
-              onTaskClick={locked ? undefined : setSelectedTask}
+              draggable
+              onTaskClick={setSelectedTask}
             />
           ) : (
-            <WorkbookPool workbooks={workbooks} onChange={persistWorkbooks} draggable={!locked} notebooks={notebooks} stats={workbookMinuteStats} />
+            <WorkbookPool workbooks={workbooks} onChange={persistWorkbooks} draggable notebooks={notebooks} stats={workbookMinuteStats} />
           )}
         </div>
 
@@ -2139,59 +1909,6 @@ export default function PlannerView({
             }}
             onClick={handleTimelineClick}>
 
-            {/* Colonna Pomodoro: totale giornaliero in alto + fasce orarie reali,
-                modificabili — clic su uno spazio vuoto ne aggiunge una nuova. */}
-            <div
-              className="planner-focus-column"
-              style={{ height: timeSlots.length * SLOT_HEIGHT }}
-              onClick={handleFocusColumnClick}
-              title="Clic per aggiungere una fascia Pomodoro" />
-            <div className="planner-focus-daytotal" title="Totale concentrazione Pomodoro">
-              <span>🍅</span>
-              <span>{fmtFocusTotal(dayFocusMinutes)}</span>
-            </div>
-            {(pomodoroStatsMap[currentDate]?.sessions || []).map((s, i) => {
-              const sStart = new Date(s.start);
-              const sEnd   = new Date(s.end);
-              const startMin = sStart.getHours() * 60 + sStart.getMinutes();
-              const endMin   = sEnd.getHours() * 60 + sEnd.getMinutes();
-              const top    = Math.max(0, (Math.max(startMin, DAY_START_MIN) - DAY_START_MIN) / 30 * SLOT_HEIGHT);
-              const height = Math.max(3, (Math.min(endMin, DAY_END_MIN) - Math.max(startMin, DAY_START_MIN)) / 30 * SLOT_HEIGHT);
-              const type = s.type || 'focus';
-              return (
-                <div
-                  key={`focus-${i}`}
-                  className={`planner-focus-bar editable ${type}`}
-                  style={{ top, height }}
-                  title={`${isoToHHMM(s.start)}–${isoToHHMM(s.end)} · ${SESSION_TYPE_LABELS[type] || SESSION_TYPE_LABELS.focus} · trascina per spostare, clic per modificare`}
-                  onMouseDown={e => handleFocusSessionMouseDown(e, i, 'move')}>
-                  <div
-                    className="planner-focus-bar-handle top"
-                    onMouseDown={e => handleFocusSessionMouseDown(e, i, 'resize-start')} />
-                  <div
-                    className="planner-focus-bar-handle bottom"
-                    onMouseDown={e => handleFocusSessionMouseDown(e, i, 'resize-end')} />
-                </div>
-              );
-            })}
-            {/* Fascia ancora aperta: cresce live verso "adesso" invece di comparire solo a fascia chiusa */}
-            {activeInterval && localDateStr(new Date(activeInterval.start)) === currentDate && (() => {
-              const sStart = new Date(activeInterval.start);
-              const startMin = sStart.getHours() * 60 + sStart.getMinutes();
-              const nowD = new Date(nowTick);
-              const endMin = nowD.getHours() * 60 + nowD.getMinutes();
-              const top    = Math.max(0, (Math.max(startMin, DAY_START_MIN) - DAY_START_MIN) / 30 * SLOT_HEIGHT);
-              const height = Math.max(3, (Math.min(endMin, DAY_END_MIN) - Math.max(startMin, DAY_START_MIN)) / 30 * SLOT_HEIGHT);
-              const type = activeInterval.type || 'focus';
-              const startHHMM = `${String(sStart.getHours()).padStart(2, '0')}:${String(sStart.getMinutes()).padStart(2, '0')}`;
-              return (
-                <div
-                  key="focus-live"
-                  className={`planner-focus-bar live ${type}`}
-                  style={{ top, height }}
-                  title={`${startHHMM}– · ${SESSION_TYPE_LABELS[type] || SESSION_TYPE_LABELS.focus}`} />
-              );
-            })()}
             {/* Linea dell'ora corrente — solo sul giorno di oggi */}
             {currentDate === todayStr() && (() => {
               const nowD = new Date(nowTick);
@@ -2226,7 +1943,6 @@ export default function PlannerView({
                   key={note.id}
                   note={note}
                   blockHeight={height}
-                  locked={locked}
                   onChange={text => editWorkbookNoteText(currentDate, wb.id, note.id, text)}
                   onMove={noteTop => moveWorkbookNote(currentDate, wb.id, note.id, noteTop)}
                   onRemove={() => removeWorkbookNote(currentDate, wb.id, note.id)}
@@ -2237,7 +1953,7 @@ export default function PlannerView({
                   className={`planner-day-workbook-block${isVertical ? ' vertical-layout' : ''}`}
                   style={{ top: top + 2, height, background: hexToRgba(wbColor, 0.28), borderLeftColor: wbColor }}
                   title={`${wb.startTime}–${wb.endTime} · ${wb.label} (trascina per spostare, Ctrl+trascina per duplicare, doppio clic per una nota)`}
-                  draggable={!locked && dayResizingWbId !== wb.id}
+                  draggable={dayResizingWbId !== wb.id}
                   onClick={e => e.stopPropagation()}
                   onDragStart={e => {
                     if (e.target.closest('.planner-block-note')) { e.preventDefault(); return; }
@@ -2245,7 +1961,7 @@ export default function PlannerView({
                     e.dataTransfer.setData('text/plain', JSON.stringify({ type: 'weekworkbookblock', blockId: wb.id, fromDay: currentDate, copy: e.ctrlKey || e.metaKey }));
                   }}
                   onDoubleClick={e => {
-                    if (locked || e.target.closest('.planner-block-note')) return;
+                    if (e.target.closest('.planner-block-note')) return;
                     e.stopPropagation();
                     const rect = e.currentTarget.getBoundingClientRect();
                     const noteTop = Math.max(0, Math.min(height - 22, e.clientY - rect.top));
@@ -2267,17 +1983,15 @@ export default function PlannerView({
                       {notesEls}
                     </>
                   )}
-                  {!locked && (
-                    <button
+                                      <button
                       className="planner-week-workbook-block-remove"
                       onClick={e => { e.stopPropagation(); handleRemoveWorkbookBlock(currentDate, wb.id); }}
                       title="Elimina">×</button>
-                  )}
-                  {!locked && (
-                    <div
+                  
+                                      <div
                       className="planner-block-resize"
                       onMouseDown={e => handleDayWorkbookResizeStart(e, wb)} />
-                  )}
+                  
                 </div>
               );
             })}
@@ -2299,7 +2013,7 @@ export default function PlannerView({
                   key={`cal-${i}`}
                   className={`planner-cal-event${ev._isShared ? ' shared' : ''}${isVertical ? ' vertical-layout' : ''}`}
                   style={{ top, height, background: evColor, borderLeftColor: evColor }}
-                  draggable={!locked}
+                  draggable
                   onDragStart={e => {
                     // L'evento non si sposta trascinando (solo dal modale di
                     // modifica): senza Ctrl/Cmd annulla il drag nativo, così un
@@ -2347,15 +2061,15 @@ export default function PlannerView({
                   className="planner-block-check"
                   style={{ color: block.completed ? '#86c07a' : blockColor }}
                   onClick={() => handleCompleteBlock(block.id)}
-                  disabled={locked}
+                 
                   title="Segna come completato">
                   {block.completed ? '✓' : '○'}
                 </button>
               );
               const actionsBtns = (
                 <div className="planner-block-actions">
-                  <button className="planner-block-btn" onClick={() => handleBreakdownTask(block)} disabled={locked} title="Scomponi in sottostep">🔀</button>
-                  <button className="planner-block-btn" onClick={() => handleRemoveBlock(block.id)} disabled={locked} title="Rimuovi">✕</button>
+                  <button className="planner-block-btn" onClick={() => handleBreakdownTask(block)} title="Scomponi in sottostep">🔀</button>
+                  <button className="planner-block-btn" onClick={() => handleRemoveBlock(block.id)} title="Rimuovi">✕</button>
                 </div>
               );
               const subStepsOverlay = block.subSteps?.length > 0 ? (() => {
@@ -2376,7 +2090,7 @@ export default function PlannerView({
                           className={`planner-substep-zone${s.completed ? ' done' : ''}`}
                           style={{ top: subTop, height: subHeight }}>
                           <span className="planner-substep-label">{s.title}</span>
-                          {i < n - 1 && !locked && (
+                          {i < n - 1 && (
                             <div
                               className="planner-substep-divider"
                               onMouseDown={ev => handleSubSplitResizeStart(ev, block, i, height)}
@@ -2398,9 +2112,9 @@ export default function PlannerView({
                     borderColor: hexToRgba(blockColor, 0.22),
                     borderLeftColor: blockColor,
                   }}
-                  draggable={!locked && !block.completed && resizingId !== block.id}
+                  draggable={!block.completed && resizingId !== block.id}
                   onClick={e => { e.stopPropagation(); openBlockDetail(block); }}
-                  onDragStart={locked ? undefined : e => {
+                  onDragStart={e => {
                     e.stopPropagation();
                     e.dataTransfer.setData('text/plain', JSON.stringify({ type: 'block', blockId: block.id, copy: e.ctrlKey || e.metaKey }));
                   }}>
@@ -2435,7 +2149,7 @@ export default function PlannerView({
                       {subStepsOverlay}
                     </>
                   )}
-                  {!block.completed && !locked && (
+                  {!block.completed && (
                     <div className="planner-block-resize" onMouseDown={e => handleResizeStart(e, block)} />
                   )}
                 </div>
@@ -2533,55 +2247,14 @@ export default function PlannerView({
         />
       )}
 
-      {/* Menu di modifica/aggiunta di una fascia della colonna Pomodoro */}
-      {focusPopup && (
-        <FocusSessionPopup
-          popup={focusPopup}
-          onPickType={type => focusPopup.mode === 'edit'
-            ? changeFocusSessionType(focusPopup.idx, type)
-            : addFocusSession(focusPopup.startMin, type)}
-          onDelete={focusPopup.mode === 'edit' ? () => deleteFocusSession(focusPopup.idx) : null}
-          onClose={() => setFocusPopup(null)}
-        />
-      )}
     </div>
 
     {open && detailSheet}
-
-    {/* Pulsante volante per avviare il Pomodoro, a fianco del "+" dorato GTD:
-        solo indicatore di concentrazione, scollegato da qualunque task. */}
-    {open && !pomodoroActive && (
-      <button
-        className="pomodoro-fab"
-        onClick={() => { setPomodoroActive(true); setPomodoroRunning(true); onStartFocus?.(); }}
-        title="Avvia Pomodoro">🍅</button>
-    )}
-
-    {/* Renderizzato fuori dal contenitore nascosto via CSS: resta visibile e
-        attivo (interval del timer, statistiche) anche quando il Piano è
-        chiuso e si passa alla modalità focus. */}
-    {pomodoroActive && (
-      <PomodoroTimer
-        onClose={() => { setPomodoroActive(false); setActiveInterval(null); onEndFocus?.(); }}
-        onCycleComplete={recordPomodoroSession}
-        onSessionClosed={recordSessionClosed}
-        onActiveIntervalChange={setActiveInterval}
-        onRunningChange={running => {
-          setPomodoroRunning(running);
-          if (running) onStartFocus?.();
-          else onEndFocus?.();
-        }}
-      />
-    )}
     </>
   );
 }
 
-// ── FocusSessionPopup ─────────────────────────────────────────────────────────
-// Piccolo menu ancorato al punto cliccato: sceglie/cambia il tipo di una
-// fascia Pomodoro (lavoro o uno dei tre tipi di pausa) e, per una fascia
-// esistente, permette di cancellarla. Un backdrop trasparente a tutto
-// schermo chiude il menu al clic fuori, come i pop-up del diagramma GTD.
+// ── DayCapacity ──────────────────────────────────────────────────────────────
 // Quanto della giornata è già impegnato. Il Piano diceva cosa c'è ma non
 // quanto pesa: due ore libere e otto sembravano uguali finché non si contava
 // a mano. La barra somma le ore piazzate sulle ore lavorative disponibili.
@@ -2615,36 +2288,6 @@ function DayCapacity({ blocks, config }) {
         <span className="planner-capacity-planned" style={{ width: `${pct(planned)}%` }} />
       </span>
     </div>
-  );
-}
-
-function FocusSessionPopup({ popup, onPickType, onDelete, onClose }) {
-  const width = 180, height = onDelete ? 190 : 150;
-  const left = Math.min(Math.max(8, popup.x + 10), window.innerWidth - width - 8);
-  const top  = Math.min(Math.max(8, popup.y - height / 2), window.innerHeight - height - 8);
-
-  return (
-    <>
-      <div className="planner-focus-popup-backdrop" onClick={onClose} />
-      <div className="planner-focus-popup" style={{ left, top }} onClick={e => e.stopPropagation()}>
-        <div className="planner-focus-popup-title">
-          {popup.mode === 'edit' ? 'Cambia tipo fascia' : 'Aggiungi fascia'}
-        </div>
-        <div className="planner-focus-popup-types">
-          {FOCUS_SESSION_TYPES.map(type => (
-            <button
-              key={type}
-              className={`planner-focus-popup-type ${type}`}
-              onClick={() => onPickType(type)}>
-              {SESSION_TYPE_LABELS[type]}
-            </button>
-          ))}
-        </div>
-        {onDelete && (
-          <button className="planner-focus-popup-delete" onClick={onDelete}>🗑 Elimina fascia</button>
-        )}
-      </div>
-    </>
   );
 }
 
@@ -2865,7 +2508,7 @@ function MonthlyCalendar({ currentDate, plans, calEvents, calOutOfRange, config,
 
 // ── WeeklyTimeline ────────────────────────────────────────────────────────────
 function WeeklyTimeline({
-  weekDays, plans, calEvents, workbookPlans, workbooks, workbookCalHidden, workdayStartMin, timeSlots, locked, suppressClickRef,
+  weekDays, plans, calEvents, workbookPlans, workbooks, workbookCalHidden, workdayStartMin, timeSlots, suppressClickRef,
   config, listColorMap,
   onDayClick, onMoveBlock, onCopyBlock, onBlockClick, onEventClick, onCopyEvent, onAddTask, onCreateEvent,
   onAddWorkbookBlock, onMoveWorkbookBlock, onCopyWorkbookBlock, onRemoveWorkbookBlock, onResizeWorkbookBlockStart, onResizeBlockStart,
@@ -2931,16 +2574,14 @@ function WeeklyTimeline({
   }
 
   function handleColDragOver(e, day) {
-    if (locked) return;
-    e.preventDefault();
+        e.preventDefault();
     e.dataTransfer.dropEffect = 'move';
     setDragOver({ day, min: slotFromEvent(e) });
   }
 
   function handleColDrop(e, day) {
     e.preventDefault();
-    if (locked) { setDragOver(null); return; }
-    const min = slotFromEvent(e);
+        const min = slotFromEvent(e);
     try {
       const data = JSON.parse(e.dataTransfer.getData('text/plain'));
       if (data.type === 'weekblock') {
@@ -2961,8 +2602,7 @@ function WeeklyTimeline({
   // Clic su uno spazio vuoto della colonna: apre "Nuovo evento" precompilato
   // con quel giorno e l'ora del punto cliccato.
   function handleColClick(e, day) {
-    if (locked) return;
-    if (suppressClickRef?.current) { suppressClickRef.current = false; return; }
+        if (suppressClickRef?.current) { suppressClickRef.current = false; return; }
     if (e.target.closest('.planner-week-cal-event, .planner-week-task-block, .planner-week-workbook-block')) return;
     onCreateEvent(day, m2t(slotFromEvent(e)));
   }
@@ -3042,7 +2682,6 @@ function WeeklyTimeline({
                     key={note.id}
                     note={note}
                     blockHeight={height}
-                    locked={locked}
                     onChange={text => onEditWorkbookNote(day, wb.id, note.id, text)}
                     onMove={noteTop => onMoveWorkbookNote(day, wb.id, note.id, noteTop)}
                     onRemove={() => onRemoveWorkbookNote(day, wb.id, note.id)}
@@ -3053,7 +2692,7 @@ function WeeklyTimeline({
                     className={`planner-week-workbook-block${isVertical ? ' vertical-layout' : ''}`}
                     style={{ top: top + 2, height, background: hexToRgba(wbColor, 0.28), borderLeftColor: wbColor }}
                     title={`${wb.startTime}–${wb.endTime} · ${wb.label} (trascina per spostare, Ctrl+trascina per duplicare, doppio clic per una nota)`}
-                    draggable={!locked && resizingWbId !== wb.id}
+                    draggable={resizingWbId !== wb.id}
                     onClick={e => e.stopPropagation()}
                     onDragStart={e => {
                       // Una nota in editing/drag (vedi WorkbookBlockNote) non deve
@@ -3063,7 +2702,7 @@ function WeeklyTimeline({
                       e.dataTransfer.setData('text/plain', JSON.stringify({ type: 'weekworkbookblock', blockId: wb.id, fromDay: day, copy: e.ctrlKey || e.metaKey }));
                     }}
                     onDoubleClick={e => {
-                      if (locked || e.target.closest('.planner-block-note')) return;
+                      if (e.target.closest('.planner-block-note')) return;
                       e.stopPropagation();
                       const rect = e.currentTarget.getBoundingClientRect();
                       const noteTop = Math.max(0, Math.min(height - 22, e.clientY - rect.top));
@@ -3085,17 +2724,15 @@ function WeeklyTimeline({
                         {notesEls}
                       </>
                     )}
-                    {!locked && (
-                      <button
+                                          <button
                         className="planner-week-workbook-block-remove"
                         onClick={e => { e.stopPropagation(); onRemoveWorkbookBlock(day, wb.id); }}
                         title="Elimina">×</button>
-                    )}
-                    {!locked && (
-                      <div
+                    
+                                          <div
                         className="planner-block-resize"
                         onMouseDown={e => handleWbResizeMouseDown(e, wb, day)} />
-                    )}
+                    
                   </div>
                 );
               })}
@@ -3111,7 +2748,7 @@ function WeeklyTimeline({
                 return (
                   <div key={i} className={`planner-week-cal-event${isVertical ? ' vertical-layout' : ''}`}
                     style={{ top, height, background: evColor, borderLeftColor: evColor }}
-                    draggable={!locked}
+                    draggable
                     onDragStart={e => {
                       if (!(e.ctrlKey || e.metaKey)) { e.preventDefault(); return; }
                       e.stopPropagation();
@@ -3156,7 +2793,7 @@ function WeeklyTimeline({
                     borderLeftColor: blockColor,
                   }}
                     title={`${block.startTime}–${block.endTime} · ${block.taskTitle} (trascina per spostare, Ctrl+trascina per duplicare)`}
-                    draggable={!block.completed && !locked && resizingId !== block.id}
+                    draggable={!block.completed && resizingId !== block.id}
                     onClick={e => { e.stopPropagation(); onBlockClick?.(block); }}
                     onDragStart={e => {
                       e.stopPropagation();
@@ -3173,7 +2810,7 @@ function WeeklyTimeline({
                     ) : (
                       <span className="planner-block-title">{block.taskTitle}</span>
                     )}
-                    {!block.completed && !locked && (
+                    {!block.completed && (
                       <div
                         className="planner-block-resize"
                         onMouseDown={e => handleResizeMouseDown(e, block, day)} />
@@ -3199,7 +2836,7 @@ function WeeklyTimeline({
 // si può segnare "caffè" o "pranzo" in un punto preciso di una fascia larga
 // (es. "Ufficio" 8–17:30) senza spezzarla in blocchi separati. Testo libero
 // con a-capo (textarea), riposizionabile trascinando la maniglia ⠿.
-function WorkbookBlockNote({ note, blockHeight, locked, onChange, onMove, onRemove }) {
+function WorkbookBlockNote({ note, blockHeight, onChange, onMove, onRemove }) {
   const [editing, setEditing] = useState(!note.text);
   const [draft, setDraft]     = useState(note.text);
   const textareaRef = useRef(null);
@@ -3215,8 +2852,7 @@ function WorkbookBlockNote({ note, blockHeight, locked, onChange, onMove, onRemo
   }
 
   function handleDragHandleMouseDown(e) {
-    if (locked) return;
-    e.preventDefault();
+        e.preventDefault();
     e.stopPropagation();
     const startY   = e.clientY;
     const startTop = note.top;
@@ -3249,13 +2885,11 @@ function WorkbookBlockNote({ note, blockHeight, locked, onChange, onMove, onRemo
         />
       ) : (
         <>
-          {!locked && (
-            <span className="planner-block-note-drag" onMouseDown={handleDragHandleMouseDown} title="Trascina per riposizionare">⠿</span>
-          )}
-          <pre className="planner-block-note-text" onClick={() => !locked && setEditing(true)}>{note.text}</pre>
-          {!locked && (
-            <button className="planner-block-note-remove" onClick={onRemove} title="Elimina nota">×</button>
-          )}
+                      <span className="planner-block-note-drag" onMouseDown={handleDragHandleMouseDown} title="Trascina per riposizionare">⠿</span>
+          
+          <pre className="planner-block-note-text" onClick={() => setEditing(true)}>{note.text}</pre>
+                      <button className="planner-block-note-remove" onClick={onRemove} title="Elimina nota">×</button>
+          
         </>
       )}
     </div>

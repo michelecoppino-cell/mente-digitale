@@ -1,4 +1,4 @@
-/* Shell: rail | (barra pomodoro / topbar / contenuto) */
+/* Shell: rail | (topbar / contenuto) */
 
 .shell {
   display: flex;
@@ -116,9 +116,7 @@
 @media (hover: hover) {
   .rail-menu:hover { background: rgba(255, 255, 255, .04); color: var(--text); }
   .rail-foot .rail-item:hover { color: var(--text-3); }
-  .shell-drawer-btn:hover,
-  .shell-more-btn:hover { color: var(--text); }
-  .shell-menu-item:hover { background: rgba(255, 255, 255, .05); }
+  .shell-drawer-btn:hover { color: var(--text); }
 }
 
 /* ── Colonna principale ───────────────────────────────────────────────── */
@@ -189,106 +187,6 @@
   .shell-capture-btn:hover { background: var(--accent-tint); }
 }
 
-/* ── Topbar fusa con la sessione Pomodoro (telefono) ──────────────────────
-   48px di topbar più 52px di barra Pomodoro sono 100px su uno schermo da 667:
-   quando la sessione gira le due righe diventano una. */
-
-.shell-topbar.fused { position: relative; }
-
-.pomo-inline {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  gap: var(--sp-3);
-  height: 36px;
-  padding: 0 var(--sp-3);
-  background: none;
-  border: none;
-  border-radius: var(--r-sm);
-  color: inherit;
-  font-family: var(--font-ui);
-  text-align: left;
-  cursor: pointer;
-}
-.pomo-inline:disabled { cursor: default; }
-
-.pomo-inline-time {
-  flex: 0 0 auto;
-  font-size: var(--fs-row);
-  font-weight: 500;
-  color: var(--accent);
-  font-variant-numeric: tabular-nums;
-}
-
-.pomo-inline-task {
-  min-width: 0;
-  font-size: var(--fs-meta);
-  color: var(--text-3);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.shell-more-btn {
-  flex: 0 0 auto;
-  width: 36px;
-  height: 36px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: none;
-  border: none;
-  border-radius: var(--r-sm);
-  color: var(--text-3);
-  cursor: pointer;
-}
-.shell-more-btn.active { color: var(--accent); }
-
-.shell-menu-scrim { position: fixed; inset: 0; z-index: 130; }
-
-.shell-menu {
-  position: absolute;
-  z-index: 131;
-  top: 100%;
-  right: var(--sp-4);
-  min-width: 200px;
-  padding: var(--sp-2);
-  background: var(--bg-rail);
-  border: 1px solid var(--line);
-  border-radius: var(--r);
-  box-shadow: 0 16px 40px rgba(0, 0, 0, .55);
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.shell-menu-item {
-  height: var(--tap);
-  padding: 0 var(--sp-4);
-  background: none;
-  border: none;
-  border-radius: var(--r-sm);
-  color: var(--text-2);
-  font-family: var(--font-ui);
-  font-size: var(--fs-card);
-  text-align: left;
-  cursor: pointer;
-}
-.shell-menu-item.accent { color: var(--accent); }
-
-.shell-menu-sep { height: 1px; margin: var(--sp-2) 0; background: var(--line); }
-
-/* Le azioni globali della topbar, impilate: restano gli stessi bottoni, solo
-   distanziati da dito invece che da mouse. */
-.shell-menu-actions {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--sp-5);
-  padding: var(--sp-3) var(--sp-4);
-}
-
 .shell-content {
   flex: 1;
   min-height: 0;
@@ -296,94 +194,6 @@
   overflow: hidden;
   display: flex;
   flex-direction: column;
-}
-
-/* ── Barra Pomodoro ───────────────────────────────────────────────────── */
-
-.pomo-bar {
-  flex: 0 0 auto;
-  height: 52px;
-  display: flex;
-  align-items: center;
-  gap: var(--sp-4);
-  padding: 0 var(--sp-5);
-  background: rgba(212, 164, 74, .09);
-  border-bottom: 1px solid rgba(212, 164, 74, .25);
-}
-
-.pomo-bar-main {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  gap: var(--sp-4);
-  background: none;
-  border: none;
-  padding: 0;
-  color: inherit;
-  font-family: var(--font-ui);
-  text-align: left;
-  cursor: pointer;
-}
-.pomo-bar-main:disabled { cursor: default; }
-
-/* Quadrante: un anello che si riempie con l'avanzare della sessione. */
-.pomo-bar-dial {
-  flex: 0 0 auto;
-  width: 22px;
-  height: 22px;
-  border-radius: 50%;
-  background: conic-gradient(var(--accent) var(--pomo-pct, 0deg), rgba(212, 164, 74, .22) 0);
-  mask: radial-gradient(circle, transparent 6px, #000 7px);
-  -webkit-mask: radial-gradient(circle, transparent 6px, #000 7px);
-}
-
-.pomo-bar-time {
-  flex: 0 0 auto;
-  font-size: 17px;
-  font-weight: 500;
-  color: var(--accent);
-  font-variant-numeric: tabular-nums;
-}
-
-.pomo-bar-task {
-  font-size: var(--fs-card);
-  color: var(--text);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.pomo-bar-meta {
-  flex: 0 0 auto;
-  font-size: var(--fs-chip);
-  color: var(--muted);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.pomo-bar-actions { flex: 0 0 auto; display: flex; gap: var(--sp-3); }
-
-.pomo-bar-btn {
-  height: 34px;
-  min-width: 72px;
-  padding: 0 var(--sp-4);
-  background: none;
-  border: 1px solid var(--line);
-  border-radius: var(--r-sm);
-  color: var(--text-3);
-  font-family: var(--font-ui);
-  font-size: var(--fs-meta);
-  cursor: pointer;
-  transition: border-color var(--t), color var(--t);
-}
-@media (hover: hover) {
-  .pomo-bar-btn:hover { border-color: var(--accent-line); color: var(--text); }
-}
-.pomo-bar-btn.primary { border-color: var(--accent-line); color: var(--accent); }
-@media (hover: hover) {
-  .pomo-bar-btn.primary:hover { background: var(--accent-tint); }
 }
 
 /* ── Scrim del drawer ─────────────────────────────────────────────────── */
@@ -442,8 +252,4 @@
     z-index: 110;
     background: rgba(0, 0, 0, .5);
   }
-
-  .pomo-bar { padding: 0 var(--sp-4); gap: var(--sp-3); }
-  .pomo-bar-meta { display: none; }
-  .pomo-bar-btn { min-width: 0; padding: 0 var(--sp-3); }
 }

@@ -500,14 +500,20 @@
 .sv-task { cursor: grab; }
 .sv-task:active { cursor: grabbing; }
 
-/* Quella che ha già un blocco nel piano di oggi: il pallino si svuota, come
-   nel pool del Piano — è ancora trascinabile, ma si vede che c'è già. */
+/* Quella che ha già un blocco nel piano, in un giorno qualunque: tutta la
+   riga passa in grigio e il pallino si svuota. Resta trascinabile — a volte
+   una cosa si sposta davvero — ma leggendo la colonna si vede al volo cosa
+   resta da collocare, senza rimetterla a piano una seconda volta. */
+.sv-task.scheduled { color: var(--muted); }
+.sv-task.scheduled .sv-task-title { color: var(--muted); }
+.sv-task.scheduled .sv-task-est { color: var(--disabled); }
 .sv-task.scheduled .sv-task-dot { background: none !important; box-shadow: inset 0 0 0 1px var(--muted); }
 
-/* Quella aperta nel dettaglio, e quella su cui gira il Pomodoro. */
+/* La selezione vince sul grigio: l'attività aperta nel dettaglio si vede
+   comunque, anche se è già a piano. */
 .sv-task.selected { background: var(--accent-tint); }
-.sv-task.selected .sv-task-title { color: var(--accent); }
-.sv-task.current .sv-task-dot { box-shadow: 0 0 0 2px var(--accent-tint); }
+.sv-task.selected .sv-task-title,
+.sv-task.scheduled.selected .sv-task-title { color: var(--accent); }
 
 /* ── Consegne ─────────────────────────────────────────────────────────────
    Una commessa può avere più consegne (liste To-Do `GRUPPO.Nome-YYMMDD`, vedi

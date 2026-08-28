@@ -77,12 +77,6 @@
   /* ── Transizioni ────────────────────────────────────────────────────── */
   --t: 140ms ease-out;
 
-  /* ── Colonna Pomodoro ───────────────────────────────────────────────────
-     Il focus è rosso (inline in PlannerView.css); qui i tipi di pausa. */
-  --break-personal: #e6c94d;
-  --break-office:   #9d7fd6;
-  --break-client:   #5b8fd9;
-
   /* ── Alias di compatibilità ─────────────────────────────────────────────
      I CSS per componente scritti prima dei token usano ancora questi nomi.
      Restano qui come ponte, così la palette è comunque una sola: vanno tolti

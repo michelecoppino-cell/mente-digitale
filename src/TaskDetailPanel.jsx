@@ -22,7 +22,6 @@ import {
   graphStatusFor, parseWaitingFor, withWaitingFor, waitingDays,
 } from './taskModel';
 import { listLabel, sectionNameForList } from './paraConfig';
-import { usePomodoro } from './pomodoroContext';
 import { pushUndo } from './undo';
 import SectionResources from './SectionResources';
 import Skeleton from './Skeleton';
@@ -82,13 +81,11 @@ function flowStatusOf(/** @type {string|undefined} */ graphStatus) {
  */
 export default function TaskDetailPanel({ task, notebooks = [], sectionsMap = {}, pagesCache = null, onClose, onCompleted, onDeleted, onRenamed, onDueChanged, onRestored, onEstimateChanged, onPatched, status, onSchedule, onUnschedule, showResources = true }) {
   const navigate = useNavigate();
-  const { start: startPomodoro } = usePomodoro();
   // La sezione PARA del task è la sezione OneNote che si chiama come la sua
   // lista To-Do — o, se la lista è una consegna annidata (`2573.A60`, vedi
-  // paraConfig.js), quella della sua commessa. Senza, il pomodoro non saprebbe
-  // quale workbook aprire, il bottone non comparirebbe e i riquadri
-  // OneNote/OneDrive resterebbero vuoti: tutte cose che sparirebbero in
-  // silenzio, senza un errore.
+  // paraConfig.js), quella della sua commessa. Senza, il bottone che apre il
+  // workbook non comparirebbe e i riquadri OneNote/OneDrive resterebbero
+  // vuoti: tutte cose che sparirebbero in silenzio, senza un errore.
   const { section, notebook } = useMemo(() => {
     const names = Object.values(sectionsMap || {}).flat().map(s => s.displayName);
     const target = (sectionNameForList(task?._listName, names) || '').toLowerCase();
@@ -671,27 +668,17 @@ export default function TaskDetailPanel({ task, notebooks = [], sectionsMap = {}
             {itemError && <div className="planner-checklist-error">{itemError}</div>}
           </div>
 
-          {/* Avviare il pomodoro da qui è ciò che lega la programmazione al
-              posto di lavoro: la sessione sale a livello di app e porta al
-              workbook della sezione, dove stanno le pagine e i file che
+          {/* Il ponte fra la programmazione e il posto di lavoro: da qui si va
+              al workbook della sezione, dove stanno le pagine e i file che
               servono a farla davvero, questa attività. */}
           {sectionId && (
             <button
-              className="planner-pomodoro-start"
-              onClick={() => {
-                startPomodoro({
-                  taskId: task.id,
-                  taskTitle: task.title,
-                  sectionId,
-                  sectionName: section?.displayName || null,
-                  durationMin: 25,
-                });
-                navigate(`/sezioni/${sectionId}`);
-              }}>
-              <span className="planner-pomodoro-dot" />
-              Avvia pomodoro
-              <span className="planner-pomodoro-caption">
-                apre Sezioni sul workbook {section?.displayName || 'della sezione'}
+              className="planner-workbook-open"
+              onClick={() => navigate(`/sezioni/${sectionId}`)}>
+              <span className="planner-workbook-dot" />
+              Apri il workbook
+              <span className="planner-workbook-caption">
+                {section?.displayName || 'la sezione'} in Sezioni
               </span>
             </button>
           )}

@@ -1,14 +1,13 @@
 // @ts-check
-// Shell di navigazione: rail a sinistra, barra Pomodoro persistente, topbar,
-// e il contenuto della rotta corrente.
+// Shell di navigazione: rail a sinistra, topbar, e il contenuto della rotta
+// corrente.
 //
 // Prima la navigazione era una manciata di booleani in App.jsx (plannerOpen,
 // diaryOpen, scheduleOpen…): nessuna vista aveva un indirizzo, il tasto
 // indietro usciva dall'app e ricaricando si tornava sempre alla mappa. Qui le
 // destinazioni sono sei rotte vere.
 import { useEffect, useState } from 'react';
-import { NavLink, useNavigate } from 'react-router-dom';
-import { usePomodoro } from './pomodoroContext';
+import { NavLink } from 'react-router-dom';
 import { useMediaQuery } from './useMediaQuery';
 import './AppShell.css';
 
@@ -89,107 +88,6 @@ function Icon({ name }) {
   }
 }
 
-/** mm:ss a partire dai millisecondi trascorsi. */
-function fmtElapsed(/** @type {number} */ ms) {
-  const total = Math.floor(ms / 1000);
-  return `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`;
-}
-
-/**
- * Barra della sessione Pomodoro. Resta montata qui, sopra il contenuto, in
- * tutte le viste finché il timer gira, e riporta al workbook con un click.
- *
- * Da telefono non viene montata: 48px di topbar più 52px di barra si mangiano
- * un sesto di uno schermo da 667, quindi sotto gli 860px la sessione va a
- * vivere dentro la topbar (vedi PomodoroInline).
- */
-function PomodoroBar() {
-  const { session, elapsedMs, pause, resume, stop } = usePomodoro();
-  const navigate = useNavigate();
-  if (!session) return null;
-
-  const pct = Math.min(1, elapsedMs / (session.durationMin * 60_000));
-
-  return (
-    <div className="pomo-bar">
-      <button
-        className="pomo-bar-main"
-        onClick={() => session.sectionId && navigate(`/sezioni/${session.sectionId}`)}
-        disabled={!session.sectionId}
-        title={session.sectionId ? 'Torna al workbook della sezione' : undefined}>
-        <span
-          className="pomo-bar-dial"
-          style={/** @type {import('react').CSSProperties} */ ({ '--pomo-pct': `${pct * 360}deg` })} />
-        <span className="pomo-bar-time">{fmtElapsed(elapsedMs)}</span>
-        <span className="pomo-bar-task">{session.taskTitle || 'Sessione di concentrazione'}</span>
-        <span className="pomo-bar-meta">
-          {[
-            session.sectionName,
-            `avviata alle ${new Date(session.startedAt).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })}`,
-          ].filter(Boolean).join(' · ')}
-        </span>
-      </button>
-      <div className="pomo-bar-actions">
-        <button
-          className="pomo-bar-btn"
-          onClick={session.state === 'running' ? pause : resume}>
-          {session.state === 'running' ? 'Pausa' : 'Riprendi'}
-        </button>
-        <button className="pomo-bar-btn primary" onClick={stop}>Chiudi e completa</button>
-      </div>
-    </div>
-  );
-}
-
-/**
- * La sessione Pomodoro dentro la topbar, da telefono: il panino e il timer
- * sulla stessa riga. Stesso bersaglio della barra grande — un tocco riporta al
- * workbook della sezione — ma senza rubare una seconda riga allo schermo.
- */
-function PomodoroInline() {
-  const { session, elapsedMs } = usePomodoro();
-  const navigate = useNavigate();
-  if (!session) return null;
-
-  const pct = Math.min(1, elapsedMs / (session.durationMin * 60_000));
-
-  return (
-    <button
-      className="pomo-inline"
-      onClick={() => session.sectionId && navigate(`/sezioni/${session.sectionId}`)}
-      disabled={!session.sectionId}
-      title={session.sectionId ? 'Torna al workbook della sezione' : undefined}>
-      <span
-        className="pomo-bar-dial"
-        style={/** @type {import('react').CSSProperties} */ ({ '--pomo-pct': `${pct * 360}deg` })} />
-      <span className="pomo-inline-time">{fmtElapsed(elapsedMs)}</span>
-      <span className="pomo-inline-task">{session.taskTitle || 'Sessione di concentrazione'}</span>
-    </button>
-  );
-}
-
-/**
- * Pausa/riprendi e chiusura della sessione, dentro il menù «altro».
- * @param {{ onDone: () => void }} props
- */
-function PomodoroMenuActions({ onDone }) {
-  const { session, pause, resume, stop } = usePomodoro();
-  if (!session) return null;
-  return (
-    <>
-      <button
-        className="shell-menu-item"
-        onClick={() => { session.state === 'running' ? pause() : resume(); onDone(); }}>
-        {session.state === 'running' ? 'Pausa' : 'Riprendi'}
-      </button>
-      <button className="shell-menu-item accent" onClick={() => { stop(); onDone(); }}>
-        Chiudi e completa
-      </button>
-      <div className="shell-menu-sep" />
-    </>
-  );
-}
-
 /**
  * @param {Object} props
  * @param {import('react').ReactNode} props.children      contenuto della rotta corrente
@@ -202,19 +100,9 @@ export default function AppShell({ children, topbar, onCapture, onOpenSettings }
   // Su schermo stretto il rail è un drawer sopra il contenuto, non una colonna
   // che gli ruba larghezza.
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [menuOpen, setMenuOpen] = useState(false);
   const narrow = useMediaQuery('(max-width: 860px)');
-  const { session } = usePomodoro();
-  // Topbar e barra Pomodoro si fondono in una riga sola quando lo schermo è
-  // stretto e la sessione gira.
-  const fused = narrow && !!session;
 
   useEffect(() => { localStorage.setItem(RAIL_COLLAPSED_KEY, collapsed ? '1' : '0'); }, [collapsed]);
-
-  // Il menù «altro» esiste solo dentro la topbar fusa: quando la sessione
-  // finisce o lo schermo si allarga sparisce da sé, senza un effetto che
-  // rincorra lo stato.
-  const menuVisible = menuOpen && fused;
 
   // Un solo comando, un solo handler: da telefono apre e chiude il drawer, da
   // desktop riduce e riespande il rail. Il bottone è disegnato due volte —
@@ -281,15 +169,13 @@ export default function AppShell({ children, topbar, onCapture, onOpenSettings }
       </nav>
 
       <div className="shell-main">
-        {!fused && <PomodoroBar />}
-        <header className={`shell-topbar${fused ? ' fused' : ''}`}>
+        <header className="shell-topbar">
           <button className="shell-drawer-btn tap-44" onClick={toggleMenu} title={menuBtnTitle}>
             <Icon name="menu" />
           </button>
 
-          {/* Il «+» del rail, portato in topbar da telefono: sempre a un tocco,
-              anche a sessione Pomodoro accesa (la topbar fusa lo tiene fra il
-              panino e il timer). */}
+          {/* Il «+» del rail, portato in topbar da telefono: la cattura resta
+              a un tocco anche quando il rail è chiuso nel drawer. */}
           {narrow && (
             <button
               className="shell-capture-btn tap-44"
@@ -299,32 +185,7 @@ export default function AppShell({ children, topbar, onCapture, onOpenSettings }
             </button>
           )}
 
-          {fused ? (
-            <>
-              <PomodoroInline />
-              <button
-                className={`shell-more-btn tap-44${menuVisible ? ' active' : ''}`}
-                onClick={() => setMenuOpen(o => !o)}
-                title="Altre azioni">
-                <Icon name="more" />
-              </button>
-              {menuVisible && (
-                <>
-                  <div className="shell-menu-scrim" onClick={() => setMenuOpen(false)} />
-                  <div className="shell-menu">
-                    <PomodoroMenuActions onDone={() => setMenuOpen(false)} />
-                    {/* Gli stessi bottoni della topbar, distanziati da dito.
-                        Il menù non si chiude al click: la campanella della
-                        Daily Review apre un suo pannello annidato qui dentro,
-                        e chiudere il menù lo smonterebbe all'istante. */}
-                    <div className="shell-menu-actions">{topbar}</div>
-                  </div>
-                </>
-              )}
-            </>
-          ) : (
-            <div className="shell-topbar-actions">{topbar}</div>
-          )}
+          <div className="shell-topbar-actions">{topbar}</div>
         </header>
         <div className="shell-content">{children}</div>
       </div>

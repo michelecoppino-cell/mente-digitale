@@ -21,7 +21,6 @@ import QuickCapture from './QuickCapture';
 import { captureContextFor } from './captureContext';
 import AppShell from './AppShell';
 import ShortcutsPanel from './ShortcutsPanel';
-import { usePomodoro } from './pomodoroContext';
 import TodayView from './TodayView';
 import SectionsView from './SectionsView';
 import { graphStatusFor, STATUS_LABELS } from './taskModel';
@@ -271,7 +270,6 @@ export default function App() {
   const captureContext = useMemo(
     () => captureContextFor(location.pathname, notebooks, sectionsMap, todoLists),
     [location.pathname, notebooks, sectionsMap, todoLists]);
-  const pomodoro = usePomodoro();
 
   useEffect(() => {
     /** @type {(() => void)|null} */
@@ -791,18 +789,6 @@ export default function App() {
     updateTasksEverywhere(listId, tasks => [...tasks, task]);
   }
 
-  // Il Pomodoro avviato dal Piano diventa una sessione a livello di app: la
-  // barra in cima resta visibile anche cambiando vista, che è tutto il punto
-  // di averla tirata fuori da PlannerView. La sessione non è ancora legata a
-  // un task o a una sezione — quel collegamento arriva col Piano e con Sezioni.
-  function handleStartPomodoroFocus() {
-    pomodoro.start({ durationMin: 25 });
-  }
-
-  function handleEndPomodoroFocus() {
-    pomodoro.stop();
-  }
-
   // ── Vista Attività: le transizioni di stato ──────────────────────────────
   // Lo stato vive su Graph, non in memoria: si scrive prima lì e si aggiorna
   // il pool solo dopo, così una schermata che dice "In attesa" corrisponde
@@ -1069,8 +1055,6 @@ export default function App() {
               onTaskDueChanged={(listId, taskId, dueDateTime) => handleTaskPatched(listId, taskId, { dueDateTime })}
               onTaskPatched={handleTaskPatched}
               onTaskRestored={handleTaskRestored}
-              onStartFocus={handleStartPomodoroFocus}
-              onEndFocus={handleEndPomodoroFocus}
               calendarDirtyToken={calendarDirtyToken}
             />
           } />

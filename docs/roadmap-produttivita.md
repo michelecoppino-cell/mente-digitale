@@ -6,7 +6,15 @@
 > a colonne e i quadranti voleva dire due modi di dire la stessa cosa sullo
 > stesso task. Oggi lo stato di un'attività è la colonna in cui sta, e basta.
 > Del marker `[EIS:Qn]` resta solo la ripulitura delle note vecchie, in
-> `taskModel.noteText`. Tutto il resto del documento vale ancora.
+> `taskModel.noteText`.
+>
+> Stessa sorte, più tardi, per il punto 2 — il **Pomodoro**. Timer, barra di
+> sessione, colonna della concentrazione nel Piano e file di statistiche su
+> OneDrive sono stati tolti tutti: misurare i quarti d'ora era diventato un
+> secondo lavoro accanto al lavoro, e il Piano dice già quando una cosa si fa e
+> per quanto. Al posto del bottone che avviava una sessione, nel dettaglio di
+> un'attività c'è «Apri il workbook», che porta alla sezione. Il resto del
+> documento vale ancora.
 
 ## Contesto
 

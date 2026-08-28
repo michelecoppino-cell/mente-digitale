@@ -1283,27 +1283,6 @@ export async function deleteDiaryPhoto(name) {
   }
 }
 
-// ── OneDrive Pomodoro Stats ────────────────────────────────────────────────
-const OD_POMODORO_STATS_FILE = 'mente-digitale-pomodoro-stats.json';
-
-/** @returns {Promise<Record<string, any>>} */
-export async function loadPomodoroStats() {
-  return getDriveJson(OD_POMODORO_STATS_FILE, {});
-}
-
-/** @param {Record<string, any>} stats @returns {Promise<any>} */
-export async function savePomodoroStats(stats) {
-  // Prune entries older than 90 days
-  const cutoff = new Date();
-  cutoff.setDate(cutoff.getDate() - 90);
-  /** @type {Record<string, any>} */
-  const pruned = {};
-  for (const [date, entry] of Object.entries(stats)) {
-    if (new Date(date) >= cutoff) pruned[date] = entry;
-  }
-  return putDriveJson(OD_POMODORO_STATS_FILE, pruned);
-}
-
 /**
  * @param {string} listId
  * @param {string} taskId

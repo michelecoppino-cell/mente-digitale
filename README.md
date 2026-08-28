@@ -52,7 +52,9 @@ Microsoft To-Do e al calendario Outlook, e un diario con supporto AI via copia-i
   appena se ne apre una. Una commessa con più **consegne** (liste To-Do annidate per nome,
   vedi sotto) le mostra come gruppi a tendina, ognuno con la sua scadenza; il `+` in testata
   ne crea una nuova, e un'attività si sposta da una consegna all'altra trascinandola.
-  È dove atterra il Pomodoro avviato dal Piano.
+  Le attività che hanno già un blocco nel piano — in un giorno qualunque — si leggono in
+  grigio, col giorno e l'ora nel titolo: la colonna dice a colpo d'occhio cosa resta da
+  collocare, senza rimettere a piano due volte la stessa cosa.
 - **Attività** — le cinque colonne del flusso GTD (Inbox · Prossime azioni · In attesa · Programmate · Un giorno):
   la colonna *è* lo stato, e trascinare una card fra colonne lo cambia su Microsoft To-Do. Un clic su una
   card apre il pannello di dettaglio — note, sottoattività, stima, scadenza, stato.
@@ -226,11 +228,8 @@ fino a tre indietro, compilati come «non fatto» e **dichiarati** in cima al
 pannello: un registro che si compila da solo in silenzio è un registro di cui non
 ci si fida più. Vedi `rituale.js` e `RitualeMattino.jsx`.
 
-Sopra il contenuto vive la **barra Pomodoro**: la sessione sta a livello di app
-(`PomodoroSession.jsx`), quindi il timer continua a girare — e la barra resta
-visibile — anche cambiando vista. Si avvia dal pannello di dettaglio del Piano,
-che porta a `#/sezioni/:id`: è il passaggio che lega la programmazione al posto
-di lavoro.
+Il pannello di dettaglio del Piano porta a `#/sezioni/:id` con «Apri il
+workbook»: è il passaggio che lega la programmazione al posto di lavoro.
 
 ## Il flusso di un'attività
 
