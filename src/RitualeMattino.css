@@ -90,6 +90,28 @@
 }
 .rt-motivo:focus { outline: none; border-color: var(--accent-line); }
 
+/* Cosa, e per quanto: i due campi che compaiono spuntando una casella. Stanno
+   nello spazio della tendina dei motivi, così spuntare e despuntare non sposta
+   niente attorno — la riga resta alta uguale e le altre due non ballano.
+   Il tipo prende lo spazio che resta, la durata quello che le basta: «Body
+   scan» è una parola e mezzo, «10 min» sono sei caratteri sempre. */
+.rt-campi { flex: 1; min-width: 0; display: flex; gap: var(--sp-2); }
+.rt-tipo,
+.rt-durata {
+  height: 30px;
+  padding: 0 var(--sp-2);
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  color: var(--text-2);
+  font-family: var(--font-ui);
+  font-size: var(--fs-micro);
+}
+.rt-tipo { flex: 1; min-width: 0; }
+.rt-durata { flex: 0 0 auto; }
+.rt-tipo:focus,
+.rt-durata:focus { outline: none; border-color: var(--accent-line); }
+
 .rt-esito {
   flex: 1;
   min-width: 0;

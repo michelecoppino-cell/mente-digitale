@@ -57,6 +57,7 @@ import {
 } from './coda';
 import { giorniRestanti, meseDi, obiettiviDelMese, risolvi } from './obiettivi';
 import SensitiveCard from './SensitiveCard';
+import { Matita } from './Matita';
 import MovimentoCard from './MovimentoCard';
 import { useRegistroMovimento } from './registroMovimento';
 import ObiettiviModal from './ObiettiviModal';
@@ -135,6 +136,13 @@ function fmtBreve(/** @type {string} */ ymd) {
   return new Date(ymd + 'T00:00:00')
     .toLocaleDateString('it-IT', { day: 'numeric', month: 'short' })
     .replace('.', '');
+}
+
+/** "martedì 12 marzo 2024" — la data per esteso, in testa a una voce di diario
+ *  aperta: lì l'anno conta, perché il senso di rileggersi è la distanza. */
+function fmtLungo(/** @type {string} */ ymd) {
+  return new Date(ymd + 'T00:00:00')
+    .toLocaleDateString('it-IT', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
 }
 
 /** Giorni interi fra due 'YYYY-MM-DD'. */
@@ -621,6 +629,28 @@ function AzioneRow({ blocco, task, passato, onCompleta }) {
 }
 
 /**
+ * La testata di un riquadro: il titolo con la sua matita, e sotto la riga di
+ * servizio.
+ *
+ * La riga di servizio — «4 gg alla fine», «3 in corso · 8 in coda» — stava a
+ * destra sulla stessa riga del titolo, ed è lì che andava a sbattere contro la
+ * matita. Scesa sotto diventa quello che è sempre stata: un sottotitolo, non
+ * un secondo titolo che si contende la riga.
+ * @param {{ eyebrow: string, meta?: import('react').ReactNode, matita?: {onClick?: () => void, to?: string, title: string} }} props
+ */
+function CardHead({ eyebrow, meta, matita }) {
+  return (
+    <div className="today-card-head">
+      <div className="today-card-titolo">
+        <span className="eyebrow">{eyebrow}</span>
+        {matita && <Matita {...matita} />}
+      </div>
+      {meta ? <span className="today-card-meta">{meta}</span> : null}
+    </div>
+  );
+}
+
+/**
  * Una barra di avanzamento da tre pixel: la stessa forma per gli obiettivi,
  * per le letture e per i cento desideri.
  * @param {{ quota: number, colore?: string }} props
@@ -654,12 +684,11 @@ function ObiettiviCard({ obiettivi, ym, oggi, onCambia }) {
 
   return (
     <section className="today-card today-obiettivi">
-      <div className="today-card-head">
-        <span className="eyebrow">Obiettivi di {nomeMese}</span>
-        <span className="today-card-meta">
-          {restano > 0 ? `${restano} ${restano === 1 ? 'giorno' : 'gg'} alla fine` : 'mese chiuso'}
-        </span>
-      </div>
+      <CardHead
+        eyebrow={`Obiettivi di ${nomeMese}`}
+        meta={restano > 0 ? `${restano} ${restano === 1 ? 'giorno' : 'gg'} alla fine` : 'mese chiuso'}
+        matita={{ onClick: onCambia, title: 'Cambia gli obiettivi' }}
+      />
 
       {obiettivi.length === 0 ? (
         <p className="today-empty">Nessun obiettivo per questo mese.</p>
@@ -679,8 +708,6 @@ function ObiettiviCard({ obiettivi, ym, oggi, onCambia }) {
           ))}
         </div>
       )}
-
-      <button className="today-link-btn" onClick={onCambia}>Cambia gli obiettivi →</button>
     </section>
   );
 }
@@ -702,10 +729,11 @@ function CodaCard({ voci, onApri }) {
 
   return (
     <section className="today-card today-coda">
-      <div className="today-card-head">
-        <span className="eyebrow">Da leggere e vedere</span>
-        <span className="today-card-meta">{nCorso} in corso · {nCoda} in coda</span>
-      </div>
+      <CardHead
+        eyebrow="Da leggere e vedere"
+        meta={`${nCorso} in corso · ${nCoda} in coda`}
+        matita={{ onClick: onApri, title: 'Apri la coda' }}
+      />
 
       {voci.length === 0 ? (
         <p className="today-empty">Niente in lettura. Un link incollato qui dentro diventa una riga.</p>
@@ -745,8 +773,6 @@ function CodaCard({ voci, onApri }) {
           </div>
         </div>
       )}
-
-      <button className="today-link-btn" onClick={onApri}>Apri la coda →</button>
     </section>
   );
 }
@@ -799,14 +825,16 @@ function VisionIcon() {
   );
 }
 
-/** I cento desideri: un elenco puntato — cento righe, una sotto l'altra. */
-function ListIcon() {
-  return (
-    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M9 7h11M9 12h11M9 17h11" />
-      <path d="M4.6 7h.01M4.6 12h.01M4.6 17h.01" />
-    </svg>
-  );
+/**
+ * I cento desideri: il numero e basta.
+ *
+ * Era un elenco puntato, cioè il disegno di una lista qualsiasi accanto a due
+ * simboli che dicevano una cosa precisa. «100» dice il nome del documento —
+ * quello per cui il riquadro tiene una barra che si riempie — senza chiedere
+ * di indovinare.
+ */
+function CentoIcon() {
+  return <span className="today-cento" aria-hidden="true">100</span>;
 }
 
 /**
@@ -847,25 +875,27 @@ function BussolaCard({ docs, today, onOpenIdentity }) {
           ? <p className="today-compass-wish">{wish.text}</p>
           : <p className="today-empty">Ancora nessun desiderio scritto.</p>
       )}
+      {/* Il gruppo del desiderio a sinistra, quanti ne sono scritti a destra:
+          due dati diversi che stavano in fila separati da un punto, e si
+          leggevano come una frase sola. Ai due capi della riga si vede subito
+          che sono due cose — e «39/100» è la stessa forma di «4/12» degli
+          obiettivi, che è quello che è: un contatore con un traguardo. */}
       {wish && (
-        <span className="today-compass-count">
-          {[wish.group, `uno dei ${wishes.length}`].filter(Boolean).join(' · ')}
-        </span>
-      )}
-
-      {/* Quanto manca ai cento. La barra dice in un colpo d'occhio quello che
-          prima era una frase in fondo alla riga sopra. */}
-      {wishes.length > 0 && (
-        <div className="today-compass-barra">
-          <Barra quota={wishes.length / 100} colore="var(--accent-line)" />
-          <span className="today-micro">{wishes.length} su 100 desideri scritti</span>
+        <div className="today-compass-count">
+          <span>{wish.group || ''}</span>
+          {wishes.length > 0 && <span className="today-compass-num">{wishes.length}/100</span>}
         </div>
       )}
+
+      {/* Quanto manca ai cento. La frase sotto («39 su 100 desideri scritti»)
+          non c'è più: diceva a parole quello che la barra disegna e il
+          contatore qui sopra scrive in cifre. */}
+      {wishes.length > 0 && <Barra quota={wishes.length / 100} colore="var(--accent-line)" />}
 
       <div className="today-compass-links">
         <button type="button" onClick={() => onOpenIdentity?.('bussola')} title="La Bussola" aria-label="La Bussola"><CompassIcon /></button>
         <button type="button" onClick={() => onOpenIdentity?.('visione')} title="La Visione" aria-label="La Visione"><VisionIcon /></button>
-        <button type="button" onClick={() => onOpenIdentity?.('desideri')} title="I cento desideri" aria-label="I cento desideri"><ListIcon /></button>
+        <button type="button" onClick={() => onOpenIdentity?.('desideri')} title="I cento desideri" aria-label="I cento desideri"><CentoIcon /></button>
       </div>
     </SensitiveCard>
   );
@@ -923,28 +953,25 @@ function FinanzeCard() {
     <SensitiveCard
       className="today-finanze-card"
       eyebrow="Finanze"
+      azione={{ to: '/finanze', title: 'Apri Finanze' }}
       nota="Patrimonio, saldo grezzo e netto tasse all'ultimo dato.">
       {esito === null && <p className="today-empty">Calcolo in corso…</p>}
       {esito?.tipo === 'errore' && <p className="today-empty">Non sono riuscito a leggere i dati.</p>}
       {esito?.tipo === 'vuoto' && <p className="today-empty">Nessun movimento importato.</p>}
       {esito?.tipo === 'ok' && (
-        <>
-          {/* Il patrimonio esce dalla fila e sale in cima, grande: è la cifra
-              per cui si sblocca il riquadro. Le altre tre la spiegano. */}
-          <div className="today-fin-forte">
-            <span className="today-micro">Patrimonio + immobili</span>
-            <span className="today-fin-grande" style={{ color: COLORI_SALDO.totale }}>
-              {esito.riep.totaleConImmobili}
-            </span>
-          </div>
-          <div className="today-fin-righe">
-            <FinRiga etichetta="Saldo grezzo" valore={esito.riep.grezzo} colore={COLORI_SALDO.grezzo} />
-            <FinRiga etichetta="Netto tasse" valore={esito.riep.nettoTasse} colore={COLORI_SALDO.nettoTasse} />
-            <FinRiga etichetta="Ultimo dato" valore={fmtDataDato(esito.riep.ultimoDato)} />
-          </div>
-        </>
+        /* Quattro righe uguali: etichetta a sinistra, cifra a destra. Il
+           patrimonio stava fuori dalla fila, in corpo 20 — ma la dimensione è
+           un modo di dire «guarda questa e non le altre», e le altre tre sono
+           quelle che la spiegano. Resta verde, che basta a distinguerla.
+           In cima la data: dice a quando sono ferme le tre cifre sotto, e una
+           cifra di cui non si sa la data non si sa nemmeno leggere. */
+        <div className="today-fin-righe">
+          <FinRiga etichetta="Ultimo dato" valore={fmtDataDato(esito.riep.ultimoDato)} />
+          <FinRiga etichetta="Patrimonio + immobili" valore={esito.riep.totaleConImmobili} colore={COLORI_SALDO.totale} />
+          <FinRiga etichetta="Saldo grezzo" valore={esito.riep.grezzo} colore={COLORI_SALDO.grezzo} />
+          <FinRiga etichetta="Netto tasse" valore={esito.riep.nettoTasse} colore={COLORI_SALDO.nettoTasse} />
+        </div>
       )}
-      <Link className="today-link-btn" to="/finanze">Apri Finanze →</Link>
     </SensitiveCard>
   );
 }
@@ -1066,6 +1093,7 @@ function useVoceDelGiorno(index, today, attivo) {
 function DiarioCard({ diario, today }) {
   const visibile = useRiservatiVisibili();
   const voce = useVoceDelGiorno(diario?.index, today, visibile);
+  const [aperta, setAperta] = useState(false);
 
   const date = useMemo(() => diario?.date || [], [diario]);
   const streak = useMemo(() => (diario ? diaryStreak(date) : null), [diario, date]);
@@ -1090,9 +1118,11 @@ function DiarioCard({ diario, today }) {
     <SensitiveCard
       className="today-diario-card"
       eyebrow="Diario"
+      azione={{ to: '/diario', title: 'Apri il Diario' }}
       nota="La striscia dei sette giorni e una voce da rileggere.">
-      <p className="today-diary-prompt">Due righe su com'è andata…</p>
-
+      {/* Via «Due righe su com'è andata…»: era un invito, e sotto c'è una voce
+          vera. Un invito a scrivere in cima a una cosa scritta si legge come
+          un'etichetta di quello che sta sotto, e non lo era. */}
       <div className="today-diary-week" aria-hidden="true">
         {settimana.map(x => (
           <span key={x.g} className={`today-diary-tacca${x.pieno ? ' pieno' : ''}`} />
@@ -1101,11 +1131,24 @@ function DiarioCard({ diario, today }) {
 
       {voce === undefined && <p className="today-empty">…</p>}
       {voce === null && <p className="today-empty">Ancora niente da rileggere.</p>}
+      {/* Nel riquadro ci stanno centodieci lettere, e una sera raccontata si
+          taglia sempre a metà: il bottone apre la voce intera senza portare
+          via da «Oggi». Aprire il Diario per leggere fino in fondo la riga che
+          è comparsa da sola vuol dire cambiare schermata per finire una
+          frase — e chi cambia schermata non torna. */}
       {voce && (
-        <p className="today-diary-voce">
-          <span className="today-diary-quando">{fmtBreve(voce.date)}</span>
+        <button type="button" className="today-diary-voce" onClick={() => setAperta(true)} title="Leggi la voce intera">
+          <span className="today-diary-quando">
+            {fmtBreve(voce.date)}
+            <span className="today-diary-espandi" aria-hidden="true">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M14 4h6v6M20 4l-7.5 7.5" />
+                <path d="M10 20H4v-6M4 20l7.5-7.5" />
+              </svg>
+            </span>
+          </span>
           <span className="today-diary-testo">«{excerpt(voce.text, 110)}»</span>
-        </p>
+        </button>
       )}
 
       <span className="today-micro">
@@ -1115,7 +1158,49 @@ function DiarioCard({ diario, today }) {
         ].filter(Boolean).join(' · ')}
       </span>
 
-      <Link className="today-link-btn" to="/diario">Apri il Diario →</Link>
+      {aperta && voce && <VoceIntera voce={voce} onChiudi={() => setAperta(false)} />}
     </SensitiveCard>
+  );
+}
+
+/**
+ * La voce del giorno per intero, sopra la scheda.
+ *
+ * Riusa l'involucro dei moduli di «Oggi» (.mq-overlay / .mq-sheet) come fanno
+ * gli obiettivi e la coda: un quarto aspetto per la quarta finestrella
+ * sarebbe stato un quarto modo di chiudere. Qui però non c'è niente da
+ * salvare — si legge e si chiude — e infatti l'unico comando è «Chiudi».
+ * @param {{ voce: any, onChiudi: () => void }} props
+ */
+function VoceIntera({ voce, onChiudi }) {
+  useEffect(() => {
+    function suTasto(/** @type {KeyboardEvent} */ e) { if (e.key === 'Escape') onChiudi(); }
+    window.addEventListener('keydown', suTasto);
+    return () => window.removeEventListener('keydown', suTasto);
+  }, [onChiudi]);
+
+  return (
+    <div className="mq-overlay" onClick={onChiudi}>
+      <div className="mq-sheet today-voce-sheet" onClick={e => e.stopPropagation()}>
+        <div className="mq-head">
+          <span className="mq-title">Diario</span>
+          <span className="mq-date">{fmtLungo(voce.date)}</span>
+        </div>
+
+        {/* I capoversi restano capoversi: una sera scritta di getto ha degli a
+            capo, e appiattirli in un blocco solo la rende una cosa che non si
+            legge. */}
+        <div className="today-voce-testo">
+          {(voce.text || '').split(/\n{2,}/).map((/** @type {string} */ p, /** @type {number} */ i) => (
+            <p key={i}>{p}</p>
+          ))}
+        </div>
+
+        <div className="mq-actions">
+          <button type="button" className="mq-annulla" onClick={onChiudi}>Chiudi</button>
+          <Link className="mq-salva" to="/diario">Apri il Diario</Link>
+        </div>
+      </div>
+    </div>
   );
 }

@@ -117,9 +117,28 @@ export function sessioniDelGiorno(voci, data) {
   return out;
 }
 
+/** La durata proposta per una sessione nata da una casella: la stessa che il
+ *  modulo del Movimento propone di default, cioè la seconda della sua scala. */
+export function durataDefault(/** @type {string} */ famiglia) {
+  const durate = FAMIGLIE[/** @type {keyof typeof FAMIGLIE} */ (famiglia)]?.durate || [30];
+  return durate[Math.min(1, durate.length - 1)];
+}
+
+/** Il tipo proposto per una sessione nata da una casella: il primo della sua
+ *  famiglia, che è anche il più frequente (Palestra, Seduta, Flow). */
+export function tipoDefault(/** @type {string} */ famiglia) {
+  return FAMIGLIE[/** @type {keyof typeof FAMIGLIE} */ (famiglia)]?.tipi[0] || 'Sessione';
+}
+
 /**
  * Lo stato iniziale del pannello per un giorno: quello che dice il registro,
  * e per il resto la risposta di default («non fatto, non sono riuscito»).
+ *
+ * Ogni riga porta con sé anche il **cosa** e il **quanto** che la sessione
+ * avrà se la casella viene spuntata: i due campi compaiono nel pannello solo a
+ * casella spuntata, ma i loro valori esistono da subito — altrimenti spuntare
+ * e salvare di fretta, senza toccarli, scriverebbe una sessione senza tipo e
+ * senza minuti.
  *
  * Il registro vince sul file del rituale, sempre: se una sessione è stata
  * registrata dalla scheda Movimento dopo aver risposto «no» la mattina, la
@@ -128,19 +147,25 @@ export function sessioniDelGiorno(voci, data) {
  * @param {Record<string, import('./types').RitualeGiorno>} doc
  * @param {import('./types').Movimento[]} voci
  * @param {string} data
- * @returns {Record<string, {fatto: boolean, motivo: string, registrate: number}>}
+ * @returns {Record<string, {fatto: boolean, motivo: string, registrate: number, tipo: string, durataMin: number}>}
  */
 export function statoIniziale(doc, voci, data) {
   const sessioni = sessioniDelGiorno(voci, data);
   const salvato = doc?.[data]?.famiglie || {};
-  /** @type {Record<string, {fatto: boolean, motivo: string, registrate: number}>} */
+  /** @type {Record<string, {fatto: boolean, motivo: string, registrate: number, tipo: string, durataMin: number}>} */
   const out = {};
   for (const f of ORDINE_FAMIGLIE) {
-    const registrate = (sessioni[f] || []).length;
+    const esistenti = sessioni[f] || [];
+    // Se una sessione c'è già, i due campi partono dai suoi: il pannello
+    // mostra quello che è scritto nel registro, non una proposta che lo
+    // contraddice sotto gli occhi.
+    const prima = esistenti[0];
     out[f] = {
-      fatto: registrate > 0 || !!salvato[f]?.fatto,
+      fatto: esistenti.length > 0 || !!salvato[f]?.fatto,
       motivo: salvato[f]?.motivo || MOTIVO_DEFAULT,
-      registrate,
+      registrate: esistenti.length,
+      tipo: prima?.tipo || tipoDefault(f),
+      durataMin: prima?.durataMin || durataDefault(f),
     };
   }
   return out;
@@ -162,13 +187,6 @@ export function giornoVuoto(auto = false) {
   return giorno;
 }
 
-/** La durata di una sessione nata da una casella: la stessa che il modulo del
- *  Movimento propone di default, cioè la seconda della sua scala. */
-function durataDefault(/** @type {string} */ famiglia) {
-  const durate = FAMIGLIE[/** @type {keyof typeof FAMIGLIE} */ (famiglia)]?.durate || [30];
-  return durate[Math.min(1, durate.length - 1)];
-}
-
 /**
  * Da quello che c'è nel pannello a quello che va scritto: le sessioni da
  * creare, quelle da togliere, e i giorni del rituale.
@@ -179,7 +197,7 @@ function durataDefault(/** @type {string} */ famiglia) {
  * resta una, il giorno risulta fatto lo stesso — e la casella si rispunta da
  * sola alla riapertura, che è la verità.
  *
- * @param {Record<string, Record<string, {fatto: boolean, motivo: string}>>} stato  per data, per famiglia
+ * @param {Record<string, Record<string, {fatto: boolean, motivo: string, tipo?: string, durataMin?: number}>>} stato  per data, per famiglia
  * @param {import('./types').Movimento[]} voci   il registro com'è adesso
  * @param {boolean} [auto]                       segna i giorni come compilati dall'app
  * @returns {{ giorni: Record<string, import('./types').RitualeGiorno>, daCreare: import('./types').Movimento[], daCancellare: import('./types').Movimento[] }}
@@ -197,7 +215,7 @@ export function pianoSalvataggio(stato, voci, auto = false) {
     /** @type {Record<string, import('./types').RitualeVoce>} */
     const righe = {};
     for (const f of ORDINE_FAMIGLIE) {
-      const scelta = famiglie[f] || { fatto: false, motivo: MOTIVO_DEFAULT };
+      const scelta = famiglie[f] || { fatto: false, motivo: MOTIVO_DEFAULT, tipo: '', durataMin: 0 };
       const esistenti = sessioni[f] || [];
       let restano = esistenti.length;
 
@@ -205,8 +223,8 @@ export function pianoSalvataggio(stato, voci, auto = false) {
         const voce = nuovaVoce({
           date: data,
           famiglia: f,
-          tipo: FAMIGLIE[f].tipi[0],
-          durataMin: durataDefault(f),
+          tipo: scelta.tipo || tipoDefault(f),
+          durataMin: scelta.durataMin || durataDefault(f),
         });
         voce.daRituale = true;
         daCreare.push(voce);

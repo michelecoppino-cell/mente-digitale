@@ -2,10 +2,11 @@
 
 .mv-card { gap: var(--sp-4); }
 
-.mv-head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--sp-3); }
-/* L'etichetta non si accorcia mai: in una colonna stretta a cedere dev'essere
-   il totale, che è un dettaglio, non il titolo del riquadro. */
-.mv-head > .eyebrow { flex: 0 0 auto; }
+.mv-head { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); }
+/* Il titolo con la sua matita — quella che apre «Il mattino» — non si accorcia
+   mai: in una colonna stretta a cedere dev'essere il totale, che è un
+   dettaglio, non il titolo del riquadro. */
+.mv-head > .today-card-titolo { flex: 0 0 auto; }
 
 /* A destra dell'etichetta: il totale della settimana e la chiavetta delle due
    impostazioni. Il totale è un dato, non un comando: sta in chiaro, e a
@@ -182,43 +183,6 @@
   .mv-today-btn:hover { background: var(--accent-tint); }
 }
 
-/* La riga del rituale del mattino: com'è andata, e la porta per correggerla.
-   Sta sotto le famiglie e sopra «Registra una sessione» perché racconta la
-   giornata di oggi, mentre le barre raccontano la settimana. */
-.mv-rituale {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-3);
-  width: 100%;
-  padding: var(--sp-3) var(--sp-4);
-  background: none;
-  border: 1px dashed var(--line);
-  border-radius: var(--r);
-  font-family: var(--font-ui);
-  text-align: left;
-  cursor: pointer;
-  transition: border-color var(--t);
-}
-@media (hover: hover) {
-  .mv-rituale:hover { border-color: var(--accent-line); }
-}
-.mv-rituale-eti {
-  flex: 0 0 auto;
-  font-size: var(--fs-micro);
-  letter-spacing: .08em;
-  text-transform: uppercase;
-  color: var(--disabled);
-}
-.mv-rituale-txt {
-  flex: 1;
-  min-width: 0;
-  font-size: var(--fs-micro);
-  color: var(--text-3);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.mv-rituale-freccia { flex: 0 0 auto; font-size: var(--fs-micro); color: var(--accent); }
 
 /* ── Impostazioni: bersagli e calendario ──────────────────────────────── */
 
