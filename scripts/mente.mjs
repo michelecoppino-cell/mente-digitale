@@ -75,10 +75,55 @@ async function esegui(args, opts) {
       return mente.agenda({ data: s(opts.data), giorni: n(opts.giorni) });
 
     case 'piano':
-      return mente.piano({ data: s(opts.data) });
+      if (!sub || sub === 'giorno') return mente.piano({ data: s(opts.data) });
+      if (sub === 'settimana') return mente.pianoArco({ data: s(opts.data) });
+      if (sub === 'mese') return mente.pianoArco({ mese: s(opts.mese) || s(opts.data) });
+      if (sub === 'aggiungi') {
+        return mente.pianoAggiungi({
+          attivita: resto[1], ora: resto[2] || s(opts.ora),
+          data: s(opts.data), durataMin: n(opts.durata),
+        });
+      }
+      if (sub === 'togli') return mente.pianoTogli({ attivita: resto[1], data: s(opts.data) });
+      throw new Error(`piano: sottocomando sconosciuto "${sub}" (giorno, settimana, mese, aggiungi, togli)`);
+
+    case 'obiettivi':
+      if (!sub || sub === 'leggi') return mente.obiettiviLeggi({ mese: s(opts.mese) });
+      // Sei righe con quattro campi ciascuna non si scrivono a colpi di
+      // `--flag`: da terminale arrivano come JSON, in --obiettivi o da stdin.
+      if (sub === 'scrivi') {
+        const grezzo = s(opts.obiettivi) || await leggiStdin();
+        if (!grezzo) throw new Error('Serve l\'elenco degli obiettivi in JSON (--obiettivi o da stdin).');
+        let elenco;
+        try { elenco = JSON.parse(grezzo); }
+        catch (e) { throw new Error(`Gli obiettivi non sono JSON valido: ${e.message}`); }
+        return mente.obiettiviScrivi({ mese: s(opts.mese), obiettivi: elenco });
+      }
+      throw new Error(`obiettivi: sottocomando sconosciuto "${sub}" (leggi, scrivi)`);
+
+    case 'evento':
+      if (sub === 'crea') {
+        return mente.eventoCrea({
+          oggetto: resto.slice(1).join(' ').trim() || s(opts.oggetto),
+          data: s(opts.data), inizio: s(opts.inizio), fine: s(opts.fine),
+          durataMin: n(opts.durata), tuttoIlGiorno: !!opts['tutto-il-giorno'],
+          luogo: s(opts.luogo), note: s(opts.note),
+          promemoriaMin: n(opts.promemoria), calendario: s(opts.calendario),
+        });
+      }
+      throw new Error(`evento: sottocomando sconosciuto "${sub || ''}" (crea)`);
 
     case 'sezioni':
       return mente.sezioni();
+
+    case 'sezione':
+      if (sub === 'crea') {
+        return mente.sezioneCrea({
+          nome: resto.slice(1).join(' ').trim() || s(opts.nome),
+          commessa: s(opts.commessa), consegna: s(opts.consegna), scadenza: s(opts.scadenza),
+        });
+      }
+      throw new Error(`sezione: sottocomando sconosciuto "${sub || ''}" (crea)`);
 
     case 'bussola':
       return mente.identita({ tipo: 'bussola' });
@@ -131,7 +176,21 @@ async function esegui(args, opts) {
       if (sub === 'leggi') {
         return mente.noteLeggi({ pagina: resto.slice(1).join(' ').trim(), sezione: s(opts.sezione) });
       }
-      throw new Error(`note: sottocomando sconosciuto "${sub || ''}" (pagine, leggi)`);
+      if (sub === 'crea') {
+        return mente.noteCrea({
+          sezione: s(opts.sezione),
+          titolo: resto.slice(1).join(' ').trim() || s(opts.titolo),
+          testo: s(opts.testo) || await leggiStdin(),
+        });
+      }
+      if (sub === 'aggiungi') {
+        return mente.noteAggiungi({
+          pagina: resto.slice(1).join(' ').trim() || s(opts.pagina),
+          sezione: s(opts.sezione),
+          testo: s(opts.testo) || await leggiStdin(),
+        });
+      }
+      throw new Error(`note: sottocomando sconosciuto "${sub || ''}" (pagine, leggi, crea, aggiungi)`);
 
     default:
       throw new Error(`Comando sconosciuto: ${comando}\n\n${AIUTO}`);
@@ -146,6 +205,9 @@ Lettura
   oggi [--data YYYY-MM-DD]        agenda, piano e conteggi del giorno
   agenda [--giorni N]             eventi del calendario (default 7 giorni)
   piano [--data YYYY-MM-DD]       i blocchi del piano di un giorno
+  piano settimana [--data D]      la settimana che contiene quel giorno
+  piano mese [--mese YYYY-MM]     un mese intero, giorno per giorno
+  obiettivi [--mese YYYY-MM]      gli obiettivi del mese e a che punto sono
   sezioni                         liste To-Do per commessa (con consegne, scadenze e
                                   attività aperte) e sezioni OneNote
   note pagine <sezione>           le pagine OneNote di una sezione
@@ -161,6 +223,20 @@ Scrittura
                          [--contesto ${CONTEXTS.map(c => c.key).join('|')}] [--nota "…"] [--attesa "Nome"]
   attivita stato <id|titolo> <${STATI_SCRIVIBILI.join('|')}>
   attivita completa <id|titolo>
+  sezione crea "NOME"  |  sezione crea --commessa 2573 --consegna ABS --scadenza YYYY-MM-DD
+
+  piano aggiungi <id|titolo> <HH:MM> [--data YYYY-MM-DD] [--durata 45]
+  piano togli <id|titolo> [--data YYYY-MM-DD]
+  obiettivi scrivi --mese YYYY-MM [--obiettivi '[{"titolo":"…","totale":12}]']
+                (senza --obiettivi legge il JSON da stdin; da 3 a 6 righe,
+                 sostituiscono quelle del mese)
+
+  evento crea "oggetto" [--data YYYY-MM-DD] [--inizio HH:MM] [--fine HH:MM | --durata 60]
+                        [--tutto-il-giorno] [--luogo "…"] [--note "…"]
+                        [--promemoria 15] [--calendario "Nome"]
+
+  note crea "titolo" --sezione X [--testo "…"]      (senza --testo legge da stdin)
+  note aggiungi <id | titolo --sezione X> [--testo "…"]
   diario scrivi [--testo "…"] [--tipo ${TIPI_DIARIO.join('|')}] [--data YYYY-MM-DD]
                 [--tag a,b] [--umore 1-5] [--energia 1-5] [--gratitudine "a|b"] [--cassetto]
                 (senza --testo legge da stdin)
@@ -168,9 +244,18 @@ Scrittura
 Globali
   --json                          esce in JSON invece che in testo
 
-Stati del flusso: ${TASK_STATUSES.join(', ')}. Calendario, OneNote, Bussola e
-piani si leggono soltanto: da qui non si scrivono, per non poter rovinare quello
-che non si ricostruisce da solo.
+Stati del flusso: ${TASK_STATUSES.join(', ')}.
+
+Niente, da qui, cancella niente: su OneNote si scrive solo in fondo a una
+pagina, mai sopra a quello che c'era, e la Bussola e la Visione si leggono
+soltanto. «Togliere» un'attività dal piano vuol dire toglierle l'ora, non
+cancellarla.
+
+Il piano del giorno, della settimana e del mese non sono tre piani ma tre
+distanze da cui si guarda lo stesso: si compilano tutti con «piano aggiungi»,
+un giorno per volta, e si rileggono con «piano settimana» e «piano mese». Gli
+obiettivi del mese sono un'altra cosa: dove si vuole arrivare, non quando si
+fanno le cose.
 
 Una commessa può avere più consegne, una lista To-Do ciascuna con la sua
 scadenza (nome GRUPPO.Consegna-YYMMDD). --sezione accetta sia il nome della

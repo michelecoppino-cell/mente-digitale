@@ -22,11 +22,13 @@
  */
 
 import {
-  getTodoLists, getTodoTasks, createTask, patchTask,
-  loadDailyPlans, loadIdentityDoc,
+  getTodoLists, getTodoTasks, createTask, patchTask, createTodoList,
+  loadDailyPlans, saveDailyPlans, loadIdentityDoc,
+  loadObiettivi, saveObiettivi,
   loadDiaryIndex, loadDiaryMonth, saveDiaryEntry,
-  getCalendarEvents,
+  getCalendarEvents, getCalendars, createCalendarEvent,
   getNotebooks, getSections, getPages, getPageContentHtml, htmlToText,
+  createPage, appendToPage, textToHtml,
 } from './mente-graph.mjs';
 
 import {
@@ -37,7 +39,12 @@ import {
 
 import {
   listGroupKey, listDeliverableLabel, listDueDate, listLabel, sortDeliverableLists,
+  buildListName,
 } from '../src/paraConfig.js';
+
+import {
+  nuovoObiettivo, obiettiviDelMese, meseDi, MIN_OBIETTIVI, MAX_OBIETTIVI,
+} from '../src/obiettivi.js';
 
 import {
   makeEntry, dateKey, monthKey, filterEntries, humanDate, DIARY_TYPES,
@@ -688,25 +695,9 @@ export async function noteLeggi(opts = {}) {
   const query = testo(opts.pagina);
   if (!query) throw new Error("Serve l'id di una pagina OneNote, o il suo titolo insieme alla sezione.");
 
-  let pageId = query;
-  let titolo = query;
-  // Gli id OneNote contengono sempre un '!': tutto il resto è un titolo da
-  // cercare dentro una sezione.
-  if (!query.includes('!')) {
-    const sezioneQuery = testo(opts.sezione);
-    if (!sezioneQuery) throw new Error('Per cercare una pagina per titolo serve anche la sezione.');
-    const sezione = await trovaSezioneOneNote(sezioneQuery);
-    const pagine = await getPages(sezione.id);
-    const q = query.toLowerCase();
-    const found = pagine.filter(p => (p.title || '').toLowerCase().includes(q));
-    if (!found.length) throw new Error(`Nessuna pagina "${query}" in ${sezione.displayName}.`);
-    if (found.length > 1) throw new Error(`"${query}" corrisponde a: ${found.map(p => p.title).join(', ')}`);
-    pageId = found[0].id;
-    titolo = found[0].title;
-  }
-
-  const contenuto = htmlToText(await getPageContentHtml(pageId));
-  return { data: { id: pageId, titolo, testo: contenuto }, text: contenuto };
+  const { id, titolo } = await risolviPagina(query, testo(opts.sezione));
+  const contenuto = htmlToText(await getPageContentHtml(id));
+  return { data: { id, titolo, testo: contenuto }, text: contenuto };
 }
 
 /**
@@ -724,4 +715,466 @@ export async function identita(opts = {}) {
     data: doc,
     text: sezioni.map(/** @param {any} s */ s => `── ${s.title} ──\n${s.content || ''}`.trim()).join('\n\n'),
   };
+}
+
+// ── Piano: scrittura ─────────────────────────────────────────────────────────
+// Il piano vive in un file solo su OneDrive (`mente-digitale-daily-plans.json`),
+// una chiave per giorno. Un blocco è un'attività messa a un'ora: dice quando la
+// si fa, e da lì l'attività prende lo stato «programmata» in tutta l'app.
+//
+// «Giornaliero, settimanale, mensile» non sono tre piani ma tre distanze da cui
+// si guarda lo stesso: nel Piano dell'app sono tre viste sugli stessi blocchi.
+// Perciò qui c'è una sola scrittura — `pianoAggiungi`, che prende un giorno
+// qualunque — e due letture, la settimana e il mese, per vedere il risultato
+// alla distanza giusta. Il piano *del mese* nel senso di dove si vuole
+// arrivare è un'altra cosa e ha i suoi strumenti: gli obiettivi, più sotto.
+
+const ORA_RE = /^([01]\d|2[0-3]):([0-5]\d)$/;
+const GIORNO_RE = /^\d{4}-\d{2}-\d{2}$/;
+// Il mese vuole il mese vero, 01–12: due cifre qualunque lasciano passare 2026-13,
+// e da lì `new Date(2026, 13, 0)` scivola in gennaio dell'anno dopo senza dirlo.
+const MESE_RE = /^\d{4}-(0[1-9]|1[0-2])$/;
+
+/** @param {string} hhmm @returns {number} minuti dalla mezzanotte */
+function minuti(hhmm) {
+  const m = ORA_RE.exec(hhmm);
+  if (!m) throw new Error(`Ora in formato sbagliato: ${hhmm} (serve HH:MM)`);
+  return Number(m[1]) * 60 + Number(m[2]);
+}
+
+/** @param {number} min @returns {string} "HH:MM" */
+function ora(min) {
+  const m = Math.max(0, Math.min(24 * 60 - 1, Math.round(min)));
+  return `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+}
+
+/** @param {string} giorno @returns {string} controllato, o eccezione */
+function giornoValido(giorno) {
+  if (!GIORNO_RE.test(giorno) || Number.isNaN(new Date(`${giorno}T12:00:00`).getTime())) {
+    throw new Error(`Giorno in formato sbagliato: ${giorno} (serve YYYY-MM-DD)`);
+  }
+  return giorno;
+}
+
+/** I sette giorni della settimana che contiene una data, da lunedì. */
+function settimanaDi(/** @type {string} */ giorno) {
+  const d = new Date(`${giorno}T12:00:00`);
+  const dow = d.getDay();
+  d.setDate(d.getDate() - (dow === 0 ? 6 : dow - 1));
+  return Array.from({ length: 7 }, (_, i) => {
+    const g = new Date(d);
+    g.setDate(d.getDate() + i);
+    return `${g.getFullYear()}-${String(g.getMonth() + 1).padStart(2, '0')}-${String(g.getDate()).padStart(2, '0')}`;
+  });
+}
+
+/** Un id come quelli che genera l'app: basta che sia unico dentro al file. */
+function nuovoIdBlocco() {
+  return `blk_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
+}
+
+/**
+ * Mette un'attività nel piano di un giorno, a un'ora.
+ *
+ * Due blocchi che si accavallano sono un errore e non una sovrapposizione da
+ * disegnare: il piano dice quando si fa una cosa, e due cose alla stessa ora
+ * vuol dire che non lo dice. L'app, dove si trascina e si vede la griglia, può
+ * permetterselo; da qui, dove si scrive alla cieca, no.
+ *
+ * @param {{ attivita?: string, data?: string, ora?: string, durataMin?: number }} opts
+ * @returns {Promise<{ data: any, text: string }>}
+ */
+export async function pianoAggiungi(opts = {}) {
+  const query = testo(opts.attivita);
+  if (!query) throw new Error("Serve l'attività: un pezzo del suo id o del suo titolo.");
+  const inizio = testo(opts.ora);
+  if (!inizio) throw new Error("Serve l'ora di inizio, HH:MM.");
+
+  const giorno = giornoValido(testo(opts.data) || dateKey());
+  const inizioMin = minuti(inizio);
+
+  const { tasks, plans } = await collectTasks();
+  const task = findTask(tasks, query);
+
+  // La durata: quella chiesta, altrimenti la stima dell'attività — che è la
+  // stessa cosa che fa l'app quando si trascina un task sulla griglia.
+  const durata = numero(opts.durataMin) ?? taskEstimateMin(task);
+  if (durata <= 0) throw new Error(`Durata non valida: ${durata} minuti.`);
+  const fineMin = inizioMin + durata;
+  if (fineMin > 24 * 60) throw new Error(`Un blocco dalle ${inizio} di ${durata} minuti esce dal giorno.`);
+
+  const piano = plans[giorno] || { date: giorno, blocks: [] };
+  const blocchi = piano.blocks || [];
+
+  const scontro = blocchi.find(b => minuti(b.startTime) < fineMin && inizioMin < minuti(b.endTime));
+  if (scontro) {
+    throw new Error(
+      `Alle ${inizio} c'è già «${tronca(scontro.taskTitle, 50)}» ` +
+      `(${scontro.startTime}–${scontro.endTime}). Scegli un'altra ora.`
+    );
+  }
+
+  const gia = blocchi.find(b => b.taskId === task.id);
+  if (gia) {
+    throw new Error(
+      `«${tronca(task.title, 50)}» è già nel piano del ${giorno} alle ${gia.startTime}. ` +
+      'Toglila prima, se va spostata.'
+    );
+  }
+
+  const blocco = {
+    id: nuovoIdBlocco(),
+    taskId: task.id,
+    taskTitle: task.title,
+    listId: task._listId,
+    listName: task._listName,
+    // Il colore lo assegna l'app dalla mappa delle sezioni, che qui non c'è:
+    // lasciarlo null la fa ricadere sul suo default invece di scrivere un
+    // colore inventato che poi resterebbe.
+    projectKey: null,
+    projectColor: null,
+    startTime: ora(inizioMin),
+    endTime: ora(fineMin),
+    completed: false,
+    completedAt: null,
+    subSteps: [],
+  };
+
+  plans[giorno] = { ...piano, date: giorno, blocks: [...blocchi, blocco].sort((a, b) => a.startTime.localeCompare(b.startTime)) };
+  await saveDailyPlans(plans);
+
+  return {
+    data: { giorno, blocco },
+    text: `✓ ${giorno} ${blocco.startTime}–${blocco.endTime}  ${tronca(task.title, 55)}`,
+  };
+}
+
+/**
+ * Toglie un'attività dal piano di un giorno. Non la completa e non la cancella:
+ * torna solo a non avere un'ora.
+ * @param {{ attivita?: string, data?: string }} opts
+ * @returns {Promise<{ data: any, text: string }>}
+ */
+export async function pianoTogli(opts = {}) {
+  const query = testo(opts.attivita);
+  if (!query) throw new Error("Serve l'attività: un pezzo del suo id o del suo titolo.");
+  const giorno = giornoValido(testo(opts.data) || dateKey());
+
+  const plans = await loadDailyPlans();
+  const piano = plans[giorno];
+  const blocchi = piano?.blocks || [];
+  const q = query.toLowerCase();
+  const trovati = blocchi.filter(b =>
+    String(b.taskId).toLowerCase().startsWith(q) || (b.taskTitle || '').toLowerCase().includes(q));
+
+  if (!trovati.length) throw new Error(`Niente che somigli a "${query}" nel piano del ${giorno}.`);
+  if (trovati.length > 1) {
+    throw new Error(`"${query}" corrisponde a ${trovati.length} blocchi: ` +
+      trovati.map(b => `${b.startTime} ${tronca(b.taskTitle, 40)}`).join(', '));
+  }
+
+  const via = trovati[0];
+  plans[giorno] = { ...piano, blocks: blocchi.filter(b => b.id !== via.id) };
+  await saveDailyPlans(plans);
+
+  return {
+    data: { giorno, tolto: { id: via.id, titolo: via.taskTitle, dalle: via.startTime } },
+    text: `✓ tolto dal piano del ${giorno}: ${via.startTime} ${tronca(via.taskTitle, 50)}`,
+  };
+}
+
+/**
+ * Il piano di un arco di giorni: la settimana che contiene una data, oppure un
+ * mese intero. È la stessa cosa che `piano` mostra per un giorno solo, letta
+ * dalla distanza da cui si decide come sta la settimana.
+ * @param {{ data?: string, mese?: string }} opts
+ * @returns {Promise<{ data: any, text: string }>}
+ */
+export async function pianoArco(opts = {}) {
+  const mese = testo(opts.mese);
+  /** @type {string[]} */
+  let giorni;
+  /** @type {string} */
+  let titolo;
+
+  if (mese) {
+    if (!MESE_RE.test(mese)) throw new Error(`Mese in formato sbagliato: ${mese} (serve YYYY-MM)`);
+    const [y, m] = mese.split('-').map(Number);
+    const quanti = new Date(y, m, 0).getDate();
+    giorni = Array.from({ length: quanti }, (_, i) => `${mese}-${String(i + 1).padStart(2, '0')}`);
+    titolo = `Piano di ${mese}`;
+  } else {
+    const giorno = giornoValido(testo(opts.data) || dateKey());
+    giorni = settimanaDi(giorno);
+    titolo = `Piano dal ${giorni[0]} al ${giorni[6]}`;
+  }
+
+  const plans = await loadDailyPlans();
+  const perGiorno = giorni.map(g => ({ giorno: g, blocks: plans[g]?.blocks || [] }));
+
+  const righe = perGiorno.flatMap(d => {
+    const impegnati = d.blocks.reduce((sum, b) => sum + (minuti(b.endTime) - minuti(b.startTime)), 0);
+    const capo = `${fmtGiorno.format(new Date(`${d.giorno}T12:00:00`))}` +
+      (d.blocks.length ? `  · ${Math.floor(impegnati / 60)}h${String(impegnati % 60).padStart(2, '0')} a piano` : '  · libero');
+    const sotto = d.blocks.map(b =>
+      `   ${b.startTime}–${b.endTime}  ${b.completed ? '✓' : '·'} ${tronca(b.taskTitle, 48)}`);
+    return [capo, ...sotto];
+  });
+
+  const totale = perGiorno.reduce((n, d) => n + d.blocks.length, 0);
+  return {
+    data: { giorni: perGiorno, totaleBlocchi: totale },
+    text: blocco(titolo, righe),
+  };
+}
+
+// ── Obiettivi del mese ───────────────────────────────────────────────────────
+// Il piano del mese nel senso che conta: non quando si fanno le cose — quello è
+// la griglia dei giorni — ma dove si vuole arrivare entro il trentuno. Da tre a
+// sei righe, ognuna un titolo e un numero. Il modello sta in `src/obiettivi.js`,
+// lo stesso che usa il riquadro in «Oggi».
+
+/**
+ * @param {{ mese?: string }} [opts]
+ * @returns {Promise<{ data: any, text: string }>}
+ */
+export async function obiettiviLeggi(opts = {}) {
+  const ym = testo(opts.mese) || meseDi(dateKey());
+  if (!MESE_RE.test(ym)) throw new Error(`Mese in formato sbagliato: ${ym} (serve YYYY-MM)`);
+
+  const doc = await loadObiettivi();
+  const righe = obiettiviDelMese(doc, ym);
+
+  const text = blocco(`Obiettivi di ${ym}`, righe.map(o => {
+    // Un obiettivo con una `fonte` non porta il suo numero: lo si deriva dai
+    // registri, e quel conto vive nell'app. Da qui si dice da dove viene.
+    const conto = o.fonte ? `dal registro «${o.fonte}»` : `${o.fatti ?? 0}/${o.totale}`;
+    return `${tronca(o.titolo, 48).padEnd(48)}  ${conto}${o.unita ? ' ' + o.unita : ''}`;
+  }));
+
+  return { data: { mese: ym, obiettivi: righe }, text };
+}
+
+/**
+ * Scrive gli obiettivi di un mese. Li riscrive tutti insieme, e non uno alla
+ * volta: sono da tre a sei righe che si guardano come un blocco solo — «questo
+ * mese voglio questo» — e aggiungerne uno per volta senza vedere gli altri è il
+ * modo di ritrovarsene nove a metà mese.
+ *
+ * @param {{ mese?: string, obiettivi?: any[] }} opts
+ * @returns {Promise<{ data: any, text: string }>}
+ */
+export async function obiettiviScrivi(opts = {}) {
+  const ym = testo(opts.mese) || meseDi(dateKey());
+  if (!MESE_RE.test(ym)) throw new Error(`Mese in formato sbagliato: ${ym} (serve YYYY-MM)`);
+
+  const righe = Array.isArray(opts.obiettivi) ? opts.obiettivi : [];
+  if (righe.length < MIN_OBIETTIVI || righe.length > MAX_OBIETTIVI) {
+    throw new Error(
+      `Gli obiettivi di un mese sono da ${MIN_OBIETTIVI} a ${MAX_OBIETTIVI}: ne sono arrivati ${righe.length}. ` +
+      'Sotto i tre è un elenco della spesa, sopra i sei non è più una scelta.'
+    );
+  }
+
+  const nuovi = righe.map((o, i) => {
+    const titolo = testo(o?.titolo);
+    if (!titolo) throw new Error(`L'obiettivo n. ${i + 1} non ha un titolo.`);
+    const totale = numero(o?.totale, 1) ?? 1;
+    if (totale < 1) throw new Error(`«${titolo}»: il totale dev'essere almeno 1.`);
+    return nuovoObiettivo({
+      ym,
+      titolo,
+      totale,
+      fatti: numero(o?.fatti, 0) ?? 0,
+      unita: testo(o?.unita) || '',
+      fonte: testo(o?.fonte),
+    });
+  });
+
+  const doc = await loadObiettivi();
+  const precedenti = obiettiviDelMese(doc, ym);
+  doc[ym] = nuovi;
+  await saveObiettivi(doc);
+
+  return {
+    data: { mese: ym, obiettivi: nuovi, sostituiti: precedenti.length },
+    text: [
+      `✓ ${nuovi.length} obiettivi per ${ym}` + (precedenti.length ? ` (ne sostituiscono ${precedenti.length})` : ''),
+      ...nuovi.map(o => `  ${tronca(o.titolo, 50)}  ${o.fonte ? `dal registro «${o.fonte}»` : `${o.fatti ?? 0}/${o.totale}`}`),
+    ].join('\n'),
+  };
+}
+
+// ── Sezioni: creazione ───────────────────────────────────────────────────────
+
+/**
+ * Una lista To-Do nuova. Due modi, e sono lo stesso: o si passa il nome per
+ * intero, o si passano commessa, consegna e scadenza e il nome lo compone la
+ * convenzione (`GRUPPO.Consegna-YYMMDD`, vedi `src/paraConfig.js`) — che è
+ * meglio, perché un nome scritto a mano che sbaglia il formato non viene letto
+ * come consegna da nessuna parte e la scadenza sparisce senza un errore.
+ *
+ * @param {{ nome?: string, commessa?: string, consegna?: string, scadenza?: string }} opts
+ * @returns {Promise<{ data: any, text: string }>}
+ */
+export async function sezioneCrea(opts = {}) {
+  const commessa = testo(opts.commessa);
+  const consegna = testo(opts.consegna);
+  const scadenza = testo(opts.scadenza);
+
+  if (scadenza && !GIORNO_RE.test(scadenza)) {
+    throw new Error(`Scadenza in formato sbagliato: ${scadenza} (serve YYYY-MM-DD)`);
+  }
+  if ((commessa && !consegna) || (consegna && !commessa)) {
+    throw new Error('Per una consegna servono sia la commessa sia il nome della consegna.');
+  }
+
+  const nome = commessa && consegna
+    ? buildListName({ gruppo: commessa, consegna, scadenza: scadenza || null })
+    : testo(opts.nome);
+  if (!nome) throw new Error('Serve il nome della lista, oppure commessa + consegna.');
+
+  const lists = await getTodoLists();
+  const gia = lists.find(l => (l.displayName || '').toLowerCase() === nome.toLowerCase());
+  if (gia) throw new Error(`Esiste già una lista che si chiama «${gia.displayName}».`);
+
+  const creata = await createTodoList(nome);
+  return {
+    data: { id: creata.id, nome: creata.displayName },
+    text: `✓ creata la lista «${creata.displayName}»`,
+  };
+}
+
+// ── Calendario: creazione ────────────────────────────────────────────────────
+
+/**
+ * Un evento nuovo sul calendario. Le ore si danno locali, e locali restano:
+ * «giovedì alle 15» è le 15 sul calendario, anche se fra oggi e giovedì cambia
+ * l'ora legale.
+ *
+ * @param {{ oggetto?: string, data?: string, inizio?: string, fine?: string, durataMin?: number,
+ *           tuttoIlGiorno?: boolean, luogo?: string, note?: string,
+ *           promemoriaMin?: number, calendario?: string }} opts
+ * @returns {Promise<{ data: any, text: string }>}
+ */
+export async function eventoCrea(opts = {}) {
+  const oggetto = testo(opts.oggetto);
+  if (!oggetto) throw new Error("Serve l'oggetto dell'evento.");
+  const giorno = giornoValido(testo(opts.data) || dateKey());
+  const tuttoIlGiorno = !!opts.tuttoIlGiorno;
+
+  let inizio = null, fine = null;
+  if (!tuttoIlGiorno) {
+    inizio = testo(opts.inizio);
+    if (!inizio) throw new Error("Serve l'ora di inizio, HH:MM (oppure tuttoIlGiorno).");
+    const inizioMin = minuti(inizio);
+    fine = testo(opts.fine);
+    if (fine) {
+      if (minuti(fine) <= inizioMin) throw new Error(`La fine (${fine}) non è dopo l'inizio (${inizio}).`);
+    } else {
+      const durata = numero(opts.durataMin, 60) ?? 60;
+      if (durata <= 0) throw new Error(`Durata non valida: ${durata} minuti.`);
+      if (inizioMin + durata > 24 * 60) throw new Error(`Un evento dalle ${inizio} di ${durata} minuti esce dal giorno.`);
+      fine = ora(inizioMin + durata);
+    }
+  }
+
+  // Il calendario: quello chiesto per nome, altrimenti il default dell'account.
+  let calendarId = null;
+  let calendarioNome = 'calendario di default';
+  const calQuery = testo(opts.calendario);
+  if (calQuery) {
+    const cals = await getCalendars();
+    const q = calQuery.toLowerCase();
+    const esatti = cals.filter(c => (c.name || '').toLowerCase() === q);
+    const found = esatti.length ? esatti : cals.filter(c => (c.name || '').toLowerCase().includes(q));
+    if (!found.length) throw new Error(`Nessun calendario che somigli a "${calQuery}".`);
+    if (found.length > 1) throw new Error(`"${calQuery}" corrisponde a: ${found.map(c => c.name).join(', ')}`);
+    if (found[0].canEdit === false) throw new Error(`Sul calendario «${found[0].name}» non si può scrivere.`);
+    calendarId = found[0].id;
+    calendarioNome = found[0].name;
+  }
+
+  const creato = await createCalendarEvent({
+    oggetto, data: giorno,
+    inizio: inizio || undefined, fine: fine || undefined,
+    tuttoIlGiorno,
+    luogo: testo(opts.luogo) || undefined,
+    note: testo(opts.note) || undefined,
+    promemoriaMin: numero(opts.promemoriaMin),
+    calendarId,
+  });
+
+  const quando = tuttoIlGiorno ? 'tutto il giorno' : `${inizio}–${fine}`;
+  return {
+    data: { id: creato.id, oggetto, giorno, quando, calendario: calendarioNome },
+    text: `✓ ${giorno} ${quando}  ${oggetto}  · ${calendarioNome}`,
+  };
+}
+
+// ── OneNote: scrittura ───────────────────────────────────────────────────────
+// Due sole operazioni, e nessuna che tolga: una pagina nuova, e testo aggiunto
+// in fondo a una che c'è già. OneNote sa anche sostituire il contenuto di un
+// blocco, ma una sostituzione sbagliata da qui — alla cieca, senza vedere la
+// pagina — cancellerebbe appunti che non si ricostruiscono.
+
+/**
+ * Una pagina nuova in una sezione OneNote.
+ * @param {{ sezione?: string, titolo?: string, testo?: string }} opts
+ * @returns {Promise<{ data: any, text: string }>}
+ */
+export async function noteCrea(opts = {}) {
+  const sezioneQuery = testo(opts.sezione);
+  if (!sezioneQuery) throw new Error('Serve la sezione OneNote in cui creare la pagina.');
+  const titolo = testo(opts.titolo);
+  if (!titolo) throw new Error('Serve il titolo della pagina.');
+
+  const sezione = await trovaSezioneOneNote(sezioneQuery);
+  const corpo = testo(opts.testo) || '';
+  const pagina = await createPage(sezione.id, titolo, textToHtml(corpo));
+
+  return {
+    data: { id: pagina.id, titolo, sezione: sezione.displayName, taccuino: sezione._notebook },
+    text: `✓ creata «${titolo}» in ${sezione._notebook} / ${sezione.displayName}\n  ${pagina.id}`,
+  };
+}
+
+/**
+ * Testo aggiunto in fondo a una pagina che esiste. La pagina si indica per id,
+ * oppure per titolo insieme alla sezione — come in `noteLeggi`.
+ * @param {{ pagina?: string, sezione?: string, testo?: string }} opts
+ * @returns {Promise<{ data: any, text: string }>}
+ */
+export async function noteAggiungi(opts = {}) {
+  const query = testo(opts.pagina);
+  if (!query) throw new Error("Serve l'id della pagina, o il suo titolo insieme alla sezione.");
+  const corpo = testo(opts.testo);
+  if (!corpo) throw new Error('Serve il testo da aggiungere.');
+
+  const { id, titolo } = await risolviPagina(query, testo(opts.sezione));
+  await appendToPage(id, textToHtml(corpo));
+
+  return {
+    data: { id, titolo, aggiunto: corpo },
+    text: `✓ aggiunto in fondo a «${titolo}»`,
+  };
+}
+
+/**
+ * Una pagina OneNote da un id o da un titolo più la sezione. Gli id OneNote
+ * contengono sempre un '!': tutto il resto è un titolo da cercare.
+ * @param {string} query
+ * @param {string|null} sezioneQuery
+ * @returns {Promise<{ id: string, titolo: string }>}
+ */
+async function risolviPagina(query, sezioneQuery) {
+  if (query.includes('!')) return { id: query, titolo: query };
+  if (!sezioneQuery) throw new Error('Per cercare una pagina per titolo serve anche la sezione.');
+  const sezione = await trovaSezioneOneNote(sezioneQuery);
+  const pagine = await getPages(sezione.id);
+  const q = query.toLowerCase();
+  const found = pagine.filter(p => (p.title || '').toLowerCase().includes(q));
+  if (!found.length) throw new Error(`Nessuna pagina "${query}" in ${sezione.displayName}.`);
+  if (found.length > 1) throw new Error(`"${query}" corrisponde a: ${found.map(p => p.title).join(', ')}`);
+  return { id: found[0].id, titolo: found[0].title };
 }

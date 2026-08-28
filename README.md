@@ -14,7 +14,9 @@ Microsoft To-Do e al calendario Outlook, e un diario con supporto AI via copia-i
 - **Pianificatore giornaliero** — drag & drop dei task su una timeline a slot di 30 minuti,
   vista giorno/settimana, eventi del calendario in sola lettura, sottostep ridimensionabili,
   piani salvati su OneDrive. Candidati task estratti da email ed email OneNote con euristiche
-  locali (`src/dailyReview.js`), senza chiamate AI.
+  locali (`src/dailyReview.js`), senza chiamate AI. Da telefono il Piano si legge e basta: il
+  trascinamento è il gesto di uno schermo largo, e pianificare col pollice vorrebbe dire un
+  gesto diverso — la proposta sta in `docs/proposta-piano-da-telefono.md`, non è costruita.
 - **Oggi** — la home, divisa in due metà. A sinistra la **giornata operativa**: «Oggi · agenda e
   azioni», cioè appuntamenti del calendario e azioni programmate in un elenco solo ordinato per
   ora, e sotto «In arrivo» con i giorni che vengono. A destra la **vita**: gli obiettivi del mese,
@@ -52,7 +54,9 @@ Microsoft To-Do e al calendario Outlook, e un diario con supporto AI via copia-i
   appena se ne apre una. Una commessa con più **consegne** (liste To-Do annidate per nome,
   vedi sotto) le mostra come gruppi a tendina, ognuno con la sua scadenza; il `+` in testata
   ne crea una nuova, e un'attività si sposta da una consegna all'altra trascinandola.
-  È dove atterra il Pomodoro avviato dal Piano.
+  Le attività che hanno già un blocco nel piano — in un giorno qualunque — si leggono in
+  grigio, col giorno e l'ora nel titolo: la colonna dice a colpo d'occhio cosa resta da
+  collocare, senza rimettere a piano due volte la stessa cosa.
 - **Attività** — le cinque colonne del flusso GTD (Inbox · Prossime azioni · In attesa · Programmate · Un giorno):
   la colonna *è* lo stato, e trascinare una card fra colonne lo cambia su Microsoft To-Do. Un clic su una
   card apre il pannello di dettaglio — note, sottoattività, stima, scadenza, stato.
@@ -226,11 +230,8 @@ fino a tre indietro, compilati come «non fatto» e **dichiarati** in cima al
 pannello: un registro che si compila da solo in silenzio è un registro di cui non
 ci si fida più. Vedi `rituale.js` e `RitualeMattino.jsx`.
 
-Sopra il contenuto vive la **barra Pomodoro**: la sessione sta a livello di app
-(`PomodoroSession.jsx`), quindi il timer continua a girare — e la barra resta
-visibile — anche cambiando vista. Si avvia dal pannello di dettaglio del Piano,
-che porta a `#/sezioni/:id`: è il passaggio che lega la programmazione al posto
-di lavoro.
+Il pannello di dettaglio del Piano porta a `#/sezioni/:id` con «Apri il
+workbook»: è il passaggio che lega la programmazione al posto di lavoro.
 
 ## Il flusso di un'attività
 
@@ -300,10 +301,40 @@ Allo stesso modo: il **contesto** (Lavoro / Personale / Famiglia) è in
 `categories`, la **sezione** è la lista To-Do stessa, le **sottoattività** sono
 i `checklistItems`, la **nota** è `body.content`.
 
-Due cose sole non hanno una casa nativa in To-Do. La **stima di durata** sta
-nelle note come marker `[MIN:45]`. La **persona che si aspetta**, quando un'attività
+Tre cose sole non hanno una casa nativa in To-Do. La **stima di durata** sta
+nelle note come marker `[MIN:45]`. La **sveglia** — vedi sotto — come
+`[SVEGLIA:15:30]`. La **persona che si aspetta**, quando un'attività
 è in attesa, sta nella prima riga delle note come `In attesa da: Nome` — scritta
 per esteso e non come codice, perché chi apre il task da To-Do legga una frase.
+
+### La sveglia di un'attività
+
+Sorella di «Quanto ci vuole», nel pannello di dettaglio: là si dice quanto una
+cosa dura, qui a che ora si vuole essere richiamati. Non è una scadenza — quella
+è un giorno, e To-Do ce l'ha già — ma un'ora del giorno: «alle 15:30 questa
+cosa». Le pastiglie dicono *fra quanto* (5, 15, 30 minuti, un'ora) perché è così
+che la si pensa; il campo accanto tiene l'ora esatta, che è quella che finisce
+scritta nelle note come `[SVEGLIA:hh:mm]` — e da lì si legge anche dall'app To-Do
+del telefono.
+
+Quando l'ora arriva, sul PC succedono tre cose insieme, perché la mente digitale
+quasi mai è la finestra davanti:
+
+- un **pannello a tutto schermo** che copre ogni vista, pulsa e non si chiude
+  con Esc o con un clic fuori — se il gesto per zittirla fosse lo stesso con cui
+  si scarta una finestra qualunque, la si zittirebbe senza averla letta;
+- una **notifica di sistema**, che arriva anche da dietro un'altra finestra. Il
+  permesso si chiede alla prima sveglia messa, non all'avvio dell'app;
+- un **suono** di tre rintocchi, sintetizzato al volo (nessun file da servire).
+
+Il controllo gira ogni venti secondi guardando che ore sono, e non con un timer
+piazzato sull'ora esatta: un `setTimeout` di due ore non sopravvive né allo
+standby del portatile né alla scheda messa a dormire dal browser. Una sveglia in
+ritardo di dieci minuti suona ancora; una in ritardo di due ore no — a quel punto
+non è più un avviso, è un rimprovero. Di aver già suonato ci si ricorda su
+`localStorage`, quindi per macchina: una suonata sul portatile non zittisce
+quella sul fisso. Vedi `sveglie.js` (la logica), `useSveglie.js` (il ciclo) e
+`SvegliaAlert.jsx` (il pannello).
 
 ### Quanto dev'essere grande una cosa
 
@@ -395,7 +426,7 @@ una riga, non una ricerca-e-sostituzione in dieci file.
 | Componente | Tecnologia |
 |---|---|
 | Frontend | React 19 + Vite, react-router (hash), D3 per la mappa |
-| Autenticazione | MSAL Browser (account Microsoft personale, scope Graph in sola lettura + To-Do/Files in scrittura) |
+| Autenticazione | MSAL Browser (account Microsoft personale, scope Graph in sola lettura + To-Do/Files in scrittura). Il CLI e il server MCP hanno un token proprio, con in più OneNote e Calendario in scrittura |
 | Dati | Microsoft Graph (OneNote, To-Do, Calendar, OneDrive, Mail) con cache localStorage a TTL. I file JSON dell'app stanno nella cartella `mente-digitale/` di OneDrive (quelli rimasti in root vengono spostati automaticamente al primo avvio) |
 | Backend | Nessuno: sito statico servito da Cloudflare Pages |
 | Automazioni | GitHub Actions (`sync-calendar`) |
@@ -485,12 +516,31 @@ elenca i server e il loro stato. Il segno che gli strumenti stanno funzionando
 davvero è che nella risposta compaiono chiamate a `oggi` o `attivita_lista`, e
 non comandi `node scripts/mente.mjs`.
 
-I dodici strumenti sono gli stessi comandi: `oggi`, `agenda`, `piano`, `sezioni`,
-`attivita_lista`, `attivita_crea`, `attivita_stato`, `diario_leggi`,
-`diario_scrivi`, `note_pagine`, `note_leggi`, `identita`. Quelli in sola lettura
-sono marcati come tali (`readOnlyHint`), così un client che chiede conferma prima
-di scrivere sa quando chiederla. Nessuno cancella niente: un'attività di prova si
-può spuntare, non eliminare.
+I ventuno strumenti sono gli stessi comandi. In lettura: `oggi`, `agenda`,
+`piano`, `piano_arco`, `obiettivi_leggi`, `sezioni`, `attivita_lista`,
+`diario_leggi`, `note_pagine`, `note_leggi`, `identita`. In scrittura:
+`attivita_crea`, `attivita_stato`, `sezione_crea`, `piano_aggiungi`,
+`piano_togli`, `obiettivi_scrivi`, `evento_crea`, `note_crea`, `note_aggiungi`,
+`diario_scrivi`. Quelli in sola lettura sono marcati come tali (`readOnlyHint`),
+così un client che chiede conferma prima di scrivere sa quando chiederla.
+
+Nessuno cancella niente, ed è una regola e non un'omissione: un'attività di prova
+si può spuntare, non eliminare; su OneNote si scrive solo in fondo a una pagina,
+mai sopra a quello che c'era; «togliere» un'attività dal piano vuol dire toglierle
+l'ora, non cancellarla. La Bussola e la Visione restano in sola lettura — sono i
+documenti che si scrivono pensandoci, non dettandoli a una chat.
+
+**Il piano, alle tre distanze.** Giornaliero, settimanale e mensile non sono tre
+piani ma tre distanze da cui si guarda lo stesso, come le tre viste del Piano
+nell'app. Si compilano tutti con `piano_aggiungi`, un giorno per volta, e si
+rileggono con `piano_arco`. Due blocchi che si accavallano sono un errore e non
+una sovrapposizione da disegnare: l'app, dove si trascina e si vede la griglia,
+può permetterselo; da una chat, dove si scrive alla cieca, no. Gli **obiettivi
+del mese** (`obiettivi_leggi` / `obiettivi_scrivi`) sono un'altra cosa ancora:
+dove si vuole arrivare entro il trentuno, non quando si fanno le cose. Si
+scrivono tutti insieme — da tre a sei, come nel riquadro di «Oggi» — perché sono
+un blocco solo, e aggiungerne uno per volta senza vedere gli altri è il modo di
+ritrovarsene nove a metà mese.
 
 #### Dove funziona e dove no
 
@@ -533,11 +583,18 @@ o simile — l'entrata è la stessa in forma JSON:
 
 Vale per entrambe le strade. Non c'è MSAL: si usa un refresh token, come
 `sync-calendar.mjs`. Se ne prende uno con gli scope giusti — tutto in lettura,
-scrittura su file e attività — e lo si tiene sulla propria macchina:
+scrittura su attività e liste To-Do, sui file dell'app, su OneNote e sul
+calendario — e lo si tiene sulla propria macchina:
 
 ```bash
 node scripts/get-refresh-token.mjs --mente
 ```
+
+> **Gli scope stanno dentro al token, non si chiedono a ogni chiamata.** Un token
+> preso quando OneNote e il calendario erano in sola lettura continua a leggerli
+> soltanto: gli strumenti nuovi risponderebbero `403` senza che nulla dica
+> perché. Dopo un aggiornamento che allarga `MENTE_SCOPE` (in
+> `scripts/mente-graph.mjs`) il token va rifatto con lo stesso comando qui sopra.
 
 Il token va in `scripts/.mente-refresh-token` (ignorato da git) oppure nella
 variabile `MENTE_REFRESH_TOKEN`, anche da un `.env` nella radice del progetto.

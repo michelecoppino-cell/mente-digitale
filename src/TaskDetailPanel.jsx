@@ -19,10 +19,11 @@ import {
 } from './api';
 import {
   ESTIMATE_CHOICES, DEFAULT_ESTIMATE_MIN, parseEstimate, withEstimateMarker,
+  parseAlarm, withAlarm,
   graphStatusFor, parseWaitingFor, withWaitingFor, waitingDays,
 } from './taskModel';
+import { SVEGLIA_CHOICES, hhmmIn, chiediNotifiche, statoNotifiche } from './sveglie';
 import { listLabel, sectionNameForList } from './paraConfig';
-import { usePomodoro } from './pomodoroContext';
 import { pushUndo } from './undo';
 import SectionResources from './SectionResources';
 import Skeleton from './Skeleton';
@@ -82,13 +83,11 @@ function flowStatusOf(/** @type {string|undefined} */ graphStatus) {
  */
 export default function TaskDetailPanel({ task, notebooks = [], sectionsMap = {}, pagesCache = null, onClose, onCompleted, onDeleted, onRenamed, onDueChanged, onRestored, onEstimateChanged, onPatched, status, onSchedule, onUnschedule, showResources = true }) {
   const navigate = useNavigate();
-  const { start: startPomodoro } = usePomodoro();
   // La sezione PARA del task è la sezione OneNote che si chiama come la sua
   // lista To-Do — o, se la lista è una consegna annidata (`2573.A60`, vedi
-  // paraConfig.js), quella della sua commessa. Senza, il pomodoro non saprebbe
-  // quale workbook aprire, il bottone non comparirebbe e i riquadri
-  // OneNote/OneDrive resterebbero vuoti: tutte cose che sparirebbero in
-  // silenzio, senza un errore.
+  // paraConfig.js), quella della sua commessa. Senza, il bottone che apre il
+  // workbook non comparirebbe e i riquadri OneNote/OneDrive resterebbero
+  // vuoti: tutte cose che sparirebbero in silenzio, senza un errore.
   const { section, notebook } = useMemo(() => {
     const names = Object.values(sectionsMap || {}).flat().map(s => s.displayName);
     const target = (sectionNameForList(task?._listName, names) || '').toLowerCase();
@@ -118,6 +117,10 @@ export default function TaskDetailPanel({ task, notebooks = [], sectionsMap = {}
   const [savingDue, setSavingDue]     = useState(false);
   const [itemError, setItemError]     = useState('');
   const [savingEstimate, setSavingEstimate] = useState(false);
+  const [savingAlarm, setSavingAlarm] = useState(false);
+  // Il permesso alle notifiche di sistema si chiede alla prima sveglia messa,
+  // non all'avvio dell'app: chiederlo prima è chiederlo a vuoto.
+  const [permessoNotifiche, setPermessoNotifiche] = useState(statoNotifiche);
   // Stato del flusso e persona attesa: si conoscono solo dopo il caricamento
   // completo del task, perché chi apre il pannello da un blocco del Piano ha in
   // mano solo id, titolo e lista.
@@ -126,6 +129,7 @@ export default function TaskDetailPanel({ task, notebooks = [], sectionsMap = {}
   const [waitingSince, setWaitingSince] = useState(/** @type {string|null} */ (null));
   const [savingStatus, setSavingStatus] = useState(false);
   const estimate = parseEstimate(notes) ?? DEFAULT_ESTIMATE_MIN;
+  const sveglia = parseAlarm(notes);
 
   useEffect(() => { setTitleDraft(task.title); setEditingTitle(false); load(); }, [task.id]); // eslint-disable-line
 
@@ -199,6 +203,43 @@ export default function TaskDetailPanel({ task, notebooks = [], sectionsMap = {}
       setNotes(prev);
     }
     setSavingEstimate(false);
+  }
+
+  // ── Sveglia ─────────────────────────────────────────────────────────────────
+  // L'ora finisce nelle note come `[SVEGLIA:hh:mm]`, esattamente come la stima
+  // ci finisce come `[MIN:n]`: stesso posto, stesso modo di scriverlo, stesso
+  // debounce da fermare prima di riscrivere il body.
+  /** @param {string|null} hhmm  "HH:MM", oppure null per togliere la sveglia */
+  async function handleAlarmChange(hhmm) {
+    if (hhmm === sveglia || savingAlarm) return;
+    const prev = notes;
+    const next = withAlarm(notes, hhmm);
+    clearTimeout(notesTimerRef.current);
+    setNotes(next);
+    setSavingAlarm(true);
+    try {
+      await updateTaskBody(task._listId, task.id, next);
+      onPatched?.({ body: { content: next, contentType: 'text' } });
+      pushUndo({
+        label: hhmm ? `Sveglia alle ${hhmm}` : 'Sveglia tolta',
+        undo: async () => {
+          await updateTaskBody(task._listId, task.id, prev);
+          setNotes(prev);
+          onPatched?.({ body: { content: prev, contentType: 'text' } });
+        },
+      });
+      // Il pannello a tutto schermo arriva comunque; la notifica di sistema è
+      // quella che si vede anche da dietro un'altra finestra, e per averla
+      // serve il permesso. Si chiede qui, quando il gesto lo spiega da sé.
+      if (hhmm && permessoNotifiche === 'default') {
+        await chiediNotifiche();
+        setPermessoNotifiche(statoNotifiche());
+      }
+    } catch (e) {
+      console.error('save alarm', e);
+      setNotes(prev);
+    }
+    setSavingAlarm(false);
   }
 
   // ── Stato del flusso ────────────────────────────────────────────────────────
@@ -551,6 +592,53 @@ export default function TaskDetailPanel({ task, notebooks = [], sectionsMap = {}
             </div>
           </div>
 
+          {/* La sveglia, sorella di «Quanto ci vuole»: là si dice quanto dura,
+              qui a che ora bisogna essere richiamati. Anche questa vive nelle
+              note, come `[SVEGLIA:hh:mm]`, quindi si legge anche dall'app To-Do
+              del telefono. Le pastiglie dicono «fra quanto» perché è così che
+              la si pensa; il campo accanto tiene l'ora esatta, che è quella
+              che finisce scritta. */}
+          <div className="planner-task-detail-section">
+            <div className="planner-task-detail-section-label">
+              Sveglia {savingAlarm && <span className="planner-saving-dot">●</span>}
+            </div>
+            <div className="planner-estimate-chips">
+              {SVEGLIA_CHOICES.map(c => (
+                <button
+                  key={c.min}
+                  className="planner-estimate-chip"
+                  disabled={savingAlarm}
+                  onClick={() => handleAlarmChange(hhmmIn(c.min))}>
+                  {c.label}
+                </button>
+              ))}
+              <input
+                type="time"
+                className="planner-sveglia-input"
+                value={sveglia || ''}
+                disabled={savingAlarm}
+                aria-label="Ora della sveglia"
+                onChange={e => handleAlarmChange(e.target.value || null)}
+              />
+              {sveglia && (
+                <button
+                  className="planner-estimate-chip"
+                  disabled={savingAlarm}
+                  title="Togli la sveglia"
+                  onClick={() => handleAlarmChange(null)}>
+                  ✕
+                </button>
+              )}
+            </div>
+            {sveglia && (
+              <p className="planner-sveglia-hint">
+                Suona alle {sveglia}, con l’app aperta.
+                {permessoNotifiche === 'denied' &&
+                  ' Le notifiche di sistema sono bloccate nel browser: l’avviso resta solo dentro l’app.'}
+              </p>
+            )}
+          </div>
+
           {/* Lo stato del flusso, e con esso il modo di mettere un'attività in
               attesa: si sceglie la pastiglia e si scrive chi si aspetta, invece
               di dover conoscere a memoria la riga da mettere nelle note. */}
@@ -671,27 +759,17 @@ export default function TaskDetailPanel({ task, notebooks = [], sectionsMap = {}
             {itemError && <div className="planner-checklist-error">{itemError}</div>}
           </div>
 
-          {/* Avviare il pomodoro da qui è ciò che lega la programmazione al
-              posto di lavoro: la sessione sale a livello di app e porta al
-              workbook della sezione, dove stanno le pagine e i file che
+          {/* Il ponte fra la programmazione e il posto di lavoro: da qui si va
+              al workbook della sezione, dove stanno le pagine e i file che
               servono a farla davvero, questa attività. */}
           {sectionId && (
             <button
-              className="planner-pomodoro-start"
-              onClick={() => {
-                startPomodoro({
-                  taskId: task.id,
-                  taskTitle: task.title,
-                  sectionId,
-                  sectionName: section?.displayName || null,
-                  durationMin: 25,
-                });
-                navigate(`/sezioni/${sectionId}`);
-              }}>
-              <span className="planner-pomodoro-dot" />
-              Avvia pomodoro
-              <span className="planner-pomodoro-caption">
-                apre Sezioni sul workbook {section?.displayName || 'della sezione'}
+              className="planner-workbook-open"
+              onClick={() => navigate(`/sezioni/${sectionId}`)}>
+              <span className="planner-workbook-dot" />
+              Apri il workbook
+              <span className="planner-workbook-caption">
+                {section?.displayName || 'la sezione'} in Sezioni
               </span>
             </button>
           )}

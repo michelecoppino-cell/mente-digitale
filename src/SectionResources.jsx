@@ -8,7 +8,7 @@ import OneDriveBox from './OneDriveBox';
 // OneNote + OneDrive della sezione collegata a un task, per il pannello
 // Dettagli del Piano: stessi riquadri del Panel di sezione (ToDo/OneNote/
 // OneDrive), mostrati sotto Note/Sottoattività invece che in un pannello a
-// parte — così avviare un Pomodoro non richiede più alcun cambio di layout.
+// parte — così lavorare a un'attività non richiede alcun cambio di layout.
 export default function SectionResources({ section, notebook, pagesCache }) {
   const [pages, setPages] = useState([]);
   const [loadingPages, setLoadingPages] = useState(false);

@@ -261,13 +261,6 @@
   min-height: 0;
 }
 
-/* Blocco Pomodoro in corso: il pool resta visibile ma del tutto inerte —
-   solo il task già aperto nel pannello Dettagli resta modificabile. */
-.planner-pool.locked {
-  pointer-events: none;
-  opacity: 0.45;
-}
-
 .planner-pool-body {
   flex: 1;
   overflow-y: auto;
@@ -728,7 +721,6 @@
   overflow-y: auto;
   position: relative;
   box-sizing: border-box;
-  padding-left: 46px; /* spazio per la colonna del tempo concentrato Pomodoro */
   scrollbar-width: thin;
   scrollbar-color: var(--border2) transparent;
 }
@@ -765,70 +757,6 @@
   height: 100%;
 }
 
-/* Colonna a sx delle ore: fasce orarie reali in cui il Pomodoro era attivo,
-   allineate all'asse del tempo — vive nel padding-left di .planner-timeline-body. */
-.planner-focus-bar {
-  position: absolute;
-  left: 4px;
-  width: 34px;
-  border-radius: 3px;
-  background: rgba(217,83,79,0.55);
-  border: 1px solid rgba(217,83,79,0.85);
-  z-index: 1;
-  box-sizing: border-box;
-  pointer-events: none;
-}
-/* focus (lavoro) è il rosso di default sopra; le pause hanno un colore per tipo. */
-.planner-focus-bar.personal {
-  background: rgba(230,201,77,0.5);
-  border-color: rgba(230,201,77,0.85);
-}
-.planner-focus-bar.office {
-  background: rgba(157,127,214,0.5);
-  border-color: rgba(157,127,214,0.85);
-}
-.planner-focus-bar.client {
-  background: rgba(91,143,217,0.5);
-  border-color: rgba(91,143,217,0.85);
-}
-/* Fascia ancora aperta: cresce ad ogni tick verso "adesso". */
-.planner-focus-bar.live {
-  transition: height 0.6s linear;
-}
-
-/* Fasce già chiuse: modificabili a posteriori — trascina per spostare, clic
-   per cambiare tipo/cancellare, maniglie agli estremi per ridimensionare. */
-.planner-focus-bar.editable {
-  pointer-events: auto;
-  cursor: grab;
-}
-@media (hover: hover) {
-  .planner-focus-bar.editable:hover { filter: brightness(1.25); }
-}
-.planner-focus-bar.editable:active {
-  cursor: grabbing;
-}
-.planner-focus-bar-handle {
-  position: absolute;
-  left: 0;
-  right: 0;
-  height: 6px;
-  cursor: ns-resize;
-}
-.planner-focus-bar-handle.top { top: -2px; }
-.planner-focus-bar-handle.bottom { bottom: -2px; }
-
-/* Colonna cliccabile dietro le fasce: un clic su uno spazio vuoto apre il
-   menu per aggiungerne una nuova all'orario cliccato. */
-.planner-focus-column {
-  position: absolute;
-  left: 0;
-  top: 0;
-  width: 46px;
-  z-index: 0;
-  cursor: copy;
-}
-
 /* Linea dell'ora corrente — attraversa tutta la larghezza della timeline,
    allineata alla stessa scala minuti→px delle barre/blocchi sopra. */
 .planner-now-line {
@@ -851,116 +779,6 @@
   border-radius: 50%;
   background: var(--accent);
   transform: translate(-50%, -50%);
-}
-
-/* Totale giornaliero, fissato in cima alla stessa colonna. */
-.planner-focus-daytotal {
-  position: absolute;
-  top: 4px;
-  left: 4px;
-  width: 34px;
-  padding: 3px 2px;
-  border-radius: 4px;
-  background: var(--surface2);
-  border: 1px solid rgba(212,164,74,0.4);
-  color: var(--accent);
-  font-size: 11px;
-  font-weight: 600;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 1px;
-  line-height: 1.2;
-  z-index: 2;
-  box-sizing: border-box;
-}
-
-/* Menu di modifica/aggiunta di una fascia Pomodoro — ancorato al punto
-   cliccato, con backdrop trasparente a tutto schermo per chiuderlo al clic
-   fuori (stesso pattern dei pop-up del diagramma GTD). */
-.planner-focus-popup-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 500;
-}
-.planner-focus-popup {
-  position: fixed;
-  z-index: 501;
-  width: 180px;
-  background: var(--surface2);
-  border: 1px solid var(--border2);
-  border-radius: 10px;
-  padding: 10px;
-  box-shadow: 0 12px 34px rgba(0,0,0,0.5);
-  font-family: var(--font-ui);
-  box-sizing: border-box;
-}
-.planner-focus-popup-title {
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--muted);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  margin-bottom: 8px;
-}
-.planner-focus-popup-types {
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-}
-.planner-focus-popup-type {
-  background: rgba(217,83,79,0.12);
-  border: 1px solid rgba(217,83,79,0.6);
-  color: var(--text);
-  border-radius: 6px;
-  padding: 6px 8px;
-  font-size: 12px;
-  text-align: left;
-  cursor: pointer;
-  font-family: var(--font-ui);
-  transition: background 0.15s;
-}
-@media (hover: hover) {
-  .planner-focus-popup-type:hover { background: rgba(217,83,79,0.22); }
-}
-.planner-focus-popup-type.personal {
-  background: rgba(230,201,77,0.12);
-  border-color: rgba(230,201,77,0.6);
-}
-@media (hover: hover) {
-  .planner-focus-popup-type.personal:hover { background: rgba(230,201,77,0.22); }
-}
-.planner-focus-popup-type.office {
-  background: rgba(157,127,214,0.12);
-  border-color: rgba(157,127,214,0.6);
-}
-@media (hover: hover) {
-  .planner-focus-popup-type.office:hover { background: rgba(157,127,214,0.22); }
-}
-.planner-focus-popup-type.client {
-  background: rgba(91,143,217,0.12);
-  border-color: rgba(91,143,217,0.6);
-}
-@media (hover: hover) {
-  .planner-focus-popup-type.client:hover { background: rgba(91,143,217,0.22); }
-}
-
-.planner-focus-popup-delete {
-  display: block;
-  width: 100%;
-  margin-top: 8px;
-  background: none;
-  border: 1px solid rgba(217,83,79,0.5);
-  color: #d97a7a;
-  padding: 6px 0;
-  border-radius: 6px;
-  font-size: 11px;
-  cursor: pointer;
-  font-family: var(--font-ui);
-  transition: background 0.15s;
-}
-@media (hover: hover) {
-  .planner-focus-popup-delete:hover { background: rgba(217,83,79,0.12); }
 }
 
 /* Calendar events — absolute within timeline-body; sopra i task blocks
@@ -1204,14 +1022,6 @@
   padding: 10px 12px;
   scrollbar-width: thin;
   scrollbar-color: var(--border2) transparent;
-}
-
-/* Con il widget Pomodoro attivo (fisso in basso a destra, stesso angolo di
-   questa colonna) riserva spazio in fondo così gli ultimi elementi
-   (es. link OneDrive/OneNote in fondo ai Dettagli) restano raggiungibili
-   scrollando invece di finire coperti in modo permanente. */
-.planner-ai-body.pomodoro-clearance {
-  padding-bottom: 260px;
 }
 
 .planner-save-status {
@@ -2180,6 +1990,32 @@ input[type="time"].planner-modal-select::-webkit-calendar-picker-indicator {
 }
 .planner-estimate-chip:disabled { opacity: 0.5; cursor: default; }
 
+/* L'ora esatta della sveglia, in fila con le pastiglie «fra 15 min»: le
+   pastiglie sono il gesto veloce, questo campo è quello che si usa quando
+   l'ora la si sa già. Stessa altezza e stesso bordo, così la riga resta una. */
+.planner-sveglia-input {
+  min-height: 32px;
+  padding: 0 var(--sp-3);
+  background: none;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  color: var(--accent);
+  font-family: var(--font-ui);
+  font-size: var(--fs-chip);
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  color-scheme: dark;   /* o l'orologino del browser esce bianco su bianco */
+}
+.planner-sveglia-input:disabled { opacity: 0.5; cursor: default; }
+.planner-sveglia-input:focus { outline: none; border-color: var(--accent-line); }
+
+.planner-sveglia-hint {
+  margin: var(--sp-2) 0 0;
+  font-size: var(--fs-micro);
+  color: var(--muted);
+  line-height: 1.45;
+}
+
 /* Chi si aspetta, sotto la pastiglia «In attesa»: il nome finisce nella prima
    riga delle note come «In attesa da: Nome», ma da qui non serve saperlo. */
 .planner-waiting {
@@ -2220,7 +2056,7 @@ input[type="time"].planner-modal-select::-webkit-calendar-picker-indicator {
 
   /* Il dettaglio non è una colonna ma un foglio che sale dal basso al tocco
      di un blocco. È l'unica strada che da telefono porta a sottoattività,
-     note, stima e «Avvia pomodoro»: senza, il gesto che apre il workbook
+     note, stima e «Apri il workbook»: senza, il gesto che apre il workbook
      della sezione non era raggiungibile. La colonna, sotto questa soglia,
      non viene proprio montata (vedi `narrow` in PlannerView.jsx). */
   .planner-ai-panel.mobile-active {
@@ -2383,32 +2219,6 @@ input[type="time"].planner-modal-select::-webkit-calendar-picker-indicator {
   .planner-month-chip-time { display: none; }
 }
 
-/* Pulsante volante per avviare il Pomodoro — stesso stile e riga del "+"
-   dorato GTD (App.css .gtd-fab), affiancato a sinistra dello stesso. */
-.pomodoro-fab {
-  position: fixed;
-  right: calc(20px + 46px + 12px + env(safe-area-inset-right, 0px));
-  bottom: calc(20px + env(safe-area-inset-bottom, 0px));
-  z-index: 100;
-  width: 46px;
-  height: 46px;
-  background: var(--accent);
-  border: none;
-  color: #14110d;
-  border-radius: 50%;
-  font-size: 20px;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  box-shadow: 0 8px 24px rgba(0,0,0,0.35);
-  transition: transform 0.15s, box-shadow 0.15s;
-}
-@media (hover: hover) {
-  .pomodoro-fab:hover { transform: translateY(-1px); box-shadow: 0 12px 30px rgba(212,164,74,0.45); }
-}
-.pomodoro-fab:active { transform: scale(0.94); }
-
 /* ── Capacità della giornata ──
    Quanto della giornata lavorativa è già impegnato: verde per le ore fatte,
    ocra per quelle piazzate ma ancora davanti. Non è una campitura decorativa
@@ -2439,10 +2249,10 @@ input[type="time"].planner-modal-select::-webkit-calendar-picker-indicator {
 .planner-capacity-done { background: var(--ctx-lavoro); }
 .planner-capacity-planned { background: var(--accent); opacity: .75; }
 
-/* ── Avvia pomodoro ──
+/* ── Apri il workbook ──
    In fondo al dettaglio: è l'ultimo gesto, quello che chiude la
    programmazione e apre il lavoro. */
-.planner-pomodoro-start {
+.planner-workbook-open {
   position: relative;
   display: flex;
   flex-direction: column;
@@ -2463,10 +2273,10 @@ input[type="time"].planner-modal-select::-webkit-calendar-picker-indicator {
   transition: background var(--t);
 }
 @media (hover: hover) {
-  .planner-pomodoro-start:hover { background: var(--accent-tint); }
+  .planner-workbook-open:hover { background: var(--accent-tint); }
 }
 
-.planner-pomodoro-dot {
+.planner-workbook-dot {
   position: absolute;
   left: var(--sp-4);
   top: 15px;
@@ -2476,7 +2286,7 @@ input[type="time"].planner-modal-select::-webkit-calendar-picker-indicator {
   border-radius: 50%;
 }
 
-.planner-pomodoro-caption {
+.planner-workbook-caption {
   font-size: var(--fs-micro);
   color: var(--muted);
   line-height: 1.4;

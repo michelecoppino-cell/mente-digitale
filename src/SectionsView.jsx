@@ -12,9 +12,6 @@
 // scegliere l'attività, leggerne le note e vedere quando la si fa sono tre
 // gesti che si fanno di seguito, senza aprire e chiudere niente.
 //
-// È anche dove atterra il Pomodoro: avviarlo dal Piano porta qui, sulla
-// plancia della sezione a cui appartiene l'attività.
-//
 // La colonna ATTIVITÀ non guarda più una lista To-Do sola. Una commessa può
 // avere più consegne — una lista ciascuna, chiamata `GRUPPO.Consegna-YYMMDD`
 // (la convenzione sta in paraConfig.js) — e qui si vedono tutte, raggruppate
@@ -35,8 +32,7 @@ import {
 } from './paraConfig';
 import { buildListColorMap, listColor, formatDeliverableDue, daysUntil, daysUntilLabel } from './plannerShared';
 import { useFolds } from './viewPrefs';
-import { usePomodoro } from './pomodoroContext';
-import { taskContext, contextColor, parseEstimate, GRANULARITY_MEMO_LINE } from './taskModel';
+import { taskContext, contextColor, parseEstimate, indexScheduled, GRANULARITY_MEMO_LINE } from './taskModel';
 import SectionPaths from './SectionPaths';
 import SectionTimeline from './SectionTimeline';
 import Skeleton from './Skeleton';
@@ -83,6 +79,21 @@ function estimateLabel(/** @type {import('./types').TodoTask} */ t) {
   return m ? `${h}h${String(m).padStart(2, '0')}` : `${h}h`;
 }
 
+/** Quando un'attività è già a piano, detto in una riga: «oggi 09:00»,
+ *  «domani 14:30», oppure la data per bocca sua. Serve al titolo della riga
+ *  grigia — vedere che è pianificata senza sapere quando non aiuta. */
+function plannedWhen(/** @type {{date: string, startTime: string}} */ p) {
+  const oggi = new Date();
+  const key = (/** @type {Date} */ d) =>
+    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  const domani = new Date(oggi); domani.setDate(oggi.getDate() + 1);
+  const giorno = p.date === key(oggi) ? 'oggi'
+    : p.date === key(domani) ? 'domani'
+    : new Intl.DateTimeFormat('it-IT', { weekday: 'long', day: 'numeric', month: 'long' })
+        .format(new Date(`${p.date}T12:00:00`));
+  return `${giorno} alle ${p.startTime}`;
+}
+
 /**
  * Tutte le sezioni di tutti i taccuini, in piatto, con il taccuino di
  * provenienza attaccato: l'elenco a sinistra è per ruolo PARA, non per
@@ -125,7 +136,6 @@ export default function SectionsView({
 }) {
   const { sectionId } = useParams();
   const navigate = useNavigate();
-  const { session } = usePomodoro();
   const [query, setQuery] = useState('');
   // Le famiglie PARA chiuse: solo l'archivio, di partenza.
   const [folds, setFolds] = useState(/** @type {Record<string, boolean>} */ (DEFAULT_FOLDED));
@@ -240,16 +250,12 @@ export default function SectionsView({
   // Il form della consegna nuova, aperto dal `+` in testata alla colonna.
   const [newOpen, setNewOpen] = useState(false);
 
-  // I task che hanno già un blocco nel piano di oggi: la riga lo segna, così
-  // non li si trascina due volte. È la stessa cosa che il pool del Piano fa
-  // con i task già programmati.
-  const scheduledTaskIds = useMemo(() => {
-    const d = new Date();
-    const today = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-    return new Set((plans?.[today]?.blocks || []).map(b => b.taskId).filter(Boolean));
-  }, [plans]);
-
-  const pomodoroTaskId = session?.taskId || null;
+  // I task che hanno già un blocco nel piano — in un giorno qualunque, non
+  // solo oggi: una cosa messa in agenda per giovedì è pianificata quanto una
+  // di stamattina, e riproporla in nero significherebbe pianificarla due
+  // volte. La riga li mostra in grigio, col giorno e l'ora nel titolo. È lo
+  // stesso indice che dà lo stato «programmata» al resto dell'app.
+  const scheduledPlacements = useMemo(() => indexScheduled(/** @type {any} */ (plans) || {}), [plans]);
   // La colonna Dettagli non è mai vuota se c'è qualcosa da mostrare: senza una
   // scelta esplicita apre la prima attività della sezione. Il task va riletto
   // dal pool, perché rinominarlo dal pannello aggiorna il pool e la copia
@@ -409,9 +415,6 @@ export default function SectionsView({
             <h1 className="sv-title">{paraSectionLabel(active.displayName)}</h1>
             <p className="sv-subtitle">
               {[ROLE_LABELS[active._role], active._nbName].filter(Boolean).join(' · ')}
-              {session?.sectionId === active.id && session.taskTitle && (
-                <> · aperto perché stai lavorando a «{session.taskTitle}»</>
-              )}
             </p>
           </div>
         </header>
@@ -530,9 +533,10 @@ export default function SectionsView({
                     )}
                     {!folded && d.tasks.map(t => {
                       const est = estimateLabel(t);
+                      const placement = scheduledPlacements.get(t.id) || null;
                       return (
                         <button
-                          className={`sv-task${t.id === detailTask?.id ? ' selected' : ''}${t.id === pomodoroTaskId ? ' current' : ''}${scheduledTaskIds.has(t.id) ? ' scheduled' : ''}`}
+                          className={`sv-task${t.id === detailTask?.id ? ' selected' : ''}${placement ? ' scheduled' : ''}`}
                           key={t.id}
                           draggable
                           onDragStart={e => {
@@ -545,9 +549,12 @@ export default function SectionsView({
                           }}
                           onDragEnd={() => { setDragTask(null); setDropListId(null); }}
                           onClick={() => setSelectedTaskId(t.id)}
-                          title={deliverables.length > 1
-                            ? "Apri note, sottoattività e stato · trascina su un'altra consegna per spostarla, o su Oggi per programmarla"
-                            : 'Apri note, sottoattività e stato · trascina su Oggi per programmarla'}>
+                          title={[
+                            placement && `Già nel piano: ${plannedWhen(placement)}`,
+                            deliverables.length > 1
+                              ? "Apri note, sottoattività e stato · trascina su un'altra consegna per spostarla, o su Oggi per programmarla"
+                              : 'Apri note, sottoattività e stato · trascina su Oggi per programmarla',
+                          ].filter(Boolean).join('\n')}>
                           <span
                             className="sv-task-dot"
                             style={/** @type {import('react').CSSProperties} */ ({ background: contextColor(taskContext(t)) })}

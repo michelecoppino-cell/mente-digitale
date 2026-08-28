@@ -244,7 +244,6 @@ export {};
  * @property {boolean} completed
  * @property {string|null} [completedAt]
  * @property {SubStep[]} subSteps
- * @property {number} [pomodoros]
  */
 
 /**

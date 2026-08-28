@@ -21,13 +21,14 @@ import QuickCapture from './QuickCapture';
 import { captureContextFor } from './captureContext';
 import AppShell from './AppShell';
 import ShortcutsPanel from './ShortcutsPanel';
-import { usePomodoro } from './pomodoroContext';
 import TodayView from './TodayView';
 import SectionsView from './SectionsView';
 import { graphStatusFor, STATUS_LABELS } from './taskModel';
 import { pushUndo } from './undo';
 import { COLORS } from './config';
 import UndoToast from './UndoToast';
+import SvegliaAlert from './SvegliaAlert';
+import { useSveglie } from './useSveglie';
 import './App.css';
 
 const FinanzeSection = lazy(() => import('./finanze/FinanzeSection'));
@@ -271,7 +272,6 @@ export default function App() {
   const captureContext = useMemo(
     () => captureContextFor(location.pathname, notebooks, sectionsMap, todoLists),
     [location.pathname, notebooks, sectionsMap, todoLists]);
-  const pomodoro = usePomodoro();
 
   useEffect(() => {
     /** @type {(() => void)|null} */
@@ -721,6 +721,23 @@ export default function App() {
     return listsForSection(sectionName, todoLists, allSectionNames);
   }
 
+  // Le sveglie guardano lo stesso pool di attività di tutto il resto: l'ora
+  // sta nelle note del task (marker `[SVEGLIA:hh:mm]`), quindi non c'è niente
+  // da caricare a parte — chi ha il pool ha già le sveglie.
+  const sveglie = useSveglie(scheduledTasks);
+
+  // «Vai» sull'avviso: porta alla sezione dell'attività, che è il posto da cui
+  // la si fa. Se la sua lista non ha una sezione — l'Inbox, per dirne una —
+  // resta la vista Attività, dove comunque si trova.
+  function apriTaskDaSveglia(task) {
+    const sectionName = sectionNameForList(task?._listName, allSectionNames);
+    const sec = sectionName
+      ? Object.values(sectionsMap || {}).flat()
+          .find(x => (x.displayName || '').toLowerCase() === sectionName.toLowerCase())
+      : null;
+    navigate(sec ? `/sezioni/${sec.id}` : '/attivita');
+  }
+
   function handleSelectSection(section, nb, appKey = 'onenote') {
     if (!section) { setSelected(null); return; }
     const lists = findTodoLists(section.displayName);
@@ -789,18 +806,6 @@ export default function App() {
   // eliminazione/completamento) nel pool globale.
   function handleTaskRestored(listId, task) {
     updateTasksEverywhere(listId, tasks => [...tasks, task]);
-  }
-
-  // Il Pomodoro avviato dal Piano diventa una sessione a livello di app: la
-  // barra in cima resta visibile anche cambiando vista, che è tutto il punto
-  // di averla tirata fuori da PlannerView. La sessione non è ancora legata a
-  // un task o a una sezione — quel collegamento arriva col Piano e con Sezioni.
-  function handleStartPomodoroFocus() {
-    pomodoro.start({ durationMin: 25 });
-  }
-
-  function handleEndPomodoroFocus() {
-    pomodoro.stop();
   }
 
   // ── Vista Attività: le transizioni di stato ──────────────────────────────
@@ -1069,8 +1074,6 @@ export default function App() {
               onTaskDueChanged={(listId, taskId, dueDateTime) => handleTaskPatched(listId, taskId, { dueDateTime })}
               onTaskPatched={handleTaskPatched}
               onTaskRestored={handleTaskRestored}
-              onStartFocus={handleStartPomodoroFocus}
-              onEndFocus={handleEndPomodoroFocus}
               calendarDirtyToken={calendarDirtyToken}
             />
           } />
@@ -1211,6 +1214,15 @@ export default function App() {
         onResetSectionColor={resetSectionColor}
       />
       <UndoToast />
+
+      {/* La sveglia sta qui, in fondo e fuori da ogni rotta: deve poter
+          coprire qualunque vista, compreso il Piano a schermo intero. */}
+      <SvegliaAlert
+        sveglie={sveglie.attive}
+        onChiudi={sveglie.chiudi}
+        onChiudiTutte={sveglie.chiudiTutte}
+        onApri={apriTaskDaSveglia}
+      />
     </>
   );
 }
