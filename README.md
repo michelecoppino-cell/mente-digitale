@@ -14,7 +14,9 @@ Microsoft To-Do e al calendario Outlook, e un diario con supporto AI via copia-i
 - **Pianificatore giornaliero** — drag & drop dei task su una timeline a slot di 30 minuti,
   vista giorno/settimana, eventi del calendario in sola lettura, sottostep ridimensionabili,
   piani salvati su OneDrive. Candidati task estratti da email ed email OneNote con euristiche
-  locali (`src/dailyReview.js`), senza chiamate AI.
+  locali (`src/dailyReview.js`), senza chiamate AI. Da telefono il Piano si legge e basta: il
+  trascinamento è il gesto di uno schermo largo, e pianificare col pollice vorrebbe dire un
+  gesto diverso — la proposta sta in `docs/proposta-piano-da-telefono.md`, non è costruita.
 - **Oggi** — la home, divisa in due metà. A sinistra la **giornata operativa**: «Oggi · agenda e
   azioni», cioè appuntamenti del calendario e azioni programmate in un elenco solo ordinato per
   ora, e sotto «In arrivo» con i giorni che vengono. A destra la **vita**: gli obiettivi del mese,
