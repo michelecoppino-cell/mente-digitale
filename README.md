@@ -563,7 +563,10 @@ Le schede Chat e Cowork prendono i connettori dall'account claude.ai, cioè serv
 MCP **remoti**, raggiungibili via HTTPS. Un server stdio come questo vive sul
 disco e parla su una pipe: non è raggiungibile da lì, e non c'è percorso o
 configurazione che lo renda tale. Servirebbe la versione remota — il server
-esposto su internet con un'autenticazione propria, e la macchina sempre accesa.
+esposto su internet con un'autenticazione propria, e la macchina sempre accesa. Quanto
+costi davvero — e cosa si può provare in tre minuti prima di cominciare, visto
+che la voce sul telefono gli strumenti li chiama — sta in
+`docs/proposta-voce-dal-telefono.md`: proposta, non costruita.
 
 Per client MCP diversi da Claude Code — che leggono un `claude_desktop_config.json`
 o simile — l'entrata è la stessa in forma JSON:

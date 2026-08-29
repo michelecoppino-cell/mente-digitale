@@ -153,6 +153,13 @@ rivelasse troppo lenta da costruire, è il ripiego che tiene.
 Il 2 è indipendente dall'1 e non lo sostituisce: uno è il momento in cui ci si
 siede a decidere la giornata, l'altro è l'idea che arriva in tangenziale.
 
+> **Aggiornamento.** Il 3 è stato poi guardato da vicino, perché è quello che
+> serve alla scena della macchina: `docs/proposta-voce-dal-telefono.md` lo
+> misura pezzo per pezzo. Due cose ne escono che riguardano anche questa
+> proposta: la voce sul telefono gli strumenti li chiama davvero, e il calcolo
+> del tasto «Riempi» qui sotto è lo stesso che serve là — conviene scriverlo
+> una volta sola, in `mente-comandi.mjs`, e usarlo da tutti e due i canali.
+
 Il 3 non lo comincerei per questo. Se un giorno lo si farà, lo si farà perché
 serve tutto il canale MCP dal telefono, non solo il piano — e allora il piano
 sarà uno dei motivi, non il motivo.
