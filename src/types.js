@@ -141,6 +141,9 @@ export {};
  * @property {string} [_calName]
  * @property {string} [_calColor]
  * @property {boolean} [_isShared]
+ * @property {'calendarView'|'events'} [_calMode] come è stato letto il calendario:
+ *   `events` è il ripiego usato quando calendarView viene rifiutato, e non
+ *   espande le occorrenze delle serie ricorrenti.
  */
 
 /**

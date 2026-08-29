@@ -2,7 +2,7 @@ import { useState, useEffect, useLayoutEffect, useRef, useMemo, Fragment } from 
 import {
   loadDailyPlans, saveDailyPlans,
   loadPlannerConfig, savePlannerConfig,
-  completeTask, getCalendarEvents, getCalendars, updateCalendarColor,
+  completeTask, getCalendarEvents, getCalendars, getCalendarFetchReport, updateCalendarColor,
   createCalendarEvent, updateCalendarEvent, deleteCalendarEvent, moveCalendarEvent,
   patchCalendarEvent, graphDateTime, getTask,
   loadWorkbooks, saveWorkbooks, getWorkbookCalendarId, getWorkbookEvents, WORKBOOK_CALENDAR_NAME,
@@ -242,6 +242,10 @@ export default function PlannerView({
   // esiste e il dettaglio è un foglio dal basso.
   const narrow = useMediaQuery('(max-width: 768px)');
   const [calendarsList, setCalendarsList]   = useState([]);
+  // Esito dell'ultimo caricamento per calendario (vedi getCalendarFetchReport):
+  // è quello che rende visibile nel filtro un calendario che c'è ma non porta
+  // eventi, invece di lasciar credere che quei giorni siano vuoti.
+  const [calReport, setCalReport]           = useState([]);
   const [calFilterOpen, setCalFilterOpen]   = useState(false);
   const [calColorPickerFor, setCalColorPickerFor] = useState(null); // id del calendario con lo swatch colori aperto
   const [calModal, setCalModal]             = useState(null); // { mode: 'create'|'edit', event }
@@ -644,6 +648,7 @@ export default function PlannerView({
     // 1 — in-memory (stessa sessione): evita anche il tick async di fetchQuery
     if (allCalEventsRef.current.length > 0) {
       filterCalEvents(allCalEventsRef.current);
+      setCalReport(getCalendarFetchReport());
       return;
     }
     // 2 — fetchQuery: cache di sessione persistita se fresca, altrimenti Graph
@@ -659,9 +664,11 @@ export default function PlannerView({
       });
       allCalEventsRef.current = evs;
       filterCalEvents(evs);
+      setCalReport(getCalendarFetchReport());
     } catch (e) {
       console.error('cal events bulk load', e);
       filterCalEvents([]);
+      setCalReport(getCalendarFetchReport());
     }
   }
 
@@ -1590,6 +1597,12 @@ export default function PlannerView({
   const dayWorkbookPlan  = workbookPlans[currentDate] || { blocks: [] };
   const workbookCalHidden = getHiddenCalendarIds().includes(WORKBOOK_CAL_ID);
 
+  // Quanti eventi ha portato ogni calendario, e chi non ce l'ha fatta: si
+  // legge nel filtro "Calendari", che è il posto dove ci si accorge che un
+  // calendario è elencato ma non mostra niente.
+  const calReportById = Object.fromEntries(calReport.map(r => [r.calId, r]));
+  const calIssueCount = calReport.filter(r => r.level !== 'ok').length;
+
   const workStart = t2m(config.workdayStart);
 
   function saveLabel() {
@@ -1696,8 +1709,11 @@ export default function PlannerView({
         <div className="planner-header-actions">
           <DayCapacity blocks={todayPlan.blocks || []} config={config} />
           <div className="planner-cal-filter-wrap">
-            <button className="planner-action-btn" onClick={() => setCalFilterOpen(v => !v)} title="Filtra calendari">
-              Calendari ▾
+            <button
+              className={`planner-action-btn${calIssueCount ? ' warn' : ''}`}
+              onClick={() => setCalFilterOpen(v => !v)}
+              title={calIssueCount ? `${calIssueCount} calendari con eventi non caricati` : 'Filtra calendari'}>
+              Calendari{calIssueCount ? ' ⚠️' : ''} ▾
             </button>
             {calFilterOpen && (
               <>
@@ -1719,6 +1735,7 @@ export default function PlannerView({
                     <div className="planner-cal-filter-empty">Nessun calendario</div>
                   ) : calendarsList.map(cal => {
                     const hidden  = getHiddenCalendarIds().includes(cal.id);
+                    const rep     = calReportById[cal.id];
                     return (
                       <Fragment key={cal.id}>
                         <label className="planner-cal-filter-item">
@@ -1734,7 +1751,19 @@ export default function PlannerView({
                             onClick={e => { e.preventDefault(); e.stopPropagation(); setCalColorPickerFor(v => v === cal.id ? null : cal.id); }}
                             title="Cambia colore calendario" />
                           <span className="planner-cal-filter-name">{cal.name}</span>
+                          {rep && (
+                            <span
+                              className={`planner-cal-filter-count${rep.count === 0 ? ' zero' : ''}`}
+                              title={`${rep.count} eventi letti da questo calendario nell'ultimo caricamento`}>
+                              {rep.count}
+                            </span>
+                          )}
                         </label>
+                        {rep && rep.level !== 'ok' && (
+                          <div className={`planner-cal-filter-issue ${rep.level}`}>
+                            {rep.level === 'error' ? '⚠️ Eventi non caricati — ' : 'ℹ️ '}{rep.message}
+                          </div>
+                        )}
                         {calColorPickerFor === cal.id && (
                           <div className="planner-cal-color-swatches">
                             {GRAPH_CAL_COLOR_OPTIONS.map(opt => (
