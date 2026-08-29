@@ -207,32 +207,50 @@ una sezione, risolvere prima le liste che somigliano al nome e chiedere le
 attività solo di quelle. Da trenta chiamate a due o tre, senza cambiare né il
 risultato né la firma.
 
-## Il gradino intermedio, che costa un'ora
+## Il gradino intermedio, che costa un comando
 
-C'è una via di mezzo che nessuna delle due proposte ha ancora nominato, e che
-non richiede di costruire il server: **una sessione Cloud di Claude Code con il
-refresh token fra le variabili d'ambiente.** Il container remoto ha il repo e ha
-Node; con `MENTE_REFRESH_TOKEN` impostato, `node scripts/mente.mjs oggi`
-funziona da lì — e a quella sessione si arriva dal telefono.
+C'è una via di mezzo che nessuna delle due proposte aveva nominato, e che non
+richiede di costruire niente: **Remote Control**.
 
-Non è la macchina: si scrive, non si parla. Ma:
+`claude --remote-control` (o `/remote-control` in una sessione già aperta)
+registra la sessione sull'account e ne apre una finestra su claude.ai/code e
+sulla scheda **Code** dell'app del telefono. La sessione **continua a girare sul
+PC**, con il suo filesystem e i suoi server MCP: dal telefono si scrive dentro
+una sessione che ha `mente` collegato, e i ventuno strumenti rispondono per
+davvero. Il token non si muove, non c'è niente da esporre su internet, non c'è
+serratura da scrivere. Serve un piano Pro o Max, il PC sveglio e il processo
+`claude` acceso; se il portatile si addormenta la sessione va offline e torna da
+sé quando la macchina si riprende.
 
-- dice **se la conversazione vale la pena** prima di pagare il server. Se
-  chiedere «leggimi i task di 2573, aggiungi questi due, ordinali» per iscritto
-  si rivela scomodo o poco utile, farlo a voce non lo salva;
-- è già utile per conto suo, in treno o sul divano.
+*(C'è anche **Dispatch**, che dal telefono assegna un compito che gira sul
+desktop. È fatto per il lavoro in background — «fallo e dimmi com'è andato» —
+non per una conversazione a botta e risposta, che è quello che serve qui.)*
 
-Con l'avvertenza che conta, e che è la stessa di sopra: vuol dire mettere la
-chiave del proprio OneDrive nella configurazione di un servizio. È la fiducia
-già data a GitHub Actions con `MS_REFRESH_TOKEN` — ma quel segreto lì può
-leggere solo posta e calendario, e questo scriverebbe ovunque. Sono due cose
-diverse, e la seconda si decide apposta, con un token dedicato e più stretto,
-non per inerzia dalla prima.
+**Questo cambia il primo passo, e per il meglio.** Non è la macchina — la scheda
+Code è una chat di testo: si detta col microfono della tastiera e si legge la
+risposta, che con le mani sul volante non si fa. Ma è il banco di prova esatto:
+si può provare *oggi*, dal divano o dal treno, la conversazione vera —
+«leggimi i task di 2573, aggiungi questi due, ordinameli» — sugli strumenti veri
+e sui dati veri.
 
-*(Il README, in «Dove funziona e dove no», dice che una sessione Cloud non ha il
-token: è vero per il canale MCP, che vive sul disco di casa. Metterci una
-variabile d'ambiente è una scelta esplicita e diversa — e va scritta lì, se si
-fa, perché quella tabella altrimenti diventa una bugia.)*
+E quello che si scopre lì vale per tutto il resto:
+
+- se quella conversazione, per iscritto, risulta più lenta che aprire l'app, la
+  voce non la salva: il problema è negli strumenti, ed è quello che dicono i tre
+  punti qui sopra (ventuno strumenti, «ordinameli» che non esiste, la latenza);
+- se invece funziona, il server remoto ha un motivo dimostrato invece che
+  sperato, e si sa già quali otto strumenti servono e come vanno accorciate le
+  risposte.
+
+Fra le due cose, quindi, l'ordine è: **prima si prova la conversazione con
+Remote Control, poi si decide se costruire il canale della voce.**
+
+*(Una terza strada, per completezza: una sessione Cloud di Claude Code con
+`MENTE_REFRESH_TOKEN` fra le variabili d'ambiente. Funziona, e non chiede il PC
+acceso — ma vuol dire mettere la chiave del proprio OneDrive nella
+configurazione di un servizio, e Remote Control ottiene lo stesso risultato
+lasciando il token dov'è. La terrei per il caso «il PC è spento e mi serve
+adesso», con un token dedicato e più stretto, non come strada principale.)*
 
 ## Quello che non farei
 
@@ -253,7 +271,8 @@ fa, perché quella tabella altrimenti diventa una bugia.)*
 
 | # | Cosa | Costo | Serve a |
 |---|---|---|---|
-| 1 | **La prova dei tre minuti**: voce + Haiku + un connettore che c'è già | zero | Sapere se il canale esiste, prima di costruirlo |
+| 0 | **Remote Control**: la conversazione vera dal telefono, sugli strumenti che ci sono | un comando | Sapere se quella conversazione vale la pena, prima di tutto il resto |
+| 1 | **La prova dei tre minuti**: voce + Haiku + un connettore che c'è già | zero | Sapere se il canale della voce esiste, prima di costruirlo |
 | 2 | Filtrare le liste **prima** di leggere le attività | basso | Risposte in due secondi invece che in dieci — e serve anche alla CLI |
 | 3 | `piano_riempi` in `mente-comandi.mjs`, esposto a MCP e a riga di comando | basso/medio | «Ordinameli» che scrive un piano vero invece di ore inventate |
 | 4 | L'involucro HTTP: trasporto, token nel KV, serratura OAuth, otto strumenti | medio/alto | Il canale vero |
@@ -264,6 +283,7 @@ canale che c'è, e il 3 è metà della scaletta. Il **1** costa niente e può
 cambiare tutto — se la voce con Haiku non chiama gli strumenti, il 4 va
 progettato per Sonnet, cioè con risposte più corte e meno giri.
 
-Il **4** è l'unico progetto vero, e lo comincerei solo dopo che l'1 ha detto di
-sì e il gradino intermedio ha detto che quella conversazione, per iscritto, era
-già utile.
+Il **4** è l'unico progetto vero, e lo comincerei solo dopo che lo **0** ha detto
+che quella conversazione, per iscritto, era già utile, e l'**1** che la voce
+chiama gli strumenti. Sono le due domande a cui non serve scrivere codice per
+rispondere, e sono le due che possono far risparmiare tutto il resto.

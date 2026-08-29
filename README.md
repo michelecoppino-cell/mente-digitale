@@ -552,12 +552,28 @@ Solo dove il client può avviare un processo **su questa macchina**:
 | App desktop, scheda **Code**, ambiente **Local** | sì |
 | App desktop, sessione **Cloud** (icona della nuvola in cima alla sessione) | no |
 | App desktop, schede **Chat** e **Cowork** | no |
-| claude.ai nel browser, app sul telefono | no |
+| claude.ai/code e app del telefono, **scheda Code**, su una sessione Remote Control | sì — gira sul PC |
+| claude.ai e app del telefono, ovunque altro (Chat, voce) | no |
 
 Una sessione Cloud gira in un container remoto: non ha il file del token, e non
 è un difetto da aggirare — se lo avesse, vorrebbe dire che il token ha lasciato
 il computer. È la confusione più facile da fare, perché l'app è la stessa: la
 nuvola accanto al titolo della sessione è il modo per accorgersene.
+
+**Il telefono, per una via traversa: Remote Control.** `claude --remote-control`
+(oppure `/remote-control` in una sessione già aperta) registra la sessione
+sull'account e ne apre una finestra su claude.ai/code e sulla scheda **Code**
+dell'app del telefono. La sessione continua a girare **qui**, con il suo
+filesystem e i suoi server MCP: dal telefono si scrive in una sessione che ha
+`mente` collegato, e le attività si leggono e si scrivono davvero. Il PC deve
+essere sveglio e il processo `claude` acceso — se il portatile si addormenta la
+sessione va offline e torna da sola quando la macchina si riprende.
+
+È l'unico modo in cui oggi la mente digitale si raggiunge dal telefono senza
+costruire niente, e non è la voce: la scheda Code è una chat di testo, mentre la
+modalità vocale vive nella scheda Chat e usa i connettori, non le sessioni di
+Claude Code. Sono due superfici diverse, e Remote Control non porta questo
+server nella prima.
 
 Le schede Chat e Cowork prendono i connettori dall'account claude.ai, cioè server
 MCP **remoti**, raggiungibili via HTTPS. Un server stdio come questo vive sul
