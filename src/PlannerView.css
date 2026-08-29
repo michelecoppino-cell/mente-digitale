@@ -803,10 +803,17 @@
 
 /* Calendar events — absolute within timeline-body; sopra i task blocks
    (z-index maggiore) e cliccabili per aprire il modale di modifica. */
+/* Larghezza divisa fra gli eventi che si accavallano: --cal-cols quante
+   colonne ha il gruppo, --cal-col quale occupa questo (li calcola
+   overlapColumns). Con una colonna sola la geometria è quella di prima:
+   da 92px a 6px dal bordo destro. */
 .planner-cal-event {
+  --cal-col: 0;
+  --cal-cols: 1;
   position: absolute;
-  left: 92px;
-  right: 6px;
+  left: calc(92px + (100% - 98px) * var(--cal-col) / var(--cal-cols));
+  width: calc((100% - 98px) / var(--cal-cols) - 1px);
+  right: auto;
   border-radius: var(--r-sm);
   background: var(--surface);
   border: 1px solid var(--line);
@@ -1460,9 +1467,12 @@ input[type="time"].planner-modal-select::-webkit-calendar-picker-indicator {
 
 /* Calendar events in week view — sopra i task blocks, cliccabili per modificare */
 .planner-week-cal-event {
+  --cal-col: 0;
+  --cal-cols: 1;
   position: absolute;
-  left: 2px;
-  right: 2px;
+  left: calc(2px + (100% - 4px) * var(--cal-col) / var(--cal-cols));
+  width: calc((100% - 4px) / var(--cal-cols) - 1px);
+  right: auto;
   border-radius: 3px;
   background: #4f8fa3;
   border-left: 3px solid rgba(126,184,201,0.95);
