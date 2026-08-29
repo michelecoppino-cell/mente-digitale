@@ -164,6 +164,13 @@
   color: var(--muted);
 }
 .planner-cal-filter-count.zero { color: #c07a7a; }
+.planner-cal-filter-count-view { color: var(--text); }
+.planner-cal-filter-legend {
+  padding: 6px 8px 2px;
+  font-size: 10px;
+  color: var(--muted);
+  text-align: right;
+}
 .planner-cal-filter-issue {
   padding: 2px 8px 6px 28px;
   font-size: 11px;

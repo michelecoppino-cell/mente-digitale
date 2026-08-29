@@ -1668,6 +1668,14 @@ export default function PlannerView({
   // calendario è elencato ma non mostra niente.
   const calReportById = Object.fromEntries(calReport.map(r => [r.calId, r]));
   const calIssueCount = calReport.filter(r => r.level !== 'ok').length;
+  // Quanti ne cadono nel periodo che si sta guardando. È il numero che separa
+  // le due domande che si somigliano: «questo calendario non si legge» (zero
+  // letti in assoluto) e «lo leggo ma non lo disegno qui» (letti tanti, in
+  // vista nessuno, oppure in vista tre e sullo schermo uno).
+  const calInViewCount = calEvents.reduce((acc, ev) => {
+    acc[ev._calId] = (acc[ev._calId] || 0) + 1;
+    return acc;
+  }, /** @type {Record<string, number>} */ ({}));
 
   const workStart = t2m(config.workdayStart);
 
@@ -1820,8 +1828,9 @@ export default function PlannerView({
                           {rep && (
                             <span
                               className={`planner-cal-filter-count${rep.count === 0 ? ' zero' : ''}`}
-                              title={`${rep.count} eventi letti da questo calendario nell'ultimo caricamento`}>
-                              {rep.count}
+                              title={`${calInViewCount[cal.id] || 0} eventi in questa vista, ${rep.count} letti da questo calendario nell'ultimo caricamento`}>
+                              <span className="planner-cal-filter-count-view">{calInViewCount[cal.id] || 0}</span>
+                              /{rep.count}
                             </span>
                           )}
                         </label>
@@ -1846,6 +1855,11 @@ export default function PlannerView({
                       </Fragment>
                     );
                   })}
+                  {calReport.length > 0 && (
+                    <div className="planner-cal-filter-legend">
+                      in questa vista / letti in ±3 mesi
+                    </div>
+                  )}
                 </div>
               </>
             )}
