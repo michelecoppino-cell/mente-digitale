@@ -5,6 +5,11 @@
 > quella liquidata con «alto, progetto a sé» — presa sul serio e misurata: cosa
 > costa davvero, cosa si può provare in tre minuti prima di spendere un'ora, e
 > qual è il pezzo che di solito si sottovaluta.
+>
+> Con una scoperta che viene prima di tutto il resto: **dal telefono, alla mente
+> digitale, ci si arriva già oggi** — con Remote Control, se il PC è acceso. Non
+> è la voce, ma è il banco di prova che dice se la voce vale la pena. Sta in
+> *Il gradino intermedio*, ed è il passo zero.
 
 ## La scena
 
