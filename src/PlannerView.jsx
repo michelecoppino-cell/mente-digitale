@@ -173,6 +173,70 @@ function isoToLocalDateStr(iso) {
 function isAllDay(ev) {
   return ev.isAllDay || (!ev.start?.dateTime && !!ev.start?.date);
 }
+// Il giorno di calendario di un evento. Per quelli con orario conta il fuso
+// locale: tagliare i primi dieci caratteri del dateTime UTC di Graph fa
+// scivolare al giorno prima tutto ciò che comincia dopo mezzanotte (in Italia
+// prima delle 01:00 o 02:00) — ed è il motivo per cui uno stesso evento poteva
+// comparire in agenda, che il fuso lo applica, e non nel Piano, che lo
+// tagliava. Per quelli tutto-il-giorno vale invece la data così com'è: Graph la
+// dà a mezzanotte UTC, e convertirla la sposterebbe di un giorno nei fusi a
+// ovest di Greenwich.
+function graphDayStr(dt, allDay) {
+  if (!dt) return '';
+  if (allDay) return (dt.dateTime || dt.date || '').slice(0, 10);
+  return isoToLocalDateStr(dt.dateTime) || (dt.date || '').slice(0, 10);
+}
+function evDayStr(ev) {
+  return ev ? graphDayStr(ev.start, isAllDay(ev)) : '';
+}
+// Due eventi che si accavallano nel tempo occupavano entrambi tutta la
+// larghezza della colonna, uno esattamente sopra l'altro: quello disegnato
+// prima spariva dietro il secondo, che è opaco. Qui gli eventi che si toccano
+// si dividono la larghezza in colonne, come in qualunque calendario, e
+// restano visibili tutti. Ritorna, nello stesso ordine ricevuto, la colonna di
+// ciascuno e quante colonne ha il gruppo cui appartiene.
+/**
+ * @param {{start: number, end: number}[]} spans  minuti dall'inizio giornata
+ * @returns {{col: number, cols: number}[]}
+ */
+function overlapColumns(spans) {
+  const layout = spans.map(() => ({ col: 0, cols: 1 }));
+  const ordine = spans.map((_, i) => i)
+    .sort((a, b) => spans[a].start - spans[b].start || spans[a].end - spans[b].end);
+  /** @type {number[]} */
+  let gruppo = [];
+  /** @type {number[]} */
+  let fineColonna = [];
+  let fineGruppo = -Infinity;
+  // Un gruppo si chiude quando comincia un evento che non tocca più nessuno
+  // di quelli in corso: solo allora si sa in quante colonne dividerlo.
+  const chiudiGruppo = () => {
+    const cols = Math.max(1, fineColonna.length);
+    gruppo.forEach(i => { layout[i].cols = cols; });
+    gruppo = []; fineColonna = []; fineGruppo = -Infinity;
+  };
+  for (const i of ordine) {
+    const s = spans[i];
+    if (s.start >= fineGruppo) chiudiGruppo();
+    let col = fineColonna.findIndex(fine => fine <= s.start);
+    if (col === -1) { col = fineColonna.length; fineColonna.push(s.end); }
+    else fineColonna[col] = s.end;
+    layout[i].col = col;
+    gruppo.push(i);
+    fineGruppo = Math.max(fineGruppo, s.end);
+  }
+  chiudiGruppo();
+  return layout;
+}
+// Inizio/fine in minuti di un evento, per il calcolo delle sovrapposizioni.
+// Un evento che scavalla la mezzanotte (fine < inizio) e uno di durata nulla
+// occuperebbero un intervallo vuoto: gli si dà comunque mezz'ora di corpo,
+// che è la sua altezza minima sulla timeline.
+function eventSpan(ev) {
+  const s = t2m(isoToHHMM(ev.start?.dateTime || ev.start?.date) || '00:00');
+  const e = t2m(isoToHHMM(ev.end?.dateTime || ev.end?.date) || '00:00');
+  return { start: s, end: Math.max(e, s + 30) };
+}
 // Durata di un blocco/evento in layout verticale, mostrata in basso nella
 // colonna etichetta — formato compatto "2h" oppure "2h30" senza minuti a zero.
 function fmtBlockDuration(min) {
@@ -701,7 +765,7 @@ export default function PlannerView({
     const hiddenIds = getHiddenCalendarIds();
     const filtered = allEvs.filter(ev => {
       if (hiddenIds.includes(ev._calId)) return false;
-      const d = (ev.start?.dateTime || ev.start?.date || '').slice(0, 10);
+      const d = evDayStr(ev);
       return d >= viewStart && d <= viewEnd;
     });
     setCalEvents(filtered);
@@ -747,8 +811,8 @@ export default function PlannerView({
       const targetCalId  = calendarId || defaultCalId;
       // Snapshot dei valori precedenti, per poter tornare indietro con l'undo.
       const prevAllDay    = ev.isAllDay;
-      const prevStartDate = (ev.start?.dateTime || ev.start?.date || '').slice(0, 10);
-      const prevEndDate   = (ev.end?.dateTime || ev.end?.date || '').slice(0, 10);
+      const prevStartDate = graphDayStr(ev.start, prevAllDay);
+      const prevEndDate   = graphDayStr(ev.end, prevAllDay);
       const prevStartTime = prevAllDay ? null : isoToHHMM(ev.start?.dateTime);
       const prevEndTime   = prevAllDay ? null : isoToHHMM(ev.end?.dateTime);
       const prevSubject   = ev.subject;
@@ -802,8 +866,8 @@ export default function PlannerView({
         await createCalendarEvent({
           calendarId: calId,
           subject: ev.subject,
-          startDate: (ev.start?.dateTime || ev.start?.date || '').slice(0, 10),
-          endDate: (ev.end?.dateTime || ev.end?.date || '').slice(0, 10),
+          startDate: graphDayStr(ev.start, isAllDay(ev)),
+          endDate: graphDayStr(ev.end, isAllDay(ev)),
           startTime: ev.isAllDay ? null : isoToHHMM(ev.start?.dateTime),
           endTime: ev.isAllDay ? null : isoToHHMM(ev.end?.dateTime),
         });
@@ -1594,6 +1658,8 @@ export default function PlannerView({
 
   const allDayEvents = calEvents.filter(isAllDay);
   const timedEvents  = calEvents.filter(ev => !isAllDay(ev));
+  // Colonne per gli eventi che si accavallano nella timeline del Giorno.
+  const timedEventsLayout = overlapColumns(timedEvents.map(eventSpan));
   const dayWorkbookPlan  = workbookPlans[currentDate] || { blocks: [] };
   const workbookCalHidden = getHiddenCalendarIds().includes(WORKBOOK_CAL_ID);
 
@@ -1602,6 +1668,14 @@ export default function PlannerView({
   // calendario è elencato ma non mostra niente.
   const calReportById = Object.fromEntries(calReport.map(r => [r.calId, r]));
   const calIssueCount = calReport.filter(r => r.level !== 'ok').length;
+  // Quanti ne cadono nel periodo che si sta guardando. È il numero che separa
+  // le due domande che si somigliano: «questo calendario non si legge» (zero
+  // letti in assoluto) e «lo leggo ma non lo disegno qui» (letti tanti, in
+  // vista nessuno, oppure in vista tre e sullo schermo uno).
+  const calInViewCount = calEvents.reduce((acc, ev) => {
+    acc[ev._calId] = (acc[ev._calId] || 0) + 1;
+    return acc;
+  }, /** @type {Record<string, number>} */ ({}));
 
   const workStart = t2m(config.workdayStart);
 
@@ -1754,8 +1828,9 @@ export default function PlannerView({
                           {rep && (
                             <span
                               className={`planner-cal-filter-count${rep.count === 0 ? ' zero' : ''}`}
-                              title={`${rep.count} eventi letti da questo calendario nell'ultimo caricamento`}>
-                              {rep.count}
+                              title={`${calInViewCount[cal.id] || 0} eventi in questa vista, ${rep.count} letti da questo calendario nell'ultimo caricamento`}>
+                              <span className="planner-cal-filter-count-view">{calInViewCount[cal.id] || 0}</span>
+                              /{rep.count}
                             </span>
                           )}
                         </label>
@@ -1780,6 +1855,11 @@ export default function PlannerView({
                       </Fragment>
                     );
                   })}
+                  {calReport.length > 0 && (
+                    <div className="planner-cal-filter-legend">
+                      in questa vista / letti in ±3 mesi
+                    </div>
+                  )}
                 </div>
               </>
             )}
@@ -2037,11 +2117,15 @@ export default function PlannerView({
               const evColor = calendarSwatch(ev._calColor);
               const isVertical  = (evEndMin - evStartMin) > VERTICAL_LAYOUT_MIN_DURATION;
               const titleLayout = isVertical ? verticalTitleLayout(ev.subject, height - 12 - VERTICAL_DURATION_RESERVE_PX, 10) : null;
+              const geo = timedEventsLayout[i] || { col: 0, cols: 1 };
               return (
                 <div
-                  key={`cal-${i}`}
+                  key={ev.id || `cal-${i}`}
                   className={`planner-cal-event${ev._isShared ? ' shared' : ''}${isVertical ? ' vertical-layout' : ''}`}
-                  style={{ top, height, background: evColor, borderLeftColor: evColor }}
+                  style={{
+                    top, height, background: evColor, borderLeftColor: evColor,
+                    '--cal-col': geo.col, '--cal-cols': geo.cols,
+                  }}
                   draggable
                   onDragStart={e => {
                     // L'evento non si sposta trascinando (solo dal modale di
@@ -2465,7 +2549,7 @@ function MonthlyCalendar({ currentDate, plans, calEvents, calOutOfRange, config,
   // Eventi indicizzati per giorno (calEvents è già filtrato sul mese corrente)
   const eventsByDay = {};
   for (const ev of calEvents) {
-    const key = (ev.start?.dateTime || ev.start?.date || '').slice(0, 10);
+    const key = evDayStr(ev);
     if (!key) continue;
     (eventsByDay[key] ||= []).push(ev);
   }
@@ -2676,9 +2760,9 @@ function WeeklyTimeline({
         {weekDays.map(day => {
           const dayPlan         = plans[day] || { blocks: [] };
           const dayWorkbookPlan = workbookPlans[day] || { blocks: [] };
-          const dayEvents = calEvents.filter(ev =>
-            !isAllDay(ev) && (ev.start?.dateTime || ev.start?.date || '').slice(0, 10) === day
-          );
+          const dayEvents = calEvents.filter(ev => !isAllDay(ev) && evDayStr(ev) === day);
+          // Gli eventi che si accavallano si dividono la colonna del giorno.
+          const dayEventsLayout = overlapColumns(dayEvents.map(eventSpan));
           return (
             <div
               key={day}
@@ -2774,9 +2858,13 @@ function WeeklyTimeline({
                 const evColor = calendarSwatch(ev._calColor);
                 const isVertical  = (t2m(evEnd) - t2m(evStart)) > VERTICAL_LAYOUT_MIN_DURATION;
                 const titleLayout = isVertical ? verticalTitleLayout(ev.subject, height - 12 - VERTICAL_DURATION_RESERVE_PX, 10) : null;
+                const geo = dayEventsLayout[i] || { col: 0, cols: 1 };
                 return (
-                  <div key={i} className={`planner-week-cal-event${isVertical ? ' vertical-layout' : ''}`}
-                    style={{ top, height, background: evColor, borderLeftColor: evColor }}
+                  <div key={ev.id || i} className={`planner-week-cal-event${isVertical ? ' vertical-layout' : ''}`}
+                    style={{
+                      top, height, background: evColor, borderLeftColor: evColor,
+                      '--cal-col': geo.col, '--cal-cols': geo.cols,
+                    }}
                     draggable
                     onDragStart={e => {
                       if (!(e.ctrlKey || e.metaKey)) { e.preventDefault(); return; }

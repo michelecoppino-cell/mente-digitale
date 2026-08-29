@@ -99,11 +99,23 @@ function evMin(/** @type {any} */ iso) {
   return d.getHours() * 60 + d.getMinutes();
 }
 
-/** La data locale 'YYYY-MM-DD' di un evento Graph. */
+/** La data locale 'YYYY-MM-DD' di un dateTime Graph. */
 function evDate(/** @type {any} */ iso) {
   if (!iso) return '';
   const d = new Date(iso.endsWith('Z') ? iso : iso + 'Z');
   return todayStr(d);
+}
+
+// Il giorno di calendario di un evento, come lo calcola anche il Piano: fuso
+// locale per gli eventi con orario, data grezza per quelli tutto-il-giorno
+// (Graph li dà a mezzanotte UTC, convertirli li sposterebbe di un giorno nei
+// fusi a ovest di Greenwich). Le due schermate devono essere d'accordo su che
+// giorno è un evento, altrimenti lo stesso appuntamento compare in una e non
+// nell'altra.
+function evDayStr(/** @type {any} */ e) {
+  const allDay = e?.isAllDay || (!e?.start?.dateTime && !!e?.start?.date);
+  if (allDay) return (e?.start?.dateTime || e?.start?.date || '').slice(0, 10);
+  return evDate(e?.start?.dateTime) || (e?.start?.date || '').slice(0, 10);
 }
 
 /** Iniziali per il cerchietto delle ricorrenze. */
@@ -360,7 +372,7 @@ export default function TodayView({ plans, tasks, todoLists, calendarEvents, onC
   // cronologia: prima oggi, poi quello che arriva.
   const { events, ahead, aheadTotale } = useMemo(() => {
     const all = (calendarEvents || [])
-      .map(e => ({ e, date: evDate(e.start?.dateTime), rec: isRecurrence(e) }))
+      .map(e => ({ e, date: evDayStr(e), rec: isRecurrence(e) }))
       .filter(x => x.date >= today)
       .sort((a, b) => (a.e.start?.dateTime || '').localeCompare(b.e.start?.dateTime || ''));
     const futuri = all.filter(x => {
@@ -368,9 +380,18 @@ export default function TodayView({ plans, tasks, todoLists, calendarEvents, onC
       if (gap <= 0) return false;
       return gap <= (x.rec ? AHEAD_RECURRENCES : AHEAD_APPOINTMENTS);
     });
+    // Il tetto di righe non deve mai mostrare una giornata a metà: se cade in
+    // mezzo agli eventi di uno stesso giorno si tiene tutto il giorno. Vedere
+    // «un appuntamento» in una giornata che ne ha tre non è una lista più
+    // corta, è una lista che dice il falso.
+    let taglio = Math.min(AHEAD_MAX_ROWS, futuri.length);
+    if (taglio > 0) {
+      const ultimoGiorno = futuri[taglio - 1].date;
+      while (taglio < futuri.length && futuri[taglio].date === ultimoGiorno) taglio++;
+    }
     return {
       events: all.filter(x => x.date === today),
-      ahead: futuri.slice(0, AHEAD_MAX_ROWS),
+      ahead: futuri.slice(0, taglio),
       aheadTotale: futuri.length,
     };
   }, [calendarEvents, today]);
