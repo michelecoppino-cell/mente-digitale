@@ -153,6 +153,26 @@
   .planner-cal-filter-dot-btn:hover { border-color: #fff; }
 }
 .planner-cal-filter-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Quanti eventi ha davvero portato ogni calendario: uno zero accanto a un
+   calendario spuntato è la differenza fra «quel giorno non c'è niente» e
+   «quel calendario non si legge». */
+.planner-cal-filter-count {
+  margin-left: auto;
+  flex-shrink: 0;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+}
+.planner-cal-filter-count.zero { color: #c07a7a; }
+.planner-cal-filter-issue {
+  padding: 2px 8px 6px 28px;
+  font-size: 11px;
+  line-height: 1.35;
+  color: var(--muted);
+  white-space: normal;
+}
+.planner-cal-filter-issue.error { color: #c07a7a; }
+.planner-action-btn.warn { border-color: #c07a7a; color: #c07a7a; }
 .planner-cal-filter-divider { border-top: 1px solid var(--border2); margin: 4px 2px; }
 
 /* Riga di swatch colore Graph (enum fisso, non hex libero) sotto il

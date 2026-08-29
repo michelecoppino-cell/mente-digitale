@@ -551,10 +551,137 @@ export async function updateCalendarColor(calendarId, color) {
   return res;
 }
 
+// Esito del caricamento per calendario dell'ultimo giro di getCalendarEvents.
+// Prima i fallimenti per singolo calendario finivano dentro un
+// Promise.allSettled e venivano buttati via senza una riga di log: un
+// calendario che Graph rifiuta (tipicamente un calendario condiviso da
+// un'altra persona, che /me/calendars elenca comunque) restava visibile nel
+// filtro "Calendari" del Piano ma senza un solo evento, e non c'era modo di
+// accorgersene — men che meno da telefono, dove la console non si legge.
 /**
- * Eventi Calendario mergiati da tutti i calendari (max 8, in parallelo),
- * escluso il calendario Workbook dedicato. Ogni evento è decorato con
- * _calId/_calName/_calColor/_isShared.
+ * @typedef {Object} CalendarFetchIssue
+ * @property {string} calId
+ * @property {string} name
+ * @property {'ok'|'fallback'|'error'} level
+ * @property {string} message
+ * @property {number} count      eventi caricati nella finestra richiesta
+ * @property {boolean} shared
+ */
+/** @type {CalendarFetchIssue[]} */
+let _calFetchReport = [];
+
+/** Esito per calendario dell'ultimo getCalendarEvents. @returns {CalendarFetchIssue[]} */
+export function getCalendarFetchReport() { return _calFetchReport; }
+
+// Un errore Graph in forma leggibile: "403 — ErrorAccessDenied: ..." è
+// l'unica cosa che, letta dal telefono, dice davvero cos'è successo.
+/** @param {any} e @returns {string} */
+function graphErrMsg(e) {
+  const m = (e?.message || String(e)).replace(/^Graph error /, '');
+  return m.length > 220 ? m.slice(0, 220) + '…' : m;
+}
+
+// Ripiego per i calendari su cui calendarView non funziona: la collezione
+// /events grezza, filtrata sulla finestra. calendarView chiede al server di
+// espandere le ricorrenze, e sulla copia locale di un calendario condiviso da
+// un'altra persona quell'espansione può essere negata (403) mentre la lettura
+// degli eventi passa. In compenso qui le serie ricorrenti arrivano come
+// seriesMaster, cioè una sola riga sulla prima occorrenza invece che una per
+// occorrenza: è una vista parziale, e come tale viene segnalata.
+/**
+ * @param {string} calId
+ * @param {string} startIso
+ * @param {string} endIso
+ * @param {number} top
+ * @returns {Promise<any[]>}
+ */
+async function fetchCalendarEventsRaw(calId, startIso, endIso, top) {
+  // Graph vuole il letterale senza millisecondi né suffisso di fuso (lo
+  // interpreta come UTC): con la "Z" in coda risponde 400.
+  const lit = (/** @type {string} */ iso) => iso.slice(0, 19);
+  const filter = encodeURIComponent(`start/dateTime lt '${lit(endIso)}' and end/dateTime gt '${lit(startIso)}'`);
+  const q = `$filter=${filter}&$orderby=start/dateTime&$top=${top}&$select=id,subject,start,end,isAllDay,webLink,type`;
+  return callPagedValues(`/me/calendars/${calId}/events?${q}`);
+}
+
+/**
+ * Eventi di un singolo calendario, con ripiego su /events e diagnostica.
+ * @param {import('./types').Calendar} cal
+ * @param {boolean} isOwn
+ * @param {string} params  querystring di calendarView
+ * @param {string} startIso
+ * @param {string} endIso
+ * @param {number} top
+ * @returns {Promise<{events: any[], report: CalendarFetchIssue}>}
+ */
+async function fetchOneCalendar(cal, isOwn, params, startIso, endIso, top) {
+  /** @param {any[]} events @param {'calendarView'|'events'} mode */
+  const decorate = (events, mode) => events.map(e => ({
+    ...e,
+    _calId:     cal.id,
+    _calName:   cal.name,
+    _calColor:  cal.color,
+    _isShared:  !isOwn,
+    _calMode:   mode,
+  }));
+  /** @param {'ok'|'fallback'|'error'} level @param {string} message @param {number} count */
+  const report = (level, message, count) => ({
+    calId: cal.id, name: cal.name || '', level, message, count, shared: !isOwn,
+  });
+
+  try {
+    const events = await callPagedValues(`/me/calendars/${cal.id}/calendarView?${params}`);
+    // Un calendario condiviso che risponde "nessun evento" merita una
+    // controprova: è il modo silenzioso in cui Graph dice di no.
+    if (events.length === 0 && !isOwn) {
+      const raw = await fetchCalendarEventsRaw(cal.id, startIso, endIso, top).catch(() => []);
+      if (raw.length) {
+        return {
+          events: decorate(raw, 'events'),
+          report: report('fallback', `calendarView non restituisce nulla su questo calendario condiviso: ${raw.length} eventi letti in modalità compatibilità (le occorrenze delle serie ricorrenti oltre la prima non compaiono).`, raw.length),
+        };
+      }
+    }
+    return { events: decorate(events, 'calendarView'), report: report('ok', '', events.length) };
+  } catch (e) {
+    const first = graphErrMsg(e);
+    try {
+      const raw = await fetchCalendarEventsRaw(cal.id, startIso, endIso, top);
+      return {
+        events: decorate(raw, 'events'),
+        report: report('fallback', `${first} — ${raw.length} eventi letti in modalità compatibilità (le occorrenze delle serie ricorrenti oltre la prima non compaiono).`, raw.length),
+      };
+    } catch (e2) {
+      console.error('cal events', cal.name, e, e2);
+      return { events: [], report: report('error', `${first}${isOwn ? '' : ' — calendario condiviso: serve il consenso "Calendars.Read.Shared" (esci e rientra per riautorizzare).'}`, 0) };
+    }
+  }
+}
+
+// Esegue le fetch a gruppi invece che tutte insieme: prima erano in parallelo
+// ma limitate ai primi 8 calendari, ed era un altro modo di sparire in
+// silenzio (il nono calendario compariva nel filtro senza mai un evento).
+/**
+ * @template T, R
+ * @param {T[]} items
+ * @param {number} limit
+ * @param {(item: T) => Promise<R>} fn
+ * @returns {Promise<R[]>}
+ */
+async function mapLimit(items, limit, fn) {
+  /** @type {R[]} */
+  const out = [];
+  for (let i = 0; i < items.length; i += limit) {
+    out.push(...await Promise.all(items.slice(i, i + limit).map(fn)));
+  }
+  return out;
+}
+
+/**
+ * Eventi Calendario mergiati da tutti i calendari, escluso il calendario
+ * Workbook dedicato. Ogni evento è decorato con
+ * _calId/_calName/_calColor/_isShared/_calMode; l'esito per calendario resta
+ * leggibile con getCalendarFetchReport().
  * @param {Date} startDate
  * @param {Date} endDate
  * @param {number} [top]
@@ -577,34 +704,27 @@ export async function getCalendarEvents(startDate, endDate, top = 50) {
 
   if (!calendars.length) {
     // Fallback: solo calendario default
+    _calFetchReport = [];
     return callPagedValues(`/me/calendarView?${params}`);
   }
 
   const defaultCal = calendars.find(c => c.isDefaultCalendar) || calendars[0];
   const userEmail  = (defaultCal?.owner?.address || '').toLowerCase();
 
-  // Fetch in parallelo da tutti i calendari (max 8). calendarView pagina i
-  // risultati anche quando $top chiede di più: senza seguire @odata.nextLink
-  // gli eventi oltre la prima pagina (tipicamente quelli più lontani nel
-  // tempo, essendo l'ordinamento per start/dateTime crescente) sparivano in
-  // silenzio dalla finestra ±3 mesi.
-  const results = await Promise.allSettled(
-    calendars.slice(0, 8).map(cal =>
-      callPagedValues(`/me/calendars/${cal.id}/calendarView?${params}`)
-        .then(events => {
-          const isOwn = !userEmail || (cal.owner?.address || '').toLowerCase() === userEmail;
-          return events.map(e => ({
-            ...e,
-            _calId:     cal.id,
-            _calName:   cal.name,
-            _calColor:  cal.color,
-            _isShared:  !isOwn,
-          }));
-        })
-    )
-  );
+  // calendarView pagina i risultati anche quando $top chiede di più: senza
+  // seguire @odata.nextLink gli eventi oltre la prima pagina (tipicamente
+  // quelli più lontani nel tempo, essendo l'ordinamento per start/dateTime
+  // crescente) sparivano in silenzio dalla finestra ±3 mesi.
+  const results = await mapLimit(calendars, 4, cal => {
+    const isOwn = !userEmail || (cal.owner?.address || '').toLowerCase() === userEmail;
+    return fetchOneCalendar(cal, isOwn, params, start, end, top);
+  });
 
-  const allEvents = results.flatMap(r => r.status === 'fulfilled' ? r.value : []);
+  _calFetchReport = results.map(r => r.report);
+  const problemi = _calFetchReport.filter(r => r.level !== 'ok');
+  if (problemi.length) console.warn('calendari con eventi non caricati:', problemi);
+
+  const allEvents = results.flatMap(r => r.events);
   return allEvents.sort((a, b) => {
     const at = a.start?.dateTime || a.start?.date || '';
     const bt = b.start?.dateTime || b.start?.date || '';
