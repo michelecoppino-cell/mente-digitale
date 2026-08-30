@@ -243,6 +243,18 @@ function LoginDiagnostics() {
           quando l'app è stata usata. */}
       <br />Ultimo rinnovo vero: {d.lastRefresh ? oraLeggibile(d.lastRefresh) : 'mai'}
       {durataSessione && <><br />È durata: {durataSessione}</>}
+      {/* La riga che conta più di tutte: MSAL v5 cifra la cache con una chiave
+          che vive in un cookie di sessione, e cancella tutto all'avvio dopo che
+          quel cookie è scaduto — a meno che l'accesso non sia «persistente»,
+          cosa che decide Microsoft in base alla risposta a «Rimani connesso?». */}
+      {d.kmsi === false && (
+        <span style={{ display: 'block', marginTop: 4, color: 'var(--accent, #d4a44a)' }}>
+          L&apos;ultimo accesso non era persistente: iOS, chiudendo l&apos;app, fa scadere
+          la sessione e Microsoft cancella l&apos;accesso. Al prossimo accesso rispondi
+          <strong> Sì</strong> a «Rimani connesso?».
+        </span>
+      )}
+      {d.kmsi === true && <><br />Accesso persistente: sì</>}
       <br />Spazio occupato: {d.storageKb} kB{d.storageFull ? ' (è stato pieno)' : ''} · {d.msalInv}
       {/* La scatola nera: cosa è successo, in ordine. Un errore solo dice cosa
           è andato storto, questa dice cosa stava succedendo intorno. */}
