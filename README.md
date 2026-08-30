@@ -694,6 +694,30 @@ c'è. Perché i casi sono due, e si somigliano solo da fuori:
   ITP), oppure si sta guardando da un contesto diverso — l'app aperta
   dall'icona sulla Home ha la sua memoria, separata da quella di Safari.
 
+### La cache dei dati e l'account, nello stesso cassetto
+
+`localStorage` è uno solo per origine, e su Safari è piccolo — qualche mega,
+meno ancora per un'app aperta dall'icona sulla Home. Dentro ci finiscono due
+cose che non hanno niente a che vedere fra loro: la cache di TanStack Query
+(`md_rq_cache_v1` — pagine OneNote, task, eventi di calendario a ±3 mesi,
+tenuti 24 ore, riscritta a ogni cambiamento) e la cache di MSAL, cioè
+l'account e il refresh token.
+
+Quando lo spazio finisce, `setItem` smette di funzionare **per tutti**. La
+cache dei dati se ne fa una ragione, ha il suo try/catch; MSAL no: si ritrova
+a non poter scrivere il token appena ruotato, e l'accesso sparisce senza che
+nessuno abbia visto scadere niente. Da fuori sembra una sessione che dura
+poco. In realtà è la cache dei dati che ha mangiato il posto dell'account — e
+si vede dal fatto che la sessione muore *dopo* un po' di navigazione, non a
+un'ora tonda dall'accesso.
+
+Per questo la persistenza della cache ha un tetto (`PERSIST_BUDGET`, un mega di
+JSON): se lo supera, `serializzaEntroIlBudget` butta le query più grosse finché
+non ci sta. Perdere gli eventi di tre mesi vuol dire riscaricarli, perdere
+l'account vuol dire rifare l'accesso: non è lo stesso prezzo. Se lo spazio
+finisce lo stesso, la chiave `md_storage_full` lo registra e la schermata di
+login lo dice.
+
 ### Il lucchetto fra le istanze
 
 Le tre icone sulla schermata Home (`Mente`, `GTD`, `Diario`) aprono la stessa

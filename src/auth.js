@@ -109,7 +109,8 @@ export function getLastAuthDebug() {
  * cache sparita (non c'è niente, nemmeno l'errore).
  * @returns {{lastError: ReturnType<typeof getLastAuthDebug>, lastOk: string|null,
  *   lastRefresh: string|null, loginAt: string|null, storageAvailable: boolean,
- *   accounts: number, ricordato: boolean, standalone: boolean}}
+ *   accounts: number, ricordato: boolean, storageFull: string|null,
+ *   storageKb: number, standalone: boolean}}
  */
 export function getAuthDiagnostics() {
   let storageAvailable = true;
@@ -117,11 +118,23 @@ export function getAuthDiagnostics() {
   let lastRefresh = null;
   let loginAt = null;
   let ricordato = false;
+  let storageFull = null;
+  let storageKb = 0;
   try {
     lastOk = localStorage.getItem(AUTH_OK_KEY);
     lastRefresh = localStorage.getItem(AUTH_REFRESH_KEY);
     loginAt = localStorage.getItem(AUTH_LOGIN_KEY);
     ricordato = !!localStorage.getItem(PERSONAL_ID_KEY);
+    storageFull = localStorage.getItem('md_storage_full');
+    // Quanto pesa tutto quello che l'app tiene in `localStorage`. È la stessa
+    // dispensa in cui MSAL mette l'account: se è piena, il token appena
+    // ruotato non trova posto dove essere scritto, e l'accesso salta.
+    let caratteri = 0;
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i) || '';
+      caratteri += k.length + (localStorage.getItem(k) || '').length;
+    }
+    storageKb = Math.round(caratteri / 1024);
   } catch {
     storageAvailable = false;
   }
@@ -141,6 +154,11 @@ export function getAuthDiagnostics() {
     // Il dispositivo ricorda di aver fatto un accesso: se lo ricorda e MSAL
     // non ha account, l'account è stato rimosso, non è scaduto.
     ricordato,
+    // Quando la cache dei dati ha trovato lo spazio finito: è il sospetto
+    // numero uno per un account sparito senza errori, perché lo spazio che
+    // manca a lei manca anche a MSAL.
+    storageFull,
+    storageKb,
     // Safari e l'app aperta dall'icona sulla Home hanno due memorie separate:
     // sapere da quale delle due si sta guardando evita di scambiare «devo
     // accedere anche qui» per «la sessione è scaduta».

@@ -225,6 +225,8 @@ function LoginDiagnostics() {
         <>La memoria del sito non è disponibile (navigazione privata, o cookie bloccati): qui l&apos;accesso non può durare oltre la sessione.</>
       ) : motivo ? (
         <>Ultima disconnessione: {motivo}{dove} ({oraLeggibile(err?.t)})</>
+      ) : d.storageFull ? (
+        <>Lo spazio del sito è finito ({oraLeggibile(d.storageFull)}): la cache dei dati ha occupato il posto che serviva all&apos;account.</>
       ) : d.ricordato ? (
         <>Nessun errore registrato, e MSAL non ha più l&apos;account: è stato rimosso dalla cache, non è scaduto.</>
       ) : d.loginAt ? (
@@ -239,6 +241,7 @@ function LoginDiagnostics() {
           quando l'app è stata usata. */}
       <br />Ultimo rinnovo vero: {d.lastRefresh ? oraLeggibile(d.lastRefresh) : 'mai'}
       {durataSessione && <><br />È durata: {durataSessione}</>}
+      <br />Spazio occupato: {d.storageKb} kB{d.storageFull ? ' (è stato pieno)' : ''}
       <br />{d.standalone ? 'Aperta dall\u2019icona sulla Home' : 'Aperta in Safari'} · build {oraLeggibile(BUILD_TIME)}
     </div>
   );

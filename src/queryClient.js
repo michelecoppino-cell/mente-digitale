@@ -81,6 +81,54 @@ export const qk = {
 // sarebbero sparite finché non si riespandeva un taccuino.
 const PERSIST_KEY = 'md_rq_cache_v1';
 
+// Quanto spazio può prendersi la cache, e perché un tetto ci vuole.
+//
+// `localStorage` è uno solo per origine, e su Safari è piccolo: qualche mega,
+// meno ancora per un'app aperta dall'icona sulla Home. Dentro ci sta la cache
+// di TanStack — pagine OneNote, task, e gli eventi di calendario a ±3 mesi,
+// tenuti 24 ore — ma ci sta anche, nello stesso cassetto, la cache di MSAL,
+// cioè l'account e il refresh token. Quando lo spazio finisce, `setItem`
+// smette di funzionare *per tutti*: la cache dei dati se ne fa una ragione
+// (c'è il try/catch qui sotto), MSAL no — si ritrova a non poter scrivere il
+// token appena ruotato, e l'accesso sparisce senza che nessuno abbia visto
+// scadere niente. Da fuori sembra una sessione che dura poco; in realtà è la
+// cache dei dati che ha mangiato il posto dell'account.
+//
+// Un mega di JSON è comodo per i dati e lascia margine abbondante a MSAL, che
+// di suo occupa qualche decina di kB.
+const PERSIST_BUDGET = 1_000_000;
+
+// Se lo spazio è finito lo stesso, resta scritto qui: la schermata di login lo
+// legge e lo dice, invece di lasciare l'utente davanti a un logout inspiegato.
+const STORAGE_FULL_KEY = 'md_storage_full';
+
+/**
+ * Sfoltisce la cache da persistere finché non sta nel budget, buttando prima
+ * le query più grosse. Perdere gli eventi di tre mesi vuol dire riscaricarli;
+ * perdere l'account vuol dire rifare l'accesso — non è lo stesso prezzo.
+ * @param {ReturnType<typeof dehydrate>} clientState
+ * @returns {string} il JSON da scrivere, già sotto al budget
+ */
+function serializzaEntroIlBudget(clientState) {
+  const payload = { timestamp: Date.now(), clientState };
+  let json = JSON.stringify(payload);
+  if (json.length <= PERSIST_BUDGET) return json;
+
+  const queries = [...(clientState.queries || [])]
+    .map(q => ({ q, size: JSON.stringify(q).length }))
+    .sort((a, b) => b.size - a.size);
+  const tenute = new Set(queries.map(x => x.q));
+  for (const { q } of queries) {
+    tenute.delete(q);
+    json = JSON.stringify({
+      timestamp: payload.timestamp,
+      clientState: { ...clientState, queries: [...tenute] },
+    });
+    if (json.length <= PERSIST_BUDGET) break;
+  }
+  return json;
+}
+
 try {
   const raw = window.localStorage.getItem(PERSIST_KEY);
   if (raw) {
@@ -106,10 +154,16 @@ queryClient.getQueryCache().subscribe(() => {
   clearTimeout(_saveTimer);
   _saveTimer = setTimeout(() => {
     try {
-      const clientState = dehydrate(queryClient);
-      window.localStorage.setItem(PERSIST_KEY, JSON.stringify({ timestamp: Date.now(), clientState }));
+      window.localStorage.setItem(PERSIST_KEY, serializzaEntroIlBudget(dehydrate(queryClient)));
+      window.localStorage.removeItem(STORAGE_FULL_KEY);
     } catch {
-      // localStorage pieno: si rinuncia a persistere, la cache in memoria resta.
+      // Spazio finito lo stesso: la cache in memoria resta e si va avanti, ma
+      // il posto va liberato subito — quello che manca qui manca anche a MSAL,
+      // e lì costa l'accesso.
+      try {
+        window.localStorage.removeItem(PERSIST_KEY);
+        window.localStorage.setItem(STORAGE_FULL_KEY, new Date().toISOString());
+      } catch { /* nemmeno questo si può fare */ }
     }
   }, 1000);
 });
