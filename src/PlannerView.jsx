@@ -370,6 +370,7 @@ export default function PlannerView({
   // ── Load config + plans once on open; scroll to now ─────────────────────────
   useEffect(() => {
     if (!open) return;
+    dipingiUltimoCaricamento();
     Promise.all([
       initConfig(), initPlans(), initCalendarsList(),
       initWorkbooks(), initWorkbookCalendar(), initIdealWeek(),
@@ -416,6 +417,40 @@ export default function PlannerView({
     const id = setInterval(() => setNowTick(Date.now()), 15000);
     return () => clearInterval(id);
   }, [open]);
+
+  // Il Piano dell'ultimo caricamento, dipinto prima di qualunque attesa.
+  //
+  // Le init qui sotto passano tutte da fetchQuery, che con un dato ancora
+  // fresco risponde subito ma con uno vecchio va in rete: e finché non
+  // tornava, il Piano restava una griglia vuota — cioè esattamente quello che
+  // si vede riaprendo l'app dal telefono, dove la pagina è stata buttata via e
+  // ogni dato è «vecchio» per definizione. I blocchi e gli appuntamenti sono
+  // già in cache: si mettono in pagina adesso, e la rilettura li sostituisce
+  // quando arriva.
+  //
+  // Gli eventi si dipingono senza toccare allCalEventsRef: quel ref è la
+  // scorciatoia che dice «già letti in questa sessione, non rifetchare», e
+  // riempirlo qui vorrebbe dire un Piano che non si aggiorna più.
+  function dipingiUltimoCaricamento() {
+    const cfg = queryClient.getQueryData(qk.plannerConfig());
+    if (cfg) { setConfig(cfg); configRef.current = cfg; }
+
+    const allPlans = queryClient.getQueryData(qk.dailyPlans());
+    if (allPlans) {
+      setPlans(allPlans);
+      plansRef.current = allPlans;
+      setTodayPlan(allPlans[currentDate] || { date: currentDate, blocks: [], emailExtractedActions: [] });
+    }
+
+    const wb = queryClient.getQueryData(qk.workbooks());
+    if (wb?.workbooks) { setWorkbooks(wb.workbooks); workbooksRef.current = wb.workbooks; }
+
+    const evs = queryClient.getQueryData(qk.calEventsBulk());
+    if (evs?.length) filterCalEvents(evs);
+
+    const wbEvs = queryClient.getQueryData(qk.workbookEventsBulk());
+    if (wbEvs?.length) filterWorkbookEvents(wbEvs);
+  }
 
   async function initConfig() {
     try {

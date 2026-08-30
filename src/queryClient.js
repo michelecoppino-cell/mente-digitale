@@ -35,12 +35,31 @@ export const STALE = {
   idealWeek:          30 * MIN,
   calEventsBulk:      30 * MIN,
   workbookEventsBulk: 30 * MIN,
+  // TodayView — i documenti su OneDrive che «Oggi» apre a ogni ingresso.
+  // Prima non avevano cache: ogni riapertura dell'app li rileggeva da zero, e
+  // fino alla risposta i riquadri restavano vuoti. Adesso passano di qui, così
+  // la copia dell'ultimo caricamento c'è già mentre la lettura è in volo.
+  obiettivi:       15 * MIN,
+  coda:            15 * MIN,
+  rituale:          5 * MIN,
+  movimento:        5 * MIN,
+  diarioDate:      15 * MIN,
+  calEventiSezioni: 30 * MIN,
 };
 
 // gcTime lungo: un dato diventato "vecchio" resta comunque in cache (e
 // persistito) come fallback finché non arriva un refetch riuscito — è ciò che
 // prima faceva a mano il fallback-su-stale dopo un 401.
-const GC_TIME = 24 * HOUR;
+//
+// Sette giorni e non più ventiquattr'ore, perché è questo il numero che decide
+// cosa si vede all'apertura. iPhone butta via la pagina dopo pochi minuti in
+// secondo piano: riaprire l'icona è un caricamento da capo, e quello che si
+// vede nel frattempo è esattamente quanto è sopravvissuto qui dentro. Con un
+// giorno solo, tornare sull'app dopo un fine settimana voleva dire schermate
+// vuote finché Graph non rispondeva; la scadenza breve non proteggeva da
+// niente — la freschezza la decide staleTime, query per query, e il refetch
+// parte comunque. Qui si decide solo se c'è qualcosa da guardare nell'attesa.
+const GC_TIME = 7 * 24 * HOUR;
 
 export const queryClient = new QueryClient({
   defaultOptions: {
@@ -72,6 +91,14 @@ export const qk = {
   idealWeek:          () => /** @type {const} */ (['idealWeek']),
   calEventsBulk:      () => /** @type {const} */ (['calEventsBulk']),
   workbookEventsBulk: () => /** @type {const} */ (['workbookEventsBulk']),
+  // TodayView — documenti singoli su OneDrive
+  obiettivi:        () => /** @type {const} */ (['obiettivi']),
+  coda:             () => /** @type {const} */ (['coda']),
+  rituale:          () => /** @type {const} */ (['rituale']),
+  /** @param {string} oggi 'YYYY-MM-DD': il registro tenuto è quello dei due mesi attorno a oggi */
+  movimento:        (oggi) => /** @type {const} */ (['movimento', oggi.slice(0, 7)]),
+  diarioDate:       () => /** @type {const} */ (['diarioDate']),
+  calEventiSezioni: () => /** @type {const} */ (['calEventiSezioni']),
 };
 
 // ── Persistenza su localStorage ──────────────────────────────────────────────
@@ -86,7 +113,7 @@ const PERSIST_KEY = 'md_rq_cache_v1';
 // `localStorage` è uno solo per origine, e su Safari è piccolo: qualche mega,
 // meno ancora per un'app aperta dall'icona sulla Home. Dentro ci sta la cache
 // di TanStack — pagine OneNote, task, e gli eventi di calendario a ±3 mesi,
-// tenuti 24 ore — ma ci sta anche, nello stesso cassetto, la cache di MSAL,
+// tenuti una settimana — ma ci sta anche, nello stesso cassetto, la cache di MSAL,
 // cioè l'account e il refresh token. Quando lo spazio finisce, `setItem`
 // smette di funzionare *per tutti*: la cache dei dati se ne fa una ragione
 // (c'è il try/catch qui sotto), MSAL no — si ritrova a non poter scrivere il

@@ -44,7 +44,7 @@
 // L'unico pannello che si apre da solo: la prima volta che si entra qui in una
 // giornata, chiede se movimento, meditazione e yoga sono stati fatti. Il perché
 // del momento e delle caselle già despuntate sta in rituale.js.
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   loadCoda, loadDiaryIndex, loadDiaryMonth, loadIdentityDoc, loadObiettivi, loadRituale,
@@ -65,6 +65,8 @@ import CodaModal from './CodaModal';
 import RitualeMattino from './RitualeMattino';
 import { useRiservatiVisibili } from './riservati';
 import { readPref, writePref } from './viewPrefs';
+import { qk, STALE } from './queryClient';
+import { useDatoPersistito } from './useDatoPersistito';
 import { caricaRiepilogoOggi } from './finanze/riepilogoOggi';
 import './TodayView.css';
 
@@ -204,84 +206,50 @@ function diaryStreak(dates) {
  * bisogno di sapere cosa c'è scritto. Il testo si legge altrove e solo dopo il
  * PIN (vedi useVoceDelGiorno).
  */
-function useDiarioDate() {
-  const [stato, setStato] = useState(/** @type {{date: string[], index: any}|null} */ (null));
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const index = await loadDiaryIndex();
-        const wanted = [monthKey(), shiftMonth(monthKey(), -1)];
-        const months = wanted.filter(m => !index?.months || index.months.includes(m));
-        const dates = [];
-        for (const m of months) {
-          const entries = await loadDiaryMonth(m);
-          for (const e of entries || []) if (e?.date && !e.sealed) dates.push(e.date);
-        }
-        if (!cancelled) setStato({ date: dates, index });
-      } catch (e) {
-        console.error('striscia diario', e);
-        if (!cancelled) setStato({ date: [], index: null });
-      }
-    })();
-    return () => { cancelled = true; };
-  }, []);
-  return stato;
+async function leggiDiarioDate() {
+  const index = await loadDiaryIndex();
+  const wanted = [monthKey(), shiftMonth(monthKey(), -1)];
+  const months = wanted.filter(m => !index?.months || index.months.includes(m));
+  const dates = [];
+  for (const m of months) {
+    const entries = await loadDiaryMonth(m);
+    for (const e of entries || []) if (e?.date && !e.sealed) dates.push(e.date);
+  }
+  return { date: dates, index };
 }
 
-/**
- * Una lettura da OneDrive tenuta per tutta la sessione, con un modo di
- * rileggerla dopo una scrittura.
- *
- * Serve due volte identica — obiettivi e coda — e sono due file che si aprono
- * a ogni ingresso in «Oggi» e cambiano una volta ogni tanto: rileggerli
- * passando da un'altra vista e tornando sarebbe una richiesta buttata via.
- * @template T
- * @param {() => Promise<T>} leggi
- * @param {T} vuoto
- * @returns {{ dato: T, aggiorna: (d: T) => void }}
- */
-function useDatoOneDrive(leggi, vuoto) {
-  const [dato, setDato] = useState(/** @type {T} */ (vuoto));
-  useEffect(() => {
-    let annullato = false;
-    leggi()
-      .then(d => { if (!annullato) setDato(d); })
-      .catch(e => { console.error('lettura OneDrive', e); });
-    return () => { annullato = true; };
-    // `leggi` è una funzione importata, stabile fra i render.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-  return { dato, aggiorna: useCallback((/** @type {T} */ d) => setDato(d), []) };
+function useDiarioDate() {
+  // In cache finiscono le date e basta, non le voci da cui sono state
+  // ricavate: la striscia si ridisegna all'istante alla riapertura, e il testo
+  // di quello che è stato scritto la sera prima non lascia una copia su questo
+  // dispositivo. È la stessa ragione per cui questo hook le date le tiene e i
+  // testi no.
+  const { dato } = useDatoPersistito(
+    qk.diarioDate(), leggiDiarioDate, STALE.diarioDate,
+    /** @type {{date: string[], index: any}|null} */ (null));
+  return dato;
 }
 
 /** Il giorno in cui il rituale del mattino è già stato proposto. */
 const PREF_RITUALE = 'oggi.rituale.propostoIl.v1';
 
 /**
- * Il rituale del mattino, letto una volta per sessione.
+ * Il rituale del mattino.
  *
- * Ha un hook suo e non usa useDatoOneDrive per un motivo che conta: qui `null`
- * deve restare distinguibile da `{}`. Il pannello che si apre da solo decide
- * quali giorni tappare guardando quello che manca nel documento, e aprirlo
- * prima che il documento sia arrivato vorrebbe dire dichiarare scoperti dei
- * giorni già compilati — e riscriverli come «non fatto».
+ * Il valore «vuoto» qui è `null` e non `{}`, e la differenza conta: il
+ * pannello che si apre da solo decide quali giorni tappare guardando quello
+ * che *manca* nel documento, e aprirlo prima che il documento ci sia vorrebbe
+ * dire dichiarare scoperti dei giorni già compilati — e riscriverli come «non
+ * fatto». Vale anche per una rilettura fallita: se non è arrivata, resta
+ * l'ultima copia buona, mai un documento finto vuoto.
  */
 function useRituale() {
-  const [doc, setDoc] = useState(/** @type {Record<string, import('./types').RitualeGiorno>|null} */ (null));
-  useEffect(() => {
-    let annullato = false;
-    loadRituale()
-      .then(d => { if (!annullato) setDoc(d); })
-      .catch(e => {
-        console.error('rituale', e);
-        // Un errore di lettura non deve far scrivere: con un documento finto
-        // vuoto il pannello tapperebbe tre giorni che magari erano compilati.
-        if (!annullato) setDoc(null);
-      });
-    return () => { annullato = true; };
-  }, []);
-  return { doc, setDoc };
+  const { dato, aggiorna, fresco } = useDatoPersistito(
+    qk.rituale(), loadRituale, STALE.rituale,
+    /** @type {Record<string, import('./types').RitualeGiorno>|null} */ (null));
+  // Il documento si consegna solo se è quello confermato: qui la copia vecchia
+  // non si mostra e basta, si finisce per riscriverci sopra (vedi `fresco`).
+  return { doc: fresco ? dato : null, setDoc: aggiorna };
 }
 
 /**
@@ -313,8 +281,10 @@ export default function TodayView({ plans, tasks, todoLists, calendarEvents, onC
   // vorrebbe dire due richieste per lo stesso file e due verità che possono
   // divergere fra un riquadro e quello accanto.
   const registro = useRegistroMovimento(today);
-  const { dato: obiettiviDoc, aggiorna: aggiornaObiettivi } = useDatoOneDrive(loadObiettivi, /** @type {any} */ ({}));
-  const { dato: coda, aggiorna: aggiornaCoda } = useDatoOneDrive(loadCoda, /** @type {import('./types').VoceCoda[]} */ ([]));
+  const { dato: obiettiviDoc, aggiorna: aggiornaObiettivi } = useDatoPersistito(
+    qk.obiettivi(), loadObiettivi, STALE.obiettivi, /** @type {any} */ ({}));
+  const { dato: coda, aggiorna: aggiornaCoda } = useDatoPersistito(
+    qk.coda(), loadCoda, STALE.coda, /** @type {import('./types').VoceCoda[]} */ ([]));
   const { doc: rituale, setDoc: setRituale } = useRituale();
 
   const [modale, setModale] = useState(/** @type {'obiettivi'|'coda'|null} */ (null));
@@ -333,7 +303,12 @@ export default function TodayView({ plans, tasks, todoLists, calendarEvents, onC
   // riaperto a mano: cambia la frase in cima, non il resto.
   const [ritualeAMano, setRitualeAMano] = useState(false);
 
-  const ritualePronto = rituale !== null && registro.voci !== null;
+  // Il pannello si apre solo su letture confermate, sue e del registro: le
+  // caselle che mostra diventano quello che viene scritto, e partire da una
+  // copia vecchia vorrebbe dire segnare «non fatto» una sessione registrata
+  // altrove. Tutto il resto della scheda, intanto, la copia vecchia la mostra
+  // eccome — lì non si scrive niente.
+  const ritualePronto = rituale !== null && registro.fresco;
   const ritualeAperto = ritualeAMano
     ? { auto: false }
     : (ritualePronto && propostoIl !== today ? { auto: true } : null);
