@@ -241,7 +241,19 @@ function LoginDiagnostics() {
           quando l'app è stata usata. */}
       <br />Ultimo rinnovo vero: {d.lastRefresh ? oraLeggibile(d.lastRefresh) : 'mai'}
       {durataSessione && <><br />È durata: {durataSessione}</>}
-      <br />Spazio occupato: {d.storageKb} kB{d.storageFull ? ' (è stato pieno)' : ''}
+      <br />Spazio occupato: {d.storageKb} kB{d.storageFull ? ' (è stato pieno)' : ''} · {d.msalKeys} chiavi MSAL
+      {/* La scatola nera: cosa è successo, in ordine. Un errore solo dice cosa
+          è andato storto, questa dice cosa stava succedendo intorno. */}
+      {d.trail.length > 0 && (
+        <>
+          <br />
+          {d.trail.slice(-5).map((r, i) => (
+            <span key={i} style={{ display: 'block' }}>
+              {new Date(r.t).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })} · {r.e}
+            </span>
+          ))}
+        </>
+      )}
       <br />{d.standalone ? 'Aperta dall\u2019icona sulla Home' : 'Aperta in Safari'} · build {oraLeggibile(BUILD_TIME)}
     </div>
   );

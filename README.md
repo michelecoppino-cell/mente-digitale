@@ -718,6 +718,34 @@ l'account vuol dire rifare l'accesso: non è lo stesso prezzo. Se lo spazio
 finisce lo stesso, la chiave `md_storage_full` lo registra e la schermata di
 login lo dice.
 
+### Il riscatto a ogni avvio (e perché costava l'accesso)
+
+`startTokenKeepAlive` rinnova quando manca poco alla scadenza, e la guardia che
+lo decide legge `expiresAt`. Appena avviata l'app quel numero è zero — la
+scadenza del token che MSAL ha in cache non si conosce ancora — e zero veniva
+letto come «scaduto da sempre»: **ogni singolo lancio dell'app forzava un
+riscatto del refresh token.**
+
+È il modo più efficace di perderlo. Il refresh token è monouso e ruota: il
+vecchio muore nell'istante in cui Microsoft emette il nuovo. Se la risposta non
+torna indietro — la pagina che iOS sospende perché si è guardato altro per
+qualche secondo, la rete mobile che cade — il nuovo non viene scritto da
+nessuna parte. Vecchio morto, nuovo mai arrivato, accesso finito, e nessun
+errore da nessuna parte perché la pagina non era più viva per registrarlo.
+
+Ora all'avvio si fa una lettura non forzata: non spende niente, prende il token
+dalla cache di MSAL e riempie `expiresAt`, così dalla volta dopo la guardia ha
+un numero vero. E offline non si riscatta: fallirebbe e basta.
+
+### La scatola nera
+
+`md_auth_trail` tiene gli ultimi otto fatti dell'autenticazione — avvio (con
+quanti account e quante chiavi MSAL ci sono), accesso a mano, token dalla
+cache, rinnovo riuscito, rinnovo fallito con il suo codice. La schermata di
+login mostra gli ultimi cinque. Un errore solo dice cosa è andato storto; la
+scatola nera dice cosa stava succedendo intorno, che su un telefono — dove
+l'app viene riaperta dieci volte al giorno — è la parte che spiega tutto.
+
 ### Il lucchetto fra le istanze
 
 Le tre icone sulla schermata Home (`Mente`, `GTD`, `Diario`) aprono la stessa

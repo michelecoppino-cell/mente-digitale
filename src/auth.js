@@ -49,6 +49,35 @@ const AUTH_REFRESH_KEY = 'md_auth_last_refresh';
 const REFRESH_LOCK_KEY = 'md_auth_refresh_lock';
 const REFRESH_LOCK_TTL = 20_000;
 
+// La scatola nera: le ultime cose successe all'autenticazione, in ordine.
+// Un errore solo, quello dell'ultima volta, dice cosa è andato storto ma non
+// cosa stava succedendo intorno — e su iPhone «cosa stava succedendo intorno»
+// è tutto: quante volte l'app è stata riavviata, quanti riscatti sono partiti,
+// se fra l'ultimo riuscito e la disconnessione l'app è stata aperta di nuovo.
+const TRAIL_KEY = 'md_auth_trail';
+const TRAIL_MAX = 8;
+
+/** @param {string} evento */
+function traccia(evento) {
+  try {
+    const prima = JSON.parse(localStorage.getItem(TRAIL_KEY) || '[]');
+    const dopo = [...(Array.isArray(prima) ? prima : []), { t: new Date().toISOString(), e: evento }];
+    localStorage.setItem(TRAIL_KEY, JSON.stringify(dopo.slice(-TRAIL_MAX)));
+  } catch { /* storage non disponibile */ }
+}
+
+/** Quante chiavi in `localStorage` appartengono a MSAL. */
+function chiaviMsal() {
+  let n = 0;
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i) || '';
+      if (k.includes(CLIENT_ID) || k.startsWith('msal.')) n++;
+    }
+  } catch { /* storage non disponibile */ }
+  return n;
+}
+
 function logAuthRedirect(e, kind = 'silenzioso') {
   try {
     localStorage.setItem(AUTH_DEBUG_KEY, JSON.stringify({
@@ -110,7 +139,8 @@ export function getLastAuthDebug() {
  * @returns {{lastError: ReturnType<typeof getLastAuthDebug>, lastOk: string|null,
  *   lastRefresh: string|null, loginAt: string|null, storageAvailable: boolean,
  *   accounts: number, ricordato: boolean, storageFull: string|null,
- *   storageKb: number, standalone: boolean}}
+ *   storageKb: number, msalKeys: number, trail: {t: string, e: string}[],
+ *   standalone: boolean}}
  */
 export function getAuthDiagnostics() {
   let storageAvailable = true;
@@ -120,12 +150,15 @@ export function getAuthDiagnostics() {
   let ricordato = false;
   let storageFull = null;
   let storageKb = 0;
+  /** @type {{t: string, e: string}[]} */
+  let trail = [];
   try {
     lastOk = localStorage.getItem(AUTH_OK_KEY);
     lastRefresh = localStorage.getItem(AUTH_REFRESH_KEY);
     loginAt = localStorage.getItem(AUTH_LOGIN_KEY);
     ricordato = !!localStorage.getItem(PERSONAL_ID_KEY);
     storageFull = localStorage.getItem('md_storage_full');
+    try { trail = JSON.parse(localStorage.getItem(TRAIL_KEY) || '[]'); } catch { trail = []; }
     // Quanto pesa tutto quello che l'app tiene in `localStorage`. È la stessa
     // dispensa in cui MSAL mette l'account: se è piena, il token appena
     // ruotato non trova posto dove essere scritto, e l'accesso salta.
@@ -159,6 +192,8 @@ export function getAuthDiagnostics() {
     // manca a lei manca anche a MSAL.
     storageFull,
     storageKb,
+    msalKeys: chiaviMsal(),
+    trail,
     // Safari e l'app aperta dall'icona sulla Home hanno due memorie separate:
     // sapere da quale delle due si sta guardando evita di scambiare «devo
     // accedere anche qui» per «la sessione è scaduta».
@@ -199,6 +234,7 @@ export async function initAuth() {
     const result = await msal.handleRedirectPromise();
     if (result?.account) {
       rememberAccount(result.account);
+      traccia('accesso a mano');
       // Si è appena tornati da Microsoft: è questo il momento in cui la
       // sessione comincia, ed è da qui che si misura quanto dura.
       try { localStorage.setItem(AUTH_LOGIN_KEY, new Date().toISOString()); } catch { /* storage non disponibile */ }
@@ -213,6 +249,7 @@ export async function initAuth() {
   // indietro rifiutato. Senza questa riga la schermata di login compariva
   // muta: nessun rinnovo era stato tentato *in questa pagina*, quindi non
   // c'era niente da registrare.
+  traccia(`avvio: ${msal.getAllAccounts().length} account, ${chiaviMsal()} chiavi MSAL`);
   try {
     if (localStorage.getItem(PERSONAL_ID_KEY) && msal.getAllAccounts().length === 0) {
       const prima = getLastAuthDebug();
@@ -380,6 +417,7 @@ async function acquire(forceRefresh) {
     // l'account dalla cache: la schermata di login arrivava senza motivo
     // registrato, che è il caso peggiore da leggere da un telefono.
     logAuthRedirect(e, forceRefresh ? 'rinnovo forzato' : 'silenzioso');
+    traccia(`${forceRefresh ? 'rinnovo' : 'token'} fallito: ${e?.errorCode || e?.name || 'ignoto'}`);
     if (!(e instanceof InteractionRequiredAuthError)) throw e;
     // Secondo tentativo silenzioso per un'altra strada: se il cookie di
     // sessione Microsoft nel browser è ancora buono, ssoSilent riesce dove
@@ -408,6 +446,7 @@ function onAcquired(r, forced = false) {
   const expiresOn = r.expiresOn ? r.expiresOn.getTime() : Date.now() + 55 * 60_000;
   setInteractionRequired(false);
   logAuthOk(forced);
+  traccia(forced ? 'rinnovo riuscito' : 'token dalla cache');
   scheduleRenew(expiresOn);
   return { token: r.accessToken, expiresOn };
 }
@@ -445,6 +484,23 @@ export function startTokenKeepAlive() {
   function refreshIfStale() {
     if (document.visibilityState !== 'visible') return;
     if (!getAccount()) return;
+    // Appena avviati non si sa ancora quando scade il token che MSAL ha in
+    // cache: `expiresAt` è zero, e la guardia qui sotto lo leggeva come «è
+    // scaduto da sempre», forzando un riscatto del refresh token a ogni
+    // singolo lancio dell'app. Che è il modo più efficace di perderlo: il
+    // refresh token è monouso e ruota, quindi il vecchio muore nell'istante in
+    // cui Microsoft emette il nuovo — e se la risposta non torna indietro
+    // (pagina sospesa da iOS mentre si guarda altro, rete mobile che cade) il
+    // nuovo non viene scritto da nessuna parte. Vecchio morto, nuovo mai
+    // arrivato: l'accesso è finito, e nessuno ha visto un errore.
+    //
+    // Una lettura non forzata invece non spende niente: prende il token dalla
+    // cache di MSAL e ci dice quando scade, così la prossima volta la guardia
+    // ha un numero vero su cui ragionare.
+    if (!expiresAt) { getToken(false).catch(() => {}); return; }
+    // Offline il riscatto non può che fallire, e fallire costa: si aspetta il
+    // `online`, che è già in ascolto qui sotto.
+    if (navigator.onLine === false) return;
     // Rinnova prima che la schermata parta con le sue chiamate a Graph: il
     // token vecchio le farebbe fallire tutte insieme in 401.
     if (Date.now() < expiresAt - RENEW_MARGIN_MS) return;
