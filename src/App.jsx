@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef, lazy, Suspense } from 'react';
 import { Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom';
-import { initAuth, getAccount, login, trySsoSilent, getLastAuthDebug, onInteractionRequired, isInteractionRequired, reconnect, startTokenKeepAlive } from './auth';
+import { initAuth, getAccount, login, trySsoSilent, getAuthDiagnostics, onInteractionRequired, isInteractionRequired, reconnect, startTokenKeepAlive } from './auth';
 import { getNotebooks, getSections, getTodoLists, getTodoTasks, getPages, getRecentEmails, getPageContentHtml, markOneNoteTagDone, getReminders, createTask, getCalendarEvents, getTasksForDeadlineDedup, invalidateCalendarsCache, loadColorSettings, saveColorSettings, migrateLegacyDriveFiles, loadPlannerConfig, loadDailyPlans, saveDailyPlans, updateTaskStatus, completeTask, createTodoList, renameTodoList } from './api';
 import { getMarker, setMarker, clearMarkers } from './markers';
 import { queryClient, qk, STALE } from './queryClient';
@@ -25,7 +25,7 @@ import TodayView from './TodayView';
 import SectionsView from './SectionsView';
 import { graphStatusFor, STATUS_LABELS } from './taskModel';
 import { pushUndo } from './undo';
-import { COLORS } from './config';
+import { COLORS, BUILD_TIME } from './config';
 import UndoToast from './UndoToast';
 import SvegliaAlert from './SvegliaAlert';
 import { useSveglie } from './useSveglie';
@@ -171,6 +171,66 @@ async function collectAllOneNotePages(pagesCacheRef) {
     }
   }
   return allPages;
+}
+
+// ── La diagnosi in fondo alla schermata di login ───────────────────────────
+//
+// Prima si vedeva solo se c'era un errore registrato, e l'errore c'è in un
+// caso solo: il rinnovo silenzioso ha provato ed è stato respinto. Ma questa
+// schermata compare anche quando in cache l'account non c'è più — Safari che
+// svuota la memoria del sito, oppure la stessa app aperta da un'altra icona,
+// che ha la sua memoria separata — e in quel caso di errore non ce n'è
+// nessuno: restava una schermata muta, cioè la cosa peggiore da guardare da un
+// telefono, dove console non ce n'è. Adesso una riga c'è sempre, e dice quale
+// dei due casi è.
+
+/** @param {string|null|undefined} iso @returns {string} */
+function oraLeggibile(iso) {
+  if (!iso) return '—';
+  return new Date(iso).toLocaleString('it-IT', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+}
+
+/** Distanza fra due istanti in forma parlata: è lei la diagnosi vera. */
+function durata(daIso, aIso) {
+  if (!daIso || !aIso) return null;
+  const min = Math.round((new Date(aIso).getTime() - new Date(daIso).getTime()) / 60000);
+  if (min < 0) return null;
+  if (min < 90) return `${min} min`;
+  const ore = Math.round(min / 60);
+  return ore < 48 ? `${ore} ore` : `${Math.round(ore / 24)} giorni`;
+}
+
+function LoginDiagnostics() {
+  const d = getAuthDiagnostics();
+  const err = d.lastError;
+  const motivo = err
+    ? [err.errorCode, err.subError].filter(Boolean).join(' / ') || err.message
+    : null;
+  // Quanto è durata: dall'accesso a mano all'ultimo rinnovo andato a buon
+  // fine. Un'ora tonda vuol dire che il refresh token non è mai entrato in
+  // gioco; un giorno vuol dire che è arrivato al tetto delle 24 ore che Entra
+  // impone alle SPA; una settimana vuol dire che è stata Safari a fare pulizia.
+  const durataSessione = durata(d.loginAt, d.lastOk || err?.t);
+
+  return (
+    <div className="login-note" style={{ opacity: 0.6, marginTop: 4, textAlign: 'left' }}>
+      {!d.storageAvailable ? (
+        <>La memoria del sito non è disponibile (navigazione privata, o cookie bloccati): qui l&apos;accesso non può durare oltre la sessione.</>
+      ) : motivo ? (
+        <>Ultima disconnessione: {motivo} ({oraLeggibile(err?.t)})</>
+      ) : d.hasMsalCache ? (
+        <>Nessun errore registrato: l&apos;account è ancora in memoria ma non è stato riconosciuto.</>
+      ) : d.loginAt ? (
+        <>Nessun errore registrato: la memoria del sito è stata svuotata. Non è una scadenza — è Safari (o un&apos;altra icona, che ha la sua memoria separata).</>
+      ) : (
+        <>Primo accesso in questo contesto: qui non c&apos;è mai stata una sessione.</>
+      )}
+      {d.loginAt && <><br />Ultimo accesso a mano: {oraLeggibile(d.loginAt)}</>}
+      {d.lastOk && <><br />Ultimo rinnovo riuscito: {oraLeggibile(d.lastOk)}</>}
+      {durataSessione && <><br />È durata: {durataSessione}</>}
+      <br />{d.standalone ? 'Aperta dall\u2019icona sulla Home' : 'Aperta in Safari'} · build {oraLeggibile(BUILD_TIME)}
+    </div>
+  );
 }
 
 export default function App() {
@@ -934,7 +994,6 @@ export default function App() {
   if (!ready) return null;
 
   if (!account) {
-    const lastAuthDebug = getLastAuthDebug();
     return (
       <div className="login-screen">
         <div className="login-card">
@@ -950,17 +1009,7 @@ export default function App() {
             Accedi con Microsoft
           </button>
           <div className="login-note">Solo permessi di lettura · nessun dato salvato</div>
-          {lastAuthDebug && (
-            <div className="login-note" style={{ opacity: 0.6, marginTop: 4 }}>
-              Ultima disconnessione: {[lastAuthDebug.errorCode, lastAuthDebug.subError].filter(Boolean).join(' / ') || lastAuthDebug.message} ({new Date(lastAuthDebug.t).toLocaleTimeString('it-IT')})
-              {/* Quanto è durata la sessione è la diagnosi: un'ora tonda vuol
-                  dire che il refresh token non è mai entrato in gioco, un
-                  giorno vuol dire che è arrivato al suo tetto. */}
-              {lastAuthDebug.lastOk && (
-                <><br />Ultimo rinnovo riuscito: {new Date(lastAuthDebug.lastOk).toLocaleString('it-IT')}</>
-              )}
-            </div>
-          )}
+          <LoginDiagnostics />
         </div>
       </div>
     );

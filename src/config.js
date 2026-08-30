@@ -1,3 +1,6 @@
+// Data della build (iniettata da Vite): la schermata di login la mostra, così
+// da iPhone si vede subito se il telefono sta girando l'ultimo deploy.
+export const BUILD_TIME = import.meta.env.VITE_BUILD_TIME || null;
 export const CLIENT_ID = 'b639e8ea-2c30-4beb-8226-46e342721a50';
 export const REDIRECT_URI = window.location.origin + '/';
 // Account Microsoft personale usato di default: evita lo chooser dei 3 account
