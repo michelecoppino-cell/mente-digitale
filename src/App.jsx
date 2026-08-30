@@ -209,7 +209,9 @@ function LoginDiagnostics() {
   const motivo = err
     ? [err.errorCode, err.subError].filter(Boolean).join(' / ') || err.message
     : null;
-  const dove = err?.kind ? ` durante il ${err.kind}` : '';
+  // Senza articolo: i valori di `kind` sono sostantivi diversi («avvio»,
+  // «rinnovo forzato»), e l'articolo giusto cambia con ognuno.
+  const dove = err?.kind ? ` · ${err.kind}` : '';
   // Quanto è durata: dall'accesso a mano all'ultimo rinnovo andato a buon
   // fine. Un'ora tonda vuol dire che il refresh token non è mai entrato in
   // gioco; un giorno vuol dire che è arrivato al tetto delle 24 ore che Entra
@@ -241,7 +243,7 @@ function LoginDiagnostics() {
           quando l'app è stata usata. */}
       <br />Ultimo rinnovo vero: {d.lastRefresh ? oraLeggibile(d.lastRefresh) : 'mai'}
       {durataSessione && <><br />È durata: {durataSessione}</>}
-      <br />Spazio occupato: {d.storageKb} kB{d.storageFull ? ' (è stato pieno)' : ''} · {d.msalKeys} chiavi MSAL
+      <br />Spazio occupato: {d.storageKb} kB{d.storageFull ? ' (è stato pieno)' : ''} · {d.msalInv}
       {/* La scatola nera: cosa è successo, in ordine. Un errore solo dice cosa
           è andato storto, questa dice cosa stava succedendo intorno. */}
       {d.trail.length > 0 && (

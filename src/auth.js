@@ -66,16 +66,43 @@ function traccia(evento) {
   } catch { /* storage non disponibile */ }
 }
 
-/** Quante chiavi in `localStorage` appartengono a MSAL. */
-function chiaviMsal() {
-  let n = 0;
+/**
+ * Inventario di quello che MSAL tiene in `localStorage`, per tipo. Il totale da
+ * solo non basta: fra le sue chiavi ce ne sono un paio di puro indice, che
+ * restano lì anche quando non c'è più niente dentro. Sapere se manca il
+ * refresh token o manca tutto è la differenza fra due diagnosi diverse.
+ *
+ * Solo nomi di chiave, mai contenuti: qui dentro non passa nessun token.
+ * @returns {{tot: number, rt: number, at: number, id: number}}
+ */
+function inventarioMsal() {
+  const inv = { tot: 0, rt: 0, at: 0, id: 0 };
   try {
     for (let i = 0; i < localStorage.length; i++) {
       const k = localStorage.key(i) || '';
-      if (k.includes(CLIENT_ID) || k.startsWith('msal.')) n++;
+      // Le credenziali hanno il clientId nel nome; l'entità account no — la
+      // sua chiave è `<id>-login.windows.net-<realm>`, e contando solo il
+      // clientId restava fuori proprio lei.
+      const suaMsal = k.includes(CLIENT_ID) || k.startsWith('msal.')
+        || /-login\.(windows|microsoftonline)\./.test(k);
+      if (!suaMsal) continue;
+      inv.tot++;
+      if (k.includes('refreshtoken')) inv.rt++;
+      else if (k.includes('accesstoken')) inv.at++;
+      else if (k.includes('idtoken')) inv.id++;
     }
   } catch { /* storage non disponibile */ }
-  return n;
+  return inv;
+}
+
+/** @param {{tot: number, rt: number, at: number, id: number}} inv */
+function descriviInventario(inv) {
+  return `${inv.tot} chiavi (rt${inv.rt} at${inv.at} id${inv.id})`;
+}
+
+/** Quante chiavi in `localStorage` appartengono a MSAL. */
+function chiaviMsal() {
+  return inventarioMsal().tot;
 }
 
 function logAuthRedirect(e, kind = 'silenzioso') {
@@ -139,7 +166,8 @@ export function getLastAuthDebug() {
  * @returns {{lastError: ReturnType<typeof getLastAuthDebug>, lastOk: string|null,
  *   lastRefresh: string|null, loginAt: string|null, storageAvailable: boolean,
  *   accounts: number, ricordato: boolean, storageFull: string|null,
- *   storageKb: number, msalKeys: number, trail: {t: string, e: string}[],
+ *   storageKb: number, msalKeys: number, msalInv: string,
+ *   trail: {t: string, e: string}[],
  *   standalone: boolean}}
  */
 export function getAuthDiagnostics() {
@@ -193,6 +221,7 @@ export function getAuthDiagnostics() {
     storageFull,
     storageKb,
     msalKeys: chiaviMsal(),
+    msalInv: descriviInventario(inventarioMsal()),
     trail,
     // Safari e l'app aperta dall'icona sulla Home hanno due memorie separate:
     // sapere da quale delle due si sta guardando evita di scambiare «devo
@@ -203,6 +232,13 @@ export function getAuthDiagnostics() {
 }
 
 export async function initAuth() {
+  // Fotografia PRIMA di toccare MSAL. È la misura che decide fra le due
+  // spiegazioni rimaste per un account che sparisce senza errori: se qui le
+  // chiavi ci sono e dopo `initialize()` non ci sono più, è MSAL a fare
+  // pulizia all'avvio; se mancano già da qui, sono sparite mentre l'app era
+  // chiusa, e allora è il telefono. Finora la conta veniva fatta solo dopo, e
+  // le due cose erano indistinguibili.
+  const primaDiTutto = inventarioMsal();
   // initAuth viene chiamata una volta sola dal boot dell'app, ma in StrictMode
   // l'effetto parte due volte: una seconda PublicClientApplication sullo stesso
   // clientId significa due cache che si sovrascrivono a vicenda, ed è uno dei
@@ -213,19 +249,24 @@ export async function initAuth() {
       clientId: CLIENT_ID,
       authority: 'https://login.microsoftonline.com/common',
       redirectUri: REDIRECT_URI,
-      navigateToLoginRequestUrl: true,
     },
     cache: {
       cacheLocation: 'localStorage',
-      storeAuthStateInCookie: true, // fondamentale per Safari iOS
     },
     system: {
-      allowNativeBroker: false,
-      // I 6 secondi di default per l'iframe nascosto del rinnovo silenzioso
-      // sono tarati su un desktop: su iPhone in rete mobile scadono prima che
+      allowPlatformBroker: false,
+      // Il default per l'attesa dell'iframe nascosto del rinnovo silenzioso è
+      // tarato su un desktop: su iPhone in rete mobile scade prima che
       // Microsoft risponda, e un timeout viene trattato come «serve il login».
-      iframeHashTimeout: 12_000,
-      loadFrameTimeout: 12_000,
+      //
+      // Qui c'erano `iframeHashTimeout` e `loadFrameTimeout`, che in MSAL v5
+      // non esistono più: erano scritti con cura e non facevano niente. Come
+      // `navigateToLoginRequestUrl` (in v5 è un'opzione della singola
+      // richiesta, non della configurazione), `storeAuthStateInCookie` (non
+      // c'è più) e `allowNativeBroker` (ora `allowPlatformBroker`). Un'opzione
+      // che non esiste MSAL la ignora in silenzio, quindi da fuori sembrava
+      // tutto a posto.
+      iframeBridgeTimeout: 12_000,
     },
   });
   await msal.initialize();
@@ -249,7 +290,8 @@ export async function initAuth() {
   // indietro rifiutato. Senza questa riga la schermata di login compariva
   // muta: nessun rinnovo era stato tentato *in questa pagina*, quindi non
   // c'era niente da registrare.
-  traccia(`avvio: ${msal.getAllAccounts().length} account, ${chiaviMsal()} chiavi MSAL`);
+  const dopoInit = inventarioMsal();
+  traccia(`avvio: ${msal.getAllAccounts().length} account · prima ${descriviInventario(primaDiTutto)} · dopo ${descriviInventario(dopoInit)}`);
   try {
     if (localStorage.getItem(PERSONAL_ID_KEY) && msal.getAllAccounts().length === 0) {
       const prima = getLastAuthDebug();
