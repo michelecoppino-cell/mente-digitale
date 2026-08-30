@@ -685,13 +685,40 @@ c'è. Perché i casi sono due, e si somigliano solo da fuori:
   il rinnovo silenzioso ha provato ed è stato respinto. Qui si guarda la
   durata: un'ora tonda vuol dire che il refresh token non è mai entrato in
   gioco, un giorno che è il tetto delle 24 ore.
-- **Non c'è nessun errore**: l'account non è scaduto, è *sparito* dalla
-  memoria del sito. Nessun rinnovo è mai stato tentato, perché non c'era più
-  niente da rinnovare. È Safari che ha fatto pulizia (ITP), oppure si sta
-  guardando da un contesto diverso — l'app aperta dall'icona sulla Home ha la
-  sua memoria, separata da quella di Safari.
+- **Non c'è nessun errore ma il dispositivo ricordava un accesso**: l'account
+  è stato *rimosso* dalla cache MSAL, non è scaduto. È quello che MSAL fa
+  quando un riscatto del refresh token torna indietro rifiutato — e se il
+  rifiuto è arrivato a un'altra istanza dell'app, in questa pagina non c'era
+  niente da registrare. Vedi il lucchetto qui sotto.
+- **Non c'è niente del tutto**: la memoria del sito è stata svuotata (Safari,
+  ITP), oppure si sta guardando da un contesto diverso — l'app aperta
+  dall'icona sulla Home ha la sua memoria, separata da quella di Safari.
 
-Le righe mostrate: motivo, ultimo accesso fatto a mano, ultimo rinnovo
-riuscito, quanto è durata, se si è in Safari o nell'app dall'icona, e la data
+### Il lucchetto fra le istanze
+
+Le tre icone sulla schermata Home (`Mente`, `GTD`, `Diario`) aprono la stessa
+app sulla stessa origine: la cache MSAL è in comune, ma ogni pagina ha il suo
+MSAL. La coda dei rinnovi in `auth.js` serializza le richieste dentro una
+pagina sola, e fra pagine diverse non può niente: due rinnovi forzati insieme
+sono due riscatti dello stesso refresh token, che è monouso e ruota. Il primo
+lo invalida per il secondo, e MSAL — vedendosi rifiutare il riscatto — toglie
+l'account dalla cache condivisa. Da lì la schermata di login, per tutte e due,
+senza che nessuno abbia visto scadere niente.
+
+`md_auth_refresh_lock` in `localStorage` è il lucchetto che manca a quella
+coda: chi vuole forzare un rinnovo lo prende, chi lo trova occupato aspetta
+tre secondi e poi si accontenta della cache — dove nel frattempo è arrivato il
+token che ha preso l'altro. Scade da solo dopo venti secondi, altrimenti una
+scheda chiusa a metà rinnovo bloccherebbe le altre per sempre.
+
+Attenzione a due righe che si somigliano e non dicono la stessa cosa:
+**«ultima chiamata riuscita»** si aggiorna anche quando `acquireTokenSilent`
+risponde leggendo la cache, quindi dice fino a quando l'app è stata *usata*;
+**«ultimo rinnovo vero»** si scrive solo quando il refresh token è stato speso
+davvero. Se lì c'è scritto «mai» e la sessione è morta, il refresh token non è
+mai entrato in gioco.
+
+Le altre righe: motivo (e durante quale tentativo), ultimo accesso fatto a
+mano, quanto è durata, se si è in Safari o nell'app dall'icona, e la data
 della build. L'ultima serve a una domanda che da iPhone non ha altra risposta:
 sto guardando l'ultimo deploy, o Safari mi sta ancora servendo il vecchio?

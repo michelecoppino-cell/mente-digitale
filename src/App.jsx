@@ -202,31 +202,42 @@ function durata(daIso, aIso) {
 
 function LoginDiagnostics() {
   const d = getAuthDiagnostics();
-  const err = d.lastError;
+  // Un errore più vecchio dell'ultima chiamata riuscita è un errore da cui ci
+  // si è già ripresi: mostrarlo qui vorrebbe dire dare la colpa di questa
+  // disconnessione a qualcosa che era già rientrato.
+  const err = d.lastError && (!d.lastOk || d.lastError.t >= d.lastOk) ? d.lastError : null;
   const motivo = err
     ? [err.errorCode, err.subError].filter(Boolean).join(' / ') || err.message
     : null;
+  const dove = err?.kind ? ` durante il ${err.kind}` : '';
   // Quanto è durata: dall'accesso a mano all'ultimo rinnovo andato a buon
   // fine. Un'ora tonda vuol dire che il refresh token non è mai entrato in
   // gioco; un giorno vuol dire che è arrivato al tetto delle 24 ore che Entra
   // impone alle SPA; una settimana vuol dire che è stata Safari a fare pulizia.
   const durataSessione = durata(d.loginAt, d.lastOk || err?.t);
+  // «Ultima chiamata riuscita» non è «ultimo rinnovo»: acquireTokenSilent
+  // risponde anche solo leggendo la cache, quindi quell'ora dice fino a
+  // quando l'app è stata usata, non fino a quando la sessione ha retto.
 
   return (
     <div className="login-note" style={{ opacity: 0.6, marginTop: 4, textAlign: 'left' }}>
       {!d.storageAvailable ? (
         <>La memoria del sito non è disponibile (navigazione privata, o cookie bloccati): qui l&apos;accesso non può durare oltre la sessione.</>
       ) : motivo ? (
-        <>Ultima disconnessione: {motivo} ({oraLeggibile(err?.t)})</>
-      ) : d.hasMsalCache ? (
-        <>Nessun errore registrato: l&apos;account è ancora in memoria ma non è stato riconosciuto.</>
+        <>Ultima disconnessione: {motivo}{dove} ({oraLeggibile(err?.t)})</>
+      ) : d.ricordato ? (
+        <>Nessun errore registrato, e MSAL non ha più l&apos;account: è stato rimosso dalla cache, non è scaduto.</>
       ) : d.loginAt ? (
         <>Nessun errore registrato: la memoria del sito è stata svuotata. Non è una scadenza — è Safari (o un&apos;altra icona, che ha la sua memoria separata).</>
       ) : (
         <>Primo accesso in questo contesto: qui non c&apos;è mai stata una sessione.</>
       )}
       {d.loginAt && <><br />Ultimo accesso a mano: {oraLeggibile(d.loginAt)}</>}
-      {d.lastOk && <><br />Ultimo rinnovo riuscito: {oraLeggibile(d.lastOk)}</>}
+      {d.lastOk && <><br />Ultima chiamata riuscita: {oraLeggibile(d.lastOk)}</>}
+      {/* Questa è la riga che conta: «rinnovo» vuol dire refresh token speso
+          davvero. Se manca, l'ora dell'ultima chiamata dice solo fino a
+          quando l'app è stata usata. */}
+      <br />Ultimo rinnovo vero: {d.lastRefresh ? oraLeggibile(d.lastRefresh) : 'mai'}
       {durataSessione && <><br />È durata: {durataSessione}</>}
       <br />{d.standalone ? 'Aperta dall\u2019icona sulla Home' : 'Aperta in Safari'} · build {oraLeggibile(BUILD_TIME)}
     </div>

@@ -30,11 +30,34 @@ const AUTH_OK_KEY = 'md_auth_last_ok';
 // è la memoria del sito svuotata.
 const AUTH_LOGIN_KEY = 'md_auth_login_at';
 
-function logAuthRedirect(e) {
+// L'ultima volta che il refresh token è stato *speso davvero*. Distinguerlo
+// dall'ultima acquisizione riuscita è tutta la differenza fra le due diagnosi:
+// `acquireTokenSilent` risponde anche solo leggendo la cache, quindi
+// «ultima acquisizione» dice soltanto fino a quando l'app è stata usata. Se qui
+// non c'è niente e la sessione è morta, il refresh token non è mai entrato in
+// gioco.
+const AUTH_REFRESH_KEY = 'md_auth_last_refresh';
+
+// Lucchetto condiviso fra le istanze dell'app. Le tre icone sulla schermata
+// Home aprono la stessa app sulla stessa origine: memoria in comune, ma
+// ognuna con il suo MSAL in pagina. La coda qui sotto serializza i rinnovi
+// dentro una pagina sola, e fra pagine diverse non può niente — due rinnovi
+// forzati insieme sono due riscatti dello stesso refresh token, che è monouso
+// e ruota: il primo invalida il secondo, e chi perde si porta via l'account
+// dalla cache condivisa. Da lì la schermata di login, senza che nessuno abbia
+// visto scadere niente.
+const REFRESH_LOCK_KEY = 'md_auth_refresh_lock';
+const REFRESH_LOCK_TTL = 20_000;
+
+function logAuthRedirect(e, kind = 'silenzioso') {
   try {
     localStorage.setItem(AUTH_DEBUG_KEY, JSON.stringify({
       t: new Date().toISOString(),
-      errorCode: e?.errorCode || null,
+      // Quale tentativo è fallito: il rinnovo programmato, una chiamata
+      // qualunque, o il controllo all'avvio. Senza, un errore registrato non
+      // dice se l'app stava lavorando o dormendo.
+      kind,
+      errorCode: e?.errorCode || e?.name || null,
       // Il sotto-codice è quello che distingue «il refresh token è scaduto»
       // da «Microsoft vuole rivederti in faccia»: senza, dalla schermata di
       // login si legge sempre e solo `interaction_required`.
@@ -45,8 +68,33 @@ function logAuthRedirect(e) {
   } catch { /* storage non disponibile */ }
 }
 
-function logAuthOk() {
-  try { localStorage.setItem(AUTH_OK_KEY, new Date().toISOString()); } catch { /* storage non disponibile */ }
+function logAuthOk(forced) {
+  try {
+    const ora = new Date().toISOString();
+    localStorage.setItem(AUTH_OK_KEY, ora);
+    if (forced) localStorage.setItem(AUTH_REFRESH_KEY, ora);
+  } catch { /* storage non disponibile */ }
+}
+
+/** @returns {boolean} true se il lucchetto è nostro e possiamo rinnovare. */
+function takeRefreshLock() {
+  try {
+    const raw = localStorage.getItem(REFRESH_LOCK_KEY);
+    const t = raw ? Number(raw) : NaN;
+    // Un lucchetto vecchio è un lucchetto di una pagina che non c'è più: si
+    // scavalca, altrimenti una scheda chiusa a metà rinnovo bloccherebbe le
+    // altre per sempre.
+    if (Number.isFinite(t) && Date.now() - t < REFRESH_LOCK_TTL) return false;
+    localStorage.setItem(REFRESH_LOCK_KEY, String(Date.now()));
+    return true;
+  } catch {
+    // Senza storage non c'è nemmeno il problema delle istanze multiple.
+    return true;
+  }
+}
+
+function releaseRefreshLock() {
+  try { localStorage.removeItem(REFRESH_LOCK_KEY); } catch { /* storage non disponibile */ }
 }
 
 export function getLastAuthDebug() {
@@ -60,32 +108,39 @@ export function getLastAuthDebug() {
  * cose che la fanno comparire — un rinnovo fallito (c'è un errore) e una
  * cache sparita (non c'è niente, nemmeno l'errore).
  * @returns {{lastError: ReturnType<typeof getLastAuthDebug>, lastOk: string|null,
- *   loginAt: string|null, storageAvailable: boolean, hasMsalCache: boolean,
- *   standalone: boolean}}
+ *   lastRefresh: string|null, loginAt: string|null, storageAvailable: boolean,
+ *   accounts: number, ricordato: boolean, standalone: boolean}}
  */
 export function getAuthDiagnostics() {
   let storageAvailable = true;
   let lastOk = null;
+  let lastRefresh = null;
   let loginAt = null;
-  let hasMsalCache = false;
+  let ricordato = false;
   try {
     lastOk = localStorage.getItem(AUTH_OK_KEY);
+    lastRefresh = localStorage.getItem(AUTH_REFRESH_KEY);
     loginAt = localStorage.getItem(AUTH_LOGIN_KEY);
-    // MSAL tiene le sue chiavi in localStorage e ci mette dentro il clientId.
-    // Se non ce n'è nessuna, l'account non è «scaduto»: è stato cancellato.
-    for (let i = 0; i < localStorage.length; i++) {
-      const k = localStorage.key(i) || '';
-      if (k.includes(CLIENT_ID) || k.startsWith('msal.')) { hasMsalCache = true; break; }
-    }
+    ricordato = !!localStorage.getItem(PERSONAL_ID_KEY);
   } catch {
     storageAvailable = false;
   }
+  // Quanti account vede MSAL adesso: è la domanda giusta, e la conta delle
+  // chiavi in localStorage non la rispondeva — MSAL lascia lì il suo scheletro
+  // (`msal.account.keys` e compagnia) anche dopo aver rimosso l'account, e
+  // quello scheletro faceva dire «l'account è ancora in memoria» quando non
+  // c'era più.
+  const accounts = msal ? msal.getAllAccounts().length : 0;
   return {
     lastError: getLastAuthDebug(),
     lastOk,
+    lastRefresh,
     loginAt,
     storageAvailable,
-    hasMsalCache,
+    accounts,
+    // Il dispositivo ricorda di aver fatto un accesso: se lo ricorda e MSAL
+    // non ha account, l'account è stato rimosso, non è scaduto.
+    ricordato,
     // Safari e l'app aperta dall'icona sulla Home hanno due memorie separate:
     // sapere da quale delle due si sta guardando evita di scambiare «devo
     // accedere anche qui» per «la sessione è scaduta».
@@ -133,6 +188,24 @@ export async function initAuth() {
   } catch (e) {
     console.error('Redirect error:', e);
   }
+
+  // L'account c'era e non c'è più: le nostre chiavi sono ancora qui, quindi la
+  // memoria del sito non è stata svuotata — è MSAL che ha rimosso l'account
+  // dalla sua cache, cosa che fa quando un riscatto del refresh token torna
+  // indietro rifiutato. Senza questa riga la schermata di login compariva
+  // muta: nessun rinnovo era stato tentato *in questa pagina*, quindi non
+  // c'era niente da registrare.
+  try {
+    if (localStorage.getItem(PERSONAL_ID_KEY) && msal.getAllAccounts().length === 0) {
+      const prima = getLastAuthDebug();
+      const ok = localStorage.getItem(AUTH_OK_KEY);
+      // Un errore già registrato dopo l'ultima acquisizione riuscita dice più
+      // di questo: è quello vero, e non va sovrascritto.
+      if (!prima || (ok && prima.t < ok)) {
+        logAuthRedirect({ errorCode: 'account_rimosso_dalla_cache', errorMessage: 'MSAL non ha più account, ma il dispositivo ne ricordava uno' }, 'avvio');
+      }
+    }
+  } catch { /* storage non disponibile */ }
 
   return msal;
 }
@@ -267,10 +340,28 @@ export function getToken(forceRefresh = false) {
 async function acquire(forceRefresh) {
   const account = getAccount();
   if (!account) throw new Error('Non autenticato');
+  // Se un'altra istanza dell'app sta già spendendo il refresh token, non se ne
+  // spende un secondo: si aspetta che finisca e si legge quello che ha messo
+  // nella cache condivisa. Rinnovare in due è il modo più veloce di restare
+  // fuori tutti e due.
+  let locked = false;
+  if (forceRefresh) {
+    locked = takeRefreshLock();
+    if (!locked) {
+      await new Promise(res => setTimeout(res, 3_000));
+      forceRefresh = false;
+    }
+  }
   try {
     const r = await msal.acquireTokenSilent({ scopes: SCOPES, account, forceRefresh });
-    return onAcquired(r);
+    return onAcquired(r, forceRefresh);
   } catch (e) {
+    // Ogni fallimento va scritto, non solo quelli che chiedono interazione.
+    // Prima gli altri uscivano da qui senza lasciare traccia — ed erano
+    // proprio quelli, perché è su un `invalid_grant` che MSAL si porta via
+    // l'account dalla cache: la schermata di login arrivava senza motivo
+    // registrato, che è il caso peggiore da leggere da un telefono.
+    logAuthRedirect(e, forceRefresh ? 'rinnovo forzato' : 'silenzioso');
     if (!(e instanceof InteractionRequiredAuthError)) throw e;
     // Secondo tentativo silenzioso per un'altra strada: se il cookie di
     // sessione Microsoft nel browser è ancora buono, ssoSilent riesce dove
@@ -281,22 +372,24 @@ async function acquire(forceRefresh) {
     try {
       const r = await msal.ssoSilent({ scopes: SCOPES, loginHint: getLoginHint() });
       rememberAccount(r.account);
-      return onAcquired(r);
+      return onAcquired(r, true);
     } catch { /* niente da fare in silenzio */ }
-    logAuthRedirect(e);
     setInteractionRequired(true);
     throw e;
+  } finally {
+    if (locked) releaseRefreshLock();
   }
 }
 
 /**
  * @param {{accessToken: string, expiresOn?: Date|null}} r
+ * @param {boolean} [forced] true se il refresh token è stato speso davvero
  * @returns {TokenResult}
  */
-function onAcquired(r) {
+function onAcquired(r, forced = false) {
   const expiresOn = r.expiresOn ? r.expiresOn.getTime() : Date.now() + 55 * 60_000;
   setInteractionRequired(false);
-  logAuthOk();
+  logAuthOk(forced);
   scheduleRenew(expiresOn);
   return { token: r.accessToken, expiresOn };
 }
