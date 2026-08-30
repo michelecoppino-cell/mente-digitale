@@ -675,17 +675,17 @@ Due tetti restano, e non si spostano da qui:
   spazio separato da quello di Safari: sono due sessioni distinte, ed è
   normale doversi autenticare in tutte e due.
 
-### Perché su iPhone l'accesso spariva senza lasciare tracce
+### Perché su iPhone l'accesso spariva, e perché MSAL è fissato alla v3
 
-Questa è la causa vera, trovata dopo aver escluso tutte le altre, e non sta
-nel nostro codice: sta in come **MSAL v5** tiene la cache.
+Questa è la causa vera, trovata dopo aver escluso tutte le altre, e non sta nel
+nostro codice: sta in come **MSAL, dalla v4 in poi**, tiene la cache.
 
-MSAL v5 non scrive più i token in chiaro in `localStorage`: li **cifra**, e
-tiene la chiave di cifratura in un **cookie di sessione** —
-`msal.cache.encryption`, con scadenza 0, cioè muore quando finisce la sessione
-del browser. All'avvio successivo, se quel cookie non c'è più, MSAL ne genera
-uno nuovo con un id nuovo, poi rilegge la cache, trova dati cifrati con un id
-diverso e li butta. Parole sue, in `LocalStorage.mjs`:
+Non scrive più i token in chiaro in `localStorage`: li **cifra**, e tiene la
+chiave di cifratura in un **cookie di sessione** — `msal.cache.encryption`, con
+scadenza 0, cioè muore quando finisce la sessione del browser. All'avvio
+successivo, se quel cookie non c'è più, MSAL ne genera uno nuovo con un id
+nuovo, poi rilegge la cache, trova dati cifrati con un id diverso e li butta.
+Parole sue, in `LocalStorage.mjs`:
 
 > *Data was encrypted with a different key. It must be removed because it is
 > from a previous session.*
@@ -697,23 +697,37 @@ insieme — senza un errore, senza una scadenza, senza che nessun rinnovo sia
 stato tentato. È esattamente quello che la scatola nera ha fotografato:
 
 ```
-15:05 · avvio: 1 account · prima 7 chiavi (rt1 at1 id1) · dopo 7 chiavi (rt1 at1 id1)
-15:07 · avvio: 1 account · prima 7 chiavi (rt1 at1 id1) · dopo 7 chiavi (rt1 at1 id1)
-15:16 · avvio: 0 account · prima 7 chiavi (rt1 at1 id1) · dopo 1 chiavi (rt0 at0 id0)
+15:38 · avvio: 1 account · prima 1 chiavi (rt0 at0 id0) · dopo 7 chiavi (rt1 at1 id1)
+15:39 · avvio: 1 account · prima 7 chiavi (rt1 at1 id1) · dopo 7 chiavi (rt1 at1 id1)
+16:04 · avvio: 0 account · prima 7 chiavi (rt1 at1 id1) · dopo 1 chiavi (rt0 at0 id0)
 ```
 
-Prima di `initialize()` c'era tutto; dopo, niente. I due avvii precedenti,
-dentro la stessa sessione del browser, erano andati lisci.
+Prima di `initialize()` c'era tutto; dopo, niente. Gli avvii precedenti, dentro
+la stessa sessione del browser, erano andati lisci.
 
-**L'unica via d'uscita non è un'opzione della configurazione.** MSAL tiene la
-cache in chiaro solo per gli accessi *persistenti*, e persistente lo decide una
-claim dell'id token, `signin_state`: vale se contiene `kmsi` — l'utente ha
-risposto **«Sì» a «Rimani connesso?»** — o `dvc_dmjd`, dispositivo aggiunto a
-un dominio. Nient'altro la attiva.
+**L'eccezione prevista non ci riguarda.** MSAL tiene la cache in chiaro per gli
+accessi *persistenti*, e persistente lo decide la claim `signin_state`
+dell'id token: vale se contiene `kmsi` o `dvc_dmjd`. Ma quella claim la mette
+Entra, non gli account Microsoft personali. Provato sul telefono, con l'app
+reinstallata e i dati dei siti cancellati: risposto **Sì** a «Rimani connesso?»,
+e la sessione è morta lo stesso dopo un quarto d'ora. Con un account personale
+quella strada non esiste.
 
-Per questo l'app adesso legge quella claim a ogni accesso, la ricorda in
-`md_auth_kmsi`, e se l'ultimo accesso non era persistente la schermata di login
-lo dice in chiaro, con l'istruzione: al prossimo accesso, rispondi **Sì**.
+Quindi la versione di MSAL è **fissata alla 3.30.0, esatta, senza `^`**. Lì
+`LocalStorage` è un guscio sottile su `window.localStorage`: scrive in chiaro, e
+l'accesso sopravvive alla chiusura dell'app. Un aggiornamento a v4 o v5
+rimetterebbe in piedi il problema **in silenzio**, senza che niente smetta di
+compilare — è il motivo per cui la versione non ha il cancelletto davanti, e
+questo paragrafo esiste.
+
+Sulla v3 tornano valide anche `storeAuthStateInCookie`, `iframeHashTimeout`,
+`loadFrameTimeout`, `navigateToLoginRequestUrl` e `allowNativeBroker`: erano
+scritte nel codice, la v5 le ignorava in silenzio, e ora fanno di nuovo quello
+per cui erano state messe.
+
+La strada definitiva, se un giorno la v3 non basterà più, resta quella già
+scritta più sotto: un client riservato lato server che tenga lui il refresh
+token, e allora della cache del browser non importerà più niente.
 
 ### La diagnosi in fondo alla schermata di login
 
