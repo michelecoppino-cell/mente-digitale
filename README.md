@@ -675,6 +675,46 @@ Due tetti restano, e non si spostano da qui:
   spazio separato da quello di Safari: sono due sessioni distinte, ed è
   normale doversi autenticare in tutte e due.
 
+### Perché su iPhone l'accesso spariva senza lasciare tracce
+
+Questa è la causa vera, trovata dopo aver escluso tutte le altre, e non sta
+nel nostro codice: sta in come **MSAL v5** tiene la cache.
+
+MSAL v5 non scrive più i token in chiaro in `localStorage`: li **cifra**, e
+tiene la chiave di cifratura in un **cookie di sessione** —
+`msal.cache.encryption`, con scadenza 0, cioè muore quando finisce la sessione
+del browser. All'avvio successivo, se quel cookie non c'è più, MSAL ne genera
+uno nuovo con un id nuovo, poi rilegge la cache, trova dati cifrati con un id
+diverso e li butta. Parole sue, in `LocalStorage.mjs`:
+
+> *Data was encrypted with a different key. It must be removed because it is
+> from a previous session.*
+
+Su iPhone questo succede in continuazione: `localStorage` sopravvive, ma la
+sessione del browser finisce ogni volta che iOS chiude l'app aperta dall'icona.
+Le chiavi restano lì fino all'avvio dopo, e a quel punto spariscono tutte
+insieme — senza un errore, senza una scadenza, senza che nessun rinnovo sia
+stato tentato. È esattamente quello che la scatola nera ha fotografato:
+
+```
+15:05 · avvio: 1 account · prima 7 chiavi (rt1 at1 id1) · dopo 7 chiavi (rt1 at1 id1)
+15:07 · avvio: 1 account · prima 7 chiavi (rt1 at1 id1) · dopo 7 chiavi (rt1 at1 id1)
+15:16 · avvio: 0 account · prima 7 chiavi (rt1 at1 id1) · dopo 1 chiavi (rt0 at0 id0)
+```
+
+Prima di `initialize()` c'era tutto; dopo, niente. I due avvii precedenti,
+dentro la stessa sessione del browser, erano andati lisci.
+
+**L'unica via d'uscita non è un'opzione della configurazione.** MSAL tiene la
+cache in chiaro solo per gli accessi *persistenti*, e persistente lo decide una
+claim dell'id token, `signin_state`: vale se contiene `kmsi` — l'utente ha
+risposto **«Sì» a «Rimani connesso?»** — o `dvc_dmjd`, dispositivo aggiunto a
+un dominio. Nient'altro la attiva.
+
+Per questo l'app adesso legge quella claim a ogni accesso, la ricorda in
+`md_auth_kmsi`, e se l'ultimo accesso non era persistente la schermata di login
+lo dice in chiaro, con l'istruzione: al prossimo accesso, rispondi **Sì**.
+
 ### La diagnosi in fondo alla schermata di login
 
 Da iPhone non c'è una console da leggere, quindi la schermata di login dice da

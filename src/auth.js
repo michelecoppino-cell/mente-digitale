@@ -30,6 +30,15 @@ const AUTH_OK_KEY = 'md_auth_last_ok';
 // è la memoria del sito svuotata.
 const AUTH_LOGIN_KEY = 'md_auth_login_at';
 
+// Se l'accesso è «persistente» agli occhi di MSAL. Non è una nostra scelta: la
+// decide una claim dell'id token, `signin_state`, che Microsoft mette solo se
+// all'accesso si è risposto «Sì» a «Rimani connesso?» (valore `kmsi`) o se il
+// dispositivo è aggiunto a un dominio (`dvc_dmjd`).
+//
+// È la differenza fra un accesso che dura e uno che muore alla prima volta che
+// iOS chiude l'app — vedi il commento lungo sotto, in `initAuth`.
+const AUTH_KMSI_KEY = 'md_auth_kmsi';
+
 // L'ultima volta che il refresh token è stato *speso davvero*. Distinguerlo
 // dall'ultima acquisizione riuscita è tutta la differenza fra le due diagnosi:
 // `acquireTokenSilent` risponde anche solo leggendo la cache, quindi
@@ -100,6 +109,14 @@ function descriviInventario(inv) {
   return `${inv.tot} chiavi (rt${inv.rt} at${inv.at} id${inv.id})`;
 }
 
+/** @returns {boolean|null} */
+function leggiKmsi() {
+  try {
+    const v = localStorage.getItem(AUTH_KMSI_KEY);
+    return v === null ? null : v === '1';
+  } catch { return null; }
+}
+
 /** Quante chiavi in `localStorage` appartengono a MSAL. */
 function chiaviMsal() {
   return inventarioMsal().tot;
@@ -166,7 +183,7 @@ export function getLastAuthDebug() {
  * @returns {{lastError: ReturnType<typeof getLastAuthDebug>, lastOk: string|null,
  *   lastRefresh: string|null, loginAt: string|null, storageAvailable: boolean,
  *   accounts: number, ricordato: boolean, storageFull: string|null,
- *   storageKb: number, msalKeys: number, msalInv: string,
+ *   storageKb: number, msalKeys: number, msalInv: string, kmsi: boolean|null,
  *   trail: {t: string, e: string}[],
  *   standalone: boolean}}
  */
@@ -221,6 +238,8 @@ export function getAuthDiagnostics() {
     storageFull,
     storageKb,
     msalKeys: chiaviMsal(),
+    // null quando non lo sappiamo ancora (nessun accesso registrato da qui).
+    kmsi: leggiKmsi(),
     msalInv: descriviInventario(inventarioMsal()),
     trail,
     // Safari e l'app aperta dall'icona sulla Home hanno due memorie separate:
@@ -250,6 +269,28 @@ export async function initAuth() {
       authority: 'https://login.microsoftonline.com/common',
       redirectUri: REDIRECT_URI,
     },
+    // ── Perché `localStorage` da solo non basta, in MSAL v5 ────────────────
+    //
+    // MSAL v5 non scrive più i token in chiaro: li **cifra**, e tiene la
+    // chiave di cifratura in un *cookie di sessione* (`msal.cache.encryption`,
+    // scadenza 0, cioè muore con la sessione del browser). All'avvio, se quel
+    // cookie non c'è più, MSAL ne genera uno nuovo con un id nuovo, poi rilegge
+    // la cache, trova dati cifrati con un id diverso e — parole sue —
+    // «It must be removed because it is from a previous session»: cancella
+    // account e credenziali, in silenzio, prima ancora che l'app possa
+    // accorgersene.
+    //
+    // Su iPhone succede di continuo: `localStorage` sopravvive, ma la sessione
+    // del browser finisce ogni volta che iOS chiude l'app aperta dall'icona. Le
+    // chiavi restano lì fino all'avvio dopo, e a quel punto spariscono tutte
+    // insieme. Da fuori: «l'accesso è durato poco», senza un errore, senza una
+    // scadenza, senza che nessun rinnovo sia stato tentato.
+    //
+    // L'unica via d'uscita non è una nostra opzione: MSAL tiene la cache in
+    // chiaro solo per gli accessi «persistenti», e persistente lo decide una
+    // claim dell'id token (`signin_state`), che Microsoft mette quando alla
+    // domanda «Rimani connesso?» si risponde di sì. Per questo la schermata di
+    // login adesso lo dice a chiare lettere.
     cache: {
       cacheLocation: 'localStorage',
     },
@@ -275,7 +316,9 @@ export async function initAuth() {
     const result = await msal.handleRedirectPromise();
     if (result?.account) {
       rememberAccount(result.account);
-      traccia('accesso a mano');
+      traccia(kmsiDaClaims(result.account.idTokenClaims)
+        ? 'accesso a mano (persistente)'
+        : 'accesso a mano (solo per questa sessione)');
       // Si è appena tornati da Microsoft: è questo il momento in cui la
       // sessione comincia, ed è da qui che si misura quanto dura.
       try { localStorage.setItem(AUTH_LOGIN_KEY, new Date().toISOString()); } catch { /* storage non disponibile */ }
@@ -326,6 +369,21 @@ export async function trySsoSilent() {
 function rememberAccount(account) {
   localStorage.setItem(PERSONAL_ID_KEY, account.homeAccountId);
   localStorage.setItem(PERSONAL_USERNAME_KEY, account.username);
+  try { localStorage.setItem(AUTH_KMSI_KEY, kmsiDaClaims(account.idTokenClaims) ? '1' : '0'); }
+  catch { /* storage non disponibile */ }
+}
+
+/**
+ * Legge dalla claim `signin_state` se questo accesso è di quelli che MSAL può
+ * tenere in chiaro. Gli stessi due valori che guarda MSAL: `kmsi` (l'utente ha
+ * risposto «Sì» a «Rimani connesso?») e `dvc_dmjd` (dispositivo aggiunto a un
+ * dominio).
+ * @param {Record<string, unknown>|undefined} claims
+ */
+function kmsiDaClaims(claims) {
+  const stato = claims?.signin_state;
+  if (!Array.isArray(stato)) return false;
+  return stato.some(v => ['kmsi', 'dvc_dmjd'].includes(String(v).trim().toLowerCase()));
 }
 
 function getLoginHint() {
