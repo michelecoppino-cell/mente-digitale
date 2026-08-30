@@ -459,8 +459,100 @@ export default function App() {
     catch (e) { console.error(e); }
   }
 
+  // ── Quello che si vede mentre l'app si ricarica ───────────────────────────
+  //
+  // Su iPhone l'app non resta aperta: il telefono butta via la pagina dopo
+  // pochi minuti in secondo piano, e riaprire l'icona è un avvio da capo, con
+  // tutti gli stati React vuoti. Fin qui il primo schermo era quello: niente
+  // taccuini, niente attività, niente piano, per tutto il tempo che ci mette
+  // Graph a rispondere — che dal telefono, in giro, non sono decimi di secondo.
+  //
+  // Eppure i dati ci sono già: la cache di query viene ripristinata da
+  // localStorage prima ancora del primo render (vedi queryClient.js). Mancava
+  // solo di dipingerli, invece di lasciare lo schermo vuoto ad aspettare la
+  // rete. Da qui in poi si vede subito l'ultimo caricamento, e le richieste
+  // che partono comunque lo sostituiscono man mano che rispondono.
+  //
+  // È una copia vecchia, e va bene che lo sia: è la stessa scelta già fatta
+  // per la sessione scaduta — «i dati mostrati sono quelli dell'ultimo
+  // caricamento» — solo applicata al caso di gran lunga più frequente, cioè
+  // l'app che si riapre.
+  /**
+   * @param {boolean} forceRefresh su «Aggiorna tutto» le sezioni restano
+   *   fuori: là si riparte apposta a taccuini chiusi, ed è riespanderli che
+   *   le ricarica (vedi handleExpandNotebook).
+   * @returns {boolean} se c'era qualcosa da mostrare
+   */
+  function dipingiUltimoCaricamento(forceRefresh) {
+    let qualcosa = false;
+
+    const overrides = queryClient.getQueryData(qk.colorSettings()) || DEFAULT_COLOR_SETTINGS;
+    colorSettingsRef.current = overrides;
+    setColorSettings(overrides);
+
+    const nbs = queryClient.getQueryData(qk.notebooks());
+    if (nbs?.length) {
+      qualcosa = true;
+      nbs.forEach((nb, i) => applyNotebookColor(nb, i, overrides));
+      notebooksRef.current = nbs;
+      setNotebooks(nbs);
+
+      if (!forceRefresh) {
+        const sectMap = {};
+        for (const nb of nbs) {
+          const sects = queryClient.getQueryData(qk.sections(nb.id));
+          if (sects) {
+            applySectionColors(nb, sects, overrides);
+            sectMap[nb.id] = sects;
+          }
+        }
+        if (Object.keys(sectMap).length > 0) setSectionsMap(sectMap);
+      }
+    }
+
+    const lists = queryClient.getQueryData(qk.todolists());
+    if (lists?.length) {
+      qualcosa = true;
+      todoListsRef.current = lists;
+      setTodoLists(lists);
+      const map = {};
+      lists.forEach(l => { map[l.displayName.toLowerCase()] = { id: l.id, displayName: l.displayName }; });
+      setTodoListsMap(map);
+
+      // Le attività dell'ultimo caricamento, lista per lista. Solo se almeno
+      // una c'è: `scheduledTasks` a `null` vuol dire «sto ancora caricando» e
+      // fa comparire lo scheletro, un elenco vuoto vuol dire «non c'è niente
+      // da fare oggi» — e le due cose non si possono scambiare.
+      const attivita = [];
+      let qualcheLista = false;
+      for (const l of lists) {
+        const tasks = queryClient.getQueryData(qk.tasks(l.id));
+        if (!tasks) continue;
+        qualcheLista = true;
+        tasksCache.current[l.id] = tasks;
+        tasks.forEach(t => attivita.push({ ...t, _listName: l.displayName, _listId: l.id }));
+      }
+      if (qualcheLista) setScheduledTasks(attivita);
+    }
+
+    const plans = queryClient.getQueryData(qk.dailyPlans());
+    if (plans) { qualcosa = true; setDailyPlans(plans); }
+
+    const cfg = queryClient.getQueryData(qk.plannerConfig());
+    if (cfg) setPlannerConfig(cfg);
+
+    const eventi = queryClient.getQueryData(qk.calEventiSezioni());
+    if (eventi?.length) setSectionCalendarEvents(eventi);
+
+    return qualcosa;
+  }
+
   async function load(forceRefresh = false) {
-    setSync({ state: 'loading', label: 'Caricamento…' });
+    // Prima di qualunque attesa: sullo schermo ci va l'ultimo caricamento.
+    // L'etichetta lo dice — «Aggiornamento» è un elenco già in pagina che si
+    // sta rinfrescando, «Caricamento» è uno schermo vuoto che aspetta.
+    const daCache = dipingiUltimoCaricamento(forceRefresh);
+    setSync({ state: 'loading', label: daCache ? 'Aggiornamento…' : 'Caricamento…' });
     runDriveMigrationOnce();
 
     // Svuota cache in memoria se forceRefresh
@@ -546,7 +638,7 @@ export default function App() {
       // prossimi mesi in un'unica chiamata: il Pannello sezione li filtra poi
       // localmente per prefisso "[NomeSezione]", senza dover interrogare
       // Graph a ogni apertura (era il collo di bottiglia lento lamentato).
-      setTimeout(() => preloadSectionCalendarEvents(), 3000);
+      setTimeout(() => preloadSectionCalendarEvents(forceRefresh), 3000);
 
     } catch (e) {
       console.error('load', e);
@@ -654,11 +746,29 @@ export default function App() {
   // apertura — era il collo di bottiglia lento lamentato, perché ripeteva
   // l'intera scansione multi-calendario a ogni click. Il Pannello ora filtra
   // solo localmente per prefisso "[NomeSezione]" (vedi deadlineReminders.js).
-  async function preloadSectionCalendarEvents() {
+  // Un evento creato o cancellato qui dentro va scritto anche nella cache, non
+  // solo nello stato: la cache è la copia che sopravvive alla chiusura
+  // dell'app, e un appuntamento appena creato che alla riapertura non si vede
+  // più — perché la copia salvata è di prima — sembrerebbe un salvataggio
+  // andato perso.
+  /** @param {(prec: any[]) => any[]} modifica */
+  function aggiornaEventiSezioni(modifica) {
+    setSectionCalendarEvents(prev => modifica(prev || []));
+    queryClient.setQueryData(qk.calEventiSezioni(), (/** @type {any[]|undefined} */ prec) =>
+      prec ? modifica(prec) : prec);
+  }
+
+  async function preloadSectionCalendarEvents(forceRefresh = false) {
     try {
       const start = new Date(); start.setMonth(start.getMonth() - 1);
       const end = new Date(); end.setMonth(end.getMonth() + 18);
-      const events = await getCalendarEvents(start, end, 250);
+      // Via fetchCached e non più con una chiamata nuda: così la finestra di
+      // eventi sopravvive alla chiusura dell'app e il Pannello sezione, alla
+      // riapertura, ha già i suoi appuntamenti invece di aspettare la
+      // richiesta più lenta del giro.
+      const events = await fetchCached(
+        qk.calEventiSezioni(), () => getCalendarEvents(start, end, 250),
+        STALE.calEventiSezioni, forceRefresh);
       setSectionCalendarEvents(events);
     } catch (e) { console.error('section calendar events preload', e); }
   }
@@ -1261,11 +1371,11 @@ export default function App() {
         }}
         onTaskRemoved={handleTaskRemoved}
         onEventCreated={event => {
-          setSectionCalendarEvents(prev => [...(prev || []), event]);
+          aggiornaEventiSezioni(prev => [...prev, event]);
           setCalendarDirtyToken(t => t + 1);
         }}
         onEventRemoved={eventId => {
-          setSectionCalendarEvents(prev => (prev || []).filter(e => e.id !== eventId));
+          aggiornaEventiSezioni(prev => prev.filter(e => e.id !== eventId));
           setCalendarDirtyToken(t => t + 1);
         }}
       />
