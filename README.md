@@ -675,7 +675,23 @@ Due tetti restano, e non si spostano da qui:
   spazio separato da quello di Safari: sono due sessioni distinte, ed è
   normale doversi autenticare in tutte e due.
 
-La schermata di login mostra in fondo l'ultimo errore *e* l'ora dell'ultimo
-rinnovo riuscito: la distanza fra i due è la diagnosi. Un'ora tonda vuol dire
-che il refresh token non è entrato in gioco; un giorno vuol dire che è il
-tetto delle 24 ore.
+### La diagnosi in fondo alla schermata di login
+
+Da iPhone non c'è una console da leggere, quindi la schermata di login dice da
+sé perché è comparsa — e adesso lo dice **sempre**, anche quando un errore non
+c'è. Perché i casi sono due, e si somigliano solo da fuori:
+
+- **C'è un errore registrato** (`interaction_required` e il suo sotto-codice):
+  il rinnovo silenzioso ha provato ed è stato respinto. Qui si guarda la
+  durata: un'ora tonda vuol dire che il refresh token non è mai entrato in
+  gioco, un giorno che è il tetto delle 24 ore.
+- **Non c'è nessun errore**: l'account non è scaduto, è *sparito* dalla
+  memoria del sito. Nessun rinnovo è mai stato tentato, perché non c'era più
+  niente da rinnovare. È Safari che ha fatto pulizia (ITP), oppure si sta
+  guardando da un contesto diverso — l'app aperta dall'icona sulla Home ha la
+  sua memoria, separata da quella di Safari.
+
+Le righe mostrate: motivo, ultimo accesso fatto a mano, ultimo rinnovo
+riuscito, quanto è durata, se si è in Safari o nell'app dall'icona, e la data
+della build. L'ultima serve a una domanda che da iPhone non ha altra risposta:
+sto guardando l'ultimo deploy, o Safari mi sta ancora servendo il vecchio?

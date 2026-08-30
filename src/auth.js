@@ -23,6 +23,13 @@ const AUTH_DEBUG_KEY = 'md_auth_debug';
 // delle 24 ore dei refresh token SPA.
 const AUTH_OK_KEY = 'md_auth_last_ok';
 
+// Momento dell'ultimo accesso interattivo davvero fatto a mano. Con l'ultimo
+// rinnovo riuscito qui sopra dice per quanto è durata la sessione, e serve
+// anche quando di errore non ce n'è nessuno: la schermata di login compare
+// anche quando l'account non c'è più in cache, e quella non è una scadenza —
+// è la memoria del sito svuotata.
+const AUTH_LOGIN_KEY = 'md_auth_login_at';
+
 function logAuthRedirect(e) {
   try {
     localStorage.setItem(AUTH_DEBUG_KEY, JSON.stringify({
@@ -44,6 +51,47 @@ function logAuthOk() {
 
 export function getLastAuthDebug() {
   try { return JSON.parse(localStorage.getItem(AUTH_DEBUG_KEY) || 'null'); } catch { return null; }
+}
+
+/**
+ * Fotografia di com'è messa l'autenticazione su questo dispositivo, da
+ * mostrare nella schermata di login. Su iPhone è l'unica strada: non c'è
+ * console da leggere, e la schermata di login da sola non distingue le due
+ * cose che la fanno comparire — un rinnovo fallito (c'è un errore) e una
+ * cache sparita (non c'è niente, nemmeno l'errore).
+ * @returns {{lastError: ReturnType<typeof getLastAuthDebug>, lastOk: string|null,
+ *   loginAt: string|null, storageAvailable: boolean, hasMsalCache: boolean,
+ *   standalone: boolean}}
+ */
+export function getAuthDiagnostics() {
+  let storageAvailable = true;
+  let lastOk = null;
+  let loginAt = null;
+  let hasMsalCache = false;
+  try {
+    lastOk = localStorage.getItem(AUTH_OK_KEY);
+    loginAt = localStorage.getItem(AUTH_LOGIN_KEY);
+    // MSAL tiene le sue chiavi in localStorage e ci mette dentro il clientId.
+    // Se non ce n'è nessuna, l'account non è «scaduto»: è stato cancellato.
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i) || '';
+      if (k.includes(CLIENT_ID) || k.startsWith('msal.')) { hasMsalCache = true; break; }
+    }
+  } catch {
+    storageAvailable = false;
+  }
+  return {
+    lastError: getLastAuthDebug(),
+    lastOk,
+    loginAt,
+    storageAvailable,
+    hasMsalCache,
+    // Safari e l'app aperta dall'icona sulla Home hanno due memorie separate:
+    // sapere da quale delle due si sta guardando evita di scambiare «devo
+    // accedere anche qui» per «la sessione è scaduta».
+    standalone: window.navigator.standalone === true
+      || window.matchMedia('(display-mode: standalone)').matches,
+  };
 }
 
 export async function initAuth() {
@@ -76,7 +124,12 @@ export async function initAuth() {
 
   try {
     const result = await msal.handleRedirectPromise();
-    if (result?.account) rememberAccount(result.account);
+    if (result?.account) {
+      rememberAccount(result.account);
+      // Si è appena tornati da Microsoft: è questo il momento in cui la
+      // sessione comincia, ed è da qui che si misura quanto dura.
+      try { localStorage.setItem(AUTH_LOGIN_KEY, new Date().toISOString()); } catch { /* storage non disponibile */ }
+    }
   } catch (e) {
     console.error('Redirect error:', e);
   }

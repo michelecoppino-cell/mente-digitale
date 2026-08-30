@@ -4,6 +4,12 @@ import react from '@vitejs/plugin-react'
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [react()],
+  // Data della build, iniettata a compile time. Serve a una domanda sola, ma
+  // che da iPhone non ha altra risposta: la versione che sto guardando è
+  // quella appena messa online, o Safari mi sta ancora servendo la vecchia?
+  define: {
+    'import.meta.env.VITE_BUILD_TIME': JSON.stringify(new Date().toISOString()),
+  },
   build: {
     rollupOptions: {
       output: {
