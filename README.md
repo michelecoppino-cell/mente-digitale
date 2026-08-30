@@ -737,11 +737,34 @@ Ora all'avvio si fa una lettura non forzata: non spende niente, prende il token
 dalla cache di MSAL e riempie `expiresAt`, così dalla volta dopo la guardia ha
 un numero vero. E offline non si riscatta: fallirebbe e basta.
 
+### Quattro opzioni MSAL che non facevano niente
+
+`src/auth.js` configurava MSAL con opzioni scritte per la v2/v3, mentre in
+`package.json` c'è la v5. Un'opzione che non esiste MSAL la ignora in silenzio,
+quindi da fuori sembrava tutto a posto:
+
+- `iframeHashTimeout` e `loadFrameTimeout` → in v5 non esistono; l'attesa
+  dell'iframe nascosto ora è `system.iframeBridgeTimeout`. I dodici secondi
+  pensati per la rete mobile non erano mai stati applicati.
+- `storeAuthStateInCookie` → non esiste più fra le `cache` options.
+- `navigateToLoginRequestUrl` → in v5 è un'opzione della singola richiesta, non
+  della configurazione.
+- `allowNativeBroker` → si chiama `allowPlatformBroker`.
+
 ### La scatola nera
 
-`md_auth_trail` tiene gli ultimi otto fatti dell'autenticazione — avvio (con
-quanti account e quante chiavi MSAL ci sono), accesso a mano, token dalla
-cache, rinnovo riuscito, rinnovo fallito con il suo codice. La schermata di
+`md_auth_trail` tiene gli ultimi otto fatti dell'autenticazione — accesso a
+mano, token dalla cache, rinnovo riuscito, rinnovo fallito con il suo codice, e
+soprattutto l'avvio, che si porta dietro l'inventario di quello che MSAL tiene
+in `localStorage` **prima** di `initialize()` e **dopo**. È la misura che
+decide fra le due spiegazioni rimaste per un account che sparisce senza errori:
+chiavi presenti prima e assenti dopo vuol dire che è MSAL a fare pulizia
+all'avvio; chiavi già assenti prima vuol dire che sono sparite mentre l'app era
+chiusa, e allora è il telefono. L'inventario distingue per tipo (`rt` refresh
+token, `at` access token, `id` id token) perché un paio di chiavi MSAL sono di
+puro indice e restano lì anche quando non c'è più niente dentro — contare solo
+il totale faceva sembrare piena una cache vuota. Solo nomi di chiave, mai
+contenuti: nel registro non passa nessun token. La schermata di
 login mostra gli ultimi cinque. Un errore solo dice cosa è andato storto; la
 scatola nera dice cosa stava succedendo intorno, che su un telefono — dove
 l'app viene riaperta dieci volte al giorno — è la parte che spiega tutto.
