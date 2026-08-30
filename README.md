@@ -685,13 +685,64 @@ c'è. Perché i casi sono due, e si somigliano solo da fuori:
   il rinnovo silenzioso ha provato ed è stato respinto. Qui si guarda la
   durata: un'ora tonda vuol dire che il refresh token non è mai entrato in
   gioco, un giorno che è il tetto delle 24 ore.
-- **Non c'è nessun errore**: l'account non è scaduto, è *sparito* dalla
-  memoria del sito. Nessun rinnovo è mai stato tentato, perché non c'era più
-  niente da rinnovare. È Safari che ha fatto pulizia (ITP), oppure si sta
-  guardando da un contesto diverso — l'app aperta dall'icona sulla Home ha la
-  sua memoria, separata da quella di Safari.
+- **Non c'è nessun errore ma il dispositivo ricordava un accesso**: l'account
+  è stato *rimosso* dalla cache MSAL, non è scaduto. È quello che MSAL fa
+  quando un riscatto del refresh token torna indietro rifiutato — e se il
+  rifiuto è arrivato a un'altra istanza dell'app, in questa pagina non c'era
+  niente da registrare. Vedi il lucchetto qui sotto.
+- **Non c'è niente del tutto**: la memoria del sito è stata svuotata (Safari,
+  ITP), oppure si sta guardando da un contesto diverso — l'app aperta
+  dall'icona sulla Home ha la sua memoria, separata da quella di Safari.
 
-Le righe mostrate: motivo, ultimo accesso fatto a mano, ultimo rinnovo
-riuscito, quanto è durata, se si è in Safari o nell'app dall'icona, e la data
+### La cache dei dati e l'account, nello stesso cassetto
+
+`localStorage` è uno solo per origine, e su Safari è piccolo — qualche mega,
+meno ancora per un'app aperta dall'icona sulla Home. Dentro ci finiscono due
+cose che non hanno niente a che vedere fra loro: la cache di TanStack Query
+(`md_rq_cache_v1` — pagine OneNote, task, eventi di calendario a ±3 mesi,
+tenuti 24 ore, riscritta a ogni cambiamento) e la cache di MSAL, cioè
+l'account e il refresh token.
+
+Quando lo spazio finisce, `setItem` smette di funzionare **per tutti**. La
+cache dei dati se ne fa una ragione, ha il suo try/catch; MSAL no: si ritrova
+a non poter scrivere il token appena ruotato, e l'accesso sparisce senza che
+nessuno abbia visto scadere niente. Da fuori sembra una sessione che dura
+poco. In realtà è la cache dei dati che ha mangiato il posto dell'account — e
+si vede dal fatto che la sessione muore *dopo* un po' di navigazione, non a
+un'ora tonda dall'accesso.
+
+Per questo la persistenza della cache ha un tetto (`PERSIST_BUDGET`, un mega di
+JSON): se lo supera, `serializzaEntroIlBudget` butta le query più grosse finché
+non ci sta. Perdere gli eventi di tre mesi vuol dire riscaricarli, perdere
+l'account vuol dire rifare l'accesso: non è lo stesso prezzo. Se lo spazio
+finisce lo stesso, la chiave `md_storage_full` lo registra e la schermata di
+login lo dice.
+
+### Il lucchetto fra le istanze
+
+Le tre icone sulla schermata Home (`Mente`, `GTD`, `Diario`) aprono la stessa
+app sulla stessa origine: la cache MSAL è in comune, ma ogni pagina ha il suo
+MSAL. La coda dei rinnovi in `auth.js` serializza le richieste dentro una
+pagina sola, e fra pagine diverse non può niente: due rinnovi forzati insieme
+sono due riscatti dello stesso refresh token, che è monouso e ruota. Il primo
+lo invalida per il secondo, e MSAL — vedendosi rifiutare il riscatto — toglie
+l'account dalla cache condivisa. Da lì la schermata di login, per tutte e due,
+senza che nessuno abbia visto scadere niente.
+
+`md_auth_refresh_lock` in `localStorage` è il lucchetto che manca a quella
+coda: chi vuole forzare un rinnovo lo prende, chi lo trova occupato aspetta
+tre secondi e poi si accontenta della cache — dove nel frattempo è arrivato il
+token che ha preso l'altro. Scade da solo dopo venti secondi, altrimenti una
+scheda chiusa a metà rinnovo bloccherebbe le altre per sempre.
+
+Attenzione a due righe che si somigliano e non dicono la stessa cosa:
+**«ultima chiamata riuscita»** si aggiorna anche quando `acquireTokenSilent`
+risponde leggendo la cache, quindi dice fino a quando l'app è stata *usata*;
+**«ultimo rinnovo vero»** si scrive solo quando il refresh token è stato speso
+davvero. Se lì c'è scritto «mai» e la sessione è morta, il refresh token non è
+mai entrato in gioco.
+
+Le altre righe: motivo (e durante quale tentativo), ultimo accesso fatto a
+mano, quanto è durata, se si è in Safari o nell'app dall'icona, e la data
 della build. L'ultima serve a una domanda che da iPhone non ha altra risposta:
 sto guardando l'ultimo deploy, o Safari mi sta ancora servendo il vecchio?
