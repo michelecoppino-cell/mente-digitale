@@ -618,6 +618,17 @@ export async function getTodoTasks(listId) {
   return callPagedValues(`/me/todo/lists/${listId}/tasks?$filter=status ne 'completed'&$orderby=importance desc,createdDateTime desc&$top=50`);
 }
 
+// Tutti i task di una lista, completati compresi e con le sottoattività dentro:
+// la fotografia che serve alla migrazione su file (taskMigrazione.js), che deve
+// portarsi dietro anche quello che getTodoTasks non guarda.
+/**
+ * @param {string} listId
+ * @returns {Promise<import('./types').TodoTask[]>}
+ */
+export async function getTodoTasksCompleti(listId) {
+  return callPagedValues(`/me/todo/lists/${listId}/tasks?$expand=checklistItems&$top=100`, 50);
+}
+
 // Task di una lista indipendentemente dallo stato (anche completati), solo
 // id+body: usata per il controllo anti-duplicati delle scadenze ricorrenti
 // (refreshDeadlineReminders in App.jsx) — getTodoTasks esclude i completati,

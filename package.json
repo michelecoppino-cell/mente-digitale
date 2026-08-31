@@ -12,6 +12,7 @@
     "mente": "node scripts/mente.mjs",
     "prova-onedrive": "node scripts/prova-onedrive.mjs",
     "prova-task": "node scripts/prova-task.mjs",
+    "prova-migrazione": "node scripts/prova-migrazione.mjs",
     "preview": "vite preview"
   },
   "dependencies": {

@@ -21,21 +21,40 @@ const STUB_AUTH = 'const getToken = async () => ({ token: "prova", expiresOn: Da
 /** @param {string} testo @returns {string} */
 const comeModulo = testo => 'data:text/javascript;base64,' + Buffer.from(testo, 'utf8').toString('base64');
 
+// I moduli si costruiscono una volta sola e si legano fra loro: se `api.js`
+// venisse ricostruito per ogni import, taskStore e taskMigrazione parlerebbero
+// con due copie diverse — e due registri di ETag diversi.
+/** @type {Map<string, Promise<string>>} */
+const _urlModuli = new Map();
+
+/** @param {string} nome @returns {Promise<string>} */
+function urlDi(nome) {
+  let url = _urlModuli.get(nome);
+  if (!url) {
+    url = (async () => {
+      let testo = await readFile(join(src, nome), 'utf8');
+      testo = testo.replace("import { getToken } from './auth';", STUB_AUTH);
+      if (nome === 'api.js') testo += '\nexport { _driveVersions, _migrationTried, _cartellePronte };\n';
+      // Gli import fra moduli dell'app si rilegano ai moduli già costruiti.
+      const riferiti = [...testo.matchAll(/from '\.\/([\w-]+)'/g)].map(m => m[1]);
+      for (const rif of [...new Set(riferiti)]) {
+        testo = testo.replaceAll(`from './${rif}'`, `from '${await urlDi(`${rif}.js`)}'`);
+      }
+      return comeModulo(testo);
+    })();
+    _urlModuli.set(nome, url);
+  }
+  return url;
+}
+
 /**
- * Importa un modulo di src/ come modulo isolato, con l'autenticazione finta e
- * gli import fra moduli dell'app rilegati fra loro.
- * @param {string} nome            es. 'taskStore.js'
- * @param {string} [riesporta]     righe da aggiungere in fondo (per vedere le funzioni interne)
+ * Importa un modulo di src/ con l'autenticazione finta e gli import fra moduli
+ * dell'app rilegati fra loro.
+ * @param {string} nome   es. 'taskStore.js'
  * @returns {Promise<any>}
  */
-export async function importaModulo(nome, riesporta = '') {
-  const api = comeModulo(
-    (await readFile(join(src, 'api.js'), 'utf8')).replace("import { getToken } from './auth';", STUB_AUTH)
-    + '\nexport { _driveVersions, _migrationTried, _cartellePronte };\n'
-  );
-  if (nome === 'api.js') return import(api);
-  const testo = (await readFile(join(src, nome), 'utf8')).replace(/from '\.\/api'/g, `from '${api}'`);
-  return import(comeModulo(testo + riesporta));
+export async function importaModulo(nome) {
+  return import(await urlDi(nome));
 }
 
 /**
@@ -79,9 +98,17 @@ export function montaFintoOnedrive() {
     .filter(([p]) => (cartella ? p.startsWith(cartella + '/') && !p.slice(cartella.length + 1).includes('/') : !p.includes('/')))
     .map(([p, v]) => ({ id: v.id, name: cartella ? p.slice(cartella.length + 1) : p, file: v.cartella ? undefined : {} }));
 
+  /** Rotte aggiunte dalle prove (es. il finto Microsoft To-Do). @type {Function[]} */
+  const rotte = [];
+
   globalThis.fetch = async (url, opt = {}) => {
     const metodo = opt.method || 'GET';
     const senzaHost = String(url).replace('https://graph.microsoft.com/v1.0', '');
+
+    for (const rotta of rotte) {
+      const esito = await rotta(senzaHost, opt, risposta);
+      if (esito) return esito;
+    }
 
     if (metodo === 'POST' && senzaHost.includes('children')) {
       const genitore = senzaHost === '/me/drive/root/children'
@@ -141,6 +168,8 @@ export function montaFintoOnedrive() {
     get archivio() { return archivio; },
     stato,
     scriviFile,
+    /** Aggiunge una rotta consultata prima di quelle del drive. */
+    aggiungiRotta: fn => rotte.push(fn),
     pulisci() {
       archivio = new Map();
       archivio.set('mente-digitale', { cartella: true, id: 'radice' });

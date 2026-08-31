@@ -67,6 +67,10 @@ export const FILE_REGISTRO = percorsoTask('_liste.json');
  * @property {string|null} sveglia     'HH:MM', un'ora di oggi
  * @property {string|null} scadenza    'YYYY-MM-DD'
  * @property {string} nota             testo pulito, senza marker da spogliare
+ * @property {string|null} origineScadenza  quale occorrenza di quale evento ha
+ *   generato il task, per le scadenze ricorrenti: serve a non ricrearlo a ogni
+ *   scansione (vedi deadlineReminders.js). Non è testo per chi legge, è un
+ *   riferimento, quindi non sta nella nota.
  * @property {Sottoattivita[]} sottoattivita
  * @property {string} creatoIl
  * @property {string} modificatoIl
@@ -129,6 +133,7 @@ export function normalizzaTask(raw) {
     sveglia: /^([01]\d|2[0-3]):[0-5]\d$/.test(raw?.sveglia || '') ? raw.sveglia : null,
     scadenza: /^\d{4}-\d{2}-\d{2}$/.test(raw?.scadenza || '') ? raw.scadenza : null,
     nota: typeof raw?.nota === 'string' ? raw.nota : '',
+    origineScadenza: raw?.origineScadenza ? String(raw.origineScadenza) : null,
     sottoattivita: Array.isArray(raw?.sottoattivita) ? raw.sottoattivita.map(normalizzaSottoattivita) : [],
     creatoIl: creato,
     modificatoIl: typeof raw?.modificatoIl === 'string' ? raw.modificatoIl : creato,
