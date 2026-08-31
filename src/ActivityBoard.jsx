@@ -264,6 +264,11 @@ export default function ActivityBoard({
   // solo «Inbox» e «Un giorno» hanno una striscia da cui riaprirsi. `true` =
   // tenuta aperta, `false` = tenuta chiusa, assente = come dice il default.
   const [expandedCols, setExpandedCols] = useState(/** @type {Record<string, boolean>} */ ({}));
+  // Le aree «Da chiedere» e «Delegati» partono chiuse: stanno in fondo alla
+  // loro colonna come una riga sola, e si aprono col chevron. Sono un elenco
+  // che si consulta quando si becca la persona, non mentre si lavora — aperte
+  // di default rubavano metà colonna alle prossime azioni e alle attese.
+  const [expandedAreas, setExpandedAreas] = useState(/** @type {Record<string, boolean>} */ ({}));
   // Su schermo stretto le cinque colonne scorrono in orizzontale e se ne vede
   // una e mezza: senza le pastiglie non c'è niente che dica quante sono né a
   // che punto della fila si è.
@@ -546,6 +551,10 @@ export default function ActivityBoard({
     notebooks,
     sectionsMap,
     pagesCache,
+    // OneNote e OneDrive restano fuori: in coda al pannello allungavano la
+    // colonna di due riquadri che nessuno guarda mentre smista le attività —
+    // le pagine e i file si aprono in Sezioni, col bottone qui sotto.
+    showResources: false,
     onClose: () => setOpenTask(null),
     onCompleted: () => { if (detailTask) onTaskRemoved?.(detailTask._listId || '', detailTask.id); setOpenTask(null); },
     onDeleted: () => { if (detailTask) onTaskRemoved?.(detailTask._listId || '', detailTask.id); setOpenTask(null); },
@@ -663,7 +672,7 @@ export default function ActivityBoard({
             return (
               <div
                 key={col.status}
-                className={`ab-col${collapsed ? ' collapsed' : ''}${dragOver === col.status ? ' drag-over' : ''}`}
+                className={`ab-col${collapsed ? ' collapsed' : ''}${col.collapse && count > 0 ? ' flagged' : ''}${dragOver === col.status ? ' drag-over' : ''}`}
                 onDragOver={e => { e.preventDefault(); setDragOver(col.status); }}
                 onDragLeave={() => setDragOver(o => (o === col.status ? null : o))}
                 onDrop={e => { e.preventDefault(); handleDrop(col.status); }}>
@@ -721,52 +730,64 @@ export default function ActivityBoard({
                           ))}
                         </div>
                       ))}
-                      {/* L'area in fondo alla colonna. È un bersaglio suo per
-                          il trascinamento — con lo stop alla risalita, o il
-                          rilascio finirebbe alla colonna che la contiene. */}
-                      {col.sub && (
-                        <div
-                          className={`ab-area${dragOver === col.sub ? ' drag-over' : ''}`}
-                          onDragOver={e => { e.preventDefault(); e.stopPropagation(); setDragOver(col.sub); }}
-                          onDragLeave={e => {
-                            if (e.currentTarget.contains(/** @type {any} */ (e.relatedTarget))) return;
-                            setDragOver(o => (o === col.sub ? null : o));
-                          }}
-                          onDrop={e => { e.preventDefault(); e.stopPropagation(); handleDrop(col.sub); }}>
-                          <div className="ab-area-head">
-                            <span className="eyebrow">{SUB_AREAS[col.sub].label}</span>
-                            <span className="ab-count">{byStatus[col.sub].length}</span>
-                          </div>
-                          {byStatus[col.sub].length === 0 && (
-                            <div className="ab-empty">{SUB_AREAS[col.sub].empty}</div>
-                          )}
-                          {groupedByPerson[col.sub].map(group => (
-                            <div className="ab-group ab-group-person" key={group.key}>
-                              <div className="ab-group-head">
-                                <span className="ab-group-name">{group.name}</span>
-                                <span className="ab-group-count">{group.tasks.length}</span>
-                              </div>
-                              {group.tasks.map(t => (
-                                <TaskRow
-                                  key={t.id}
-                                  task={t}
-                                  status={col.sub}
-                                  color={colorForTask(t)}
-                                  placement={scheduled.get(t.id) || null}
-                                  dragging={dragTask?.id === t.id}
-                                  selected={openTask?.id === t.id}
-                                  showPerson={false}
-                                  onClick={setOpenTask}
-                                  onComplete={handleComplete}
-                                  onDragStart={setDragTask}
-                                  onDragEnd={() => { setDragTask(null); setDragOver(null); }}
-                                />
-                              ))}
-                            </div>
-                          ))}
-                        </div>
-                      )}
                     </div>
+                    {/* L'area sta *sotto* il corpo della colonna, non dentro:
+                        così resta incollata in fondo mentre l'elenco sopra
+                        scorre, invece di finire fuori vista in coda ai gruppi.
+                        È un bersaglio suo per il trascinamento — con lo stop
+                        alla risalita, o il rilascio finirebbe alla colonna che
+                        la contiene. */}
+                    {col.sub && (
+                      <div
+                        className={`ab-area${expandedAreas[col.sub] ? ' expanded' : ''}${dragOver === col.sub ? ' drag-over' : ''}`}
+                        onDragOver={e => { e.preventDefault(); e.stopPropagation(); setDragOver(col.sub); }}
+                        onDragLeave={e => {
+                          if (e.currentTarget.contains(/** @type {any} */ (e.relatedTarget))) return;
+                          setDragOver(o => (o === col.sub ? null : o));
+                        }}
+                        onDrop={e => { e.preventDefault(); e.stopPropagation(); handleDrop(col.sub); }}>
+                        <button
+                          className="ab-area-head"
+                          aria-expanded={!!expandedAreas[col.sub]}
+                          title={expandedAreas[col.sub] ? `Chiudi «${SUB_AREAS[col.sub].label}»` : `Apri «${SUB_AREAS[col.sub].label}»`}
+                          onClick={() => setExpandedAreas(s2 => ({ ...s2, [col.sub]: !s2[col.sub] }))}>
+                          <span className="ab-area-chevron" aria-hidden="true">›</span>
+                          <span className="eyebrow">{SUB_AREAS[col.sub].label}</span>
+                          <span className="ab-count">{byStatus[col.sub].length}</span>
+                        </button>
+                        {expandedAreas[col.sub] && (
+                          <div className="ab-area-body">
+                            {byStatus[col.sub].length === 0 && (
+                              <div className="ab-empty">{SUB_AREAS[col.sub].empty}</div>
+                            )}
+                            {groupedByPerson[col.sub].map(group => (
+                              <div className="ab-group ab-group-person" key={group.key}>
+                                <div className="ab-group-head">
+                                  <span className="ab-group-name">{group.name}</span>
+                                  <span className="ab-group-count">{group.tasks.length}</span>
+                                </div>
+                                {group.tasks.map(t => (
+                                  <TaskRow
+                                    key={t.id}
+                                    task={t}
+                                    status={col.sub}
+                                    color={colorForTask(t)}
+                                    placement={scheduled.get(t.id) || null}
+                                    dragging={dragTask?.id === t.id}
+                                    selected={openTask?.id === t.id}
+                                    showPerson={false}
+                                    onClick={setOpenTask}
+                                    onComplete={handleComplete}
+                                    onDragStart={setDragTask}
+                                    onDragEnd={() => { setDragTask(null); setDragOver(null); }}
+                                  />
+                                ))}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </>
                 )}
               </div>
