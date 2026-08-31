@@ -28,7 +28,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { getPages } from './api';
-import { spostaTask } from './taskStore';
+import { creaTask, eliminaTask, spostaTask } from './taskStore';
 import {
   paraSectionLabel, sectionRole, listsForSection, listGroupKey, listDeliverableLabel,
   listDueDate, buildListName, groupKeyForSection, sectionNameForList, toDateInputValue,
@@ -39,6 +39,8 @@ import {
   taskContext, contextColor, indexScheduled, taskStatus, taskPerson,
   STATUS_LABELS, GRANULARITY_MEMO_LINE,
 } from './taskModel';
+import { ordinaAMano, riordinaGruppo, CON_MOUSE } from './taskOrder';
+import { useMediaQuery } from './useMediaQuery';
 import SectionPaths from './SectionPaths';
 import SectionTimeline from './SectionTimeline';
 import Skeleton from './Skeleton';
@@ -48,10 +50,16 @@ import { pushUndo } from './undo';
 import { openProtocol } from './protocolLink';
 import './SectionsView.css';
 
-/** I due elenchi per persona in fondo alla colonna Attività, nell'ordine in
- *  cui si leggono: prima quello che tocca a te far partire, poi quello che sta
- *  già camminando per conto suo. */
-const PERSON_LISTS = /** @type {const} */ (['ask', 'delegated']);
+/** I tre elenchi per persona in fondo alla colonna Attività, nell'ordine in
+ *  cui si leggono: prima quello che tocca a te far partire, poi quello che hai
+ *  chiesto e stai aspettando, infine quello che cammina per conto suo.
+ *
+ *  «In attesa» mancava, e mancava proprio la riga di mezzo: le cose chieste e
+ *  mai tornate indietro restavano dentro la consegna come se fossero da fare,
+ *  quando invece la palla è di qualcun altro. Le tre righe ci sono sempre,
+ *  anche a zero — è la riga stessa che ricorda di guardarci — e il numero si
+ *  accende quando c'è qualcosa che aspetta. */
+const PERSON_LISTS = /** @type {const} */ (['ask', 'waiting', 'delegated']);
 
 /** Le quattro famiglie PARA, nell'ordine in cui si guardano: prima quello che
  *  ha una fine, poi quello che va mantenuto, poi il materiale, infine quel che
@@ -291,7 +299,9 @@ export default function SectionsView({
       due,
       days,
       color: listColor(l.displayName, colorMap, 'var(--line)'),
-      tasks: sectionTasks.filter(t => t._listId === l.id && !idsPerPersona.has(t.id)),
+      // Dentro la consegna comanda l'ordine messo a mano dove c'è; dove
+      // nessuno l'ha toccato resta quello del file.
+      tasks: ordinaAMano(sectionTasks.filter(t => t._listId === l.id && !idsPerPersona.has(t.id))),
     };
   }), [sectionLists, sectionTasks, colorMap, idsPerPersona]);
 
@@ -318,16 +328,28 @@ export default function SectionsView({
   // Il link `onenote:` che apre l'intera sezione nell'app desktop.
   const sectionClientUrl = active?.links?.oneNoteClientUrl?.href || null;
 
-  /** Una riga di attività: la stessa dentro le consegne e dentro i due elenchi
+  /** Una riga di attività: la stessa dentro le consegne e dentro gli elenchi
    *  per persona — sono le stesse attività, e devono comportarsi allo stesso
    *  modo (si aprono, si trascinano su un'altra consegna o sulla giornata).
-   *  @param {import('./taskStore').Task} t */
-  function taskButton(t) {
+   *
+   *  Dentro una consegna si può anche riordinare, rilasciandone una sopra
+   *  un'altra: `gruppo` è l'elenco in cui questa riga sta, che è quello da
+   *  rimettere in fila. Negli elenchi per persona non si passa — lì le righe
+   *  sono raccolte per chi ce l'ha in mano, e vengono da consegne diverse.
+   *  @param {import('./taskStore').Task} t
+   *  @param {import('./taskStore').Task[]} [gruppo] */
+  function taskButton(t, gruppo) {
+    // Si riordina fra righe della stessa lista: il rilascio su una di
+    // un'altra consegna resta lo spostamento di sempre, che il gruppo
+    // intercetta da sé.
+    const riordinabile = !!gruppo && conMouse && !!dragTask && dragTask.id !== t.id
+      && (dragTask._listId || '') === (t._listId || '')
+      && gruppo.some(x => x.id === dragTask.id);
     const est = estimateLabel(t);
     const placement = scheduledPlacements.get(t.id) || null;
     return (
       <button
-        className={`sv-task${t.id === detailTask?.id ? ' selected' : ''}${placement ? ' scheduled' : ''}`}
+        className={`sv-task${t.id === detailTask?.id ? ' selected' : ''}${placement ? ' scheduled' : ''}${dropOnId === t.id ? ' drop-on' : ''}`}
         key={t.id}
         draggable
         onDragStart={e => {
@@ -337,7 +359,19 @@ export default function SectionsView({
           e.dataTransfer.effectAllowed = 'move';
           setDragTask(t);
         }}
-        onDragEnd={() => { setDragTask(null); setDropListId(null); }}
+        onDragEnd={() => { setDragTask(null); setDropListId(null); setDropOnId(null); }}
+        onDragOver={riordinabile ? e => {
+          e.preventDefault();
+          e.stopPropagation();
+          e.dataTransfer.dropEffect = 'move';
+          setDropOnId(t.id);
+        } : undefined}
+        onDragLeave={riordinabile ? () => setDropOnId(prev => (prev === t.id ? null : prev)) : undefined}
+        onDrop={riordinabile ? e => {
+          e.preventDefault();
+          e.stopPropagation();
+          riordina(/** @type {import('./taskStore').Task[]} */ (gruppo), t);
+        } : undefined}
         onClick={() => setSelectedTaskId(t.id)}
         title={[
           placement && `Già nel piano: ${plannedWhen(placement)}`,
@@ -360,6 +394,12 @@ export default function SectionsView({
   // quale spostamento è in corso o è andato storto.
   const [dragTask, setDragTask] = useState(/** @type {import('./taskStore').Task|null} */ (null));
   const [dropListId, setDropListId] = useState(/** @type {string|null} */ (null));
+  // Il riordino a mano dentro una consegna si fa col mouse (vedi taskOrder.js);
+  // `dropOnId` è la riga su cui si sta passando.
+  const conMouse = useMediaQuery(CON_MOUSE);
+  const [dropOnId, setDropOnId] = useState(/** @type {string|null} */ (null));
+  // Quale consegna ha il campo della nuova attività aperto.
+  const [addingListId, setAddingListId] = useState(/** @type {string|null} */ (null));
   const [movingListId, setMovingListId] = useState(/** @type {string|null} */ (null));
   const [moveError, setMoveError] = useState(/** @type {{listId: string, message: string}|null} */ (null));
 
@@ -388,6 +428,43 @@ export default function SectionsView({
       setMoveError({ listId: toList.id, message: "Non è riuscito a spostarla" });
     }
     setMovingListId(null);
+  }
+
+  /** Rimette in fila le attività di una consegna: la riga trascinata va dove
+   *  sta quella su cui è stata rilasciata.
+   *  @param {import('./taskStore').Task[]} gruppo
+   *  @param {import('./taskStore').Task} suTask */
+  async function riordina(gruppo, suTask) {
+    const daTask = dragTask;
+    setDropOnId(null);
+    setDragTask(null);
+    const listId = daTask?._listId || '';
+    if (!daTask || !listId || listId !== (suTask._listId || '')) return;
+    try {
+      await riordinaGruppo({
+        listId, gruppo, daId: daTask.id, suId: suTask.id,
+        onOrdinato: (lid, id, patch) => onTaskPatched?.(lid, id, patch),
+      });
+    } catch (e) { console.error('riordino attività', e); }
+  }
+
+  /** Un'attività nuova dentro una consegna, dal `+` accanto al suo nome. La
+   *  colonna è l'elenco delle cose da fare per questa commessa: aggiungerne
+   *  una voleva dire uscire di qui, aprire la cattura e dire dove va — una
+   *  destinazione che qui è già sotto il cursore.
+   *  @param {{ id: string, displayName: string }} lista
+   *  @param {string} titolo */
+  async function creaAttivita(lista, titolo) {
+    const creato = await creaTask(lista.id, { titolo });
+    onTaskRestored?.(lista.id, creato);
+    setSelectedTaskId(creato.id);
+    pushUndo({
+      label: `Attività "${titolo}" aggiunta`,
+      undo: async () => {
+        await eliminaTask(lista.id, creato.id);
+        onTaskRemoved?.(lista.id, creato.id);
+      },
+    });
   }
 
   /** @param {any} e @param {{ id: string }} toList */
@@ -597,6 +674,8 @@ export default function SectionsView({
                         onToggle={() => toggleFold(d.list.id)}
                         sectionName={active.displayName}
                         onRename={onRenameDeliverable}
+                        adding={addingListId === d.list.id}
+                        onAdd={() => setAddingListId(id => (id === d.list.id ? null : d.list.id))}
                       />
                     )}
                     {moveError?.listId === d.list.id && (
@@ -609,7 +688,20 @@ export default function SectionsView({
                           : 'Nessuna attività aperta'}
                       </p>
                     )}
-                    {!folded && d.tasks.map(t => taskButton(t))}
+                    {!folded && d.tasks.map(t => taskButton(t, d.tasks))}
+                    {/* Il campo della nuova attività: aperto dal `+` accanto al
+                        nome della consegna. Dove l'intestazione non c'è —
+                        una lista sola, niente da raggruppare — resta lì
+                        aperto, che è l'ultima riga dell'elenco. */}
+                    {!folded && (plain || addingListId === d.list.id) && (
+                      <NewTaskRow
+                        key={`nuova-${d.list.id}`}
+                        listName={d.list.displayName}
+                        autoFocus={!plain}
+                        onCreate={titolo => creaAttivita(d.list, titolo)}
+                        onClose={() => setAddingListId(null)}
+                      />
+                    )}
                   </div>
                 );
               })}
@@ -623,20 +715,26 @@ export default function SectionsView({
                 per chi le ha in mano invece che per dove stanno. Chiuse
                 finché non servono: si consultano quando si becca la persona,
                 non mentre si lavora alla consegna. */}
-            {PERSON_LISTS.filter(status => perPersona[status].length > 0).map(status => (
-              <div className={`sv-persone${openPersone[status] ? ' expanded' : ''}`} key={status}>
+            {PERSON_LISTS.map(status => {
+              const quante = perPersona[status].reduce((n, g) => n + g.tasks.length, 0);
+              return (
+              <div className={`sv-persone${openPersone[status] && quante > 0 ? ' expanded' : ''}`} key={status}>
                 <button
                   className="sv-persone-head"
-                  aria-expanded={!!openPersone[status]}
-                  title={openPersone[status] ? `Chiudi «${STATUS_LABELS[status]}»` : `Apri «${STATUS_LABELS[status]}»`}
+                  aria-expanded={!!openPersone[status] && quante > 0}
+                  disabled={quante === 0}
+                  title={quante === 0
+                    ? `${STATUS_LABELS[status]}: niente, per questa commessa`
+                    : (openPersone[status] ? `Chiudi «${STATUS_LABELS[status]}»` : `Apri «${STATUS_LABELS[status]}»`)}
                   onClick={() => setOpenPersone(o => ({ ...o, [status]: !o[status] }))}>
                   <span className="sv-persone-chevron" aria-hidden="true">›</span>
                   <span className="eyebrow">{STATUS_LABELS[status]}</span>
-                  <span className="sv-persone-count">
-                    {perPersona[status].reduce((n, g) => n + g.tasks.length, 0)}
-                  </span>
+                  {/* Zero è una notizia buona e resta spento; da uno in su il
+                      numero si accende, perché è roba ferma in mano a qualcuno
+                      e va guardata. */}
+                  <span className={`sv-persone-count${quante > 0 ? ' acceso' : ''}`}>{quante}</span>
                 </button>
-                {openPersone[status] && (
+                {openPersone[status] && quante > 0 && (
                   <div className="sv-persone-body">
                     {perPersona[status].map(group => (
                       <div className="sv-persona" key={group.key}>
@@ -650,7 +748,8 @@ export default function SectionsView({
                   </div>
                 )}
               </div>
-            ))}
+              );
+            })}
           </section>
 
           {/* Dettagli — lo stesso pannello del Piano e della vista Attività,
@@ -667,10 +766,7 @@ export default function SectionsView({
                 <TaskDetailPanel
                   key={detailTask.id}
                   task={detailTask}
-                  notebooks={notebooks}
                   sectionsMap={sectionsMap}
-                  pagesCache={pagesCache}
-                  showResources={false}
                   showWorkbook={false}
                   onCompleted={() => { onTaskRemoved?.(detailTask._listId || '', detailTask.id); setSelectedTaskId(null); }}
                   onDeleted={() => { onTaskRemoved?.(detailTask._listId || '', detailTask.id); setSelectedTaskId(null); }}
@@ -711,8 +807,10 @@ export default function SectionsView({
  * @param {() => void} props.onToggle
  * @param {string} props.sectionName
  * @param {(listId: string, displayName: string) => Promise<any>} [props.onRename]
+ * @param {boolean} [props.adding]   il campo della nuova attività è aperto
+ * @param {() => void} [props.onAdd] apre e chiude quel campo
  */
-function DeliverableHead({ deliverable: d, folded, moving = false, onToggle, sectionName, onRename }) {
+function DeliverableHead({ deliverable: d, folded, moving = false, onToggle, sectionName, onRename, adding = false, onAdd }) {
   // La data aperta in modifica: cambiarla rinomina la lista, ma il nome
   // composto non si vede mai — si tocca solo il campo data.
   const [editingDue, setEditingDue] = useState(false);
@@ -782,6 +880,19 @@ function DeliverableHead({ deliverable: d, folded, moving = false, onToggle, sec
         <span className="sv-deliverable-count" title="Attività aperte">{moving ? '…' : d.tasks.length}</span>
       </button>
 
+      {/* Una attività nuova, in questa consegna. È il gesto che mancava alla
+          colonna: l'elenco delle cose da fare si guardava qui e si allungava
+          altrove. */}
+      {onAdd && (
+        <button
+          className={`sv-icon-btn${adding ? ' active' : ''}`}
+          onClick={onAdd}
+          title={`Nuova attività in «${d.label}»`}
+          aria-label={`Nuova attività in ${d.label}`}
+          aria-expanded={adding}>
+          +
+        </button>
+      )}
       {canEditDue && (
         editingDue ? (
           <input
@@ -886,6 +997,60 @@ function NewDeliverableForm({ sectionName, sectionNames, onCancel, onCreate }) {
         </button>
       </div>
       {error && <p className="sv-deliverable-error" role="alert">{error}</p>}
+    </form>
+  );
+}
+
+/**
+ * Il campo di una nuova attività dentro una consegna: solo il titolo. Tutto il
+ * resto — durata, stato, scadenza — si dà nella scheda a destra, che si apre da
+ * sé sull'attività appena creata: chiedere quattro cose per aggiungerne una a
+ * un elenco che si ha davanti sarebbe il motivo per non aggiungerla.
+ * @param {Object} props
+ * @param {string} props.listName
+ * @param {boolean} [props.autoFocus]
+ * @param {(titolo: string) => Promise<void>} props.onCreate
+ * @param {() => void} props.onClose
+ */
+function NewTaskRow({ listName, autoFocus = false, onCreate, onClose }) {
+  const [titolo, setTitolo] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState(/** @type {string|null} */ (null));
+
+  async function submit(/** @type {import('react').FormEvent} */ e) {
+    e.preventDefault();
+    const testo = titolo.trim();
+    if (!testo || saving) return;
+    setSaving(true);
+    setError(null);
+    try {
+      await onCreate(testo);
+      // Il campo si svuota e resta aperto: quando si aggiunge una cosa se ne
+      // aggiungono quasi sempre tre.
+      setTitolo('');
+    } catch (err) {
+      console.error('nuova attività', err);
+      setError(err instanceof Error ? err.message : 'Non è riuscita');
+    }
+    setSaving(false);
+  }
+
+  return (
+    <form className="sv-new-task" onSubmit={submit}>
+      <input
+        className="sv-new-task-input"
+        autoFocus={autoFocus}
+        value={titolo}
+        disabled={saving}
+        placeholder="+ Nuova attività"
+        aria-label={`Nuova attività in ${listDeliverableLabel(listName)}`}
+        onChange={e => setTitolo(e.target.value)}
+        onKeyDown={e => { if (e.key === 'Escape') { setTitolo(''); onClose(); } }}
+      />
+      <button type="submit" className="sv-new-task-ok" disabled={saving || !titolo.trim()}>
+        {saving ? '…' : '+'}
+      </button>
+      {error && <span className="sv-deliverable-error" role="alert">{error}</span>}
     </form>
   );
 }

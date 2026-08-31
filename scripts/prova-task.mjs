@@ -10,10 +10,15 @@ const { verifica, fine } = creaTabellone();
 
 const api = await importaModulo('api.js');
 const store = await importaModulo('taskStore.js');
+const ordine = await importaModulo('taskOrder.js');
 
 function pulisci() {
   finto.pulisci();
   api._driveVersions.clear(); api._migrationTried.clear(); api._cartellePronte.clear();
+  // Il registro delle liste ha una copia in memoria che dura mezzo minuto: qui
+  // i file spariscono da sotto, e senza buttarla la prova successiva
+  // ragionerebbe sulle liste della prova precedente.
+  store.dimenticaRegistro();
 }
 
 /** Una lista con dentro qualche task, come punto di partenza. */
@@ -87,6 +92,22 @@ await store.aggiornaTask(lista.id, uno.id, {
 let sotto = (await store.leggiTask(lista.id)).find(t => t.id === uno.id).sottoattivita;
 verifica(sotto.length === 2 && sotto[1].fatta === true, 'le sottoattività stanno dentro il task');
 
+// Riordinare un elenco a mano: l'ordine è un campo del task, e chi non è
+// nell'elenco passato non viene toccato.
+lista = await conListaEQualcheTask();
+tasks = await store.leggiTask(lista.id);
+const alContrario = [...tasks].reverse().map(t => t.id);
+await store.riordinaTask(lista.id, alContrario.slice(0, 3));
+const riordinati = await store.leggiTask(lista.id);
+const ordineDi = id => riordinati.find(t => t.id === id)?.ordine;
+verifica(ordineDi(alContrario[0]) < ordineDi(alContrario[1])
+  && ordineDi(alContrario[1]) < ordineDi(alContrario[2]),
+  'il riordino scrive le posizioni nell\'ordine chiesto');
+verifica(ordineDi(alContrario[3]) === null, 'chi non era nell\'elenco resta senza posizione');
+verifica(riordinati.find(t => t.id === alContrario[0]).modificatoIl
+  === tasks.find(t => t.id === alContrario[0]).modificatoIl,
+  'e non conta come una modifica al task (i giorni di attesa non ripartono)');
+
 console.log('\nSpostamenti e cancellazioni\n');
 
 lista = await conListaEQualcheTask();
@@ -111,6 +132,43 @@ verifica(/Scrittura rifiutata/.test(errore?.message || ''), 'un crollo improvvis
 verifica((await store.leggiTask(lista.id)).length === 6, 'e il file resta quello di prima');
 await store.cambiaTask(lista.id, () => [], { consentiCalo: true });
 verifica((await store.leggiTask(lista.id)).length === 0, 'se la cancellazione è dichiarata, passa');
+
+console.log('\nL\'ordine a mano\n');
+
+// Dove la riga trascinata va a finire: prima o dopo quella su cui si rilascia,
+// a seconda che la si stia risalendo o scendendo. Senza la distinzione,
+// trascinare l'ultima sulla prima la metterebbe seconda.
+verifica(ordine.ordineDopoTrascinamento(['a', 'b', 'c'], 'c', 'a').join('') === 'cab',
+  'risalendo, la riga si mette al posto di quella su cui cade');
+verifica(ordine.ordineDopoTrascinamento(['a', 'b', 'c'], 'a', 'c').join('') === 'bca',
+  'scendendo, ci finisce dopo le altre che ha scavalcato');
+verifica(ordine.ordineDopoTrascinamento(['a', 'b'], 'a', 'a') === null,
+  'e lasciata dov\'era non cambia niente');
+
+// Il criterio della vista vale dove nessuno ha messo le mani; dove le ha messe,
+// comanda l'ordine a mano.
+const conMano = ordine.ordinaAMano(
+  [{ id: 'x', ordine: null }, { id: 'y', ordine: 20 }, { id: 'z', ordine: 10 }],
+  (a, b) => a.id.localeCompare(b.id),
+);
+verifica(conMano.map(t => t.id).join('') === 'zyx',
+  'chi è stato messo in fila viene prima, nell\'ordine in cui è stato messo');
+
+// Il riordino di un gruppo: una scrittura sola, e l'annulla rimette la fila
+// di prima.
+lista = await conListaEQualcheTask();
+const inColonna = await store.leggiTask(lista.id);
+const patch = [];
+await ordine.riordinaGruppo({
+  listId: lista.id,
+  gruppo: inColonna,
+  daId: inColonna[3].id,
+  suId: inColonna[0].id,
+  onOrdinato: (lid, id, p) => patch.push([id, p.ordine]),
+});
+const inFila = ordine.ordinaAMano(await store.leggiTask(lista.id));
+verifica(inFila[0].id === inColonna[3].id, 'la riga trascinata in cima ci resta');
+verifica(patch.length === inColonna.length, 'e la vista viene avvisata di tutte le posizioni');
 
 console.log('\nDue dispositivi\n');
 

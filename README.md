@@ -326,7 +326,8 @@ Tutto il resto di un'attività è un campo suo: il **contesto** (Lavoro /
 Personale / Famiglia) è `contesto`, la **sezione** è la lista in cui il file sta,
 le **sottoattività** sono `sottoattivita`, la **nota** è `nota` — solo testo,
 senza niente da spogliare —, la **stima** è `stimaMin`, la **sveglia** è
-`sveglia`, la **persona** è `persona`. Il suo ruolo non è un campo: è lo stato,
+`sveglia`, la **persona** è `persona`, il posto in fila dentro la sua lista è
+`ordine`. Il suo ruolo non è un campo: è lo stato,
 e i tre si escludono a vicenda perché sono tre momenti della stessa cosa.
 
 ### Le persone
@@ -342,13 +343,84 @@ così la volta dopo l'elenco lo propone da sé; il posto stabile però resta il
 JSON. Quello che si scrive viene ricondotto al nome del registro quando
 corrisponde a meno di maiuscole e spazi.
 
+### La scheda di un'attività
+
+È la stessa ovunque la si tocchi — dal Piano, dalla vista Attività, dalla
+plancia di Sezioni — perché è l'unico posto in cui un'attività si lavora davvero
+(`src/TaskDetailPanel.jsx`). Tiene titolo, scadenza, quanto ci vuole, sveglia,
+stato, note e sottoattività, e in fondo il bottone che porta al workbook della
+sezione, incollato in basso invece di restare appeso a metà colonna sotto
+l'ultima sottoattività.
+
+**Si apre subito.** Aprirla costava due secondi di scheda grigia, e non perché
+servisse leggere qualcosa che non si avesse: erano due letture da OneDrive in
+fila — il registro delle liste per sapere in che file guardare, poi il file — per
+un'attività che il serbatoio della vista ha già in mano per intero. Adesso si
+guarda prima in casa: l'attività passata dalla vista, o la copia in cache del suo
+elenco, dipinge la scheda al primo istante; la lettura vera parte lo stesso
+dietro e aggiorna quello che nel frattempo non si sta scrivendo — chi comincia a
+scrivere una nota non se la vede sostituire quando la risposta arriva. Il
+registro delle liste, che è il primo file di ogni operazione, ha una copia in
+memoria che dura mezzo minuto: cambia quando si crea o si rinomina una lista,
+cioè qualche volta al mese.
+
+In coda alla scheda c'erano anche le pagine OneNote e i file OneDrive della
+sezione. Sono usciti: sono due riquadri che nessuno guarda mentre lavora a
+un'attività — le pagine e i file si aprono in Sezioni, dove sono due colonne
+intere — e riempirli costava una lettura delle pagine a ogni apertura di scheda,
+cioè un altro pezzo di quei due secondi.
+
+**Quanto ci vuole** ha le quattro durate di tutti i giorni come pastiglie e una
+casella per tutte le altre: una cosa può durare venti minuti o tre ore, e non
+c'era modo di dirlo. Si conferma uscendo dal campo o con Invio, non a ogni tasto,
+o scrivere «120» ridimensionerebbe il blocco a piano tre volte.
+
+**Lo stato** è una fila di sei icone invece di sei nomi per esteso, che in una
+colonna larga trecento pixel prendevano tre righe: il triangolo del play per la
+prossima azione, il calendario per la programmata, il punto di domanda per quella
+da chiedere, le due lineette della pausa per quella in attesa, una persona per la
+delegata, una nuvola per «un giorno». Il nome resta a un passaggio del cursore, e
+quello dello stato acceso è scritto accanto alla fila. Le stesse icone tornano
+sulle righe delle colonne della vista Attività: un segno vuol dire la stessa cosa
+ovunque lo si incontri. Stanno in `src/StatusIcon.jsx` — disegni e non caratteri,
+perché ⏸ e ▶ diventano emoji a colori su qualche sistema e la fila si
+sfalserebbe.
+
+### L'ordine delle attività
+
+Dentro una lista le attività si mettono in fila **trascinandole una sopra
+l'altra**: la riga rilasciata va dove sta quella su cui è caduta. Vale nel
+serbatoio del Piano, nelle colonne della vista Attività e nella colonna Attività
+di Sezioni — cioè in tutti i posti in cui un elenco si guarda.
+
+Si riordina **una lista alla volta**, perché è per lista che le viste
+raggruppano: trascinare una riga sopra una di un'altra consegna non è un
+riordino, è uno spostamento, e quello ha già il suo gesto. E si riordina **col
+mouse**: da telefono le stesse righe si trascinano già per programmarle, e due
+significati sullo stesso dito vorrebbero dire un ordine cambiato per sbaglio ogni
+volta che si mette qualcosa in agenda.
+
+L'ordine è un campo del task (`ordine`, in `src/taskStore.js`), non un elenco di
+id tenuto a parte: un elenco a parte è una cosa in più da tenere in pari con le
+creazioni, gli spostamenti fra liste e le cancellazioni, e quando si disallinea
+sono attività che spariscono dall'elenco pur essendo nel file. Dove nessuno ha
+riordinato niente il campo resta vuoto e comanda il criterio della vista, che è
+la scadenza: un ordine derivato dice cosa scade prima, non cosa si vuole fare
+prima. Il riordino non tocca `modificatoIl` — è la data da cui si contano i
+giorni di un'attesa, e alzare una riga non è aver risentito la persona — e si
+annulla come tutto il resto. Vedi `src/taskOrder.js`.
+
 ### La sveglia di un'attività
 
 Sorella di «Quanto ci vuole», nel pannello di dettaglio: là si dice quanto una
 cosa dura, qui a che ora si vuole essere richiamati. Non è una scadenza — quella
 è un giorno, e c'è già — ma un'ora del giorno: «alle 15:30 questa cosa». Le
 pastiglie dicono *fra quanto* (5, 15, 30 minuti, un'ora) perché è così che la si
-pensa; il campo accanto tiene l'ora esatta, che è quella che finisce scritta.
+pensa. Sono due, il quarto d'ora e l'ora, più «ora» che segna questo momento:
+erano quattro più il campo dell'ora e la crocetta, e sei controlli in fila
+andavano a capo due volte in una colonna stretta per una cosa che si mette in un
+gesto solo. Il campo accanto tiene l'ora esatta, che è quella che finisce
+scritta.
 
 Quando l'ora arriva, sul PC succedono tre cose insieme, perché la mente digitale
 quasi mai è la finestra davanti:
@@ -430,6 +502,23 @@ composto lo scrive il codice, non l'utente. Cambiare la data di una consegna è
 una rinomina della lista, fatta dallo stesso campo data. I colori seguono la
 commessa: ogni consegna è una sfumatura del colore della sezione, così si
 distinguono restando parenti.
+
+In fondo alla colonna stanno **tre righe per persona** — da chiedere, in attesa,
+delegati — raccolte per chi ha in mano la cosa invece che per la consegna in cui
+sta: quando si becca Sara si vuole sapere cosa chiederle, non a quale consegna
+appartiene ogni domanda. «In attesa» mancava, ed era proprio la riga di mezzo: le
+cose chieste e mai tornate indietro restavano dentro la consegna come se fossero
+da fare, quando invece la palla è di qualcun altro. Le tre righe ci sono sempre,
+anche a zero — è la riga stessa che ricorda di guardarci — e il numero si accende
+in ocra quando c'è qualcosa che aspetta.
+
+Accanto al nome di ogni consegna c'è un `+` che apre il campo di una **nuova
+attività** in quella lista: solo il titolo, e la scheda a destra si apre da sé su
+quella appena creata per il resto. Era il gesto che mancava alla colonna —
+l'elenco delle cose da fare per una commessa si guardava qui e si allungava
+altrove, dicendo alla cattura una destinazione che qui è già sotto il cursore.
+Dove la consegna non ha intestazione (una lista sola, niente da raggruppare) il
+campo è l'ultima riga dell'elenco.
 
 Un'attività **si sposta da una consegna all'altra trascinandola** sul gruppo di
 destinazione, che si accende quando la può accogliere — lo stesso gesto con cui

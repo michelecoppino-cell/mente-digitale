@@ -1006,6 +1006,14 @@ export default function App() {
     if (tasksCache.current[listId]) {
       tasksCache.current[listId] = updater(tasksCache.current[listId]);
     }
+    // Anche la copia in cache della lista. È quella da cui la scheda di
+    // dettaglio si dipinge appena aperta (vedi TaskDetailPanel.daMemoria) e
+    // quella che si ritrova riaprendo l'app: lasciarla indietro voleva dire
+    // vedere per un istante la versione di prima di ogni cosa appena
+    // cambiata.
+    queryClient.setQueryData(qk.tasks(listId), (/** @type {any[]|undefined} */ prec) => (
+      prec ? updater(prec) : prec
+    ));
   }
 
   // Completamento ed eliminazione hanno lo stesso effetto locale: il task
@@ -1287,7 +1295,6 @@ export default function App() {
               notebooks={notebooks}
               sectionsMap={sectionsMap}
               todoLists={todoLists}
-              pagesCache={pagesCache}
               autoAddTask={pendingPlannerTask}
               onAutoAdded={() => setPendingPlannerTask(null)}
               onTaskCompleted={handleTaskRemoved}
@@ -1309,7 +1316,6 @@ export default function App() {
               loading={scheduledTasks === null}
               notebooks={notebooks}
               sectionsMap={sectionsMap}
-              pagesCache={pagesCache}
               onClarify={task => { setClarifyTask(task); setGtdSeedText(task.titolo || ''); setGtdOpen(true); }}
               onChangeStatus={handleChangeTaskStatus}
               onSchedule={handleScheduleTask}

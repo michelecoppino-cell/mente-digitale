@@ -24,8 +24,10 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
   taskStatus, inboxListId, indexScheduled, taskContext, taskEstimateMin,
-  taskPerson, personRoleFor, waitingDays, CONTEXTS, isSlipped, STATUS_LABELS,
+  taskPerson, personRoleFor, waitingDays, CONTEXTS, isSlipped, STATUS_LABELS, STATUS_HINTS,
 } from './taskModel';
+import { ordinaAMano, riordinaGruppo, CON_MOUSE } from './taskOrder';
+import StatusIcon from './StatusIcon';
 import {
   DEFAULT_CONFIG, findProject, buildListColorMap, listColor, formatDueDate, dueDateSortValue, isTaskOverdue,
 } from './plannerShared';
@@ -164,8 +166,18 @@ function CheckMark() {
  * @param {(t: import('./taskStore').Task) => void} props.onComplete
  * @param {(t: import('./taskStore').Task) => void} props.onDragStart
  * @param {() => void} props.onDragEnd
+ * @param {boolean} [props.riordinabile]  ci si può rilasciare sopra un'altra riga
+ *                                        della stessa lista, per riordinare
+ * @param {boolean} [props.dropOn]        ci si sta passando sopra adesso
+ * @param {() => void} [props.onDropOn]
+ * @param {() => void} [props.onDropLeave]
+ * @param {() => void} [props.onReorder]
  */
-function TaskRow({ task, status, color, placement, dragging, selected, showPerson = true, onClick, onComplete, onDragStart, onDragEnd }) {
+function TaskRow({
+  task, status, color, placement, dragging, selected, showPerson = true,
+  onClick, onComplete, onDragStart, onDragEnd,
+  riordinabile = false, dropOn = false, onDropOn, onDropLeave, onReorder,
+}) {
   // Il nome si mostra dove la riga non sta già sotto l'intestazione di quella
   // persona: nella colonna «In attesa» sì, dentro le aree per persona no —
   // ripeterlo su ogni riga sarebbe scriverlo due volte.
@@ -178,7 +190,7 @@ function TaskRow({ task, status, color, placement, dragging, selected, showPerso
   // dentro un bottone non è HTML valido. Resta attivabile da tastiera.
   return (
     <div
-      className={`ab-row ab-row-${status}${dragging ? ' dragging' : ''}${selected ? ' selected' : ''}`}
+      className={`ab-row ab-row-${status}${dragging ? ' dragging' : ''}${selected ? ' selected' : ''}${dropOn ? ' drop-on' : ''}`}
       style={/** @type {import('react').CSSProperties} */ ({ '--task-color': color })}
       role="button"
       tabIndex={0}
@@ -186,6 +198,12 @@ function TaskRow({ task, status, color, placement, dragging, selected, showPerso
       title={task.titolo}
       onDragStart={e => { e.dataTransfer.effectAllowed = 'move'; onDragStart(task); }}
       onDragEnd={onDragEnd}
+      // Rilasciare una riga sopra un'altra della stessa lista le mette in
+      // quell'ordine; il rilascio sulla colonna, che resta quello che cambia
+      // stato, non deve partire anche lui.
+      onDragOver={riordinabile ? e => { e.preventDefault(); e.stopPropagation(); e.dataTransfer.dropEffect = 'move'; onDropOn?.(); } : undefined}
+      onDragLeave={riordinabile ? () => onDropLeave?.() : undefined}
+      onDrop={riordinabile ? e => { e.preventDefault(); e.stopPropagation(); onReorder?.(); } : undefined}
       onClick={() => onClick(task)}
       onKeyDown={e => {
         if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick(task); }
@@ -199,6 +217,13 @@ function TaskRow({ task, status, color, placement, dragging, selected, showPerso
         onClick={e => { e.stopPropagation(); onComplete(task); }}>
         <CheckMark />
       </button>
+      {/* Il segno dello stato: lo stesso della scheda di dettaglio (vedi
+          StatusIcon.jsx). Nella colonna dice poco — la colonna è lo stato —
+          ma dentro le aree «Da chiedere» e «Delegati», e quando si guarda una
+          riga da sola, è quello che la lega alla pastiglia accesa di là. */}
+      <span className="ab-row-status" title={STATUS_HINTS[status] || ''}>
+        <StatusIcon status={status} size={12} />
+      </span>
       <span className="ab-row-title">{task.titolo}</span>
 
       <span className="ab-row-meta">
@@ -231,7 +256,6 @@ function TaskRow({ task, status, color, placement, dragging, selected, showPerso
  * @param {boolean} [props.loading]
  * @param {import('./types').Notebook[]} [props.notebooks]
  * @param {Record<string, import('./types').Section[]>} [props.sectionsMap]
- * @param {{ current: Record<string, import('./types').Page[]> }|null} [props.pagesCache]
  * @param {(t: import('./taskStore').Task) => void} props.onClarify        card di Inbox: va chiarita, non spostata
  * @param {(t: import('./taskStore').Task, s: string) => void} props.onChangeStatus
  * @param {(t: import('./taskStore').Task) => void} props.onSchedule       porta al Piano sul giorno corrente
@@ -242,7 +266,7 @@ function TaskRow({ task, status, color, placement, dragging, selected, showPerso
  */
 export default function ActivityBoard({
   tasks = [], todoLists = [], plans = {}, config = DEFAULT_CONFIG, loading = false,
-  notebooks = [], sectionsMap = {}, pagesCache = null,
+  notebooks = [], sectionsMap = {},
   onClarify, onChangeStatus, onSchedule, onUnschedule,
   onTaskRemoved, onTaskPatched, onTaskRestored,
 }) {
@@ -275,6 +299,11 @@ export default function ActivityBoard({
   const columnsRef = useRef(/** @type {HTMLDivElement|null} */ (null));
   const [visibleCol, setVisibleCol] = useState(0);
   const wide = useMediaQuery(WIDE);
+  // Il riordino a mano dentro un gruppo si fa col mouse: vedi taskOrder.js.
+  const conMouse = useMediaQuery(CON_MOUSE);
+  // Su quale riga si sta passando, per la linea che dice dove finirà quella
+  // trascinata.
+  const [dropOnId, setDropOnId] = useState(/** @type {string|null} */ (null));
 
   // Più chiavi in un colpo solo: due `setParam` di fila partirebbero entrambe
   // dagli stessi `params`, e la seconda cancellerebbe la prima.
@@ -354,8 +383,11 @@ export default function ActivityBoard({
       const pa = scheduled.get(a.id), pb = scheduled.get(b.id);
       return `${pa?.date} ${pa?.startTime}`.localeCompare(`${pb?.date} ${pb?.startTime}`);
     });
+    // Dove l'ordine è stato messo a mano comanda quello: dice in che ordine si
+    // vogliono fare le cose, che è un'altra domanda rispetto a quale scade
+    // prima. Dove nessuno l'ha toccato resta la scadenza, come sempre.
     for (const k of ['next', 'ask', 'waiting', 'delegated', 'someday', 'inbox']) {
-      out[k].sort((a, b) => dueDateSortValue(a.scadenza) - dueDateSortValue(b.scadenza));
+      out[k] = ordinaAMano(out[k], (a, b) => dueDateSortValue(a.scadenza) - dueDateSortValue(b.scadenza));
     }
     return out;
   }, [visible, scheduled, inboxId]);
@@ -472,6 +504,41 @@ export default function ActivityBoard({
     if (personRoleFor(target) && !taskPerson(task)) setOpenTask(task);
   }
 
+  /** Il rilascio di una riga sopra un'altra: le mette in quell'ordine. Vale
+   *  dentro la stessa lista — un gruppo può essere un progetto a mano con
+   *  dentro attività di liste diverse, e lì l'ordine non vorrebbe dire niente.
+   *  @param {import('./taskStore').Task[]} gruppo
+   *  @param {import('./taskStore').Task} suTask */
+  async function handleReorder(gruppo, suTask) {
+    const daTask = dragTask;
+    setDropOnId(null);
+    setDragTask(null);
+    const listId = daTask?._listId || '';
+    if (!daTask || !listId || listId !== (suTask._listId || '') || daTask.id === suTask.id) return;
+    try {
+      await riordinaGruppo({
+        listId, gruppo, daId: daTask.id, suId: suTask.id,
+        onOrdinato: (lid, id, patch) => onTaskPatched?.(lid, id, patch),
+      });
+    } catch (e) { console.error('riordino attività', e); }
+  }
+
+  /** Le props del riordino per una riga dentro un gruppo.
+   *  @param {import('./taskStore').Task[]} gruppo
+   *  @param {import('./taskStore').Task} t */
+  function propsRiordino(gruppo, t) {
+    const riordinabile = conMouse && !!dragTask && dragTask.id !== t.id
+      && (dragTask._listId || '') === (t._listId || '')
+      && gruppo.some(x => x.id === dragTask.id);
+    return {
+      riordinabile,
+      dropOn: dropOnId === t.id,
+      onDropOn: () => setDropOnId(t.id),
+      onDropLeave: () => setDropOnId(prev => (prev === t.id ? null : prev)),
+      onReorder: () => handleReorder(gruppo, t),
+    };
+  }
+
   // Spuntare un'attività dalla board. Il completamento sta nel file — la
   // colonna sparisce perché il task esce dal pool, non perché la board tenga
   // un elenco di "fatte" per conto suo — e l'annulla lo riporta indietro come
@@ -548,13 +615,7 @@ export default function ActivityBoard({
 
   // Gli stessi agganci per il pannello, che stia in colonna o nel cassetto.
   const detailProps = {
-    notebooks,
     sectionsMap,
-    pagesCache,
-    // OneNote e OneDrive restano fuori: in coda al pannello allungavano la
-    // colonna di due riquadri che nessuno guarda mentre smista le attività —
-    // le pagine e i file si aprono in Sezioni, col bottone qui sotto.
-    showResources: false,
     onClose: () => setOpenTask(null),
     onCompleted: () => { if (detailTask) onTaskRemoved?.(detailTask._listId || '', detailTask.id); setOpenTask(null); },
     onDeleted: () => { if (detailTask) onTaskRemoved?.(detailTask._listId || '', detailTask.id); setOpenTask(null); },
@@ -726,7 +787,8 @@ export default function ActivityBoard({
                               onClick={col.status === 'inbox' ? onClarify : setOpenTask}
                               onComplete={handleComplete}
                               onDragStart={setDragTask}
-                              onDragEnd={() => { setDragTask(null); setDragOver(null); }}
+                              onDragEnd={() => { setDragTask(null); setDragOver(null); setDropOnId(null); }}
+                              {...propsRiordino(group.tasks, t)}
                             />
                           ))}
                         </div>
@@ -780,7 +842,8 @@ export default function ActivityBoard({
                                     onClick={setOpenTask}
                                     onComplete={handleComplete}
                                     onDragStart={setDragTask}
-                                    onDragEnd={() => { setDragTask(null); setDragOver(null); }}
+                                    onDragEnd={() => { setDragTask(null); setDragOver(null); setDropOnId(null); }}
+                                    {...propsRiordino(group.tasks, t)}
                                   />
                                 ))}
                               </div>

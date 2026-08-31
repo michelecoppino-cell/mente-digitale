@@ -42,6 +42,21 @@ export const STATUS_LABELS = {
   done:      'Fatte',
 };
 
+/** Il verso di ogni stato in una riga: è il testo che esce passandoci sopra
+ *  col cursore, sulle pastiglie della scheda di dettaglio e sulle icone delle
+ *  colonne. Le etichette qui sopra dicono *come si chiama* una colonna, questi
+ *  dicono *cosa vuol dire* per l'attività che ci sta dentro. */
+export const STATUS_HINTS = /** @type {Record<string, string>} */ ({
+  inbox:     'Da chiarire: sta nella lista Inbox',
+  next:      'Prossima azione — fattibile, senza data',
+  scheduled: 'Programmata — ha un blocco nel Piano',
+  ask:       'Da chiedere — prima devi chiederlo a qualcuno',
+  waiting:   'In attesa — dipende da qualcun altro',
+  delegated: "Delegata — l'ha in mano qualcun altro",
+  someday:   'Un giorno — non adesso',
+  done:      'Fatta',
+});
+
 export const CONTEXTS = [
   { key: 'lavoro',     label: 'Lavoro',     category: 'Lavoro',     color: 'var(--ctx-lavoro)' },
   { key: 'personale',  label: 'Personale',  category: 'Personale',  color: 'var(--ctx-personale)' },

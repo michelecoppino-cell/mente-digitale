@@ -49,7 +49,7 @@
 let _drive = null;
 
 /** @param {Drive} drive */
-export function usaDrive(drive) { _drive = drive; }
+export function usaDrive(drive) { _drive = drive; dimenticaRegistro(); }
 
 /** @returns {Promise<Drive>} */
 async function drive() {
@@ -114,6 +114,10 @@ export const FILE_REGISTRO = percorsoTask('_liste.json');
  *   generato il task, per le scadenze ricorrenti: serve a non ricrearlo a ogni
  *   scansione (vedi deadlineReminders.js). Non è testo per chi legge, è un
  *   riferimento, quindi non sta nella nota.
+ * @property {number|null} ordine     la posizione voluta a mano dentro la sua lista, per
+ *   il riordino a trascinamento. Null finché nessuno l'ha toccata: un elenco
+ *   che nessuno ha riordinato resta ordinato come lo ordina la vista (per
+ *   scadenza, per orario), e non per un numero scritto quando il task è nato.
  * @property {Sottoattivita[]} sottoattivita
  * @property {string} creatoIl
  * @property {string} modificatoIl
@@ -166,6 +170,9 @@ export function normalizzaTask(raw) {
   const creato = typeof raw?.creatoIl === 'string' ? raw.creatoIl : adesso();
   const stato = STATI.includes(raw?.stato) ? raw.stato : 'next';
   const stima = Number(raw?.stimaMin);
+  // `Number(null)` è zero, che è una posizione valida: senza questo controllo
+  // ogni task mai riordinato si ritroverebbe primo in elenco.
+  const ordine = raw?.ordine === null || raw?.ordine === undefined ? NaN : Number(raw.ordine);
   return {
     id: String(raw?.id ?? nuovoId()),
     titolo: String(raw?.titolo ?? ''),
@@ -177,6 +184,7 @@ export function normalizzaTask(raw) {
     scadenza: /^\d{4}-\d{2}-\d{2}$/.test(raw?.scadenza || '') ? raw.scadenza : null,
     nota: typeof raw?.nota === 'string' ? raw.nota : '',
     origineScadenza: raw?.origineScadenza ? String(raw.origineScadenza) : null,
+    ordine: Number.isFinite(ordine) ? ordine : null,
     sottoattivita: Array.isArray(raw?.sottoattivita) ? raw.sottoattivita.map(normalizzaSottoattivita) : [],
     creatoIl: creato,
     modificatoIl: typeof raw?.modificatoIl === 'string' ? raw.modificatoIl : creato,
@@ -261,9 +269,31 @@ export function fileLibero(nome, esistenti) {
 // Il registro delle liste
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** @returns {Promise<{ version: number, migrazioneTodo?: string, liste: ListaRegistrata[] }>} */
-export async function leggiRegistro() {
-  return normalizzaRegistro(await leggiDoc(FILE_REGISTRO, null));
+// Il registro è il primo file di ogni operazione: leggerlo, scrivere un task,
+// riordinare un elenco cominciano tutti col sapere in che file sta la lista.
+// Su OneDrive è una richiesta a sé, e siccome cambia solo quando si crea o si
+// rinomina una lista — cose che si fanno qualche volta al mese — rileggerlo a
+// ogni click raddoppiava il tempo di apertura di una scheda per niente. La
+// copia dura poco e la si butta appena qualcuno scrive: un secondo dispositivo
+// che aggiunge una lista si vede al giro dopo, che è come si vede tutto il
+// resto.
+const REGISTRO_TTL = 30_000;
+
+/** @type {{ valore: { version: number, migrazioneTodo?: string, liste: ListaRegistrata[] }, scade: number }|null} */
+let _registro = null;
+
+/** Butta la copia del registro: dopo una scrittura, o cambiando trasporto. */
+export function dimenticaRegistro() { _registro = null; }
+
+/**
+ * @param {{ fresco?: boolean }} [opts] `fresco` salta la copia e rilegge il file
+ * @returns {Promise<{ version: number, migrazioneTodo?: string, liste: ListaRegistrata[] }>}
+ */
+export async function leggiRegistro(opts = {}) {
+  if (!opts.fresco && _registro && _registro.scade > Date.now()) return _registro.valore;
+  const valore = normalizzaRegistro(await leggiDoc(FILE_REGISTRO, null));
+  _registro = { valore, scade: Date.now() + REGISTRO_TTL };
+  return valore;
 }
 
 /**
@@ -272,6 +302,9 @@ export async function leggiRegistro() {
  * @returns {Promise<any>}
  */
 export async function scriviRegistro(registro, opts) {
+  // La copia se ne va prima della scrittura, non dopo: se la PUT fallisce a
+  // metà, la prossima lettura deve andare a vedere com'è finita davvero.
+  dimenticaRegistro();
   return scriviDoc(FILE_REGISTRO, { ...registro, version: VERSIONE }, opts);
 }
 
@@ -539,6 +572,37 @@ export async function aggiornaTask(listId, taskId, patch) {
 export async function eliminaTask(listId, taskId) {
   // Cancellare è il caso in cui il file si accorcia sul serio: dichiarato.
   await cambiaTask(listId, tasks => tasks.filter(t => t.id !== taskId), { consentiCalo: true });
+}
+
+/** Il passo fra due posizioni consecutive. Non 1: lasciare spazio in mezzo
+ *  permette, se un domani servisse, di infilare un task fra due senza
+ *  rinumerare l'elenco intero. */
+export const PASSO_ORDINE = 10;
+
+/**
+ * Rimette in fila le attività di una lista. `idsOrdinati` è l'ordine voluto:
+ * chi non c'è dentro non viene toccato, così riordinare quello che si vede in
+ * una vista non scompiglia quello che quella vista non mostra (le fatte, le
+ * cose in attesa tirate fuori in un elenco loro).
+ *
+ * L'ordine è un campo del task e non un elenco di id tenuto a parte: un elenco
+ * a parte è una cosa in più da tenere in pari con le creazioni, gli
+ * spostamenti fra liste e le cancellazioni — e quando si disallinea sono task
+ * che spariscono dall'elenco pur essendo nel file.
+ *
+ * `modificatoIl` non si tocca: è la data da cui si contano i giorni di
+ * un'attesa («da 3 giorni», vedi taskModel.waitingDays), e trascinare una riga
+ * più in alto non è aver risentito la persona.
+ *
+ * @param {string} listId
+ * @param {string[]} idsOrdinati
+ * @returns {Promise<Task[]>}
+ */
+export async function riordinaTask(listId, idsOrdinati) {
+  const posizione = new Map(idsOrdinati.map((id, i) => [id, (i + 1) * PASSO_ORDINE]));
+  return cambiaTask(listId, tasks => tasks.map(t => (
+    posizione.has(t.id) ? { ...t, ordine: /** @type {number} */ (posizione.get(t.id)) } : t
+  )));
 }
 
 /**
