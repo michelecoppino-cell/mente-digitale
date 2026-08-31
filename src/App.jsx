@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useRef, lazy, Suspense } from 'react';
 import { Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { initAuth, getAccount, login, trySsoSilent, getAuthDiagnostics, onInteractionRequired, isInteractionRequired, reconnect, startTokenKeepAlive, cambiaAccount } from './auth';
-import { getNotebooks, getSections, getPages, getRecentEmails, getPageContentHtml, markOneNoteTagDone, getReminders, getCalendarEvents, invalidateCalendarsCache, loadColorSettings, saveColorSettings, migrateLegacyDriveFiles, loadPlannerConfig, loadDailyPlans, saveDailyPlans } from './api';
+import { getNotebooks, getSections, getPages, getRecentEmails, getPageContentHtml, markOneNoteTagDone, getReminders, getCalendarEvents, invalidateCalendarsCache, loadColorSettings, saveColorSettings, migrateLegacyDriveFiles, loadPlannerConfig, loadDailyPlans, saveDailyPlans, provaConnessione } from './api';
 import { elencoListe, leggiTask, leggiTaskAperti, creaTask, aggiornaTask, creaLista, rinominaLista } from './taskStore';
 import { migraSeServe } from './taskMigrazione';
 import { getMarker, setMarker, clearMarkers } from './markers';
@@ -298,6 +298,19 @@ function descriviErrore(e) {
  *   onChiudi: () => void, onAggiorna: () => void }} props
  */
 function PannelloStato({ sync, problemi, account, onChiudi, onAggiorna }) {
+  // La prova di connessione: tre richieste a tre host diversi, per sapere
+  // quale dei tre non risponde invece di dedurlo.
+  const [prova, setProva] = useState(/** @type {{passo: string, ok: boolean, nota: string}[]|null} */ (null));
+  const [provaInCorso, setProvaInCorso] = useState(false);
+
+  async function eseguiProva() {
+    setProvaInCorso(true);
+    setProva(null);
+    try { setProva(await provaConnessione()); }
+    catch (e) { setProva([{ passo: 'Prova', ok: false, nota: descriviErrore(e) }]); }
+    finally { setProvaInCorso(false); }
+  }
+
   // Di account Microsoft ce n'è più d'uno e ognuno ha il suo OneDrive: entrati
   // con quello sbagliato non c'è nessun errore da mostrare, solo riquadri
   // vuoti. Quando non è quello di sempre, lo si dice qui.
@@ -327,7 +340,16 @@ function PannelloStato({ sync, problemi, account, onChiudi, onAggiorna }) {
         <br />build {oraLeggibile(BUILD_TIME)}
         {' · '}{typeof navigator !== 'undefined' && navigator.onLine === false ? 'offline' : 'online'}
       </div>
+      {prova && prova.map((r, i) => (
+        <div className="stato-riga" key={`prova-${i}`}>
+          <div className="stato-dove">{r.ok ? '✓' : '✕'} {r.passo}</div>
+          <div className={r.ok ? 'stato-ok' : 'stato-messaggio'}>{r.nota}</div>
+        </div>
+      ))}
       <button className="stato-aggiorna" onClick={onAggiorna}>Aggiorna tutto</button>
+      <button className="stato-aggiorna" onClick={eseguiProva} disabled={provaInCorso}>
+        {provaInCorso ? 'Provo…' : 'Prova connessione'}
+      </button>
       <button className="stato-aggiorna" onClick={() => cambiaAccount()}>Cambia account</button>
     </div>
   );
@@ -661,7 +683,10 @@ export default function App() {
       // ricevuto taccuini e sezioni, prima di renderli nello stato.
       setSync({ state: 'loading', label: 'Caricamento… colori' });
       const colorCfg = await fetchCached(qk.colorSettings(), loadColorSettings, STALE.colorSettings, forceRefresh)
-        .catch(e => { console.error('color settings load', e); return queryClient.getQueryData(qk.colorSettings()) || null; });
+        .catch(e => {
+          registraProblema('Colori (file su OneDrive)', e);
+          return queryClient.getQueryData(qk.colorSettings()) || null;
+        });
       const overrides = colorCfg || DEFAULT_COLOR_SETTINGS;
       colorSettingsRef.current = overrides;
       colorSettingsLoadedRef.current = true;

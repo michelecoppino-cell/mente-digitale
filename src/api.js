@@ -10,6 +10,20 @@ const GRAPH = 'https://graph.microsoft.com/v1.0';
 // infinita di prima.
 const TIMEOUT_MS = 20_000;
 
+/** Il file su cui si fa la prova: il registro delle liste, che c'è sempre. */
+const FILE_PROVA = 'task/_liste.json';
+
+/**
+ * Solo il nome dell'host di un URL. I file di OneDrive non stanno su
+ * graph.microsoft.com: i metadati sì, il contenuto no — quello arriva da una
+ * storage con un nome tutto suo. Se una rete lascia passare l'uno e non
+ * l'altra, senza il nome dell'host non c'è modo di accorgersene.
+ * @param {string} url
+ */
+function hostDi(url) {
+  try { return new URL(url).hostname; } catch { return url.slice(0, 40); }
+}
+
 // Cache token in memoria per evitare acquireTokenSilent ad ogni chiamata
 /** @type {string|null} */
 let _cachedToken = null;
@@ -87,11 +101,13 @@ async function callRaw(path, options = {}, retries = 3) {
     } catch (e) {
       const scaduta = /** @type {any} */ (e)?.name === 'AbortError';
       if (attempt === retries - 1) {
-        // Un AbortError nudo non dice niente a chi legge dal telefono: qui
-        // diventa la frase che il pannello di stato mostrerà.
+        // Un AbortError nudo — o il «Load failed» di Safari — non dicono
+        // niente a chi legge dal telefono. Qui diventano la frase che il
+        // pannello mostrerà, e ci va dentro l'host: quando le richieste a un
+        // host passano e a un altro no, è l'host la diagnosi.
         throw scaduta
-          ? new Error(`Nessuna risposta entro ${TIMEOUT_MS / 1000}s (${path})`)
-          : e;
+          ? new Error(`${hostDi(url)}: nessuna risposta entro ${TIMEOUT_MS / 1000}s`)
+          : new Error(`${hostDi(url)}: ${/** @type {any} */ (e)?.message || String(e)}`);
       }
       await new Promise(res => setTimeout(res, (attempt + 1) * 1000));
       continue;
@@ -449,8 +465,8 @@ async function scaricaJson(url, retries = 3) {
       if (/** @type {any} */ (e)?.status) throw e;
       if (attempt === retries - 1) {
         throw /** @type {any} */ (e)?.name === 'AbortError'
-          ? new Error(`Download del file: nessuna risposta entro ${TIMEOUT_MS / 1000}s`)
-          : e;
+          ? new Error(`${hostDi(url)}: nessuna risposta entro ${TIMEOUT_MS / 1000}s`)
+          : new Error(`${hostDi(url)}: ${/** @type {any} */ (e)?.message || String(e)}`);
       }
       await new Promise(res => setTimeout(res, (attempt + 1) * 1000));
     } finally {
@@ -1709,4 +1725,54 @@ export async function loadFinanze() {
 /** @param {any} data @returns {Promise<any>} */
 export async function saveFinanze(data) {
   return putDriveJson(OD_FINANZE_FILE, data);
+}
+
+
+/**
+ * Tre richieste che separano i tre sospetti, da lanciare dal pannello di stato
+ * quando l'app non carica e gli errori non bastano a dire di chi è la colpa.
+ *
+ * Sono tre host diversi dietro a un'unica frase — «non funziona» — e finché
+ * non si sa quale dei tre non risponde si tira a indovinare: Graph, i metadati
+ * di OneDrive (che sono ancora Graph) e la storage dei file, che è un dominio
+ * a parte e può essere filtrata per conto suo da una VPN, da Private Relay o
+ * da un blocco DNS sul telefono.
+ *
+ * @returns {Promise<{passo: string, ok: boolean, nota: string}[]>}
+ */
+export async function provaConnessione() {
+  /** @type {{passo: string, ok: boolean, nota: string}[]} */
+  const esiti = [];
+  /** @param {string} passo @param {() => Promise<string>} fn */
+  const prova = async (passo, fn) => {
+    const t0 = Date.now();
+    try {
+      const nota = await fn();
+      esiti.push({ passo, ok: true, nota: `${Date.now() - t0}ms · ${nota}` });
+    } catch (e) {
+      esiti.push({ passo, ok: false, nota: /** @type {any} */ (e)?.message || String(e) });
+    }
+  };
+
+  await prova('Graph', async () => {
+    const io = await call('/me?$select=userPrincipalName', {}, 1);
+    return io?.userPrincipalName || 'ok';
+  });
+
+  /** @type {any} */
+  let item = null;
+  await prova('OneDrive · metadati', async () => {
+    item = await itemDiFile(FILE_PROVA);
+    return item ? 'file trovato' : 'file assente';
+  });
+
+  await prova('OneDrive · contenuto', async () => {
+    if (!item) return 'niente da scaricare';
+    const url = item['@microsoft.graph.downloadUrl'];
+    if (!url) return 'nessun URL di download';
+    await scaricaJson(url, 1);
+    return hostDi(url);
+  });
+
+  return esiti;
 }
