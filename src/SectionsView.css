@@ -522,6 +522,47 @@
    consegna appartengono e quanto manca. Con una consegna sola e senza
    convenzione nel nome l'intestazione non c'è proprio, e la colonna è identica
    a com'era prima. */
+/* ── Da chiedere e delegati ───────────────────────────────────────────────
+   Due elenchi in fondo alla colonna Attività, separati dalle consegne da una
+   riga: dentro, una riga per persona. Non sono un'altra consegna — sono le
+   stesse attività raccolte per chi le ha in mano. */
+
+.sv-persone {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  margin-top: var(--sp-4);
+  padding-top: var(--sp-3);
+  border-top: 1px solid var(--line-soft);
+}
+
+.sv-persone-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding-bottom: var(--sp-2);
+}
+
+.sv-persone-count {
+  margin-left: auto;
+  font-size: var(--fs-micro);
+  color: var(--disabled);
+  font-variant-numeric: tabular-nums;
+}
+
+.sv-persona + .sv-persona { margin-top: var(--sp-2); }
+
+.sv-persona-name {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: 0 var(--sp-2) var(--sp-1);
+  font-size: var(--fs-micro);
+  letter-spacing: .05em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
 .sv-deliverable { flex: 0 0 auto; display: flex; flex-direction: column; }
 .sv-deliverable + .sv-deliverable { margin-top: var(--sp-3); }
 

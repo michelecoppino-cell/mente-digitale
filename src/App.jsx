@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useRef, lazy, Suspense } from 'react';
 import { Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { initAuth, getAccount, login, trySsoSilent, getAuthDiagnostics, onInteractionRequired, isInteractionRequired, reconnect, startTokenKeepAlive } from './auth';
-import { getNotebooks, getSections, getTodoLists, getTodoTasks, getPages, getRecentEmails, getPageContentHtml, markOneNoteTagDone, getReminders, createTask, getCalendarEvents, getTasksForDeadlineDedup, invalidateCalendarsCache, loadColorSettings, saveColorSettings, migrateLegacyDriveFiles, loadPlannerConfig, loadDailyPlans, saveDailyPlans, updateTaskStatus, completeTask, createTodoList, renameTodoList } from './api';
+import { getNotebooks, getSections, getTodoLists, getTodoTasks, getPages, getRecentEmails, getPageContentHtml, markOneNoteTagDone, getReminders, createTask, getCalendarEvents, getTasksForDeadlineDedup, invalidateCalendarsCache, loadColorSettings, saveColorSettings, migrateLegacyDriveFiles, loadPlannerConfig, loadDailyPlans, saveDailyPlans, updateTaskStatus, updateTaskBody, completeTask, createTodoList, renameTodoList } from './api';
 import { getMarker, setMarker, clearMarkers } from './markers';
 import { queryClient, qk, STALE } from './queryClient';
 import { extractEmailCandidates, extractOneNoteCandidates } from './dailyReview';
@@ -23,7 +23,7 @@ import AppShell from './AppShell';
 import ShortcutsPanel from './ShortcutsPanel';
 import TodayView from './TodayView';
 import SectionsView from './SectionsView';
-import { graphStatusFor, STATUS_LABELS } from './taskModel';
+import { graphStatusFor, personRoleFor, taskPerson, withPerson, STATUS_LABELS } from './taskModel';
 import { pushUndo } from './undo';
 import { COLORS, BUILD_TIME } from './config';
 import UndoToast from './UndoToast';
@@ -1011,17 +1011,32 @@ export default function App() {
   // il pool solo dopo, così una schermata che dice "In attesa" corrisponde
   // sempre a un task che su To-Do è davvero waitingOnOthers.
 
-  async function handleChangeTaskStatus(task, status) {
+  // «Da chiedere» e «Delegati» non sono uno `status` di To-Do ma una riga nelle
+  // note: spostarci dentro un'attività, o portarla via, vuol dire riscrivere
+  // quella riga oltre allo stato. `persona` è il nome scelto da chi sposta —
+  // senza, si tiene quello che l'attività aveva già, perché passare da «in
+  // attesa da Sara» a «delegato» non deve far dimenticare Sara.
+  async function handleChangeTaskStatus(task, status, persona) {
     const listId = task._listId;
     const before = task.status;
+    const beforeBody = task.body?.content || '';
+    const role = personRoleFor(status);
+    const who = role ? (persona || taskPerson(task)?.who || 'qualcuno') : null;
+    const nextBody = withPerson(beforeBody, role, who);
+    const graph = graphStatusFor(status);
+    // Trascinare un'attività dove già sta non è un cambiamento: senza questo
+    // controllo lascerebbe comunque un «annulla» che non annulla niente.
+    if (nextBody === beforeBody && graph === before) return;
     try {
-      await updateTaskStatus(listId, task.id, graphStatusFor(status));
-      handleTaskPatched(listId, task.id, { status: graphStatusFor(status) });
+      if (nextBody !== beforeBody) await updateTaskBody(listId, task.id, nextBody);
+      if (graph !== before) await updateTaskStatus(listId, task.id, graph);
+      handleTaskPatched(listId, task.id, { status: graph, body: { content: nextBody, contentType: 'text' } });
       pushUndo({
         label: `Spostata in ${STATUS_LABELS[status]}`,
         undo: async () => {
-          await updateTaskStatus(listId, task.id, before || 'notStarted');
-          handleTaskPatched(listId, task.id, { status: before });
+          if (nextBody !== beforeBody) await updateTaskBody(listId, task.id, beforeBody);
+          if (graph !== before) await updateTaskStatus(listId, task.id, before || 'notStarted');
+          handleTaskPatched(listId, task.id, { status: before, body: { content: beforeBody, contentType: 'text' } });
         },
       });
     } catch (e) {

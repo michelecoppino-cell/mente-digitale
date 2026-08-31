@@ -2055,6 +2055,16 @@ input[type="time"].planner-modal-select::-webkit-calendar-picker-indicator {
 
 /* Chi si aspetta, sotto la pastiglia «In attesa»: il nome finisce nella prima
    riga delle note come «In attesa da: Nome», ma da qui non serve saperlo. */
+/* Le solite persone — quelle di `persone.json` — come pastiglie sopra il
+   campo: un nome si sceglie invece di riscriverlo, ed è così che i gruppi per
+   persona nella vista Attività restano uno per persona e non uno per grafia. */
+.planner-persone {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  margin-bottom: var(--sp-2);
+}
+
 .planner-waiting {
   display: flex;
   align-items: center;
