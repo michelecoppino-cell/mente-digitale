@@ -389,15 +389,14 @@
 .ab-row.selected { background: color-mix(in srgb, var(--task-color, var(--accent)) 18%, transparent); }
 .ab-row:focus-visible { outline: 1px solid var(--accent); outline-offset: -1px; }
 
-/* Il segno dello stato, prima del titolo: lo stesso disegno della pastiglia
-   accesa nella scheda di dettaglio (StatusIcon.jsx). Spento come il resto dei
-   dati di contorno — è un promemoria, non il contenuto della riga. */
-.ab-row-status {
-  display: inline-flex;
-  align-items: center;
-  flex: none;
-  color: var(--text-3);
-}
+/* Il segno dello stato sta sul titolo della colonna e su quello delle due aree
+   (StatusIcon.jsx), non sulle righe: la colonna *è* lo stato, e tutte le righe
+   che ci stanno dentro lo hanno per definizione. Prende il colore del titolo
+   che lo porta, quindi si accende con lui. */
+.ab-col-head .status-icon,
+.ab-area-head .status-icon,
+.ab-strip .status-icon,
+.ab-pill .status-icon { flex: none; }
 
 /* La riga su cui si sta per rilasciarne un'altra: la linea dice dove finisce. */
 .ab-row.drop-on { box-shadow: inset 0 2px 0 -1px var(--accent); }

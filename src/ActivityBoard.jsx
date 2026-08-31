@@ -217,13 +217,6 @@ function TaskRow({
         onClick={e => { e.stopPropagation(); onComplete(task); }}>
         <CheckMark />
       </button>
-      {/* Il segno dello stato: lo stesso della scheda di dettaglio (vedi
-          StatusIcon.jsx). Nella colonna dice poco — la colonna è lo stato —
-          ma dentro le aree «Da chiedere» e «Delegati», e quando si guarda una
-          riga da sola, è quello che la lega alla pastiglia accesa di là. */}
-      <span className="ab-row-status" title={STATUS_HINTS[status] || ''}>
-        <StatusIcon status={status} size={12} />
-      </span>
       <span className="ab-row-title">{task.titolo}</span>
 
       <span className="ab-row-meta">
@@ -659,7 +652,10 @@ export default function ActivityBoard({
           <div className="ab-columns">
             {COLUMNS.map(c => (
               <div className="ab-col" key={c.status}>
-                <div className="ab-col-head"><span className="eyebrow">{c.label}</span></div>
+                <div className="ab-col-head">
+                  <StatusIcon status={c.status} size={13} />
+                  <span className="eyebrow">{c.label}</span>
+                </div>
                 <div className="ab-col-body"><Skeleton /><Skeleton /><Skeleton /></div>
               </div>
             ))}
@@ -720,7 +716,9 @@ export default function ActivityBoard({
           <button
             key={col.status}
             className={`ab-pill${visibleCol === i ? ' active' : ''}`}
+            title={STATUS_HINTS[col.status]}
             onClick={() => scrollToColumn(i)}>
+            <StatusIcon status={col.status} size={12} />
             {col.label}
             <span className="ab-pill-count">{columnCount(col)}</span>
           </button>
@@ -748,12 +746,19 @@ export default function ActivityBoard({
                     aria-expanded={false}
                     onClick={() => setExpandedCols(s => ({ ...s, [col.status]: true }))}>
                     <span className="ab-strip-chevron" aria-hidden="true">›</span>
+                    <StatusIcon status={col.status} size={12} />
                     <span className="ab-strip-label">{col.label}</span>
                     <span className="ab-strip-count">{count}</span>
                   </button>
                 ) : (
                   <>
-                    <div className="ab-col-head">
+                    <div className="ab-col-head" title={STATUS_HINTS[col.status]}>
+                      {/* Il segno dello stato sta sul titolo della colonna, che
+                          è il posto in cui dice qualcosa: la colonna *è* lo
+                          stato, e tutte le righe che ci stanno dentro lo hanno
+                          per definizione. Sulle righe era un'icona ripetuta
+                          venti volte che non distingueva niente. */}
+                      <StatusIcon status={col.status} size={13} />
                       <span className="eyebrow">{col.label}</span>
                       <span className="ab-count">{count}</span>
                       {col.collapse && (
@@ -812,9 +817,10 @@ export default function ActivityBoard({
                         <button
                           className="ab-area-head"
                           aria-expanded={!!expandedAreas[col.sub]}
-                          title={expandedAreas[col.sub] ? `Chiudi «${SUB_AREAS[col.sub].label}»` : `Apri «${SUB_AREAS[col.sub].label}»`}
+                          title={`${STATUS_HINTS[col.sub]}\n${expandedAreas[col.sub] ? 'Chiudi' : 'Apri'} «${SUB_AREAS[col.sub].label}»`}
                           onClick={() => setExpandedAreas(s2 => ({ ...s2, [col.sub]: !s2[col.sub] }))}>
                           <span className="ab-area-chevron" aria-hidden="true">›</span>
+                          <StatusIcon status={col.sub} size={12} />
                           <span className="eyebrow">{SUB_AREAS[col.sub].label}</span>
                           <span className="ab-count">{byStatus[col.sub].length}</span>
                         </button>
