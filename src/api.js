@@ -156,10 +156,10 @@ async function callPagedValues(path, maxPages = 10) {
 // `diario/diario-2026-08.json`.
 const OD_FOLDER = 'mente-digitale';
 
-/** Sottocartelle dei registri che crescono nel tempo. */
+/** Sottocartelle dei registri che crescono nel tempo. Le attività ne hanno una
+ *  loro, `task/`, ma il nome sta in taskStore.js, che è chi la usa. */
 const SUB_DIARIO = 'diario';
 const SUB_MOVIMENTO = 'movimento';
-const SUB_TASK = 'task';
 const SUB_DIARY_PHOTO = 'diario-foto';
 
 // I percorsi dei file sono relativi alla cartella dell'app e possono contenere
@@ -200,14 +200,9 @@ function ensureFolder(sub) {
   return pronta;
 }
 
-// Lo strato dei task (taskStore.js) tiene i suoi file nella stessa cartella e
-// passa dagli stessi primitivi: stessa concorrenza, stessa migrazione, stesse
-// cartelle create al bisogno.
-/** @param {string} nomeFile @returns {string} percorso relativo alla cartella dell'app */
-export function percorsoTask(nomeFile) {
-  return `${SUB_TASK}/${nomeFile}`;
-}
-
+// Lo strato delle attività (taskStore.js) tiene i suoi file nella stessa
+// cartella — `task/` — e passa da questi stessi due primitivi: stessa
+// concorrenza, stessa migrazione, stesse cartelle create al bisogno.
 export { getDriveJson, putDriveJson };
 
 /** La cartella che serve per scrivere un certo file. @param {string} relPath */

@@ -28,7 +28,50 @@
 // sveglie già suonate e la deduplica delle scadenze ricorrenti. Rigenerarli
 // scollegherebbe il Piano da tutto ciò che è già programmato.
 
-import { getDriveJson, putDriveJson, percorsoTask } from './api';
+// ── Da dove si legge e dove si scrive ───────────────────────────────────────
+// Lo strato non conosce il trasporto. L'app parla con OneDrive da src/api.js;
+// il CLI e il server MCP hanno un token loro e una loro implementazione
+// (scripts/mente-graph.mjs). Erano due gli archivi che potevano divergere —
+// l'app e il CLI — ed è esattamente quello che questa migrazione toglie di
+// mezzo: stesso file, stesse regole, due modi di arrivarci.
+//
+// Il valore di partenza si carica alla prima lettura e solo se nessuno ne ha
+// registrato uno: importare src/api.js da Node vorrebbe dire tirarsi dietro
+// MSAL, che è roba da browser.
+
+/**
+ * @typedef {object} Drive
+ * @property {(percorso: string, seAssente: any) => Promise<any>} leggi
+ * @property {(percorso: string, dati: any, opts?: { reapply?: (fresco: any) => any }) => Promise<any>} scrivi
+ */
+
+/** @type {Drive|null} */
+let _drive = null;
+
+/** @param {Drive} drive */
+export function usaDrive(drive) { _drive = drive; }
+
+/** @returns {Promise<Drive>} */
+async function drive() {
+  if (!_drive) {
+    const api = await import('./api.js');
+    _drive = { leggi: api.getDriveJson, scrivi: api.putDriveJson };
+  }
+  return _drive;
+}
+
+/** @param {string} percorso @param {any} seAssente */
+const leggiDoc = async (percorso, seAssente) => (await drive()).leggi(percorso, seAssente);
+/** @param {string} percorso @param {any} dati @param {any} [opts] */
+const scriviDoc = async (percorso, dati, opts) => (await drive()).scrivi(percorso, dati, opts);
+
+/** La cartella dei file delle attività, dentro quella dell'app. */
+const CARTELLA = 'task';
+
+/** @param {string} nomeFile @returns {string} percorso relativo alla cartella dell'app */
+export function percorsoTask(nomeFile) {
+  return `${CARTELLA}/${nomeFile}`;
+}
 
 /** La versione dello schema che questo codice scrive. */
 export const VERSIONE = 1;
@@ -155,12 +198,20 @@ export function normalizzaFileLista(raw, contesto) {
   };
 }
 
-/** @param {any} raw @returns {{ version: number, liste: ListaRegistrata[] }} */
+/**
+ * @param {any} raw
+ * @returns {{ version: number, migrazioneTodo?: string, liste: ListaRegistrata[] }}
+ */
 export function normalizzaRegistro(raw) {
   /** @type {any[]} */
   const liste = Array.isArray(raw?.liste) ? raw.liste : [];
   return {
     version: VERSIONE,
+    // Quando le attività sono state portate qui da Microsoft To-Do. È il
+    // segnale che la migrazione una tantum è già stata fatta, e non basta che
+    // il registro esista: una lista creata dal CLI lo farebbe esistere, e la
+    // migrazione non partirebbe più.
+    ...(raw?.migrazioneTodo ? { migrazioneTodo: String(raw.migrazioneTodo) } : {}),
     liste: liste
       .filter(l => l?.id && l?.file)
       .map(l => ({
@@ -210,18 +261,18 @@ export function fileLibero(nome, esistenti) {
 // Il registro delle liste
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** @returns {Promise<{ version: number, liste: ListaRegistrata[] }>} */
+/** @returns {Promise<{ version: number, migrazioneTodo?: string, liste: ListaRegistrata[] }>} */
 export async function leggiRegistro() {
-  return normalizzaRegistro(await getDriveJson(FILE_REGISTRO, null));
+  return normalizzaRegistro(await leggiDoc(FILE_REGISTRO, null));
 }
 
 /**
- * @param {{ version: number, liste: ListaRegistrata[] }} registro
+ * @param {{ version: number, migrazioneTodo?: string, liste: ListaRegistrata[] }} registro
  * @param {{ reapply?: (fresco: any) => any }} [opts]
  * @returns {Promise<any>}
  */
 export async function scriviRegistro(registro, opts) {
-  return putDriveJson(FILE_REGISTRO, { ...registro, version: VERSIONE }, opts);
+  return scriviDoc(FILE_REGISTRO, { ...registro, version: VERSIONE }, opts);
 }
 
 /**
@@ -318,7 +369,7 @@ async function vociDiLista(listId) {
  */
 export async function leggiFileLista(listId, voce) {
   const v = voce || await vociDiLista(listId);
-  const raw = await getDriveJson(v.file, null);
+  const raw = await leggiDoc(v.file, null);
   return normalizzaFileLista(raw, { listId, listName: v.nome });
 }
 
@@ -355,12 +406,12 @@ export async function scriviFileLista(file, percorso, opts = {}) {
     // Quanti task c'erano: se il chiamante ha appena letto il file lo sa già, e
     // rileggerlo qui sarebbe una richiesta in più a ogni salvataggio.
     const prima = opts.prima ?? normalizzaFileLista(
-      await getDriveJson(percorso, null), { listId: file.listId }
+      await leggiDoc(percorso, null), { listId: file.listId }
     ).tasks.length;
     controllaCalo(percorso, prima, daScrivere.tasks.length);
   }
   const { reapply } = opts;
-  return putDriveJson(percorso, daScrivere, reapply ? { reapply } : undefined);
+  return scriviDoc(percorso, daScrivere, reapply ? { reapply } : undefined);
 }
 
 /**

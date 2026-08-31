@@ -209,7 +209,7 @@ Lettura
   piano settimana [--data D]      la settimana che contiene quel giorno
   piano mese [--mese YYYY-MM]     un mese intero, giorno per giorno
   obiettivi [--mese YYYY-MM]      gli obiettivi del mese e a che punto sono
-  sezioni                         liste To-Do per commessa (con consegne, scadenze e
+  sezioni                         liste per commessa (con consegne, scadenze e
                                   attività aperte) e sezioni OneNote
   note pagine <sezione>           le pagine OneNote di una sezione
   note leggi <id | titolo --sezione X>

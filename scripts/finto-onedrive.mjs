@@ -35,10 +35,17 @@ function urlDi(nome) {
       let testo = await readFile(join(src, nome), 'utf8');
       testo = testo.replace("import { getToken } from './auth';", STUB_AUTH);
       if (nome === 'api.js') testo += '\nexport { _driveVersions, _migrationTried, _cartellePronte };\n';
-      // Gli import fra moduli dell'app si rilegano ai moduli già costruiti.
-      const riferiti = [...testo.matchAll(/from '\.\/([\w-]+)'/g)].map(m => m[1]);
-      for (const rif of [...new Set(riferiti)]) {
-        testo = testo.replaceAll(`from './${rif}'`, `from '${await urlDi(`${rif}.js`)}'`);
+      // Gli import fra moduli dell'app si rilegano ai moduli già costruiti: sia
+      // quelli statici in testa al file, sia quelli a richiesta con l'estensione
+      // (`import('./api.js')`, con cui taskStore carica il suo trasporto).
+      // I `import('./types')` dei commenti JSDoc non si toccano: non sono
+      // import veri e non hanno l'estensione.
+      const statici = [...testo.matchAll(/^import\b[^;]*?from '\.\/([\w-]+)'/gm)].map(m => m[1]);
+      const dinamici = [...testo.matchAll(/import\('\.\/([\w-]+)\.js'\)/g)].map(m => m[1]);
+      for (const rif of [...new Set([...statici, ...dinamici])]) {
+        const url = await urlDi(`${rif}.js`);
+        testo = testo.replaceAll(`from './${rif}'`, `from '${url}'`)
+                     .replaceAll(`import('./${rif}.js')`, `import('${url}')`);
       }
       return comeModulo(testo);
     })();

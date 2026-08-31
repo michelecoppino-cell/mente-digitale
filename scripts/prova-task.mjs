@@ -150,4 +150,20 @@ verifica(letti[1].stato === 'next' && letti[1].stimaMin === null && letti[1].sve
 await store.aggiornaTask('lista-1', 'a', { titolo: 'Riscritta' });
 verifica(contenuto('task/vecchia.json').version === 1, 'e la scrittura riporta il file alla versione corrente');
 
+console.log('\nUn altro trasporto\n');
+
+// Il CLI e il server MCP hanno un token loro e una loro implementazione delle
+// letture e scritture su OneDrive: allo strato si dice solo da dove leggere e
+// dove scrivere. È così che l'archivio resta uno solo.
+const memoria = new Map();
+store.usaDrive({
+  leggi: async (percorso, seAssente) => (memoria.has(percorso) ? JSON.parse(memoria.get(percorso)) : seAssente),
+  scrivi: async (percorso, dati) => { memoria.set(percorso, JSON.stringify(dati)); return { id: percorso }; },
+});
+await store.creaLista('Da riga di comando', { id: 'cli-1' });
+const dalCli = await store.creaTask('cli-1', { titolo: 'Scritta dal CLI', stimaMin: 20 });
+verifica(memoria.has('task/_liste.json'), 'il registro finisce nel trasporto iniettato');
+verifica((await store.leggiTask('cli-1'))[0].id === dalCli.id, 'e i task si rileggono da lì');
+verifica((await store.leggiTask('cli-1'))[0].stimaMin === 20, 'con i loro campi');
+
 fine();

@@ -202,7 +202,7 @@ const TOOLS = [
   {
     name: 'sezioni',
     description:
-      'Le sezioni PARA: le liste di Microsoft To-Do con quante attività aperte hanno, e i taccuini ' +
+      'Le sezioni PARA: le liste di attività con quante ne hanno di aperte, e i taccuini ' +
       'OneNote con le loro sezioni. Utile per sapere quali nomi di sezione esistono prima di filtrare o creare. ' +
       'Le liste sono raccolte per commessa: una commessa può avere più consegne, una lista ciascuna ' +
       '(nome GRUPPO.Consegna-YYMMDD), e ogni consegna porta la sua scadenza.',
@@ -213,7 +213,7 @@ const TOOLS = [
   {
     name: 'sezione_crea',
     description:
-      'Crea una lista su Microsoft To-Do — che nella mente digitale è una sezione, o la consegna ' +
+      'Crea una lista — che nella mente digitale è una sezione, o la consegna ' +
       'di una commessa. Per una consegna si passano commessa, nome e scadenza, e il nome lo ' +
       'compone la convenzione (GRUPPO.Consegna-YYMMDD): scritto a mano e sbagliato, non verrebbe ' +
       'letto come consegna da nessuna parte e la scadenza sparirebbe in silenzio.',
@@ -241,7 +241,7 @@ const TOOLS = [
       properties: {
         stato: { type: 'string', enum: [...TASK_STATUSES], description: 'Filtra per stato del flusso.' },
         sezione: stringa(
-          'Filtra per sezione (nome anche parziale della lista To-Do). Il nome di una commessa ' +
+          'Filtra per sezione (nome anche parziale della lista). Il nome di una commessa ' +
           'vale per tutte le sue consegne: «2573» prende anche 2573.A60 e 2573.B10.'),
         contesto: { type: 'string', enum: CONTEXTS.map(c => c.key), description: 'Filtra per contesto.' },
         includiFatte: { type: 'boolean', description: 'Include anche le attività completate. Default false.' },
@@ -252,7 +252,7 @@ const TOOLS = [
   {
     name: 'attivita_crea',
     description:
-      "Crea un'attività su Microsoft To-Do. Senza sezione finisce in Inbox con il solo titolo, che è il modo " +
+      "Crea un'attività. Senza sezione finisce in Inbox con il solo titolo, che è il modo " +
       'giusto di catturare al volo; con una sezione può nascere già chiarita (stato, stima, contesto, scadenza). ' +
       GRANULARITY_MEMO_LINE,
     sola_lettura: false,
@@ -262,7 +262,7 @@ const TOOLS = [
       properties: {
         titolo: stringa("Titolo dell'attività."),
         sezione: stringa(
-          'Sezione in cui creare (nome anche parziale della lista To-Do). Serve fuori da Inbox. ' +
+          'Sezione in cui creare (nome anche parziale della lista). Serve fuori da Inbox. ' +
           'Se la commessa ha più consegne va indicata la consegna: «tutta la commessa» non è un posto ' +
           'in cui scrivere.'),
         stato: { type: 'string', enum: [...STATI_CREABILI], description: 'Default: inbox senza sezione, next con sezione.' },
@@ -463,12 +463,12 @@ async function gestisci(req) {
         capabilities: { tools: {} },
         serverInfo: SERVER,
         instructions:
-          'La mente digitale di Michele: attività (Microsoft To-Do), piano del giorno, calendario, ' +
+          'La mente digitale di Michele: attività (file JSON su OneDrive), piano del giorno, calendario, ' +
           'diario, obiettivi del mese e taccuini OneNote. Si legge tutto e si scrive quasi ' +
           'ovunque: attività e liste, blocchi del piano, eventi del calendario, pagine OneNote, ' +
           'voci di diario, obiettivi. Nessuno strumento cancella niente, e su OneNote si scrive ' +
           'solo in fondo a una pagina, mai sopra a quello che c\'era.\n' +
-          'Una sezione è una lista To-Do; una commessa può averne più di una, una per consegna, ' +
+          'Una sezione è una lista; una commessa può averne più di una, una per consegna, ' +
           'chiamata GRUPPO.Consegna-YYMMDD, dove le ultime sei cifre sono la scadenza.\n' +
           "Un'attività è una cosa da fare; un evento del calendario è un'ora fissa che riguarda " +
           "anche altri. Piano del giorno, della settimana e del mese non sono tre piani ma tre " +

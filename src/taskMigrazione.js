@@ -182,24 +182,26 @@ export async function migraTaskDaTodo(opts = {}) {
     opts.onAvanzamento?.(lista.displayName, convertiti.length);
   }
 
-  await scriviRegistro({ version: VERSIONE, liste: voci });
+  await scriviRegistro({ version: VERSIONE, migrazioneTodo: new Date().toISOString(), liste: voci });
   return { liste: listeTodo.length, task, completatiSaltati };
 }
 
 /**
  * La migrazione fatta una volta sola, al primo avvio dopo l'aggiornamento: se
- * il registro delle liste non c'è ancora, i task stanno solo su To-Do e vanno
- * portati di qua prima di poter leggere qualunque cosa.
+ * non risulta già fatta, i task stanno solo su To-Do e vanno portati di qua
+ * prima di poter leggere qualunque cosa.
  *
- * Non è un marker su localStorage ma la presenza del registro su OneDrive:
- * così un secondo dispositivo che apre l'app dopo la migrazione non la rifà, e
- * un browser svuotato non la fa ripartire per niente.
+ * Il segnale non è un marker su localStorage ma la data scritta nel registro su
+ * OneDrive: così un secondo dispositivo che apre l'app dopo la migrazione non
+ * la rifà, e un browser svuotato non la fa ripartire per niente. E non è la
+ * semplice esistenza del registro, perché una lista creata dal CLI lo farebbe
+ * esistere — e la migrazione non partirebbe mai più.
  *
  * @returns {Promise<{ liste: number, task: number, completatiSaltati: number }|null>} null se non serviva
  */
 export async function migraSeServe() {
   const registro = await leggiRegistro();
-  if (registro.liste.length) return null;
+  if (registro.migrazioneTodo) return null;
   console.info('Task: prima migrazione da Microsoft To-Do ai file su OneDrive…');
   const esito = await migraTaskDaTodo();
   console.info(`Task: migrati ${esito.task} task in ${esito.liste} liste.`);
