@@ -983,10 +983,23 @@ export default function App() {
   // un completamento/eliminazione/rinomina fatti dal pannello Piano, così
   // Task Pool e Panel restano coerenti senza dover
   // ricaricare tutto da Graph.
+  //
+  // «Ovunque» comprende la cache di TanStack, ed è la terza copia che conta più
+  // delle altre due: è l'unica persistita su localStorage, ed è da lì che
+  // ripartono le attività alla riapertura della pagina. Senza aggiornarla, uno
+  // spostamento appena scritto su Graph restava vero solo a schermo: al
+  // ricaricamento tornava a galla la copia dell'ultimo caricamento — vecchia
+  // fino a due ore (`STALE.tasks`) e quindi non rivalidata — e l'attività
+  // riappariva nella colonna di prima, senza la persona che le era stata data.
   function updateTasksEverywhere(listId, updater) {
     setScheduledTasks(prev => updater(prev || []));
     if (tasksCache.current[listId]) {
       tasksCache.current[listId] = updater(tasksCache.current[listId]);
+    }
+    // Solo se una copia c'è già: crearla qui la farebbe passare per fresca, e
+    // una lista parziale resterebbe tale per due ore senza mai rileggersi.
+    if (queryClient.getQueryData(qk.tasks(listId))) {
+      queryClient.setQueryData(qk.tasks(listId), (/** @type {any[]|undefined} */ prev) => updater(prev || []));
     }
   }
 
