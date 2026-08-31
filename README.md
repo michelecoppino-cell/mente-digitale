@@ -36,7 +36,7 @@ Microsoft To-Do e al calendario Outlook, e un diario con supporto AI via copia-i
   ultimo pezzo del percorso come titolo. Su OneDrive in `mente-digitale-coda.json`.
 - **Movimento** — allenamento, meditazione e yoga: la settimana a barre, un bersaglio settimanale
   per famiglia, e il confronto fra le sessioni programmate in un calendario dedicato e quelle
-  davvero registrate. Il registro sta su OneDrive (`mente-digitale-movimento-YYYY-MM.json`), il
+  davvero registrate. Il registro sta su OneDrive (`mente-digitale/movimento/movimento-YYYY-MM.json`), il
   calendario si legge soltanto.
 - **Rituale del mattino** — l'unico pannello che si apre da solo: la prima volta che si entra in
   «Oggi» in una giornata chiede se movimento, meditazione e yoga sono stati fatti. Le tre caselle
@@ -136,7 +136,7 @@ l'archivio leggibile fuori da Safari. Le voci diventano di tipo *scrittura liber
 tag `iphone` per distinguerle (`--tag`).
 
 Il risultato è una cartella `import-diario/` che riproduce la struttura di OneDrive
-(`mente-digitale-diario-YYYY-MM.json`, l'indice dei mesi, `diario-foto/`): l'ultimo passo è
+(`diario/diario-YYYY-MM.json`, l'indice dei mesi, `diario-foto/`): l'ultimo passo è
 copiarla dentro `mente-digitale/` sul OneDrive. Lo script non scrive mai sul tuo OneDrive.
 
 Opzioni utili: `--senza-foto` per portare dentro solo i testi e occuparsi delle immagini

@@ -61,21 +61,25 @@ const DEADLINE_LAST_CHECK_TTL = 30 * 24 * 60 * 60 * 1000; // 30 giorni
 const DEADLINE_LOOKBACK_MS = 7 * 24 * 60 * 60 * 1000;     // fallback alla prima scansione: ultimi 7 giorni
 
 // I file dell'app sono passati dalla root di OneDrive alla cartella
-// `mente-digitale/`. Lo spostamento dei file già esistenti gira una volta per
-// browser, in sottofondo: non blocca il caricamento e, se fallisce, il marker
-// non viene scritto e si riprova al prossimo avvio (nel frattempo i singoli
-// file vengono comunque recuperati dalla migrazione pigra in api.js).
+// `mente-digitale/`, e i registri che crescono di un file al mese (diario e
+// movimento) sono poi scesi in una sottocartella loro. Lo spostamento dei file
+// già esistenti gira una volta per browser, in sottofondo: non blocca il
+// caricamento e, se fallisce, il marker non viene scritto e si riprova al
+// prossimo avvio (nel frattempo i singoli file vengono comunque recuperati
+// dalla migrazione pigra in api.js).
 // Il flag sta su localStorage e non tra i marker: quelli vengono azzerati da
 // "Aggiorna tutto" (clearMarkers), e rifare la scansione della root a ogni
 // refresh manuale sarebbe una richiesta sprecata.
-const DRIVE_MIGRATION_KEY = 'md_drive_folder_migrated';
+// La chiave porta il numero della disposizione: chi aveva già fatto la
+// migrazione in cartella deve rifare la passata per le sottocartelle.
+const DRIVE_MIGRATION_KEY = 'md_drive_folder_migrated_2';
 
 function runDriveMigrationOnce() {
   try { if (localStorage.getItem(DRIVE_MIGRATION_KEY)) return; } catch { /* storage non disponibile */ }
   migrateLegacyDriveFiles()
     .then(moved => {
       try { localStorage.setItem(DRIVE_MIGRATION_KEY, '1'); } catch { /* no-op */ }
-      if (moved) console.info(`OneDrive: spostati ${moved} file in mente-digitale/`);
+      if (moved) console.info(`OneDrive: sistemati ${moved} file in mente-digitale/`);
     })
     .catch(e => console.error('migrazione cartella OneDrive', e));
 }

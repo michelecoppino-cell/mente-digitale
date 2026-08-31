@@ -221,25 +221,42 @@ export async function graphPaged(path, maxPages = 10) {
 
 const OD_FOLDER = 'mente-digitale';
 
-/** @param {string} filename @returns {string} */
-function drivePath(filename) {
-  return `/me/drive/root:/${OD_FOLDER}/${filename}`;
+// Come nell'app: i percorsi sono relativi alla cartella e possono contenere una
+// sottocartella ('diario/diario-2026-08.json'). Devono restare identici a quelli
+// di src/api.js, o CLI e app finirebbero a scrivere due file diversi.
+/** @param {string} relPath @returns {string} */
+function drivePath(relPath) {
+  return `/me/drive/root:/${OD_FOLDER}/${relPath}`;
 }
 
-/** @type {Promise<any>|null} */
-let _folderReady = null;
-function ensureAppFolder() {
-  if (!_folderReady) {
-    _folderReady = graph('/me/drive/root/children', {
-      method: 'POST',
-      body: JSON.stringify({ name: OD_FOLDER, folder: {}, '@microsoft.graph.conflictBehavior': 'fail' }),
-    }).catch(e => {
-      if (e?.status === 409) return null;   // esiste già: l'esito normale
-      _folderReady = null;
-      throw e;
-    });
+/** @type {Map<string, Promise<any>>} */
+const _cartellePronte = new Map();
+
+/** @param {string} [sub] @returns {Promise<any>} */
+function ensureFolder(sub) {
+  const chiave = sub || '';
+  let pronta = _cartellePronte.get(chiave);
+  if (!pronta) {
+    const genitore = sub ? `/me/drive/root:/${OD_FOLDER}:/children` : '/me/drive/root/children';
+    pronta = (sub ? ensureFolder() : Promise.resolve())
+      .then(() => graph(genitore, {
+        method: 'POST',
+        body: JSON.stringify({ name: sub || OD_FOLDER, folder: {}, '@microsoft.graph.conflictBehavior': 'fail' }),
+      }))
+      .catch(e => {
+        if (e?.status === 409) return null;   // esiste già: l'esito normale
+        _cartellePronte.delete(chiave);
+        throw e;
+      });
+    _cartellePronte.set(chiave, pronta);
   }
-  return _folderReady;
+  return pronta;
+}
+
+/** @param {string} relPath */
+function ensureFolderFor(relPath) {
+  const i = relPath.indexOf('/');
+  return ensureFolder(i < 0 ? undefined : relPath.slice(0, i));
 }
 
 /**
@@ -263,7 +280,7 @@ export async function getDriveJson(filename, notFoundValue) {
  * @returns {Promise<any>}
  */
 export async function putDriveJson(filename, data) {
-  await ensureAppFolder();
+  await ensureFolderFor(filename);
   const token = await getAccessToken();
   const r = await fetch(`${GRAPH}${drivePath(filename)}:/content`, {
     method: 'PUT',
@@ -276,10 +293,10 @@ export async function putDriveJson(filename, data) {
 
 // ── Diario ───────────────────────────────────────────────────────────────────
 
-const OD_DIARY_INDEX_FILE = 'mente-digitale-diario-index.json';
+const OD_DIARY_INDEX_FILE = 'diario/diario-index.json';
 
 /** @param {string} ym @returns {string} */
-const diaryMonthFile = ym => `mente-digitale-diario-${ym}.json`;
+const diaryMonthFile = ym => `diario/diario-${ym}.json`;
 
 /** @returns {Promise<{ months: string[] }>} */
 export async function loadDiaryIndex() {

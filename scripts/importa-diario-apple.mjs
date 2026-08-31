@@ -4,7 +4,7 @@
 //   node scripts/importa-diario-apple.mjs AnnotazioniDiarioApple.zip
 //
 // Produce una cartella pronta da copiare dentro `mente-digitale/` su OneDrive:
-// i file mensili `mente-digitale-diario-YYYY-MM.json`, l'indice dei mesi e le
+// i file mensili `diario/diario-YYYY-MM.json`, l'indice dei mesi e le
 // foto convertite in `diario-foto/`. Nessuna scrittura sul tuo OneDrive: il
 // trasferimento resta un copia-incolla fatto da te, e finché non lo fai puoi
 // controllare il risultato.
@@ -78,8 +78,8 @@ Opzioni
   --dry-run            analizza e riporta senza scrivere niente
 
 Prima di eseguire, se hai già delle voci nel Diario di Mente Digitale, copia
-i file mente-digitale-diario-*.json da OneDrive nella cartella di --out: lo
-script li unisce invece di ignorarli.
+la cartella diario/ da OneDrive dentro la cartella di --out: lo script unisce
+le voci che trova invece di ignorarle.
 
 Al termine, copia il contenuto di --out dentro la cartella mente-digitale/
 del tuo OneDrive, unendo le cartelle quando il sistema lo chiede.
@@ -210,12 +210,14 @@ async function main() {
 
   const convertitori = opts.dryRun || opts.senzaFoto ? null : await caricaConvertitori();
   const outDir = path.resolve(opts.out);
+  const diarioDir = path.join(outDir, 'diario');
   const fotoDir = path.join(outDir, 'diario-foto');
   const scartiDir = path.join(outDir, 'media-non-importati');
   if (!opts.dryRun) {
     // La cartella delle foto solo se ci finirà qualcosa: un import di soli
     // testi non deve lasciare una cartella vuota da copiare su OneDrive.
-    mkdirSync(opts.senzaFoto ? outDir : fotoDir, { recursive: true });
+    mkdirSync(diarioDir, { recursive: true });
+    if (!opts.senzaFoto) mkdirSync(fotoDir, { recursive: true });
   }
 
   const conto = { voci: 0, senzaData: 0, foto: 0, saltate: 0, mancanti: 0, video: 0, vuote: 0 };
@@ -279,7 +281,7 @@ async function main() {
   // esecuzione aggiorna le voci invece di sdoppiarle.
   const mesi = Object.keys(perMese).sort();
   for (const mese of mesi) {
-    const file = path.join(outDir, `mente-digitale-diario-${mese}.json`);
+    const file = path.join(diarioDir, `diario-${mese}.json`);
     const esistenti = leggiJsonSePresente(file, []);
     const mappa = new Map((Array.isArray(esistenti) ? esistenti : []).map(e => [e.id, e]));
     for (const e of perMese[mese]) mappa.set(e.id, e);
@@ -288,7 +290,7 @@ async function main() {
     console.log(`  ${mese}: ${perMese[mese].length} importate, ${unite.length} in totale nel mese`);
   }
 
-  const indiceFile = path.join(outDir, 'mente-digitale-diario-index.json');
+  const indiceFile = path.join(diarioDir, 'diario-index.json');
   const indice = leggiJsonSePresente(indiceFile, { months: [] });
   const tuttiIMesi = [...new Set([...(indice.months || []), ...mesi])].sort();
   if (!opts.dryRun) writeFileSync(indiceFile, JSON.stringify({ months: tuttiIMesi }, null, 2));
@@ -312,7 +314,8 @@ Riepilogo
   console.log(`Scritto in ${outDir}
 
 Ultimo passo, a mano: copia il contenuto di questa cartella dentro
-"mente-digitale" sul tuo OneDrive${opts.senzaFoto ? '' : ', unendo la cartella diario-foto quando\nil sistema lo chiede'}.
+"mente-digitale" sul tuo OneDrive, unendo le cartelle quando il sistema lo
+chiede.
 Al prossimo avvio le voci sono nel Diario.${opts.senzaFoto
   ? '\n\nLe foto puoi aggiungerle dopo: rilancia senza --senza-foto e ricopia.\nLe voci non si sdoppiano, si aggiornano.'
   : ''}`);

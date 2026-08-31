@@ -142,86 +142,180 @@ async function callPagedValues(path, maxPages = 10) {
 
 // ── Cartella dei file dell'app su OneDrive ──────────────────────────────────
 // Tutti i JSON dell'app stanno in una sola cartella invece che sparsi nella
-// root del OneDrive personale: i file sono ormai una decina e crescono con i
-// mesi del diario. I nomi restano quelli di prima (prefisso `mente-digitale-`)
-// per non dover riscrivere niente: cambia solo la cartella che li contiene.
+// root del OneDrive personale.
+//
+// Dentro quella cartella, i registri che crescono di un file al mese hanno una
+// sottocartella loro. La pressione è tutta lì: i file fissi sono una quindicina
+// e non crescono, mentre diario e movimento aggiungono due file ogni mese, e
+// dopo qualche anno la cartella non si guarda più. I fissi quindi restano in
+// cima, dove si vedono.
+//
+// Dentro la sottocartella il prefisso `mente-digitale-` non serve più — la
+// cartella dice già di che si tratta — quindi lo spostamento è anche una
+// rinomina: `mente-digitale-diario-2026-08.json` diventa
+// `diario/diario-2026-08.json`.
 const OD_FOLDER = 'mente-digitale';
 
-/** @param {string} filename @returns {string} */
-function drivePath(filename) {
-  return `/me/drive/root:/${OD_FOLDER}/${filename}`;
+/** Sottocartelle dei registri che crescono nel tempo. */
+const SUB_DIARIO = 'diario';
+const SUB_MOVIMENTO = 'movimento';
+const SUB_TASK = 'task';
+const SUB_DIARY_PHOTO = 'diario-foto';
+
+// I percorsi dei file sono relativi alla cartella dell'app e possono contenere
+// una sottocartella: 'mente-digitale-bussola.json', 'diario/diario-2026-08.json'.
+/** @param {string} relPath @returns {string} */
+function drivePath(relPath) {
+  return `/me/drive/root:/${OD_FOLDER}/${relPath}`;
 }
 
-// Creazione della cartella al primo bisogno, una volta per sessione: il 409
-// (esiste già) è l'esito normale dopo la prima volta in assoluto.
-/** @type {Promise<any>|null} */
-let _folderReady = null;
-function ensureAppFolder() {
-  if (!_folderReady) {
-    _folderReady = call('/me/drive/root/children', {
-      method: 'POST',
-      body: JSON.stringify({ name: OD_FOLDER, folder: {}, '@microsoft.graph.conflictBehavior': 'fail' }),
-    }).catch(e => {
-      if (e?.status === 409) return null;
-      _folderReady = null;   // errore vero (rete, permessi): si riproverà
-      throw e;
-    });
+// Creazione delle cartelle al primo bisogno, una volta per sessione e per
+// cartella: il 409 (esiste già) è l'esito normale dopo la prima volta in
+// assoluto.
+/** @type {Map<string, Promise<any>>} */
+const _cartellePronte = new Map();
+
+/**
+ * @param {string} [sub] sottocartella dentro quella dell'app; assente = l'app
+ * @returns {Promise<any>}
+ */
+function ensureFolder(sub) {
+  const chiave = sub || '';
+  let pronta = _cartellePronte.get(chiave);
+  if (!pronta) {
+    const genitore = sub ? `/me/drive/root:/${OD_FOLDER}:/children` : '/me/drive/root/children';
+    const nome = sub || OD_FOLDER;
+    pronta = (sub ? ensureFolder() : Promise.resolve())
+      .then(() => call(genitore, {
+        method: 'POST',
+        body: JSON.stringify({ name: nome, folder: {}, '@microsoft.graph.conflictBehavior': 'fail' }),
+      }))
+      .catch(e => {
+        if (e?.status === 409) return null;
+        _cartellePronte.delete(chiave);   // errore vero (rete, permessi): si riproverà
+        throw e;
+      });
+    _cartellePronte.set(chiave, pronta);
   }
-  return _folderReady;
+  return pronta;
 }
 
-// Migrazione pigra dei file salvati nella root prima dell'introduzione della
-// cartella: al primo 404 sul percorso nuovo si prova a spostare il vecchio
-// file con un PATCH (spostamento vero lato Graph, niente copia + cancella,
-// quindi nessuna finestra in cui il dato esiste in due posti o in nessuno).
-// Un tentativo solo per nome di file: i file mai esistiti — es. il mese di
-// diario di un mese in cui non si è scritto — non devono costare una richiesta
-// a ogni lettura.
+/** La cartella che serve per scrivere un certo file. @param {string} relPath */
+function ensureFolderFor(relPath) {
+  const i = relPath.indexOf('/');
+  return ensureFolder(i < 0 ? undefined : relPath.slice(0, i));
+}
+
+// Dove poteva stare un file prima di finire dov'è adesso, dal più recente al
+// più vecchio: la cartella dell'app senza sottocartella (e con il prefisso nel
+// nome), e prima ancora la root del OneDrive.
+/** @param {string} relPath @returns {string[]} percorsi rispetto alla root del drive */
+function percorsiPrecedenti(relPath) {
+  const i = relPath.indexOf('/');
+  if (i < 0) return [relPath];   // file fisso: prima della cartella stava in root
+  const nomeVecchio = `mente-digitale-${relPath.slice(i + 1)}`;
+  return [`${OD_FOLDER}/${nomeVecchio}`, nomeVecchio];
+}
+
+// Migrazione pigra: al primo 404 sul percorso nuovo si prova a spostare il file
+// dalla posizione che aveva prima, con un PATCH (spostamento vero lato Graph,
+// niente copia + cancella, quindi nessuna finestra in cui il dato esiste in due
+// posti o in nessuno; e nella stessa chiamata anche la rinomina).
+// Un tentativo solo per file: quelli mai esistiti — es. il mese di diario di un
+// mese in cui non si è scritto — non devono costare una richiesta a ogni lettura.
 /** @type {Set<string>} */
 const _migrationTried = new Set();
 
-/** @param {string} filename @returns {Promise<boolean>} true se il file è stato spostato */
-async function migrateLegacyFile(filename) {
-  if (_migrationTried.has(filename)) return false;
-  _migrationTried.add(filename);
+/** @param {string} relPath @returns {Promise<boolean>} true se il file è stato spostato */
+async function migrateLegacyFile(relPath) {
+  if (_migrationTried.has(relPath)) return false;
+  _migrationTried.add(relPath);
+  const i = relPath.indexOf('/');
+  const sub = i < 0 ? null : relPath.slice(0, i);
+  const nome = i < 0 ? relPath : relPath.slice(i + 1);
   try {
-    await ensureAppFolder();
-    await call(`/me/drive/root:/${filename}`, {
-      method: 'PATCH',
-      body: JSON.stringify({ parentReference: { path: `/drive/root:/${OD_FOLDER}` } }),
-    });
-    return true;
+    await ensureFolderFor(relPath);
   } catch {
-    // Nessun file da migrare (404) o spostamento fallito: si prosegue con il
-    // percorso nuovo, che è comunque la sola fonte di verità da qui in poi.
     return false;
   }
+  for (const vecchio of percorsiPrecedenti(relPath)) {
+    try {
+      await call(`/me/drive/root:/${vecchio}`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          parentReference: { path: `/drive/root:/${OD_FOLDER}${sub ? '/' + sub : ''}` },
+          name: nome,
+        }),
+      });
+      return true;
+    } catch {
+      // Non era lì (404) o lo spostamento è fallito: si prova il posto prima.
+    }
+  }
+  // Nessun file da migrare: si prosegue con il percorso nuovo, che è comunque
+  // la sola fonte di verità da qui in poi.
+  return false;
 }
 
-// Migrazione in blocco: sposta nella cartella tutti i file `mente-digitale-*.json`
-// rimasti nella root. La migrazione pigra di getDriveJson basterebbe a non
-// perdere nulla, ma sposterebbe ogni file solo quando la funzione che lo usa
-// viene aperta — la root resterebbe sporca per giorni. Questa gira una volta
-// sola (vedi il marker in App.jsx) e ripulisce tutto insieme.
+// Migrazione in blocco, in due passate: prima i file `mente-digitale-*.json`
+// rimasti nella root finiscono nella cartella dell'app, poi quelli di diario e
+// movimento scendono nella loro sottocartella perdendo il prefisso.
+//
+// La migrazione pigra di getDriveJson basterebbe a non perdere nulla, ma
+// sposterebbe ogni file solo quando la funzione che lo usa viene aperta — un
+// mese di diario del 2024 resterebbe dov'è finché non lo si va a rileggere.
+// Questa gira una volta sola (vedi il marker in App.jsx) e sistema tutto.
 /** @returns {Promise<number>} quanti file sono stati spostati */
 export async function migrateLegacyDriveFiles() {
-  const items = await callPagedValues('/me/drive/root/children?$select=id,name,file&$top=200');
-  const legacy = items.filter(i => i.file && /^mente-digitale-.*\.json$/.test(i.name || ''));
-  if (!legacy.length) return 0;
-  await ensureAppFolder();
   let moved = 0;
-  for (const item of legacy) {
+
+  /**
+   * @param {string} id
+   * @param {string} destinazione  percorso della cartella, rispetto alla root
+   * @param {string} [nome]        nuovo nome, se lo spostamento è anche rinomina
+   */
+  const sposta = async (id, destinazione, nome) => {
+    await call(`/me/drive/items/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({
+        parentReference: { path: `/drive/root:${destinazione}` },
+        ...(nome ? { name: nome } : {}),
+      }),
+    });
+    moved++;
+  };
+
+  // Passata 1: dalla root alla cartella dell'app.
+  const inRoot = await callPagedValues('/me/drive/root/children?$select=id,name,file&$top=200');
+  const rimasti = inRoot.filter(i => i.file && /^mente-digitale-.*\.json$/.test(i.name || ''));
+  if (rimasti.length) {
+    await ensureFolder();
+    for (const item of rimasti) {
+      try {
+        await sposta(item.id, `/${OD_FOLDER}`);
+      } catch (e) {
+        console.error('migrazione file OneDrive', item.name, e);
+      }
+    }
+  }
+
+  // Passata 2: dalla cartella dell'app alle sottocartelle dei registri.
+  const inCartella = await callPagedValues(
+    `/me/drive/root:/${OD_FOLDER}:/children?$select=id,name,file&$top=400`
+  );
+  for (const item of inCartella) {
+    if (!item.file) continue;
+    const m = /^mente-digitale-((diario|movimento)-.*\.json)$/.exec(item.name || '');
+    if (!m) continue;
     try {
-      await call(`/me/drive/items/${item.id}`, {
-        method: 'PATCH',
-        body: JSON.stringify({ parentReference: { path: `/drive/root:/${OD_FOLDER}` } }),
-      });
-      _migrationTried.add(item.name);
-      moved++;
+      await ensureFolder(m[2]);
+      await sposta(item.id, `/${OD_FOLDER}/${m[2]}`, m[1]);
+      _migrationTried.add(`${m[2]}/${m[1]}`);
     } catch (e) {
       console.error('migrazione file OneDrive', item.name, e);
     }
   }
+
   return moved;
 }
 
@@ -375,7 +469,7 @@ function erroreDiConflitto(filename) {
  * @returns {Promise<any>}
  */
 async function putDriveJson(filename, data, opts = {}) {
-  await ensureAppFolder();
+  await ensureFolderFor(filename);
   const nota = _driveVersions.get(filename);
 
   // Mai letto in questa sessione, o file che sappiamo non esistere: non c'e'
@@ -1303,11 +1397,11 @@ function comeArray(data) {
   return Array.isArray(data) ? data : [];
 }
 
-const OD_DIARY_INDEX_FILE = 'mente-digitale-diario-index.json';
+const OD_DIARY_INDEX_FILE = `${SUB_DIARIO}/diario-index.json`;
 
 /** @param {string} ym 'YYYY-MM' @returns {string} */
 function diaryMonthFile(ym) {
-  return `mente-digitale-diario-${ym}.json`;
+  return `${SUB_DIARIO}/diario-${ym}.json`;
 }
 
 /** @returns {Promise<{ months: string[] }>} */
@@ -1411,11 +1505,11 @@ export async function deleteDiaryEntry(entry) {
 // contiene le sessioni programmate. Sta lì e non in un file suo perché è un
 // campo solo, e perché chi legge il registro ha già bisogno dell'indice: un
 // secondo file vorrebbe dire una seconda richiesta a ogni apertura di «Oggi».
-const OD_MOVIMENTO_INDEX_FILE = 'mente-digitale-movimento-index.json';
+const OD_MOVIMENTO_INDEX_FILE = `${SUB_MOVIMENTO}/movimento-index.json`;
 
 /** @param {string} ym 'YYYY-MM' @returns {string} */
 function movimentoMonthFile(ym) {
-  return `mente-digitale-movimento-${ym}.json`;
+  return `${SUB_MOVIMENTO}/movimento-${ym}.json`;
 }
 
 /** @param {any} idx @returns {import('./types').MovimentoIndex} */
@@ -1590,33 +1684,11 @@ export async function saveRituale(giorni) {
 // diventare da megabyte): vivono come file veri in una sottocartella, e la
 // voce ne conserva solo il nome. Così una foto si può anche aprire da
 // OneDrive, e cancellare una voce non obbliga a riscrivere nulla di binario.
-const OD_DIARY_PHOTO_FOLDER = 'diario-foto';
-
-/** @type {Promise<any>|null} */
-let _photoFolderReady = null;
-function ensurePhotoFolder() {
-  if (!_photoFolderReady) {
-    _photoFolderReady = ensureAppFolder()
-      .then(() => call(`/me/drive/root:/${OD_FOLDER}:/children`, {
-        method: 'POST',
-        body: JSON.stringify({
-          name: OD_DIARY_PHOTO_FOLDER,
-          folder: {},
-          '@microsoft.graph.conflictBehavior': 'fail',
-        }),
-      }))
-      .catch(e => {
-        if (e?.status === 409) return null;
-        _photoFolderReady = null;
-        throw e;
-      });
-  }
-  return _photoFolderReady;
-}
+const ensurePhotoFolder = () => ensureFolder(SUB_DIARY_PHOTO);
 
 /** @param {string} name @returns {string} */
 function photoPath(name) {
-  return `/me/drive/root:/${OD_FOLDER}/${OD_DIARY_PHOTO_FOLDER}/${encodeURIComponent(name)}`;
+  return drivePath(`${SUB_DIARY_PHOTO}/${encodeURIComponent(name)}`);
 }
 
 /**
