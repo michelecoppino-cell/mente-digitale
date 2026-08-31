@@ -298,6 +298,11 @@ export default function SectionsView({
   const [isFolded, toggleFold] = useFolds(DELIVERABLE_FOLDS_KEY);
   // Il form della consegna nuova, aperto dal `+` in testata alla colonna.
   const [newOpen, setNewOpen] = useState(false);
+  // «Da chiedere» e «Delegati» partono chiuse: sono in fondo alla colonna
+  // Attività come due righe sole, e si aprono col chevron. Aperte di default
+  // spingevano le consegne — quello che si guarda mentre si lavora — fuori
+  // dalla prima schermata.
+  const [openPersone, setOpenPersone] = useState(/** @type {Record<string, boolean>} */ ({}));
 
   // La colonna Dettagli non è mai vuota se c'è qualcosa da mostrare: senza una
   // scelta esplicita apre la prima attività della sezione. Il task va riletto
@@ -616,36 +621,49 @@ export default function SectionsView({
                 );
               })}
 
-              {/* Da chiedere e delegati: due elenchi a parte, in fondo, con una
-                  riga per persona. Sono attività di queste consegne come le
-                  altre — si trascinano, si aprono, si spostano — ma raccolte
-                  per chi le ha in mano invece che per dove stanno. */}
-              {PERSON_LISTS.filter(status => perPersona[status].length > 0).map(status => (
-                <div className="sv-persone" key={status}>
-                  <div className="sv-persone-head">
-                    <span className="eyebrow">{STATUS_LABELS[status]}</span>
-                    <span className="sv-persone-count">
-                      {perPersona[status].reduce((n, g) => n + g.tasks.length, 0)}
-                    </span>
-                  </div>
-                  {perPersona[status].map(group => (
-                    <div className="sv-persona" key={group.key}>
-                      <div className="sv-persona-name">
-                        {group.name}
-                        <span className="sv-persone-count">{group.tasks.length}</span>
-                      </div>
-                      {group.tasks.map(t => taskButton(t))}
-                    </div>
-                  ))}
-                </div>
-              ))}
             </div>
+
+            {/* Da chiedere e delegati: due elenchi a parte, incollati in fondo
+                alla colonna — non in coda alle consegne, dove scorrevano via —
+                con una riga per persona. Sono attività di queste consegne come
+                le altre — si trascinano, si aprono, si spostano — ma raccolte
+                per chi le ha in mano invece che per dove stanno. Chiuse
+                finché non servono: si consultano quando si becca la persona,
+                non mentre si lavora alla consegna. */}
+            {PERSON_LISTS.filter(status => perPersona[status].length > 0).map(status => (
+              <div className={`sv-persone${openPersone[status] ? ' expanded' : ''}`} key={status}>
+                <button
+                  className="sv-persone-head"
+                  aria-expanded={!!openPersone[status]}
+                  title={openPersone[status] ? `Chiudi «${STATUS_LABELS[status]}»` : `Apri «${STATUS_LABELS[status]}»`}
+                  onClick={() => setOpenPersone(o => ({ ...o, [status]: !o[status] }))}>
+                  <span className="sv-persone-chevron" aria-hidden="true">›</span>
+                  <span className="eyebrow">{STATUS_LABELS[status]}</span>
+                  <span className="sv-persone-count">
+                    {perPersona[status].reduce((n, g) => n + g.tasks.length, 0)}
+                  </span>
+                </button>
+                {openPersone[status] && (
+                  <div className="sv-persone-body">
+                    {perPersona[status].map(group => (
+                      <div className="sv-persona" key={group.key}>
+                        <div className="sv-persona-name">
+                          {group.name}
+                          <span className="sv-persone-count">{group.tasks.length}</span>
+                        </div>
+                        {group.tasks.map(t => taskButton(t))}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ))}
           </section>
 
           {/* Dettagli — lo stesso pannello del Piano e della vista Attività,
-              qui senza le risorse della sezione: OneNote e i percorsi sono già
-              le due colonne accanto, e ripeterli sotto le sottoattività
-              allungava la colonna per niente. */}
+              qui senza le risorse della sezione e senza «Apri il workbook»:
+              OneNote e i percorsi sono già le due colonne accanto, e il
+              workbook è questa pagina — il bottone portava dove si è già. */}
           <section className="sv-col sv-col-detail">
             <div className="sv-col-head">
               <span className="eyebrow sv-col-label">Dettagli</span>
@@ -660,6 +678,7 @@ export default function SectionsView({
                   sectionsMap={sectionsMap}
                   pagesCache={pagesCache}
                   showResources={false}
+                  showWorkbook={false}
                   onCompleted={() => { onTaskRemoved?.(detailTask._listId || '', detailTask.id); setSelectedTaskId(null); }}
                   onDeleted={() => { onTaskRemoved?.(detailTask._listId || '', detailTask.id); setSelectedTaskId(null); }}
                   onRenamed={title => onTaskPatched?.(detailTask._listId || '', detailTask.id, { title })}

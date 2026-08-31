@@ -531,16 +531,47 @@
   flex: 0 0 auto;
   display: flex;
   flex-direction: column;
-  margin-top: var(--sp-4);
-  padding-top: var(--sp-3);
+  min-height: 0;
   border-top: 1px solid var(--line-soft);
 }
 
+/* Chiusa è una riga sola in fondo alla colonna; aperta cresce verso l'alto
+   fin dove le si concede, poi scorre per conto suo — le consegne sopra non si
+   accorciano mai sotto il leggibile. */
 .sv-persone-head {
+  flex: 0 0 auto;
   display: flex;
   align-items: center;
   gap: var(--sp-2);
-  padding-bottom: var(--sp-2);
+  width: 100%;
+  height: 32px;
+  padding: 0 var(--sp-4);
+  background: none;
+  border: none;
+  color: var(--muted);
+  font-family: var(--font-ui);
+  text-align: left;
+  cursor: pointer;
+  transition: color var(--t), background var(--t);
+}
+@media (hover: hover) {
+  .sv-persone-head:hover { color: var(--accent); background: var(--accent-tint); }
+}
+.sv-persone-head:focus-visible { outline: 1px solid var(--accent); outline-offset: -1px; }
+
+.sv-persone-chevron {
+  flex: 0 0 auto;
+  font-size: 13px;
+  line-height: 1;
+  transition: transform var(--t);
+}
+.sv-persone.expanded .sv-persone-chevron { transform: rotate(90deg); }
+
+.sv-persone-body {
+  min-height: 0;
+  max-height: 40vh;
+  overflow-y: auto;
+  padding: 0 var(--sp-4) var(--sp-3);
 }
 
 .sv-persone-count {

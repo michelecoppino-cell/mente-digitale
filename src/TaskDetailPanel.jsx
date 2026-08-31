@@ -87,8 +87,11 @@ function flowStatusOf(/** @type {string|undefined} */ graphStatus, /** @type {st
  * @param {boolean} [props.showResources]  le risorse della sezione in fondo al pannello.
  *                                         Spente dove OneNote e i percorsi sono già colonne
  *                                         accanto — nella plancia di Sezioni.
+ * @param {boolean} [props.showWorkbook]   il bottone che porta al workbook della sezione.
+ *                                         Spento dentro Sezioni: lì il workbook è già aperto,
+ *                                         e il bottone porterebbe dove si è già.
  */
-export default function TaskDetailPanel({ task, notebooks = [], sectionsMap = {}, pagesCache = null, onClose, onCompleted, onDeleted, onRenamed, onDueChanged, onRestored, onEstimateChanged, onPatched, status, onSchedule, onUnschedule, showResources = true }) {
+export default function TaskDetailPanel({ task, notebooks = [], sectionsMap = {}, pagesCache = null, onClose, onCompleted, onDeleted, onRenamed, onDueChanged, onRestored, onEstimateChanged, onPatched, status, onSchedule, onUnschedule, showResources = true, showWorkbook = true }) {
   const navigate = useNavigate();
   // La sezione PARA del task è la sezione OneNote che si chiama come la sua
   // lista To-Do — o, se la lista è una consegna annidata (`2573.A60`, vedi
@@ -797,7 +800,7 @@ export default function TaskDetailPanel({ task, notebooks = [], sectionsMap = {}
           {/* Il ponte fra la programmazione e il posto di lavoro: da qui si va
               al workbook della sezione, dove stanno le pagine e i file che
               servono a farla davvero, questa attività. */}
-          {sectionId && (
+          {showWorkbook && sectionId && (
             <button
               className="planner-workbook-open"
               onClick={() => navigate(`/sezioni/${sectionId}`)}>
