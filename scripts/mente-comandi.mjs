@@ -8,7 +8,7 @@
  * compongono le note di un'attività — stanno qui una volta sola, così le due
  * strade non possono divergere.
  *
- * «Sezione» qui vuol dire una lista di Microsoft To-Do. Una commessa può averne
+ * «Sezione» qui vuol dire una lista di attività. Una commessa può averne
  * più d'una: una per consegna, chiamata `GRUPPO.Consegna-YYMMDD` (la convenzione
  * sta in `src/paraConfig.js`). Quindi un nome può indicare una consegna sola
  * oppure tutta la commessa — cercare `2573` con tre consegne aperte vale «tutte
@@ -22,7 +22,7 @@
  */
 
 import {
-  getTodoLists, getTodoTasks, createTask, patchTask, createTodoList,
+  elencoListe, leggiTask, leggiTaskAperti, creaTask, aggiornaTask, creaLista,
   loadDailyPlans, saveDailyPlans, loadIdentityDoc,
   loadObiettivi, saveObiettivi,
   loadDiaryIndex, loadDiaryMonth, saveDiaryEntry,
@@ -32,9 +32,9 @@ import {
 } from './mente-graph.mjs';
 
 import {
-  taskStatus, inboxListId, indexScheduled, taskEstimateMin, noteText,
-  taskContext, withEstimateMarker, withPerson, withContext, personRoleFor, taskPerson,
-  graphStatusFor, STATUS_LABELS, TASK_STATUSES, CONTEXTS, GRANULARITY_MEMO_LINE,
+  taskStatus, inboxListId, indexScheduled, taskEstimateMin,
+  taskContext, personRoleFor, taskPerson,
+  STATUS_LABELS, TASK_STATUSES, CONTEXTS, GRANULARITY_MEMO_LINE,
 } from '../src/taskModel.js';
 
 import {
@@ -52,8 +52,8 @@ import {
 } from '../src/diary.js';
 
 // Gli stati che si possono scrivere da fuori l'app. `inbox` e `scheduled` non
-// ci sono: il primo è la lista di default di To-Do, il secondo un blocco nel
-// piano del giorno. Nessuno dei due è un campo che si possa impostare.
+// ci sono: il primo è la lista in cui il task si trova, il secondo un blocco
+// nel piano del giorno. Nessuno dei due è un campo che si possa impostare.
 export const STATI_SCRIVIBILI = ['next', 'ask', 'waiting', 'delegated', 'someday', 'done'];
 export const STATI_CREABILI = ['inbox', 'next', 'ask', 'waiting', 'delegated', 'someday'];
 export const TIPI_DIARIO = Object.keys(DIARY_TYPES);
@@ -106,13 +106,33 @@ function numero(v, fallback = null) {
  * come lo calcola l'app (piani del giorno inclusi: da lì viene `scheduled`).
  * @param {{ includeDone?: boolean }} [opts]
  */
+/**
+ * Le liste, con un errore parlante se non ce n'è ancora nessuna. Succede una
+ * volta sola: finché l'app non è stata aperta dopo il passaggio ai file, le
+ * attività stanno ancora su Microsoft To-Do e il registro non esiste. La
+ * migrazione la fa l'app, che è l'unica ad avere il permesso di leggere To-Do.
+ * @returns {Promise<any[]>}
+ */
+async function listeRegistrate() {
+  const lists = await elencoListe();
+  if (!lists.length) {
+    throw new Error(
+      'Nessuna lista di attività su OneDrive (mente-digitale/task/). ' +
+      "Apri l'app una volta: la prima apertura porta le attività da Microsoft To-Do ai file."
+    );
+  }
+  return lists;
+}
+
 async function collectTasks(opts = {}) {
-  const [lists, plans] = await Promise.all([getTodoLists(), loadDailyPlans()]);
+  const [lists, plans] = await Promise.all([listeRegistrate(), loadDailyPlans()]);
   const scheduled = indexScheduled(plans);
   const scheduledIds = new Set(scheduled.keys());
   const inboxId = inboxListId(lists);
 
-  const perLista = await Promise.all(lists.map(l => getTodoTasks(l, opts)));
+  const perLista = await Promise.all(
+    lists.map(l => (opts.includeDone ? leggiTask(l.id) : leggiTaskAperti(l.id)))
+  );
   const tasks = perLista.flat().map(t => ({
     ...t,
     _status: taskStatus(t, { scheduledIds, inboxListId: inboxId }),
@@ -136,7 +156,7 @@ function matchLists(lists, query) {
 }
 
 /**
- * Le liste To-Do indicate da un nome, dove almeno una ci deve essere. Di solito
+ * Le liste indicate da un nome, dove almeno una ci deve essere. Di solito
  * è una sola — una lista è una sezione — ma quando i risultati sono tutti
  * consegne della stessa commessa (`2573.A60`, `2573.B10`…) valgono per la
  * commessa intera: chi scrive `2573` intende quel lavoro, non una consegna a
@@ -174,17 +194,17 @@ function findList(lists, query) {
 
 /**
  * Trova un'attività da un pezzo di id o da un pezzo di titolo. Ambiguo è un
- * errore, non una scelta arbitraria: da qui si scrive su To-Do vero.
+ * errore, non una scelta arbitraria: da qui si scrive sull'archivio vero.
  * @param {any[]} tasks
  * @param {string} query
  */
 function findTask(tasks, query) {
   const q = query.toLowerCase();
   const perId = tasks.filter(t => String(t.id).toLowerCase().startsWith(q));
-  const found = perId.length ? perId : tasks.filter(t => (t.title || '').toLowerCase().includes(q));
+  const found = perId.length ? perId : tasks.filter(t => (t.titolo || '').toLowerCase().includes(q));
   if (!found.length) throw new Error(`Nessuna attività per "${query}".`);
   if (found.length > 1) {
-    const elenco = found.slice(0, 8).map(t => `  ${shortId(t.id)}  ${tronca(t.title, 60)}`).join('\n');
+    const elenco = found.slice(0, 8).map(t => `  ${shortId(t.id)}  ${tronca(t.titolo, 60)}`).join('\n');
     throw new Error(`"${query}" corrisponde a ${found.length} attività:\n${elenco}`);
   }
   return found[0];
@@ -201,9 +221,9 @@ function taskLine(t) {
   const persona = taskPerson(t);
   if (persona) meta.push(persona.who);
   meta.push(`${taskEstimateMin(t)}m`);
-  if (t.dueDateTime?.dateTime) meta.push(`scade ${String(t.dueDateTime.dateTime).slice(0, 10)}`);
+  if (t.scadenza) meta.push(`scade ${t.scadenza}`);
   if (t._placement) meta.push(`${t._placement.date} ${t._placement.startTime}`);
-  return `${shortId(t.id)}  ${tronca(t.title, 58)}  · ${meta.join(' · ')}`;
+  return `${shortId(t.id)}  ${tronca(t.titolo, 58)}  · ${meta.join(' · ')}`;
 }
 
 /** @param {any} t */
@@ -212,7 +232,7 @@ function riassuntoTask(t) {
   const scadenzaConsegna = listDueDate(t._listName);
   return {
     id: t.id,
-    titolo: t.title,
+    titolo: t.titolo,
     stato: t._status,
     // `sezione` resta la commessa (o la lista, se non è annidata): è la chiave
     // con cui si filtra. La consegna è un campo a parte, con la sua scadenza.
@@ -222,12 +242,11 @@ function riassuntoTask(t) {
     lista: t._listName,
     contesto: taskContext(t),
     stimaMin: taskEstimateMin(t),
-    scadenza: t.dueDateTime?.dateTime?.slice(0, 10) || null,
-    nota: noteText(t.body?.content) || null,
-    // Chi ha in mano la cosa, per gli stati che ne prevedono una: è dentro le
-    // note come riga, ma un programma non deve doverla rileggere a mano.
-    persona: taskPerson(t)?.who || null,
-    sottoattivita: (t.checklistItems || []).map(c => ({ testo: c.displayName, fatta: !!c.isChecked })),
+    scadenza: t.scadenza,
+    nota: t.nota || null,
+    // Chi ha in mano la cosa, per gli stati che ne prevedono una.
+    persona: t.persona,
+    sottoattivita: (t.sottoattivita || []).map(c => ({ testo: c.titolo, fatta: !!c.fatta })),
     programmata: t._placement,
   };
 }
@@ -410,29 +429,26 @@ export async function attivitaCrea(opts = {}) {
     throw new Error(`Scadenza in formato sbagliato: ${scadenza} (serve YYYY-MM-DD)`);
   }
 
-  const lists = await getTodoLists();
+  const lists = await listeRegistrate();
   const lista = sezione ? findList(lists, sezione) : lists.find(l => l.wellknownListName === 'defaultList');
-  if (!lista) throw new Error('Nessuna lista di default su To-Do: indica una sezione.');
+  if (!lista) throw new Error('Nessuna lista Inbox: indica una sezione.');
 
-  // Le note si compongono nell'ordine che l'app sa rileggere: il marker della
-  // stima può stare ovunque, la riga dell'attesa deve restare la prima.
-  let body = testo(opts.nota) || '';
-  const stima = numero(opts.stimaMin);
-  if (stima) body = withEstimateMarker(body, stima);
-  if (attesa) body = withPerson(body, ruolo, attesa);
-
-  const contesto = contestoRaw?.toLowerCase() || null;
-  const creato = await createTask(lista.id, {
-    title: titolo,
-    body: body || undefined,
-    status: graphStatusFor(/** @type {any} */ (stato)),
-    dueDate: scadenza || undefined,
-    categories: contesto ? withContext({ categories: [] }, contesto) : undefined,
+  // Ogni cosa nel suo campo. Prima la stima diventava un marker nelle note e la
+  // persona una riga da mettere per prima, nell'ordine che l'app sapeva
+  // rileggere: bastava sbagliarlo per far sparire uno stato.
+  const creato = await creaTask(lista.id, {
+    titolo,
+    stato: stato === 'inbox' ? 'inbox' : stato,
+    persona: attesa || null,
+    nota: testo(opts.nota) || '',
+    stimaMin: numero(opts.stimaMin) || null,
+    scadenza: scadenza || null,
+    contesto: contestoRaw?.toLowerCase() || null,
   });
 
   return {
-    data: { creata: { id: creato.id, titolo: creato.title, sezione: lista.displayName, stato } },
-    text: `✓ creata in ${lista.displayName} come ${STATUS_LABELS[stato]}\n  ${shortId(creato.id)}  ${creato.title}`,
+    data: { creata: { id: creato.id, titolo: creato.titolo, sezione: lista.displayName, stato } },
+    text: `✓ creata in ${lista.displayName} come ${STATUS_LABELS[stato]}\n  ${shortId(creato.id)}  ${creato.titolo}`,
   };
 }
 
@@ -461,28 +477,22 @@ export async function attivitaStato(opts = {}) {
   const { tasks } = await collectTasks({ includeDone: true });
   const task = findTask(tasks, query);
 
-  // Da chiedere e delegata non sono uno stato di To-Do ma una riga nelle note,
-  // e uscirne vuol dire cancellarla: quindi qui si riscrive sempre il corpo,
-  // non solo lo `status`. Senza un nome nuovo si tiene quello che c'era —
-  // passare da «in attesa da Sara» a «delegata» non deve perdere Sara.
-  const bodyPrima = task.body?.content || '';
+  // Stato e persona sono due campi e si scrivono insieme. Senza un nome nuovo
+  // si tiene quello che c'era — passare da «in attesa da Sara» a «delegata» non
+  // deve perdere Sara.
   const chi = ruolo ? (persona || taskPerson(task)?.who || 'qualcuno') : null;
-  const bodyDopo = withPerson(bodyPrima, ruolo, chi);
 
-  if (task._status === stato && bodyDopo === bodyPrima) {
+  if (task._status === stato && (task.persona || null) === chi) {
     return {
-      data: { id: task.id, titolo: task.title, stato, invariato: true },
-      text: `${tronca(task.title, 60)} era già ${STATUS_LABELS[stato]}.`,
+      data: { id: task.id, titolo: task.titolo, stato, invariato: true },
+      text: `${tronca(task.titolo, 60)} era già ${STATUS_LABELS[stato]}.`,
     };
   }
 
-  await patchTask(task._listId, task.id, {
-    status: graphStatusFor(/** @type {any} */ (stato)),
-    ...(bodyDopo !== bodyPrima ? { body: { content: bodyDopo, contentType: 'text' } } : {}),
-  });
+  await aggiornaTask(task._listId, task.id, { stato, persona: chi });
   return {
-    data: { id: task.id, titolo: task.title, stato, persona: chi, precedente: task._status },
-    text: `✓ ${tronca(task.title, 60)} → ${STATUS_LABELS[stato]}${chi ? ` · ${chi}` : ''}`,
+    data: { id: task.id, titolo: task.titolo, stato, persona: chi, precedente: task._status },
+    text: `✓ ${tronca(task.titolo, 60)} → ${STATUS_LABELS[stato]}${chi ? ` · ${chi}` : ''}`,
   };
 }
 
@@ -603,7 +613,7 @@ function voceText(e) {
 // ── Sezioni, OneNote, documenti identitari ───────────────────────────────────
 
 /**
- * Le liste To-Do raccolte per commessa: quelle annidate
+ * Le liste raccolte per commessa: quelle annidate
  * (`GRUPPO.Consegna-YYMMDD`) stanno sotto il loro gruppo, con la scadenza
  * accanto; le altre restano da sole, come sono sempre state.
  * @param {any[]} lists
@@ -670,7 +680,7 @@ export async function sezioni() {
         sezioni: (sezioniPerTaccuino[i] || []).map(s => ({ id: s.id, nome: s.displayName })),
       })),
     },
-    text: [blocco('Sezioni (liste To-Do)', listeText), '', blocco('Taccuini OneNote', taccuiniText)].join('\n'),
+    text: [blocco('Sezioni (liste di attività)', listeText), '', blocco('Taccuini OneNote', taccuiniText)].join('\n'),
   };
 }
 
@@ -846,7 +856,7 @@ export async function pianoAggiungi(opts = {}) {
   const gia = blocchi.find(b => b.taskId === task.id);
   if (gia) {
     throw new Error(
-      `«${tronca(task.title, 50)}» è già nel piano del ${giorno} alle ${gia.startTime}. ` +
+      `«${tronca(task.titolo, 50)}» è già nel piano del ${giorno} alle ${gia.startTime}. ` +
       'Toglila prima, se va spostata.'
     );
   }
@@ -854,7 +864,7 @@ export async function pianoAggiungi(opts = {}) {
   const blocco = {
     id: nuovoIdBlocco(),
     taskId: task.id,
-    taskTitle: task.title,
+    taskTitle: task.titolo,
     listId: task._listId,
     listName: task._listName,
     // Il colore lo assegna l'app dalla mappa delle sezioni, che qui non c'è:
@@ -874,7 +884,7 @@ export async function pianoAggiungi(opts = {}) {
 
   return {
     data: { giorno, blocco },
-    text: `✓ ${giorno} ${blocco.startTime}–${blocco.endTime}  ${tronca(task.title, 55)}`,
+    text: `✓ ${giorno} ${blocco.startTime}–${blocco.endTime}  ${tronca(task.titolo, 55)}`,
   };
 }
 
@@ -1037,7 +1047,7 @@ export async function obiettiviScrivi(opts = {}) {
 // ── Sezioni: creazione ───────────────────────────────────────────────────────
 
 /**
- * Una lista To-Do nuova. Due modi, e sono lo stesso: o si passa il nome per
+ * Una lista nuova. Due modi, e sono lo stesso: o si passa il nome per
  * intero, o si passano commessa, consegna e scadenza e il nome lo compone la
  * convenzione (`GRUPPO.Consegna-YYMMDD`, vedi `src/paraConfig.js`) — che è
  * meglio, perché un nome scritto a mano che sbaglia il formato non viene letto
@@ -1063,11 +1073,11 @@ export async function sezioneCrea(opts = {}) {
     : testo(opts.nome);
   if (!nome) throw new Error('Serve il nome della lista, oppure commessa + consegna.');
 
-  const lists = await getTodoLists();
+  const lists = await elencoListe();
   const gia = lists.find(l => (l.displayName || '').toLowerCase() === nome.toLowerCase());
   if (gia) throw new Error(`Esiste già una lista che si chiama «${gia.displayName}».`);
 
-  const creata = await createTodoList(nome);
+  const creata = await creaLista(nome);
   return {
     data: { id: creata.id, nome: creata.displayName },
     text: `✓ creata la lista «${creata.displayName}»`,

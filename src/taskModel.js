@@ -1,32 +1,26 @@
 // @ts-check
-// Il flusso GTD di un'attività, letto e scritto sui campi veri di Microsoft
-// To-Do invece che su una copia locale.
+// Il flusso GTD di un'attività, letto e scritto sui campi dei file nostri.
 //
-// L'app non ha un database: i task vivono su Graph, e chi li apre dall'app
-// To-Do del telefono deve vedere lo stesso stato. Quindi il flusso si appoggia
-// ai campi nativi ovunque ce ne sia uno, e scende a un marker nelle note solo
-// per la stima di durata, che in To-Do non ha un campo:
+// Fino a ieri qui c'era il contrario: i task vivevano su Microsoft To-Do e metà
+// di questo file spiegava come farci stare dentro cose per cui To-Do non aveva
+// un posto — la stima in un marker [MIN:n] nelle note, la sveglia in un altro,
+// la persona in una riga di testo libero da riconoscere con una regex, e lo
+// stato spalmato fra `status` e quella riga. Adesso ogni cosa ha un campo suo
+// (vedi taskStore.js) e qui resta solo quello che è davvero derivato:
 //
-//   inbox      lista di default di To-Do (wellknownListName === 'defaultList')
-//   next       status 'notStarted'
-//   ask        status 'notStarted' + riga "Da chiedere a: Nome" nelle note
-//   waiting    status 'waitingOnOthers'
-//   delegated  status 'waitingOnOthers' + riga "Delegato a: Nome" nelle note
-//   someday    status 'deferred'
-//   done       status 'completed'
+//   inbox      il task sta nella lista trattata come Inbox
+//   next       stato 'next'
+//   ask        stato 'ask'          + persona: quella a cui chiedere
+//   waiting    stato 'waiting'      + persona: quella da cui aspetti
+//   delegated  stato 'delegated'    + persona: quella a cui hai passato la cosa
+//   someday    stato 'someday'
+//   done       stato 'done'
 //   scheduled  ha un blocco nel piano del giorno (daily-plans su OneDrive)
 //
-//   context     categories        (Lavoro / Personale / Famiglia)
-//   sectionId   id della lista To-Do — una lista è una sezione PARA, o una
-//               sua consegna se il nome è annidato (vedi paraConfig.js)
-//   subtasks    checklistItems
-//   note        body.content
-//   completedAt completedDateTime
-//   estimateMin marker [MIN:n] nelle note      ← senza casa nativa
-//   persona     riga "In attesa da:" / "Da chiedere a:" / "Delegato a:" nelle note
-//
 // Invariante: un task ha uno e un solo stato. La colonna in cui appare è
-// derivata da qui, mai un'etichetta salvata a parte.
+// derivata da qui, mai un'etichetta salvata a parte. `scheduled` e `inbox` non
+// sono scritti da nessuna parte: il primo è la presenza di un blocco nel piano,
+// il secondo è la lista in cui il task si trova.
 
 /** @typedef {'inbox'|'next'|'ask'|'waiting'|'delegated'|'scheduled'|'someday'|'done'} TaskStatus */
 
@@ -47,31 +41,6 @@ export const STATUS_LABELS = {
   someday:   'Un giorno',
   done:      'Fatte',
 };
-
-/** Stato Graph corrispondente a ciascuno stato del flusso. `ask` è una
- *  prossima azione — la domanda la devi fare tu — e `delegated` è un'attesa:
- *  a distinguerli da `next` e `waiting` è la riga della persona nelle note. */
-const GRAPH_STATUS = {
-  inbox:     'notStarted',
-  next:      'notStarted',
-  ask:       'notStarted',
-  waiting:   'waitingOnOthers',
-  delegated: 'waitingOnOthers',
-  scheduled: 'notStarted',
-  someday:   'deferred',
-  done:      'completed',
-};
-
-/**
- * Il valore da mandare a Graph per portare il task in questo stato.
- * `inbox` e `scheduled` non hanno un `status` proprio: il primo dipende dalla
- * lista in cui sta il task, il secondo dall'esistenza di un blocco nel piano.
- * @param {TaskStatus} status
- * @returns {string}
- */
-export function graphStatusFor(status) {
-  return GRAPH_STATUS[status] || 'notStarted';
-}
 
 export const CONTEXTS = [
   { key: 'lavoro',     label: 'Lavoro',     category: 'Lavoro',     color: 'var(--ctx-lavoro)' },
@@ -111,104 +80,39 @@ export const ESTIMATE_CHOICES = [
 ];
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Stima di durata — marker [MIN:n] in testa alle note
+// Stima di durata e sveglia
 // ─────────────────────────────────────────────────────────────────────────────
 
-const MIN_MARKER_RE = /\[MIN:(\d{1,4})\]/;
-
-// La matrice di Eisenhower non c'è più: avere insieme il flusso e i quadranti
-// voleva dire due modi di dire la stessa cosa. Il marker però è ancora scritto
-// nelle note dei task creati prima, su To-Do, e nessuno lo toglierà per noi:
-// resta qui solo per non farlo comparire in mezzo al testo di una nota.
-const LEGACY_EIS_MARKER_RE = /\[EIS:Q[1-4]\]/;
-
 /**
- * @param {string|null|undefined} bodyContent
- * @returns {number|null}
- */
-export function parseEstimate(bodyContent) {
-  const m = (bodyContent || '').match(MIN_MARKER_RE);
-  if (!m) return null;
-  const n = parseInt(m[1], 10);
-  return Number.isFinite(n) && n > 0 ? n : null;
-}
-
-/**
- * Inserisce o sostituisce il marker, preservando il resto delle note.
- * @param {string|null|undefined} bodyContent
- * @param {number} minutes
- * @returns {string}
- */
-export function withEstimateMarker(bodyContent, minutes) {
-  const rest = (bodyContent || '').replace(MIN_MARKER_RE, '').replace(/^[ \t]+/, '');
-  const marker = `[MIN:${Math.max(1, Math.round(minutes))}]`;
-  return rest ? `${marker} ${rest}` : marker;
-}
-
-/**
- * @param {import('./types').TodoTask} task
+ * Quanto ci vuole, in minuti. Chi non l'ha detto prende la mezz'ora di
+ * partenza: serve al Piano per dare un'altezza al blocco.
+ * @param {import('./taskStore').Task} task
  * @returns {number}
  */
 export function taskEstimateMin(task) {
-  return parseEstimate(task?.body?.content) ?? DEFAULT_ESTIMATE_MIN;
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Sveglia — marker [SVEGLIA:hh:mm] nelle note
-// ─────────────────────────────────────────────────────────────────────────────
-
-// Un'ora del giorno, non una data: la sveglia serve a farsi richiamare oggi,
-// «alle 15:30 questa cosa», non a ricordarsi di una scadenza — per quella c'è
-// già il campo scadenza di To-Do. Sta nelle note come marker perché è lì che
-// vivono già la stima e l'attesa, e perché così arriva su To-Do e torna
-// indietro da sola: nessun file nostro da tenere in pari.
-const ALARM_MARKER_RE = /\[SVEGLIA:([01]\d|2[0-3]):([0-5]\d)\]/;
-
-/**
- * L'ora della sveglia scritta nelle note, "HH:MM", o null se non ce n'è.
- * @param {string|null|undefined} bodyContent
- * @returns {string|null}
- */
-export function parseAlarm(bodyContent) {
-  const m = (bodyContent || '').match(ALARM_MARKER_RE);
-  return m ? `${m[1]}:${m[2]}` : null;
+  return task?.stimaMin ?? DEFAULT_ESTIMATE_MIN;
 }
 
 /**
- * Inserisce, sostituisce o (con `hhmm` nullo) toglie il marker, lasciando
- * intatto il resto delle note.
- * @param {string|null|undefined} bodyContent
- * @param {string|null} hhmm  "HH:MM"
- * @returns {string}
- */
-export function withAlarm(bodyContent, hhmm) {
-  const rest = (bodyContent || '').replace(ALARM_MARKER_RE, '').replace(/^[ \t]+/, '').replace(/[ \t]+$/, '');
-  if (!hhmm) return rest;
-  const marker = `[SVEGLIA:${hhmm}]`;
-  return rest ? `${marker} ${rest}` : marker;
-}
-
-/**
- * L'ora della sveglia di un task, letta dal suo body.
- * @param {import('./types').TodoTask} task
+ * L'ora della sveglia, "HH:MM", o null. È un'ora del giorno e non una data: la
+ * sveglia serve a farsi richiamare oggi, «alle 15:30 questa cosa», non a
+ * ricordarsi di una scadenza — per quella c'è il campo scadenza.
+ * @param {import('./taskStore').Task} task
  * @returns {string|null}
  */
 export function taskAlarm(task) {
-  return parseAlarm(task?.body?.content);
+  return task?.sveglia || null;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // La persona di un'attività — attesa, da chiedere, delegata
 // ─────────────────────────────────────────────────────────────────────────────
 
-// To-Do non ha un campo "assegnato a" sulle liste personali. Il nome della
-// persona finisce quindi nella prima riga delle note, ma scritto per esteso e
-// non come marker: chi apre il task da To-Do legge una frase, non un codice.
-//
 // I ruoli sono tre e si escludono a vicenda, perché dicono tre momenti diversi
 // della stessa cosa: la domanda la devo ancora fare (`ask`), l'ho fatta e
 // aspetto (`waiting`), l'ho passata a qualcuno che la porti a casa
-// (`delegated`). Un task ha una riga sola: scriverne una cancella le altre.
+// (`delegated`). Il ruolo non è un campo: è lo stato. Il campo `persona` porta
+// solo il nome.
 export const PERSON_ROLES = /** @type {const} */ ([
   { role: 'ask',       label: 'Da chiedere a', prompt: 'A chi lo chiedi…',        empty: 'Niente da chiedere' },
   { role: 'waiting',   label: 'In attesa da',  prompt: 'Da chi aspetti…',         empty: 'Non aspetti nessuno' },
@@ -224,53 +128,16 @@ export function personRoleFor(/** @type {string|null|undefined} */ status) {
   );
 }
 
-const PERSON_LINE_RES = PERSON_ROLES.map(r => ({
-  role: r.role,
-  re: new RegExp(`^\\s*${r.label}:\\s*(.+?)\\s*$`, 'im'),
-}));
-
-/**
- * La riga della persona scritta nelle note: ruolo e nome, o null se non c'è.
- * @param {string|null|undefined} bodyContent
- * @returns {{ role: PersonRole, who: string }|null}
- */
-export function parsePersonLine(bodyContent) {
-  const body = bodyContent || '';
-  for (const { role, re } of PERSON_LINE_RES) {
-    const m = body.match(re);
-    if (m) return { role: /** @type {PersonRole} */ (role), who: m[1] };
-  }
-  return null;
-}
-
 /**
  * La persona di un task, col ruolo e da quando: `since` è l'ultima modifica,
- * che è il momento in cui la riga è stata scritta o riscritta.
- * @param {import('./types').TodoTask} task
+ * che è il momento in cui il task è entrato in quello stato.
+ * @param {import('./taskStore').Task} task
  * @returns {{ role: PersonRole, who: string, since: string|null }|null}
  */
 export function taskPerson(task) {
-  const found = parsePersonLine(task?.body?.content);
-  if (!found) return null;
-  return { ...found, since: task?.lastModifiedDateTime || task?.createdDateTime || null };
-}
-
-/**
- * Riscrive la riga della persona: toglie quella che c'è — di qualunque ruolo —
- * e mette la nuova in testa. Con `who` nullo la toglie soltanto, ed è così che
- * un'attività torna una prossima azione qualunque.
- * @param {string|null|undefined} bodyContent
- * @param {PersonRole|null} role
- * @param {string|null} who
- * @returns {string}
- */
-export function withPerson(bodyContent, role, who) {
-  let rest = bodyContent || '';
-  for (const { re } of PERSON_LINE_RES) rest = rest.replace(re, '');
-  rest = rest.replace(/^\n+/, '');
-  const label = PERSON_ROLES.find(r => r.role === role)?.label;
-  if (!label || !who) return rest;
-  return rest ? `${label}: ${who}\n${rest}` : `${label}: ${who}`;
+  const role = personRoleFor(task?.stato);
+  if (!role || !task?.persona) return null;
+  return { role, who: task.persona, since: task.modificatoIl || task.creatoIl || null };
 }
 
 /**
@@ -286,52 +153,15 @@ export function waitingDays(sinceIso) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Note ripulite
+// Contesto
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Il testo della nota senza i marker e senza la riga della persona: quello che
- * va mostrato nel campo "Nota" del pannello di dettaglio.
- * @param {string|null|undefined} bodyContent
- * @returns {string}
- */
-export function noteText(bodyContent) {
-  return (bodyContent || '')
-    .replace(LEGACY_EIS_MARKER_RE, '')
-    .replace(MIN_MARKER_RE, '')
-    .replace(ALARM_MARKER_RE, '')
-    .replace(PERSON_LINE_RES[0].re, '')
-    .replace(PERSON_LINE_RES[1].re, '')
-    .replace(PERSON_LINE_RES[2].re, '')
-    .replace(/^[ \t\n]+/, '')
-    .trimEnd();
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Contesto — categories di To-Do
-// ─────────────────────────────────────────────────────────────────────────────
-
-/**
- * @param {import('./types').TodoTask} task
+ * @param {import('./taskStore').Task} task
  * @returns {string|null}
  */
 export function taskContext(task) {
-  const cats = (task?.categories || []).map(c => String(c).toLowerCase());
-  return CONTEXTS.find(c => cats.includes(c.category.toLowerCase()))?.key || null;
-}
-
-/**
- * Le categorie da salvare per portare il task a questo contesto: quelle
- * estranee restano, così una categoria messa da Outlook non viene persa.
- * @param {import('./types').TodoTask} task
- * @param {string|null} contextKey
- * @returns {string[]}
- */
-export function withContext(task, contextKey) {
-  const known = CONTEXTS.map(c => c.category.toLowerCase());
-  const others = (task?.categories || []).filter(c => !known.includes(String(c).toLowerCase()));
-  const next = CONTEXTS.find(c => c.key === contextKey);
-  return next ? [...others, next.category] : others;
+  return task?.contesto || null;
 }
 
 /**
@@ -347,29 +177,27 @@ export function contextColor(contextKey) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Lo stato del task nel flusso. `scheduled` vince su `next` e su `ask` perché
- * avere un blocco nel piano è la cosa più specifica che si possa sapere di un
- * task altrimenti semplicemente "da fare".
+ * Lo stato del task nel flusso. Lo stato scritto vale quasi sempre; sopra ci
+ * sono solo le due cose che non sono scritte da nessuna parte:
+ * `inbox`, che è la lista in cui il task sta, e `scheduled`, che è la presenza
+ * di un blocco nel piano — la cosa più specifica che si possa sapere di un task
+ * altrimenti semplicemente "da fare".
  *
- * @param {import('./types').TodoTask} task
+ * @param {import('./taskStore').Task} task
  * @param {{ scheduledIds?: Set<string>, inboxListId?: string|null }} [ctx]
  * @returns {TaskStatus}
  */
 export function taskStatus(task, ctx = {}) {
   if (!task) return 'next';
-  if (task.status === 'completed') return 'done';
-  // Delegata e da chiedere non hanno uno `status` tutto loro su To-Do: sono
-  // un'attesa e una prossima azione con dentro un nome, e a distinguerle è la
-  // riga nelle note. Si guarda quindi la riga dove lo stato Graph è ambiguo,
-  // mai al posto suo — così un task ripreso in mano da To-Do (spuntato,
-  // rimesso in attesa) resta d'accordo con quello che To-Do dice di lui.
-  const person = parsePersonLine(task?.body?.content);
-  if (task.status === 'waitingOnOthers') return person?.role === 'delegated' ? 'delegated' : 'waiting';
-  if (task.status === 'deferred') return 'someday';
+  const stato = task.stato || 'next';
+  if (stato === 'done' || stato === 'waiting' || stato === 'delegated' || stato === 'someday') {
+    return /** @type {TaskStatus} */ (stato);
+  }
   if (ctx.scheduledIds?.has(task.id)) return 'scheduled';
   if (ctx.inboxListId && task._listId === ctx.inboxListId) return 'inbox';
-  if (person?.role === 'ask') return 'ask';
-  return 'next';
+  // Un task che porta ancora `inbox` scritto ma non sta più nella lista Inbox è
+  // stato chiarito: da lì in poi è una prossima azione come le altre.
+  return /** @type {TaskStatus} */ (stato === 'inbox' ? 'next' : stato);
 }
 
 /**

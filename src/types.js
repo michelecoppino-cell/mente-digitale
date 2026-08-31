@@ -69,20 +69,25 @@ export {};
  * Lista di Microsoft To-Do (nell'app mappa 1:1 su un'Area / progetto PARA).
  * `wellknownListName` vale 'defaultList' sulla lista predefinita di To-Do:
  * è quella che il flusso GTD tratta come Inbox.
+ * Una lista di attività: la sezione PARA, o una sua consegna se il nome è
+ * annidato (vedi paraConfig.js). Il nome del tipo viene da Microsoft To-Do, da
+ * cui le liste provengono; adesso stanno nel registro `task/_liste.json`, con
+ * la stessa forma perché è la stessa cosa.
  * @typedef {Object} TodoList
  * @property {string} id
  * @property {string} displayName
- * @property {string} [wellknownListName]
+ * @property {string} [wellknownListName]  'defaultList' per la lista Inbox
  */
 
 /**
- * Task di Microsoft To-Do. I campi `_listName` / `_listId` sono decorazioni
- * aggiunte dall'app quando il task viene messo nel pool globale, per sapere da
- * quale lista proviene senza doverlo riassociare.
- * Il flusso GTD dell'app si legge da qui: `status` porta next/waiting/someday/done
- * (vedi taskModel.js), `categories` il contesto, `checklistItems` le
- * sottoattività. Solo la stima di durata non ha un campo nativo e sta nelle
- * note come marker [MIN:n].
+ * Task di Microsoft To-Do, **come lo restituisce Graph**.
+ *
+ * Non è più la forma con cui l'app lavora: le attività vivono nei file nostri
+ * su OneDrive e la loro forma sta in taskStore.js (`Task`). Questo tipo serve
+ * solo alla migrazione una tantum (taskMigrazione.js), che legge il vecchio
+ * archivio per riversarlo di là — e resta qui a documentare da dove si viene:
+ * lo stato spalmato fra `status` e una riga nelle note, il contesto in
+ * `categories`, la stima in un marker [MIN:n] perché un campo non c'era.
  * @typedef {Object} TodoTask
  * @property {string} id
  * @property {string} title
@@ -306,7 +311,7 @@ export {};
 
 /**
  * Voce di diario, persistita su OneDrive in file mensili (vedi api.js,
- * `mente-digitale/mente-digitale-diario-YYYY-MM.json`). `sealed` = voce "chiusa nel cassetto":
+ * `mente-digitale/diario/diario-YYYY-MM.json`). `sealed` = voce "chiusa nel cassetto":
  * salvata ma tenuta fuori dalla timeline e dall'export, ritrovabile solo
  * cercandola esplicitamente.
  * @typedef {Object} DiaryEntry

@@ -1,7 +1,7 @@
 // @ts-check
 // L'elenco delle destinazioni sotto la riga di cattura: dove finisce il task.
 //
-// Non è una tendina. Una `<select>` con dentro tutte le liste To-Do — quella
+// Non è una tendina. Una `<select>` con dentro tutte le liste — quella
 // del popup di chiarimento — costringe a cercare con gli occhi in un elenco
 // piatto: con una ventina di commesse è il passaggio più lento di tutto
 // l'inserimento. Qui si scrive e la lista si stringe, come la ricerca globale.

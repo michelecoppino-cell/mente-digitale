@@ -13,7 +13,7 @@ import './TaskDetailDrawer.css';
 
 /**
  * @param {Object} props
- * @param {import('./types').TodoTask|null} props.task
+ * @param {import('./taskStore').Task|null} props.task
  * @param {() => void} props.onClose
  * @param {import('./types').Notebook[]} [props.notebooks]
  * @param {Record<string, import('./types').Section[]>} [props.sectionsMap]
@@ -21,12 +21,12 @@ import './TaskDetailDrawer.css';
  * @param {() => void} [props.onCompleted]
  * @param {() => void} [props.onDeleted]
  * @param {(title: string) => void} [props.onRenamed]
- * @param {(due: {dateTime: string, timeZone: string}|null) => void} [props.onDueChanged]
+ * @param {(scadenza: string|null) => void} [props.onDueChanged]
  * @param {(patch: Object) => void} [props.onPatched]
- * @param {(listId: string, task: import('./types').TodoTask) => void} [props.onRestored]
+ * @param {(listId: string, task: import('./taskStore').Task) => void} [props.onRestored]
  * @param {string} [props.status]
- * @param {(t: import('./types').TodoTask) => void} [props.onSchedule]
- * @param {(t: import('./types').TodoTask) => Promise<void>|void} [props.onUnschedule]
+ * @param {(t: import('./taskStore').Task) => void} [props.onSchedule]
+ * @param {(t: import('./taskStore').Task) => Promise<void>|void} [props.onUnschedule]
  */
 export default function TaskDetailDrawer({ task, onClose, ...rest }) {
   useEffect(() => {
@@ -42,7 +42,7 @@ export default function TaskDetailDrawer({ task, onClose, ...rest }) {
   return (
     <>
       <div className="tdd-scrim" onClick={onClose} />
-      <aside className="tdd" role="dialog" aria-label={`Dettaglio di ${task.title}`}>
+      <aside className="tdd" role="dialog" aria-label={`Dettaglio di ${task.titolo}`}>
         <TaskDetailPanel task={task} onClose={onClose} {...rest} />
       </aside>
     </>

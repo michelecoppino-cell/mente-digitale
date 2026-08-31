@@ -16,12 +16,12 @@ import './SvegliaAlert.css';
 
 /**
  * @param {Object} props
- * @param {{ task: import('./types').TodoTask, ora: string, key: string }[]} props.sveglie
+ * @param {{ task: import('./taskStore').Task, ora: string, key: string }[]} props.sveglie
  *        le sveglie che stanno suonando: se ne accumulano più d'una quando il
  *        PC torna dallo standby con due ore già passate
  * @param {(key: string) => void} props.onChiudi         zittisce una sveglia
  * @param {() => void} props.onChiudiTutte
- * @param {(task: import('./types').TodoTask) => void} [props.onApri]  porta all'attività
+ * @param {(task: import('./taskStore').Task) => void} [props.onApri]  porta all'attività
  */
 export default function SvegliaAlert({ sveglie, onChiudi, onChiudiTutte, onApri }) {
   const [adesso, setAdesso] = useState(() => new Date());
@@ -52,7 +52,7 @@ export default function SvegliaAlert({ sveglie, onChiudi, onChiudiTutte, onApri 
           {sveglie.map(s => (
             <li key={s.key} className="sveglia-item">
               <div className="sveglia-item-text">
-                <span className="sveglia-item-title">{s.task.title}</span>
+                <span className="sveglia-item-title">{s.task.titolo}</span>
                 <span className="sveglia-item-meta">
                   {[s.ora, s.task._listName].filter(Boolean).join(' · ')}
                 </span>

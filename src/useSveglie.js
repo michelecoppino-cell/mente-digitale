@@ -20,9 +20,9 @@ import {
 const INTERVALLO_MS = 20_000;
 
 /**
- * @param {import('./types').TodoTask[]|null} tasks  tutte le attività aperte
+ * @param {import('./taskStore').Task[]|null} tasks  tutte le attività aperte
  * @returns {{
- *   attive: { task: import('./types').TodoTask, ora: string, key: string }[],
+ *   attive: { task: import('./taskStore').Task, ora: string, key: string }[],
  *   chiudi: (key: string) => void,
  *   chiudiTutte: () => void,
  * }}
@@ -66,7 +66,7 @@ export function useSveglie(tasks) {
       stopSuonoRef.current = suona();
 
       for (const s of nuove) {
-        const n = notifica(`⏰ ${s.ora} — ${s.task.title}`, s.task._listName || 'Mente digitale');
+        const n = notifica(`⏰ ${s.ora} — ${s.task.titolo}`, s.task._listName || 'Mente digitale');
         // Un clic sulla notifica riporta davanti la finestra: è il gesto che
         // ci si aspetta, e senza di esso la notifica dice che c'è qualcosa
         // ma non dove.

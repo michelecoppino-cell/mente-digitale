@@ -33,12 +33,17 @@ export function invalidateTokenCache() { _cachedToken = null; _cachedTokenExp = 
  * Chiamata a Microsoft Graph con retry/backoff, un giro extra sul 401 (token
  * fresco) e gestione di 429/503/504. Accetta path relativi (`/me/...`) o URL
  * assoluti (i @odata.nextLink di paginazione).
+ *
+ * Restituisce la Response e non il JSON gia' letto perche' i file su OneDrive
+ * hanno bisogno anche degli header — l'ETag della versione letta, che e' cio'
+ * su cui si regge il controllo di concorrenza in scrittura. Chi vuole solo il
+ * corpo usa `call`.
  * @param {string} path
  * @param {RequestInit} [options]
  * @param {number} [retries]
- * @returns {Promise<any>}
+ * @returns {Promise<Response>}
  */
-async function call(path, options = {}, retries = 3) {
+async function callRaw(path, options = {}, retries = 3) {
   // Accetta anche URL assoluti: i link di paginazione @odata.nextLink di Graph
   // arrivano già completi di host.
   const url = path.startsWith('https://') ? path : GRAPH + path;
@@ -48,15 +53,21 @@ async function call(path, options = {}, retries = 3) {
     try {
       const token = await getTokenCached(retried401);
       r = await fetch(url, {
-        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-        ...options
+        ...options,
+        // Gli header dei chiamanti si sommano ai nostri invece di sostituirli:
+        // `If-Match` deve poter viaggiare senza portarsi via l'Authorization.
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+          .../** @type {Record<string,string>} */ (options.headers || {}),
+        },
       });
     } catch (e) {
       if (attempt === retries - 1) throw e;
       await new Promise(res => setTimeout(res, (attempt + 1) * 1000));
       continue;
     }
-    if (r.status === 204) return null;
+    if (r.status === 204) return r;
     // Il token cachato può risultare scaduto (es. dopo una pausa lunga):
     // invalida la cache e riprova una volta sola con un token fresco prima
     // di arrendersi con un errore secco. Il giro extra non consuma uno dei
@@ -91,9 +102,21 @@ async function call(path, options = {}, retries = 3) {
       err.status = r.status; // permette ai chiamanti di distinguere 404 da errori transitori
       throw err;
     }
-    return r.json();
+    return r;
   }
   throw new Error(`Graph error: tentativi esauriti per ${path}`);
+}
+
+/**
+ * Come `callRaw`, ma restituisce il corpo JSON (null sul 204).
+ * @param {string} path
+ * @param {RequestInit} [options]
+ * @param {number} [retries]
+ * @returns {Promise<any>}
+ */
+async function call(path, options = {}, retries = 3) {
+  const r = await callRaw(path, options, retries);
+  return r.status === 204 ? null : r.json();
 }
 
 // Segue @odata.nextLink e concatena i .value di tutte le pagine: senza,
@@ -119,105 +142,393 @@ async function callPagedValues(path, maxPages = 10) {
 
 // ── Cartella dei file dell'app su OneDrive ──────────────────────────────────
 // Tutti i JSON dell'app stanno in una sola cartella invece che sparsi nella
-// root del OneDrive personale: i file sono ormai una decina e crescono con i
-// mesi del diario. I nomi restano quelli di prima (prefisso `mente-digitale-`)
-// per non dover riscrivere niente: cambia solo la cartella che li contiene.
+// root del OneDrive personale.
+//
+// Dentro quella cartella, i registri che crescono di un file al mese hanno una
+// sottocartella loro. La pressione è tutta lì: i file fissi sono una quindicina
+// e non crescono, mentre diario e movimento aggiungono due file ogni mese, e
+// dopo qualche anno la cartella non si guarda più. I fissi quindi restano in
+// cima, dove si vedono.
+//
+// Dentro la sottocartella il prefisso `mente-digitale-` non serve più — la
+// cartella dice già di che si tratta — quindi lo spostamento è anche una
+// rinomina: `mente-digitale-diario-2026-08.json` diventa
+// `diario/diario-2026-08.json`.
 const OD_FOLDER = 'mente-digitale';
 
-/** @param {string} filename @returns {string} */
-function drivePath(filename) {
-  return `/me/drive/root:/${OD_FOLDER}/${filename}`;
+/** Sottocartelle dei registri che crescono nel tempo. Le attività ne hanno una
+ *  loro, `task/`, ma il nome sta in taskStore.js, che è chi la usa. */
+const SUB_DIARIO = 'diario';
+const SUB_MOVIMENTO = 'movimento';
+const SUB_DIARY_PHOTO = 'diario-foto';
+
+// I percorsi dei file sono relativi alla cartella dell'app e possono contenere
+// una sottocartella: 'mente-digitale-bussola.json', 'diario/diario-2026-08.json'.
+/** @param {string} relPath @returns {string} */
+function drivePath(relPath) {
+  return `/me/drive/root:/${OD_FOLDER}/${relPath}`;
 }
 
-// Creazione della cartella al primo bisogno, una volta per sessione: il 409
-// (esiste già) è l'esito normale dopo la prima volta in assoluto.
-/** @type {Promise<any>|null} */
-let _folderReady = null;
-function ensureAppFolder() {
-  if (!_folderReady) {
-    _folderReady = call('/me/drive/root/children', {
-      method: 'POST',
-      body: JSON.stringify({ name: OD_FOLDER, folder: {}, '@microsoft.graph.conflictBehavior': 'fail' }),
-    }).catch(e => {
-      if (e?.status === 409) return null;
-      _folderReady = null;   // errore vero (rete, permessi): si riproverà
-      throw e;
-    });
+// Creazione delle cartelle al primo bisogno, una volta per sessione e per
+// cartella: il 409 (esiste già) è l'esito normale dopo la prima volta in
+// assoluto.
+/** @type {Map<string, Promise<any>>} */
+const _cartellePronte = new Map();
+
+/**
+ * @param {string} [sub] sottocartella dentro quella dell'app; assente = l'app
+ * @returns {Promise<any>}
+ */
+function ensureFolder(sub) {
+  const chiave = sub || '';
+  let pronta = _cartellePronte.get(chiave);
+  if (!pronta) {
+    const genitore = sub ? `/me/drive/root:/${OD_FOLDER}:/children` : '/me/drive/root/children';
+    const nome = sub || OD_FOLDER;
+    pronta = (sub ? ensureFolder() : Promise.resolve())
+      .then(() => call(genitore, {
+        method: 'POST',
+        body: JSON.stringify({ name: nome, folder: {}, '@microsoft.graph.conflictBehavior': 'fail' }),
+      }))
+      .catch(e => {
+        if (e?.status === 409) return null;
+        _cartellePronte.delete(chiave);   // errore vero (rete, permessi): si riproverà
+        throw e;
+      });
+    _cartellePronte.set(chiave, pronta);
   }
-  return _folderReady;
+  return pronta;
 }
 
-// Migrazione pigra dei file salvati nella root prima dell'introduzione della
-// cartella: al primo 404 sul percorso nuovo si prova a spostare il vecchio
-// file con un PATCH (spostamento vero lato Graph, niente copia + cancella,
-// quindi nessuna finestra in cui il dato esiste in due posti o in nessuno).
-// Un tentativo solo per nome di file: i file mai esistiti — es. il mese di
-// diario di un mese in cui non si è scritto — non devono costare una richiesta
-// a ogni lettura.
+// Lo strato delle attività (taskStore.js) tiene i suoi file nella stessa
+// cartella — `task/` — e passa da questi stessi due primitivi: stessa
+// concorrenza, stessa migrazione, stesse cartelle create al bisogno.
+export { getDriveJson, putDriveJson };
+
+/** La cartella che serve per scrivere un certo file. @param {string} relPath */
+function ensureFolderFor(relPath) {
+  const i = relPath.indexOf('/');
+  return ensureFolder(i < 0 ? undefined : relPath.slice(0, i));
+}
+
+// Dove poteva stare un file prima di finire dov'è adesso, dal più recente al
+// più vecchio: la cartella dell'app senza sottocartella (e con il prefisso nel
+// nome), e prima ancora la root del OneDrive.
+/** @param {string} relPath @returns {string[]} percorsi rispetto alla root del drive */
+function percorsiPrecedenti(relPath) {
+  const i = relPath.indexOf('/');
+  if (i < 0) return [relPath];   // file fisso: prima della cartella stava in root
+  const nomeVecchio = `mente-digitale-${relPath.slice(i + 1)}`;
+  return [`${OD_FOLDER}/${nomeVecchio}`, nomeVecchio];
+}
+
+// Migrazione pigra: al primo 404 sul percorso nuovo si prova a spostare il file
+// dalla posizione che aveva prima, con un PATCH (spostamento vero lato Graph,
+// niente copia + cancella, quindi nessuna finestra in cui il dato esiste in due
+// posti o in nessuno; e nella stessa chiamata anche la rinomina).
+// Un tentativo solo per file: quelli mai esistiti — es. il mese di diario di un
+// mese in cui non si è scritto — non devono costare una richiesta a ogni lettura.
 /** @type {Set<string>} */
 const _migrationTried = new Set();
 
-/** @param {string} filename @returns {Promise<boolean>} true se il file è stato spostato */
-async function migrateLegacyFile(filename) {
-  if (_migrationTried.has(filename)) return false;
-  _migrationTried.add(filename);
+/** @param {string} relPath @returns {Promise<boolean>} true se il file è stato spostato */
+async function migrateLegacyFile(relPath) {
+  if (_migrationTried.has(relPath)) return false;
+  _migrationTried.add(relPath);
+  const i = relPath.indexOf('/');
+  const sub = i < 0 ? null : relPath.slice(0, i);
+  const nome = i < 0 ? relPath : relPath.slice(i + 1);
   try {
-    await ensureAppFolder();
-    await call(`/me/drive/root:/${filename}`, {
-      method: 'PATCH',
-      body: JSON.stringify({ parentReference: { path: `/drive/root:/${OD_FOLDER}` } }),
-    });
-    return true;
+    await ensureFolderFor(relPath);
   } catch {
-    // Nessun file da migrare (404) o spostamento fallito: si prosegue con il
-    // percorso nuovo, che è comunque la sola fonte di verità da qui in poi.
     return false;
   }
+  for (const vecchio of percorsiPrecedenti(relPath)) {
+    try {
+      await call(`/me/drive/root:/${vecchio}`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          parentReference: { path: `/drive/root:/${OD_FOLDER}${sub ? '/' + sub : ''}` },
+          name: nome,
+        }),
+      });
+      return true;
+    } catch {
+      // Non era lì (404) o lo spostamento è fallito: si prova il posto prima.
+    }
+  }
+  // Nessun file da migrare: si prosegue con il percorso nuovo, che è comunque
+  // la sola fonte di verità da qui in poi.
+  return false;
 }
 
-// Migrazione in blocco: sposta nella cartella tutti i file `mente-digitale-*.json`
-// rimasti nella root. La migrazione pigra di getDriveJson basterebbe a non
-// perdere nulla, ma sposterebbe ogni file solo quando la funzione che lo usa
-// viene aperta — la root resterebbe sporca per giorni. Questa gira una volta
-// sola (vedi il marker in App.jsx) e ripulisce tutto insieme.
+// Migrazione in blocco, in due passate: prima i file `mente-digitale-*.json`
+// rimasti nella root finiscono nella cartella dell'app, poi quelli di diario e
+// movimento scendono nella loro sottocartella perdendo il prefisso.
+//
+// La migrazione pigra di getDriveJson basterebbe a non perdere nulla, ma
+// sposterebbe ogni file solo quando la funzione che lo usa viene aperta — un
+// mese di diario del 2024 resterebbe dov'è finché non lo si va a rileggere.
+// Questa gira una volta sola (vedi il marker in App.jsx) e sistema tutto.
 /** @returns {Promise<number>} quanti file sono stati spostati */
 export async function migrateLegacyDriveFiles() {
-  const items = await callPagedValues('/me/drive/root/children?$select=id,name,file&$top=200');
-  const legacy = items.filter(i => i.file && /^mente-digitale-.*\.json$/.test(i.name || ''));
-  if (!legacy.length) return 0;
-  await ensureAppFolder();
   let moved = 0;
-  for (const item of legacy) {
+
+  /**
+   * @param {string} id
+   * @param {string} destinazione  percorso della cartella, rispetto alla root
+   * @param {string} [nome]        nuovo nome, se lo spostamento è anche rinomina
+   */
+  const sposta = async (id, destinazione, nome) => {
+    await call(`/me/drive/items/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({
+        parentReference: { path: `/drive/root:${destinazione}` },
+        ...(nome ? { name: nome } : {}),
+      }),
+    });
+    moved++;
+  };
+
+  // Passata 1: dalla root alla cartella dell'app.
+  const inRoot = await callPagedValues('/me/drive/root/children?$select=id,name,file&$top=200');
+  const rimasti = inRoot.filter(i => i.file && /^mente-digitale-.*\.json$/.test(i.name || ''));
+  if (rimasti.length) {
+    await ensureFolder();
+    for (const item of rimasti) {
+      try {
+        await sposta(item.id, `/${OD_FOLDER}`);
+      } catch (e) {
+        console.error('migrazione file OneDrive', item.name, e);
+      }
+    }
+  }
+
+  // Passata 2: dalla cartella dell'app alle sottocartelle dei registri.
+  const inCartella = await callPagedValues(
+    `/me/drive/root:/${OD_FOLDER}:/children?$select=id,name,file&$top=400`
+  );
+  for (const item of inCartella) {
+    if (!item.file) continue;
+    const m = /^mente-digitale-((diario|movimento)-.*\.json)$/.exec(item.name || '');
+    if (!m) continue;
     try {
-      await call(`/me/drive/items/${item.id}`, {
-        method: 'PATCH',
-        body: JSON.stringify({ parentReference: { path: `/drive/root:/${OD_FOLDER}` } }),
-      });
-      _migrationTried.add(item.name);
-      moved++;
+      await ensureFolder(m[2]);
+      await sposta(item.id, `/${OD_FOLDER}/${m[2]}`, m[1]);
+      _migrationTried.add(`${m[2]}/${m[1]}`);
     } catch (e) {
       console.error('migrazione file OneDrive', item.name, e);
     }
   }
+
   return moved;
 }
 
-// PUT di un file JSON nella cartella dell'app su OneDrive
+// ── Concorrenza sui file di OneDrive ────────────────────────────────────────
+// Fino a ieri qui c'era un PUT nudo: nessun ETag, nessun If-Match, l'ultimo che
+// scrive vince e nessuno se ne accorge. Con Microsoft To-Do non aveva mai fatto
+// danni — Graph fondeva campo per campo lato server — ma i file su OneDrive li
+// scriviamo interi, e telefono e portatile che salvano lo stesso documento a
+// pochi secondi di distanza si cancellavano a vicenda in silenzio.
+//
+// Il meccanismo e' quello classico: si tiene l'ETag della versione letta, lo si
+// manda come `If-Match` in scrittura, e sul 412 Precondition Failed si rilegge,
+// si riapplica la modifica sul contenuto fresco e si riscrive. Un solo giro,
+// poi l'errore sale.
+//
+// Una cautela in piu' rispetto al classico: insieme all'ETag si tiene anche il
+// **corpo** della versione su cui si sta lavorando. Serve a due cose. La prima
+// e' distinguere, su un 412, il conflitto vero (qualcuno ha scritto davvero) da
+// un ETag semplicemente inutilizzabile: il GET del contenuto passa per un
+// redirect a un URL di download, e non e' detto che l'header ETag della
+// risposta finale sia quello dell'item — se il contenuto fresco e' identico a
+// quello che avevamo, non c'e' niente da fondere e si riscrive. La seconda e'
+// avere comunque un controllo di concorrenza quando l'ETag non arriva affatto:
+// in quel caso, prima di scrivere, si confronta il contenuto remoto con la
+// nostra base. Meglio un confronto sul contenuto che niente.
+
+/**
+ * @typedef {object} DriveVersion
+ * @property {string|null} etag   ETag della versione letta o scritta, se noto
+ * @property {string|null} body   il JSON di quella versione, per il confronto
+ * @property {boolean} absent     true se il file non esiste ancora
+ */
+
+/** Versione nota di ogni file toccato in questa sessione. @type {Map<string, DriveVersion>} */
+const _driveVersions = new Map();
+
+/** @param {any} data @returns {string} */
+function serializzaPerConfronto(data) {
+  return JSON.stringify(data ?? null);
+}
+
 /**
  * @param {string} filename
+ * @param {string|null} etag
  * @param {any} data
+ * @param {boolean} [absent]
+ */
+function ricordaVersione(filename, etag, data, absent = false) {
+  _driveVersions.set(filename, {
+    etag: etag || null,
+    body: absent ? null : serializzaPerConfronto(data),
+    absent,
+  });
+}
+
+/** @param {Response} r @returns {string|null} */
+function etagDiRisposta(r) {
+  const raw = r.headers.get('ETag') || r.headers.get('etag');
+  return raw ? raw.replace(/^W\//, '') : null;
+}
+
+/**
+ * ETag autorevole dell'item, chiesto ai metadati. Costa una richiesta, quindi
+ * si usa solo dove serve davvero: quando si sta per riscrivere un file e il GET
+ * del contenuto non aveva esposto l'header.
+ * @param {string} filename
+ * @returns {Promise<string|null>}
+ */
+async function etagDiItem(filename) {
+  try {
+    const item = await call(`${drivePath(filename)}?$select=id,eTag,cTag`);
+    return item?.eTag || item?.cTag || null;
+  } catch (e) {
+    if (/** @type {any} */ (e)?.status === 404) return null;
+    throw e;
+  }
+}
+
+/**
+ * Legge un file della cartella dell'app insieme al suo ETag e registra la
+ * versione letta. Sul 404 prova la migrazione dalla vecchia posizione in root
+ * (vedi migrateLegacyFile) prima di dichiarare il file inesistente.
+ * @param {string} filename
+ * @param {{ conEtagDiItem?: boolean }} [opts] chiede i metadati se il GET non espone l'ETag
+ * @returns {Promise<{ data: any, etag: string|null, absent: boolean }>}
+ */
+async function readDriveFile(filename, opts = {}) {
+  /** @param {Response} r */
+  const leggi = async (r) => {
+    const data = r.status === 204 ? null : await r.json();
+    let etag = etagDiRisposta(r);
+    if (!etag && opts.conEtagDiItem) etag = await etagDiItem(filename);
+    ricordaVersione(filename, etag, data);
+    return { data, etag, absent: false };
+  };
+  try {
+    return await leggi(await callRaw(`${drivePath(filename)}:/content`));
+  } catch (e) {
+    if (/** @type {any} */ (e)?.status !== 404) throw e;
+    if (await migrateLegacyFile(filename)) {
+      return leggi(await callRaw(`${drivePath(filename)}:/content`));
+    }
+    ricordaVersione(filename, null, null, true);
+    return { data: null, etag: null, absent: true };
+  }
+}
+
+/**
+ * Una sola PUT, con If-Match se abbiamo un ETag. Aggiorna la versione nota con
+ * l'ETag che Graph restituisce nell'item scritto.
+ * @param {string} filename
+ * @param {any} data
+ * @param {string|null} etag
  * @returns {Promise<any>}
  */
-async function putDriveJson(filename, data) {
-  await ensureAppFolder();
-  const token = await getTokenCached();
-  const r = await fetch(`${GRAPH}${drivePath(filename)}:/content`, {
+async function putDriveJsonOnce(filename, data, etag) {
+  const r = await callRaw(`${drivePath(filename)}:/content`, {
     method: 'PUT',
-    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    headers: etag ? { 'If-Match': etag } : {},
     body: JSON.stringify(data, null, 2),
   });
-  if (!r.ok) throw new Error(`Save ${filename} error ${r.status}`);
-  return r.json();
+  const item = r.status === 204 ? null : await r.json();
+  ricordaVersione(filename, item?.eTag || item?.cTag || null, data);
+  return item;
+}
+
+/** @param {string} filename @returns {Error & { status?: number, conflict?: boolean }} */
+function erroreDiConflitto(filename) {
+  const err = /** @type {Error & { status?: number, conflict?: boolean }} */ (
+    new Error(`${filename} e' stato modificato altrove: ricarica prima di salvare`)
+  );
+  err.status = 412;
+  err.conflict = true;
+  return err;
+}
+
+/**
+ * PUT di un file JSON nella cartella dell'app su OneDrive, con controllo di
+ * concorrenza.
+ *
+ * `reapply` e' il modo che il chiamante ha di dire come si rimette la propria
+ * modifica sopra un contenuto piu' fresco: riceve il documento appena riletto e
+ * restituisce quello da scrivere. Chi non lo passa — perche' scrive il
+ * documento intero e non saprebbe fondere niente — su un conflitto vero riceve
+ * un errore con `status: 412`, invece di cancellare il lavoro dell'altro
+ * dispositivo in silenzio.
+ *
+ * @param {string} filename
+ * @param {any} data
+ * @param {{ reapply?: (fresco: any) => any }} [opts]
+ * @returns {Promise<any>}
+ */
+async function putDriveJson(filename, data, opts = {}) {
+  await ensureFolderFor(filename);
+  const nota = _driveVersions.get(filename);
+
+  // Mai letto in questa sessione, o file che sappiamo non esistere: non c'e'
+  // una base su cui fondare un confronto, si scrive come si e' sempre fatto.
+  if (!nota || nota.absent) return putDriveJsonOnce(filename, data, null);
+
+  if (nota.etag) {
+    try {
+      return await putDriveJsonOnce(filename, data, nota.etag);
+    } catch (e) {
+      if (/** @type {any} */ (e)?.status !== 412) throw e;
+    }
+  }
+  return risolviConflitto(filename, data, nota, opts);
+}
+
+/**
+ * Il file remoto non e' piu' quello su cui ci eravamo basati (o non lo sappiamo,
+ * perche' l'ETag mancava): si rilegge e si decide.
+ * @param {string} filename
+ * @param {any} data
+ * @param {DriveVersion} nota
+ * @param {{ reapply?: (fresco: any) => any }} opts
+ * @returns {Promise<any>}
+ */
+async function risolviConflitto(filename, data, nota, opts) {
+  const fresco = await readDriveFile(filename, { conEtagDiItem: true });
+  const corpoFresco = fresco.absent ? null : serializzaPerConfronto(fresco.data);
+
+  if (corpoFresco === nota.body) {
+    // Nessuno ha toccato niente: l'ETag era vecchio o inservibile, non c'e'
+    // nessun conflitto da risolvere. Si riscrive sulla versione appena letta.
+    try {
+      return await putDriveJsonOnce(filename, data, fresco.etag);
+    } catch (e) {
+      if (/** @type {any} */ (e)?.status !== 412) throw e;
+      // Un 412 anche qui vuol dire che l'If-Match su questo file non e'
+      // utilizzabile. Il contenuto remoto lo abbiamo appena letto ed era il
+      // nostro: scrivere non fa perdere niente a nessuno.
+      console.warn(`If-Match non utilizzabile su ${filename}: scrittura senza precondizione`);
+      return putDriveJsonOnce(filename, data, null);
+    }
+  }
+
+  if (!opts.reapply) {
+    _driveVersions.delete(filename);   // la prossima lettura riparte pulita
+    throw erroreDiConflitto(filename);
+  }
+
+  // Conflitto vero e sanabile: si rimette la modifica sul contenuto fresco e si
+  // riscrive. Un solo giro: se anche questa PUT trova il file cambiato sotto,
+  // l'errore sale.
+  const unito = opts.reapply(fresco.absent ? null : fresco.data);
+  return putDriveJsonOnce(filename, unito, fresco.etag);
 }
 
 /** @returns {Promise<import('./types').Notebook[]>} */
@@ -261,196 +572,26 @@ export async function getPageContentHtml(pageId) {
   return r.text();
 }
 
+// ── Microsoft To-Do: quel che ne resta ──────────────────────────────────────
+// I task non vivono più qui: stanno nei file nostri in mente-digitale/task/
+// (taskStore.js). Di To-Do restano solo queste due letture, e servono a una
+// cosa sola — la migrazione una tantum (taskMigrazione.js), che legge il
+// vecchio archivio per riversarlo nei file. Non si scrive più niente su To-Do:
+// resta lì com'è, congelato, finché non si deciderà se cancellarlo.
+
 /** @returns {Promise<import('./types').TodoList[]>} */
 export async function getTodoLists() {
   return callPagedValues('/me/todo/lists');
 }
 
-// Creare e rinominare una lista To-Do: è così che nasce una consegna dentro una
-// commessa (`GRUPPO.Consegna-YYMMDD`, vedi paraConfig.js) e così che se ne
-// cambia la scadenza — la data sta nel nome, quindi spostarla è una rinomina.
-// Stesso permesso già usato per creare attività (Tasks.ReadWrite): nessuno
-// scope nuovo.
-/**
- * @param {string} displayName
- * @returns {Promise<import('./types').TodoList>}
- */
-export async function createTodoList(displayName) {
-  return call('/me/todo/lists', {
-    method: 'POST',
-    body: JSON.stringify({ displayName })
-  });
-}
-
-/**
- * @param {string} listId
- * @param {string} displayName
- * @returns {Promise<import('./types').TodoList>}
- */
-export async function renameTodoList(listId, displayName) {
-  return call(`/me/todo/lists/${listId}`, {
-    method: 'PATCH',
-    body: JSON.stringify({ displayName })
-  });
-}
-
+// Tutti i task di una lista, completati compresi e con le sottoattività dentro:
+// la fotografia che serve alla migrazione.
 /**
  * @param {string} listId
  * @returns {Promise<import('./types').TodoTask[]>}
  */
-export async function getTodoTasks(listId) {
-  return callPagedValues(`/me/todo/lists/${listId}/tasks?$filter=status ne 'completed'&$orderby=importance desc,createdDateTime desc&$top=50`);
-}
-
-// Task di una lista indipendentemente dallo stato (anche completati), solo
-// id+body: usata per il controllo anti-duplicati delle scadenze ricorrenti
-// (refreshDeadlineReminders in App.jsx) — getTodoTasks esclude i completati,
-// e uno spuntato non deve poter essere ricreato al giro successivo.
-/**
- * @param {string} listId
- * @returns {Promise<import('./types').TodoTask[]>}
- */
-export async function getTasksForDeadlineDedup(listId) {
-  return callPagedValues(`/me/todo/lists/${listId}/tasks?$select=id,body&$top=200`);
-}
-
-/**
- * @param {string} listId
- * @param {string} taskId
- * @returns {Promise<any>}
- */
-export async function completeTask(listId, taskId) {
-  return call(`/me/todo/lists/${listId}/tasks/${taskId}`, {
-    method: 'PATCH',
-    body: JSON.stringify({ status: 'completed' })
-  });
-}
-
-// Usata anche per annullare un completamento (status: 'notStarted').
-/**
- * @param {string} listId
- * @param {string} taskId
- * @param {string} status
- * @returns {Promise<any>}
- */
-export async function updateTaskStatus(listId, taskId, status) {
-  return call(`/me/todo/lists/${listId}/tasks/${taskId}`, {
-    method: 'PATCH',
-    body: JSON.stringify({ status })
-  });
-}
-
-/**
- * @param {string} listId
- * @param {string} title
- * @param {{ body?: string, dueDate?: string }} [opts]
- * @returns {Promise<import('./types').TodoTask>}
- */
-export async function createTask(listId, title, opts = {}) {
-  /** @type {{ title: string, body?: import('./types').ItemBody, dueDateTime?: import('./types').GraphDateTime }} */
-  const payload = { title };
-  if (opts.body) payload.body = { content: opts.body, contentType: 'text' };
-  if (opts.dueDate) payload.dueDateTime = { dateTime: opts.dueDate, timeZone: 'UTC' };
-  return call(`/me/todo/lists/${listId}/tasks`, {
-    method: 'POST',
-    body: JSON.stringify(payload)
-  });
-}
-
-/**
- * @param {string} listId
- * @param {string} taskId
- * @param {string} title
- * @returns {Promise<any>}
- */
-export async function updateTaskTitle(listId, taskId, title) {
-  return call(`/me/todo/lists/${listId}/tasks/${taskId}`, {
-    method: 'PATCH',
-    body: JSON.stringify({ title })
-  });
-}
-
-/**
- * @param {string} listId
- * @param {string} taskId
- * @param {string|null} dueDate
- * @returns {Promise<any>}
- */
-export async function updateTaskDueDate(listId, taskId, dueDate) {
-  const payload = { dueDateTime: dueDate ? { dateTime: dueDate, timeZone: 'UTC' } : null };
-  return call(`/me/todo/lists/${listId}/tasks/${taskId}`, {
-    method: 'PATCH',
-    body: JSON.stringify(payload)
-  });
-}
-
-// Contesto dell'attività: `categories` è un campo nativo di To-Do, quindi la
-// scelta resta leggibile anche aprendo il task da un'altra app.
-/**
- * @param {string} listId
- * @param {string} taskId
- * @param {string[]} categories
- * @returns {Promise<any>}
- */
-export async function updateTaskCategories(listId, taskId, categories) {
-  return call(`/me/todo/lists/${listId}/tasks/${taskId}`, {
-    method: 'PATCH',
-    body: JSON.stringify({ categories })
-  });
-}
-
-// Sposta un task in un'altra lista — cioè, nel modello PARA dell'app, in
-// un'altra sezione. Graph non ha una "move": si ricrea il task nella lista di
-// destinazione con tutto ciò che porta con sé e si cancella l'originale, in
-// quest'ordine, così un errore a metà lascia un doppione (recuperabile) invece
-// di far sparire il task.
-/**
- * @param {string} fromListId
- * @param {string} toListId
- * @param {import('./types').TodoTask} task
- * @returns {Promise<import('./types').TodoTask>}
- */
-export async function moveTaskToList(fromListId, toListId, task) {
-  /** @type {Record<string, any>} */
-  const payload = {
-    title: task.title,
-    status: task.status || 'notStarted',
-    importance: task.importance || 'normal',
-  };
-  if (task.body) payload.body = { content: task.body.content || '', contentType: 'text' };
-  if (task.dueDateTime) payload.dueDateTime = task.dueDateTime;
-  if (task.categories?.length) payload.categories = task.categories;
-
-  const created = await call(`/me/todo/lists/${toListId}/tasks`, {
-    method: 'POST',
-    body: JSON.stringify(payload)
-  });
-
-  // Le sottoattività non si possono creare nello stesso POST del task.
-  for (const item of task.checklistItems || []) {
-    try {
-      await call(`/me/todo/lists/${toListId}/tasks/${created.id}/checklistItems`, {
-        method: 'POST',
-        body: JSON.stringify({ displayName: item.displayName, isChecked: item.isChecked })
-      });
-    } catch (e) {
-      console.error('move task: sottoattività non copiata', item.displayName, e);
-    }
-  }
-
-  await call(`/me/todo/lists/${fromListId}/tasks/${task.id}`, { method: 'DELETE' });
-  return created;
-}
-
-/**
- * @param {string} listId
- * @param {string} taskId
- * @returns {Promise<any>}
- */
-export async function deleteTask(listId, taskId) {
-  return call(`/me/todo/lists/${listId}/tasks/${taskId}`, {
-    method: 'DELETE',
-  });
+export async function getTodoTasksCompleti(listId) {
+  return callPagedValues(`/me/todo/lists/${listId}/tasks?$expand=checklistItems&$top=100`, 50);
 }
 
 /** @param {string|null|undefined} s @returns {string} */
@@ -896,6 +1037,10 @@ export async function moveCalendarEvent(calendarId, eventId, destinationCalendar
 // Sul 404 si prova prima la migrazione dalla vecchia posizione in root (vedi
 // migrateLegacyFile): un file già esistente non deve mai apparire "non ancora
 // creato" solo perché è stata introdotta la cartella.
+//
+// La lettura vera è readDriveFile, che registra anche l'ETag della versione
+// letta: è quello che permette a putDriveJson di accorgersi se nel frattempo
+// qualcun altro ha scritto.
 /**
  * @template T
  * @param {string} filename
@@ -903,17 +1048,8 @@ export async function moveCalendarEvent(calendarId, eventId, destinationCalendar
  * @returns {Promise<any>}
  */
 async function getDriveJson(filename, notFoundValue) {
-  try {
-    return await call(`${drivePath(filename)}:/content`);
-  } catch (e) {
-    if (/** @type {any} */ (e)?.status === 404) {
-      if (await migrateLegacyFile(filename)) {
-        return call(`${drivePath(filename)}:/content`);
-      }
-      return notFoundValue;
-    }
-    throw e;
-  }
+  const { data, absent } = await readDriveFile(filename);
+  return absent ? notFoundValue : data;
 }
 
 // ── OneDrive Identity Docs ────────────────────────────────────────────────────
@@ -1076,11 +1212,31 @@ export async function saveColorSettings(settings) {
 // offre un filtro affidabile per prefisso sul nome dei file, e senza indice
 // l'unico modo di sapere quali mesi esistono sarebbe tentare il GET di ognuno
 // a ritroso.
-const OD_DIARY_INDEX_FILE = 'mente-digitale-diario-index.json';
+// Fondere per id e' la regola di riapplicazione di Diario e Movimento: quando
+// il file e' cambiato sotto (l'altro dispositivo ha scritto la sua voce), la
+// nostra voce si rimette sopra il contenuto fresco invece di sostituirlo.
+/**
+ * @template {{ id: string }} T
+ * @param {T[]} esistenti
+ * @param {T[]} nuove
+ * @returns {T[]}
+ */
+function fondiPerId(esistenti, nuove) {
+  const mappa = new Map(esistenti.map(v => [v.id, v]));
+  for (const v of nuove) mappa.set(v.id, v);
+  return [...mappa.values()];
+}
+
+/** @param {any} data @returns {any[]} */
+function comeArray(data) {
+  return Array.isArray(data) ? data : [];
+}
+
+const OD_DIARY_INDEX_FILE = `${SUB_DIARIO}/diario-index.json`;
 
 /** @param {string} ym 'YYYY-MM' @returns {string} */
 function diaryMonthFile(ym) {
-  return `mente-digitale-diario-${ym}.json`;
+  return `${SUB_DIARIO}/diario-${ym}.json`;
 }
 
 /** @returns {Promise<{ months: string[] }>} */
@@ -1109,11 +1265,15 @@ export async function saveDiaryEntry(entry) {
   const updated = i >= 0
     ? existing.map(e => (e.id === entry.id ? entry : e))
     : [...existing, entry];
-  await putDriveJson(diaryMonthFile(ym), updated);
+  await putDriveJson(diaryMonthFile(ym), updated, {
+    reapply: fresco => fondiPerId(comeArray(fresco), [entry]),
+  });
 
   const idx = await loadDiaryIndex();
   if (!idx.months.includes(ym)) {
-    await putDriveJson(OD_DIARY_INDEX_FILE, { months: [...idx.months, ym].sort() });
+    await putDriveJson(OD_DIARY_INDEX_FILE, { months: [...idx.months, ym].sort() }, {
+      reapply: fresco => ({ months: [...new Set([...comeArray(fresco?.months), ym])].sort() }),
+    });
   }
   return updated;
 }
@@ -1140,13 +1300,19 @@ export async function saveDiaryEntries(entries) {
     const esistenti = await loadDiaryMonth(ym);
     const mappa = new Map(esistenti.map(e => [e.id, e]));
     for (const e of perMese[ym]) mappa.set(e.id, e);
-    await putDriveJson(diaryMonthFile(ym), [...mappa.values()].sort((a, b) => (a.ts < b.ts ? -1 : 1)));
+    /** @param {import('./types').DiaryEntry[]} voci */
+    const ordina = voci => [...voci].sort((a, b) => (a.ts < b.ts ? -1 : 1));
+    await putDriveJson(diaryMonthFile(ym), ordina([...mappa.values()]), {
+      reapply: fresco => ordina(fondiPerId(comeArray(fresco), perMese[ym])),
+    });
   }
 
   const idx = await loadDiaryIndex();
   const tutti = [...new Set([...idx.months, ...mesi])].sort();
   if (tutti.length !== idx.months.length) {
-    await putDriveJson(OD_DIARY_INDEX_FILE, { months: tutti });
+    await putDriveJson(OD_DIARY_INDEX_FILE, { months: tutti }, {
+      reapply: fresco => ({ months: [...new Set([...comeArray(fresco?.months), ...mesi])].sort() }),
+    });
   }
   return mesi;
 }
@@ -1159,7 +1325,9 @@ export async function deleteDiaryEntry(entry) {
   const ym = entry.date.slice(0, 7);
   const existing = await loadDiaryMonth(ym);
   const updated = existing.filter(e => e.id !== entry.id);
-  await putDriveJson(diaryMonthFile(ym), updated);
+  await putDriveJson(diaryMonthFile(ym), updated, {
+    reapply: fresco => comeArray(fresco).filter(e => e.id !== entry.id),
+  });
   return updated;
 }
 
@@ -1172,16 +1340,15 @@ export async function deleteDiaryEntry(entry) {
 // contiene le sessioni programmate. Sta lì e non in un file suo perché è un
 // campo solo, e perché chi legge il registro ha già bisogno dell'indice: un
 // secondo file vorrebbe dire una seconda richiesta a ogni apertura di «Oggi».
-const OD_MOVIMENTO_INDEX_FILE = 'mente-digitale-movimento-index.json';
+const OD_MOVIMENTO_INDEX_FILE = `${SUB_MOVIMENTO}/movimento-index.json`;
 
 /** @param {string} ym 'YYYY-MM' @returns {string} */
 function movimentoMonthFile(ym) {
-  return `mente-digitale-movimento-${ym}.json`;
+  return `${SUB_MOVIMENTO}/movimento-${ym}.json`;
 }
 
-/** @returns {Promise<import('./types').MovimentoIndex>} */
-export async function loadMovimentoIndex() {
-  const idx = await getDriveJson(OD_MOVIMENTO_INDEX_FILE, null);
+/** @param {any} idx @returns {import('./types').MovimentoIndex} */
+function normalizzaIndiceMovimento(idx) {
   return {
     months: Array.isArray(idx?.months) ? idx.months : [],
     calendarId: idx?.calendarId ?? null,
@@ -1190,9 +1357,18 @@ export async function loadMovimentoIndex() {
   };
 }
 
-/** @param {import('./types').MovimentoIndex} idx @returns {Promise<any>} */
-export async function saveMovimentoIndex(idx) {
-  return putDriveJson(OD_MOVIMENTO_INDEX_FILE, idx);
+/** @returns {Promise<import('./types').MovimentoIndex>} */
+export async function loadMovimentoIndex() {
+  return normalizzaIndiceMovimento(await getDriveJson(OD_MOVIMENTO_INDEX_FILE, null));
+}
+
+/**
+ * @param {import('./types').MovimentoIndex} idx
+ * @param {{ reapply?: (fresco: any) => any }} [opts]
+ * @returns {Promise<any>}
+ */
+export async function saveMovimentoIndex(idx, opts) {
+  return putDriveJson(OD_MOVIMENTO_INDEX_FILE, idx, opts);
 }
 
 /** @param {string} ym @returns {Promise<import('./types').Movimento[]>} */
@@ -1216,14 +1392,26 @@ export async function saveMovimento(voce) {
   const aggiornate = i >= 0
     ? esistenti.map(v => (v.id === voce.id ? voce : v))
     : [...esistenti, voce];
-  aggiornate.sort((a, b) => a.date.localeCompare(b.date) || (a.createdAt || '').localeCompare(b.createdAt || ''));
-  await putDriveJson(movimentoMonthFile(ym), aggiornate);
+  /** @param {import('./types').Movimento[]} voci */
+  const ordina = voci => [...voci].sort(
+    (a, b) => a.date.localeCompare(b.date) || (a.createdAt || '').localeCompare(b.createdAt || '')
+  );
+  await putDriveJson(movimentoMonthFile(ym), ordina(aggiornate), {
+    reapply: fresco => ordina(fondiPerId(comeArray(fresco), [voce])),
+  });
 
   const idx = await loadMovimentoIndex();
   if (!idx.months.includes(ym)) {
-    await saveMovimentoIndex({ ...idx, months: [...idx.months, ym].sort() });
+    await saveMovimentoIndex({ ...idx, months: [...idx.months, ym].sort() }, {
+      // Del nostro indice conta solo il mese aggiunto: le altre preferenze
+      // (calendario, bersagli) si prendono da quello fresco, che e' piu' nuovo.
+      reapply: fresco => {
+        const base = normalizzaIndiceMovimento(fresco);
+        return { ...base, months: [...new Set([...base.months, ym])].sort() };
+      },
+    });
   }
-  return aggiornate;
+  return ordina(aggiornate);
 }
 
 /**
@@ -1234,7 +1422,9 @@ export async function deleteMovimento(voce) {
   const ym = voce.date.slice(0, 7);
   const esistenti = await loadMovimentoMese(ym);
   const aggiornate = esistenti.filter(v => v.id !== voce.id);
-  await putDriveJson(movimentoMonthFile(ym), aggiornate);
+  await putDriveJson(movimentoMonthFile(ym), aggiornate, {
+    reapply: fresco => comeArray(fresco).filter(v => v.id !== voce.id),
+  });
   return aggiornate;
 }
 
@@ -1306,17 +1496,21 @@ export async function loadRituale() {
  * @returns {Promise<Record<string, import('./types').RitualeGiorno>>} il documento come è stato scritto
  */
 export async function saveRituale(giorni) {
-  const esistente = await loadRituale();
-  const unito = { ...esistente, ...giorni };
-  const taglio = new Date();
-  taglio.setDate(taglio.getDate() - RITUALE_GIORNI);
-  const limite = `${taglio.getFullYear()}-${String(taglio.getMonth() + 1).padStart(2, '0')}-${String(taglio.getDate()).padStart(2, '0')}`;
-  /** @type {Record<string, import('./types').RitualeGiorno>} */
-  const potato = {};
-  for (const [data, giorno] of Object.entries(unito)) {
-    if (data >= limite) potato[data] = giorno;
-  }
-  await putDriveJson(OD_RITUALE_FILE, potato);
+  /** @param {any} base @returns {Record<string, import('./types').RitualeGiorno>} */
+  const unisciEPota = (base) => {
+    const unito = { ...(base && typeof base === 'object' && !Array.isArray(base) ? base : {}), ...giorni };
+    const taglio = new Date();
+    taglio.setDate(taglio.getDate() - RITUALE_GIORNI);
+    const limite = `${taglio.getFullYear()}-${String(taglio.getMonth() + 1).padStart(2, '0')}-${String(taglio.getDate()).padStart(2, '0')}`;
+    /** @type {Record<string, import('./types').RitualeGiorno>} */
+    const potato = {};
+    for (const [data, giorno] of Object.entries(unito)) {
+      if (data >= limite) potato[data] = giorno;
+    }
+    return potato;
+  };
+  const potato = unisciEPota(await loadRituale());
+  await putDriveJson(OD_RITUALE_FILE, potato, { reapply: fresco => unisciEPota(fresco) });
   return potato;
 }
 
@@ -1325,33 +1519,11 @@ export async function saveRituale(giorni) {
 // diventare da megabyte): vivono come file veri in una sottocartella, e la
 // voce ne conserva solo il nome. Così una foto si può anche aprire da
 // OneDrive, e cancellare una voce non obbliga a riscrivere nulla di binario.
-const OD_DIARY_PHOTO_FOLDER = 'diario-foto';
-
-/** @type {Promise<any>|null} */
-let _photoFolderReady = null;
-function ensurePhotoFolder() {
-  if (!_photoFolderReady) {
-    _photoFolderReady = ensureAppFolder()
-      .then(() => call(`/me/drive/root:/${OD_FOLDER}:/children`, {
-        method: 'POST',
-        body: JSON.stringify({
-          name: OD_DIARY_PHOTO_FOLDER,
-          folder: {},
-          '@microsoft.graph.conflictBehavior': 'fail',
-        }),
-      }))
-      .catch(e => {
-        if (e?.status === 409) return null;
-        _photoFolderReady = null;
-        throw e;
-      });
-  }
-  return _photoFolderReady;
-}
+const ensurePhotoFolder = () => ensureFolder(SUB_DIARY_PHOTO);
 
 /** @param {string} name @returns {string} */
 function photoPath(name) {
-  return `/me/drive/root:/${OD_FOLDER}/${OD_DIARY_PHOTO_FOLDER}/${encodeURIComponent(name)}`;
+  return drivePath(`${SUB_DIARY_PHOTO}/${encodeURIComponent(name)}`);
 }
 
 /**
@@ -1401,109 +1573,6 @@ export async function deleteDiaryPhoto(name) {
     // citava sta comunque per sparire.
     if (/** @type {any} */ (e)?.status !== 404) throw e;
   }
-}
-
-/**
- * @param {string} listId
- * @param {string} taskId
- * @returns {Promise<import('./types').TodoTask>}
- */
-export async function getTask(listId, taskId) {
-  return call(`/me/todo/lists/${listId}/tasks/${taskId}?$expand=checklistItems`);
-}
-
-/**
- * @param {string} listId
- * @param {string} taskId
- * @param {string} content
- * @returns {Promise<any>}
- */
-export async function updateTaskBody(listId, taskId, content) {
-  return call(`/me/todo/lists/${listId}/tasks/${taskId}`, {
-    method: 'PATCH',
-    body: JSON.stringify({ body: { content, contentType: 'text' } }),
-  });
-}
-
-/**
- * @param {string} listId
- * @param {string} taskId
- * @param {string} displayName
- * @returns {Promise<import('./types').ChecklistItem>}
- */
-export async function createChecklistItem(listId, taskId, displayName) {
-  return call(`/me/todo/lists/${listId}/tasks/${taskId}/checklistItems`, {
-    method: 'POST',
-    body: JSON.stringify({ displayName, isChecked: false }),
-  });
-}
-
-/**
- * @param {string} listId
- * @param {string} taskId
- * @param {string} itemId
- * @param {boolean} isChecked
- * @returns {Promise<any>}
- */
-export async function updateChecklistItem(listId, taskId, itemId, isChecked) {
-  return call(`/me/todo/lists/${listId}/tasks/${taskId}/checklistItems/${itemId}`, {
-    method: 'PATCH',
-    body: JSON.stringify({ isChecked }),
-  });
-}
-
-/**
- * @param {string} listId
- * @param {string} taskId
- * @param {string} itemId
- * @param {string} displayName
- * @returns {Promise<any>}
- */
-export async function renameChecklistItem(listId, taskId, itemId, displayName) {
-  return call(`/me/todo/lists/${listId}/tasks/${taskId}/checklistItems/${itemId}`, {
-    method: 'PATCH',
-    body: JSON.stringify({ displayName }),
-  });
-}
-
-/**
- * @param {string} listId
- * @param {string} taskId
- * @param {string} itemId
- * @returns {Promise<any>}
- */
-export async function deleteChecklistItem(listId, taskId, itemId) {
-  return call(`/me/todo/lists/${listId}/tasks/${taskId}/checklistItems/${itemId}`, {
-    method: 'DELETE',
-  });
-}
-
-// Graph non espone un campo di ordinamento per i checklistItem: l'unico modo
-// per persistere un nuovo ordine è ricrearli nella sequenza voluta (l'ordine
-// restituito da Graph segue quello di creazione) ed eliminare gli originali.
-/**
- * @param {string} listId
- * @param {string} taskId
- * @param {import('./types').ChecklistItem[]} orderedItems
- * @returns {Promise<import('./types').ChecklistItem[]>}
- */
-export async function reorderChecklistItems(listId, taskId, orderedItems) {
-  const base = `/me/todo/lists/${listId}/tasks/${taskId}/checklistItems`;
-  /** @type {import('./types').ChecklistItem[]} */
-  const created = [];
-  try {
-    for (const item of orderedItems) {
-      created.push(await call(base, {
-        method: 'POST',
-        body: JSON.stringify({ displayName: item.displayName, isChecked: item.isChecked }),
-      }));
-    }
-  } catch (e) {
-    await Promise.all(created.map(c => call(`${base}/${c.id}`, { method: 'DELETE' }).catch(() => {})));
-    throw e;
-  }
-  await Promise.all(orderedItems.map(item => call(`${base}/${item.id}`, { method: 'DELETE' }).catch(() => {})));
-  return created;
 }
 
 // Elenco dei reminder (di eventi Calendario) che scattano nella finestra di

@@ -4,7 +4,7 @@
 // Il punto del passo 1 del flusso è che non chieda niente. Prima ⌘N apriva
 // l'albero di decisione (dove la metto? è azionabile? in che sezione?), che è
 // il passo 2: farlo mentre si sta facendo altro è il motivo per cui le cose
-// non si catturano. Qui il task nasce nella lista di default di To-Do — la
+// non si catturano. Qui il task nasce nella lista trattata come Inbox — la
 // colonna Inbox — e la si chiarisce dopo, quando c'è tempo.
 //
 // Ma metà delle volte dove va la cosa si sa già, e allora passare dall'Inbox
@@ -27,8 +27,8 @@
 // "Decidi ora" resta per il caso opposto: non è che si sa dove va, è che non
 // si sa — apre l'albero di decisione di sempre, col testo già scritto dentro.
 import { useMemo, useRef, useState } from 'react';
-import { createTask } from './api';
-import { inboxListId, withEstimateMarker } from './taskModel';
+import { creaTask } from './taskStore';
+import { inboxListId } from './taskModel';
 import { sectionRole, listLabel } from './paraConfig';
 import { parseCapture, matchDestinations } from './captureParse';
 import DestinationPicker from './DestinationPicker';
@@ -40,7 +40,7 @@ import './QuickCapture.css';
  * @param {boolean} props.open
  * @param {import('./types').TodoList[]} props.todoLists
  * @param {() => void} props.onClose
- * @param {(task: import('./types').TodoTask) => void} props.onCaptured
+ * @param {(task: import('./taskStore').Task) => void} props.onCaptured
  * @param {(text: string) => void} props.onDecideNow
  * @param {import('./captureContext').CaptureContext|null} [props.context]  la sezione aperta, se si sta guardando una
  */
@@ -72,7 +72,7 @@ export default function QuickCapture({ open, todoLists, onClose, onCaptured, onD
 
   const inboxId = inboxListId(todoLists);
 
-  // Le destinazioni sono le liste To-Do tolta l'Inbox — che è già l'opzione in
+  // Le destinazioni sono le liste tolta l'Inbox — che è già l'opzione in
   // testa al pannello — e tolto l'archivio: in archivio non si butta niente di
   // nuovo, ci si sposta quello che è finito.
   const destinations = useMemo(() => (todoLists || [])
@@ -211,19 +211,21 @@ export default function QuickCapture({ open, todoLists, onClose, onCaptured, onD
     if (!next.title || busy) return;
     const listId = dest?.id || inboxId;
     if (!listId) {
-      setError('Non trovo la lista predefinita di To-Do. Scrivi «@» e scegli una sezione, o usa «Decidi ora».');
+      setError('Non trovo la lista Inbox. Scrivi «@» e scegli una sezione, o usa «Decidi ora».');
       return;
     }
     setBusy(true);
     setError('');
     try {
-      const list = (todoLists || []).find(l => l.id === listId);
-      const task = await createTask(listId, next.title, {
-        ...(next.estimateMin ? { body: withEstimateMarker('', next.estimateMin) } : {}),
-        ...(next.dueDate ? { dueDate: next.dueDate } : {}),
+      const task = await creaTask(listId, {
+        titolo: next.title,
+        // La stima detta al volo («30m») è un campo: prima diventava un marker
+        // [MIN:30] in testa alle note del task appena nato.
+        ...(next.estimateMin ? { stimaMin: next.estimateMin } : {}),
+        ...(next.dueDate ? { scadenza: next.dueDate.slice(0, 10) } : {}),
       });
       if (dest) pushDestMru(listId);
-      onCaptured({ ...task, _listId: listId, _listName: list?.displayName });
+      onCaptured(task);
       setText('');
       setPick(null);
       setBusy(false);

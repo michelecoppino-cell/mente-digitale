@@ -28,8 +28,7 @@ export const TIMEZONE = 'Europe/Rome';
 // l'app per ogni riga scritta. Ciascuno degli scope di scrittura serve a un
 // gruppo preciso di operazioni, e non ce ne sono altri:
 //
-//   Files.ReadWrite   i file dell'app su OneDrive — diario, piani, obiettivi
-//   Tasks.ReadWrite   attività e liste di Microsoft To-Do
+//   Files.ReadWrite   i file dell'app su OneDrive — attività, diario, piani
 //   Notes.ReadWrite   pagine OneNote (crearne una, aggiungere in fondo)
 //   Calendars.ReadWrite  eventi del calendario
 //
@@ -37,10 +36,11 @@ export const TIMEZONE = 'Europe/Rome';
 // Cambiando questo elenco il refresh token va rifatto — gli scope sono cuciti
 // dentro al token, non chiesti a ogni chiamata:
 //   node scripts/get-refresh-token.mjs --mente
+// Di Microsoft To-Do non c'è più niente: le attività sono file su OneDrive, e
+// ci arrivano da Files.ReadWrite come tutto il resto.
 export const MENTE_SCOPE = [
   'offline_access',
   'Files.ReadWrite',
-  'Tasks.ReadWrite',
   'Notes.ReadWrite',
   'Notes.ReadWrite.All',
   'Calendars.ReadWrite',
@@ -137,13 +137,16 @@ export async function getAccessToken() {
 /**
  * Chiamata a Graph con retry su 429/503/504 e un giro extra sul 401, come
  * `call` in src/api.js. Accetta path relativi o i @odata.nextLink assoluti.
+ * Con `risposta: true` restituisce la Response invece del corpo: serve a
+ * leggere l'ETag di un file su OneDrive, su cui si regge il controllo di
+ * concorrenza in scrittura.
  * @param {string} path
- * @param {RequestInit & { raw?: boolean }} [options]
+ * @param {RequestInit & { raw?: boolean, risposta?: boolean }} [options]
  * @param {number} [retries]
  * @returns {Promise<any>}
  */
 export async function graph(path, options = {}, retries = 3) {
-  const { raw, ...init } = options;
+  const { raw, risposta, ...init } = options;
   const url = path.startsWith('https://') ? path : GRAPH + path;
   let retried401 = false;
 
@@ -166,7 +169,7 @@ export async function graph(path, options = {}, retries = 3) {
       continue;
     }
 
-    if (r.status === 204) return null;
+    if (r.status === 204) return risposta ? r : null;
     if (r.status === 401 && !retried401) {
       retried401 = true;
       _access = null;
@@ -190,6 +193,7 @@ export async function graph(path, options = {}, retries = 3) {
       err.status = r.status;
       throw err;
     }
+    if (risposta) return r;
     return raw ? r.text() : r.json();
   }
   throw new Error(`Graph: tentativi esauriti per ${path}`);
@@ -221,25 +225,97 @@ export async function graphPaged(path, maxPages = 10) {
 
 const OD_FOLDER = 'mente-digitale';
 
-/** @param {string} filename @returns {string} */
-function drivePath(filename) {
-  return `/me/drive/root:/${OD_FOLDER}/${filename}`;
+// Come nell'app: i percorsi sono relativi alla cartella e possono contenere una
+// sottocartella ('diario/diario-2026-08.json'). Devono restare identici a quelli
+// di src/api.js, o CLI e app finirebbero a scrivere due file diversi.
+/** @param {string} relPath @returns {string} */
+function drivePath(relPath) {
+  return `/me/drive/root:/${OD_FOLDER}/${relPath}`;
 }
 
-/** @type {Promise<any>|null} */
-let _folderReady = null;
-function ensureAppFolder() {
-  if (!_folderReady) {
-    _folderReady = graph('/me/drive/root/children', {
-      method: 'POST',
-      body: JSON.stringify({ name: OD_FOLDER, folder: {}, '@microsoft.graph.conflictBehavior': 'fail' }),
-    }).catch(e => {
-      if (e?.status === 409) return null;   // esiste già: l'esito normale
-      _folderReady = null;
-      throw e;
-    });
+/** @type {Map<string, Promise<any>>} */
+const _cartellePronte = new Map();
+
+/** @param {string} [sub] @returns {Promise<any>} */
+function ensureFolder(sub) {
+  const chiave = sub || '';
+  let pronta = _cartellePronte.get(chiave);
+  if (!pronta) {
+    const genitore = sub ? `/me/drive/root:/${OD_FOLDER}:/children` : '/me/drive/root/children';
+    pronta = (sub ? ensureFolder() : Promise.resolve())
+      .then(() => graph(genitore, {
+        method: 'POST',
+        body: JSON.stringify({ name: sub || OD_FOLDER, folder: {}, '@microsoft.graph.conflictBehavior': 'fail' }),
+      }))
+      .catch(e => {
+        if (e?.status === 409) return null;   // esiste già: l'esito normale
+        _cartellePronte.delete(chiave);
+        throw e;
+      });
+    _cartellePronte.set(chiave, pronta);
   }
-  return _folderReady;
+  return pronta;
+}
+
+/** @param {string} relPath */
+function ensureFolderFor(relPath) {
+  const i = relPath.indexOf('/');
+  return ensureFolder(i < 0 ? undefined : relPath.slice(0, i));
+}
+
+// Concorrenza, come nell'app (src/api.js, che spiega per esteso il perché e i
+// casi limite): si tiene l'ETag della versione letta insieme al suo contenuto,
+// lo si manda come `If-Match` in scrittura, e sul 412 si rilegge, si riapplica
+// la modifica sul contenuto fresco e si riscrive. Un solo giro, poi l'errore
+// sale. Qui conta doppio: il CLI scrive gli stessi file dell'app, e l'app può
+// essere aperta sul telefono mentre si lancia un comando dal portatile.
+//
+// Il codice è gemello di quello dell'app e non condiviso, perché i due hanno
+// due `graph()` diversi — token da refresh qui, MSAL di là.
+
+/** @type {Map<string, { etag: string|null, body: string|null, absent: boolean }>} */
+const _versioni = new Map();
+
+/** @param {any} data */
+const perConfronto = data => JSON.stringify(data ?? null);
+
+/** @param {string} filename @param {string|null} etag @param {any} data @param {boolean} [absent] */
+function ricordaVersione(filename, etag, data, absent = false) {
+  _versioni.set(filename, { etag: etag || null, body: absent ? null : perConfronto(data), absent });
+}
+
+/** @param {Response} r */
+const etagDiRisposta = r => (r.headers.get('etag') || '').replace(/^W\//, '') || null;
+
+/** @param {string} filename @returns {Promise<string|null>} */
+async function etagDiItem(filename) {
+  try {
+    const item = await graph(`${drivePath(filename)}?$select=id,eTag,cTag`);
+    return item?.eTag || item?.cTag || null;
+  } catch (e) {
+    if (e?.status === 404) return null;
+    throw e;
+  }
+}
+
+/**
+ * @param {string} filename
+ * @param {{ conEtagDiItem?: boolean }} [opts]
+ * @returns {Promise<{ data: any, etag: string|null, absent: boolean }>}
+ */
+async function readDriveFile(filename, opts = {}) {
+  try {
+    const r = await graph(`${drivePath(filename)}:/content`, { risposta: true });
+    const data = r.status === 204 ? null : await r.json();
+    let etag = etagDiRisposta(r);
+    if (!etag && opts.conEtagDiItem) etag = await etagDiItem(filename);
+    ricordaVersione(filename, etag, data);
+    return { data, etag, absent: false };
+  } catch (e) {
+    if (e?.status !== 404) throw e;
+    ricordaVersione(filename, null, null, true);
+    return { data: null, etag: null, absent: true };
+  }
 }
 
 /**
@@ -249,37 +325,70 @@ function ensureAppFolder() {
  * @returns {Promise<T|any>}
  */
 export async function getDriveJson(filename, notFoundValue) {
-  try {
-    return await graph(`${drivePath(filename)}:/content`);
-  } catch (e) {
-    if (e?.status === 404) return notFoundValue;
-    throw e;
-  }
+  const { data, absent } = await readDriveFile(filename);
+  return absent ? notFoundValue : data;
+}
+
+/** @param {string} filename @param {any} data @param {string|null} etag */
+async function putUnaVolta(filename, data, etag) {
+  const r = await graph(`${drivePath(filename)}:/content`, {
+    method: 'PUT',
+    risposta: true,
+    headers: etag ? { 'If-Match': etag } : {},
+    body: JSON.stringify(data, null, 2),
+  });
+  const item = r.status === 204 ? null : await r.json();
+  ricordaVersione(filename, item?.eTag || item?.cTag || null, data);
+  return item;
 }
 
 /**
  * @param {string} filename
  * @param {any} data
+ * @param {{ reapply?: (fresco: any) => any }} [opts]
  * @returns {Promise<any>}
  */
-export async function putDriveJson(filename, data) {
-  await ensureAppFolder();
-  const token = await getAccessToken();
-  const r = await fetch(`${GRAPH}${drivePath(filename)}:/content`, {
-    method: 'PUT',
-    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify(data, null, 2),
-  });
-  if (!r.ok) throw new Error(`Salvataggio ${filename} fallito (${r.status})`);
-  return r.json();
+export async function putDriveJson(filename, data, opts = {}) {
+  await ensureFolderFor(filename);
+  const nota = _versioni.get(filename);
+  if (!nota || nota.absent) return putUnaVolta(filename, data, null);
+
+  if (nota.etag) {
+    try {
+      return await putUnaVolta(filename, data, nota.etag);
+    } catch (e) {
+      if (e?.status !== 412) throw e;
+    }
+  }
+
+  const fresco = await readDriveFile(filename, { conEtagDiItem: true });
+  const corpoFresco = fresco.absent ? null : perConfronto(fresco.data);
+
+  if (corpoFresco === nota.body) {
+    // Nessuno ha toccato niente: l'ETag era vecchio o inservibile.
+    try {
+      return await putUnaVolta(filename, data, fresco.etag);
+    } catch (e) {
+      if (e?.status !== 412) throw e;
+      return putUnaVolta(filename, data, null);
+    }
+  }
+
+  if (!opts.reapply) {
+    _versioni.delete(filename);
+    const err = new Error(`${filename} è stato modificato altrove: rileggi prima di salvare`);
+    err.status = 412;
+    throw err;
+  }
+  return putUnaVolta(filename, opts.reapply(fresco.absent ? null : fresco.data), fresco.etag);
 }
 
 // ── Diario ───────────────────────────────────────────────────────────────────
 
-const OD_DIARY_INDEX_FILE = 'mente-digitale-diario-index.json';
+const OD_DIARY_INDEX_FILE = 'diario/diario-index.json';
 
 /** @param {string} ym @returns {string} */
-const diaryMonthFile = ym => `mente-digitale-diario-${ym}.json`;
+const diaryMonthFile = ym => `diario/diario-${ym}.json`;
 
 /** @returns {Promise<{ months: string[] }>} */
 export async function loadDiaryIndex() {
@@ -359,66 +468,18 @@ export async function saveObiettivi(doc) {
   return putDriveJson('mente-digitale-obiettivi.json', doc);
 }
 
-// ── To-Do ────────────────────────────────────────────────────────────────────
+// ── Attività ─────────────────────────────────────────────────────────────────
+// Le attività sono file su OneDrive, e lo strato che le legge e le scrive è
+// quello dell'app: src/taskStore.js, a cui qui si dice solo da dove leggere e
+// dove scrivere. Un archivio solo, una regola sola — prima il CLI e l'app
+// parlavano tutti e due con To-Do e ognuno si portava dietro la propria idea di
+// come si compone una nota.
 
-/** @returns {Promise<any[]>} */
-export async function getTodoLists() {
-  return graphPaged('/me/todo/lists');
-}
+import { usaDrive } from '../src/taskStore.js';
 
-/**
- * I task di una lista, annotati con `_listId`/`_listName` come fa l'app:
- * lo stato del flusso dipende anche dalla lista in cui vive il task.
- * @param {{ id: string, displayName?: string }} list
- * @param {{ includeDone?: boolean }} [opts]
- * @returns {Promise<any[]>}
- */
-export async function getTodoTasks(list, opts = {}) {
-  const filtro = opts.includeDone ? '' : "$filter=status ne 'completed'&";
-  const tasks = await graphPaged(`/me/todo/lists/${list.id}/tasks?${filtro}$top=100`);
-  return tasks.map(t => ({ ...t, _listId: list.id, _listName: list.displayName }));
-}
+usaDrive({ leggi: getDriveJson, scrivi: putDriveJson });
 
-/**
- * Una lista To-Do nuova. Su Graph una lista è una sezione della mente digitale:
- * il nome è tutto quello che la definisce, e la convenzione delle consegne
- * (`GRUPPO.Consegna-YYMMDD`) sta nel nome, non in un campo.
- * @param {string} displayName
- * @returns {Promise<any>}
- */
-export async function createTodoList(displayName) {
-  return graph('/me/todo/lists', {
-    method: 'POST',
-    body: JSON.stringify({ displayName }),
-  });
-}
-
-/**
- * @param {string} listId
- * @param {{ title: string, body?: string, dueDate?: string, status?: string, categories?: string[] }} payload
- * @returns {Promise<any>}
- */
-export async function createTask(listId, payload) {
-  const body = { title: payload.title };
-  if (payload.body) body.body = { content: payload.body, contentType: 'text' };
-  if (payload.dueDate) body.dueDateTime = { dateTime: `${payload.dueDate}T12:00:00`, timeZone: 'UTC' };
-  if (payload.status) body.status = payload.status;
-  if (payload.categories?.length) body.categories = payload.categories;
-  return graph(`/me/todo/lists/${listId}/tasks`, { method: 'POST', body: JSON.stringify(body) });
-}
-
-/**
- * @param {string} listId
- * @param {string} taskId
- * @param {Record<string, any>} patch
- * @returns {Promise<any>}
- */
-export async function patchTask(listId, taskId, patch) {
-  return graph(`/me/todo/lists/${listId}/tasks/${taskId}`, {
-    method: 'PATCH',
-    body: JSON.stringify(patch),
-  });
-}
+export * from '../src/taskStore.js';
 
 // ── Calendario ───────────────────────────────────────────────────────────────
 

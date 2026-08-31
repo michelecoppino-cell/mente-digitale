@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react';
-import { createTask, deleteTask, completeTask, createNotePage, createCalendarEvent, deleteCalendarEvent } from './api';
+import { createNotePage, createCalendarEvent, deleteCalendarEvent } from './api';
+import { creaTask, eliminaTask, aggiornaTask } from './taskStore';
 import { sectionRole, paraSectionLabel, listLabel } from './paraConfig';
 import { pushUndo } from './undo';
 import './GtdClarifyModal.css';
@@ -50,8 +51,8 @@ export default function GtdClarifyModal({ open, onClose, todoLists = [], noteboo
     if (!sourceTask) return;
     const listId = sourceTask._listId || '';
     try {
-      if (mode === 'complete') await completeTask(listId, sourceTask.id);
-      else await deleteTask(listId, sourceTask.id);
+      if (mode === 'complete') await aggiornaTask(listId, sourceTask.id, { stato: 'done' });
+      else await eliminaTask(listId, sourceTask.id);
       onTaskRemoved?.(listId, sourceTask.id);
     } catch (e) {
       console.error('gtd: consumo del task di Inbox', e);
@@ -72,13 +73,12 @@ export default function GtdClarifyModal({ open, onClose, todoLists = [], noteboo
   }
 
   async function submitProjectTask(text, { listId }) {
-    const task = await createTask(listId, text);
-    const list = todoLists.find(l => l.id === listId);
-    onTaskCreated?.({ ...task, _listId: listId, _listName: list?.displayName || '' }, { addToday: false });
+    const task = await creaTask(listId, { titolo: text });
+    onTaskCreated?.(task, { addToday: false });
     pushUndo({
       label: `Task "${text}" creato`,
       undo: async () => {
-        await deleteTask(listId, task.id);
+        await eliminaTask(listId, task.id);
         onTaskRemoved?.(listId, task.id);
       },
     });

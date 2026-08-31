@@ -135,7 +135,7 @@ export default function SectionTimeline({ plans, listNames = [], color, onPlansC
     writeToday([...blocks, {
       id: genId(),
       taskId: task.id,
-      taskTitle: task.title,
+      taskTitle: task.titolo,
       listId: task._listId || null,
       listName: task._listName || null,
       projectKey: null,
