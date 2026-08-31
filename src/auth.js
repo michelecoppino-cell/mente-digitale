@@ -453,6 +453,36 @@ function enqueue(fn) {
   return run;
 }
 
+// Quanto si aspetta un'acquisizione di token prima di dichiararla persa.
+//
+// Serve perché qui sopra c'è una coda: un'acquisizione sola tiene in attesa
+// tutte le altre, e tutte le chiamate a Graph aspettano un token. Se
+// `acquireTokenSilent` non torna — su Safari succede con l'iframe verso
+// Microsoft, che con «Impedisci tracciamento tra siti» può restare appeso —
+// non si blocca una richiesta: si blocca l'app intera, in silenzio e per
+// sempre. Trenta secondi sono abbondanti per un rinnovo vero; oltre, è
+// meglio un errore che un'attesa senza fine.
+const TOKEN_TIMEOUT = 30_000;
+
+/**
+ * @template T
+ * @param {Promise<T>} promessa
+ * @param {string} cosa
+ * @returns {Promise<T>}
+ */
+function conScadenza(promessa, cosa) {
+  return new Promise((risolvi, rifiuta) => {
+    const t = setTimeout(() => {
+      traccia(`${cosa}: nessuna risposta entro ${TOKEN_TIMEOUT / 1000}s`);
+      rifiuta(new Error(`${cosa}: nessuna risposta entro ${TOKEN_TIMEOUT / 1000}s`));
+    }, TOKEN_TIMEOUT);
+    promessa.then(
+      v => { clearTimeout(t); risolvi(v); },
+      e => { clearTimeout(t); rifiuta(e); },
+    );
+  });
+}
+
 /**
  * Access token per Graph, con la sua scadenza vera.
  * @param {boolean} [forceRefresh] ignora la cache MSAL e rinnova davvero
@@ -461,12 +491,18 @@ function enqueue(fn) {
 export function getToken(forceRefresh = false) {
   if (forceRefresh) {
     if (inFlightForced) return inFlightForced;
-    const p = enqueue(() => acquire(true)).finally(() => { if (inFlightForced === p) inFlightForced = null; });
+    // La scadenza sta *dentro* la coda, non attorno: è la coda che deve
+    // ripartire quando un'acquisizione non torna. Attorno, chi aspetta
+    // riceverebbe sì il suo errore, ma il posto in fila resterebbe occupato
+    // dall'acquisizione appesa e tutte le successive aspetterebbero lei.
+    const p = enqueue(() => conScadenza(acquire(true), 'Rinnovo del token'))
+      .finally(() => { if (inFlightForced === p) inFlightForced = null; });
     inFlightForced = p;
     return p;
   }
   if (inFlight) return inFlight;
-  const p = enqueue(() => acquire(false)).finally(() => { if (inFlight === p) inFlight = null; });
+  const p = enqueue(() => conScadenza(acquire(false), 'Token Microsoft'))
+    .finally(() => { if (inFlight === p) inFlight = null; });
   inFlight = p;
   return p;
 }
