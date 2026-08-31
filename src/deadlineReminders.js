@@ -35,13 +35,16 @@ export function reminderMarker(eventId, eventStartIso) {
   return `reminder-src:${eventId}:${eventStartIso}`;
 }
 
+// Il riferimento all'occorrenza sta nel campo `origineScadenza` del task.
+// Prima era un marker nel testo delle note — l'unico posto che To-Do lasciava —
+// e per riconoscerlo bisognava cercarlo dentro una nota scritta da una persona.
 /**
- * @param {import('./types').TodoTask} task
+ * @param {import('./taskStore').Task} task
  * @param {string} marker
  * @returns {boolean}
  */
 export function hasReminderMarker(task, marker) {
-  return !!task.body?.content?.includes(marker);
+  return task?.origineScadenza === marker;
 }
 
 // Filtra localmente (nessuna chiamata Graph) gli eventi il cui titolo inizia

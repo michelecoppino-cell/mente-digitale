@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
-import { getPages, getTodoTasks, createTask, completeTask } from './api';
+import { getPages } from './api';
+import { leggiTaskAperti, creaTask, aggiornaTask } from './taskStore';
 import { filterEventsBySectionPrefix, parseReminderSubject } from './deadlineReminders';
 import Skeleton from './Skeleton';
 import OneDriveBox from './OneDriveBox';
@@ -12,7 +13,7 @@ import { openProtocol } from './protocolLink';
 // localmente per prefisso "[NomeSezione]", nessuna nuova richiesta di rete a
 // ogni apertura del pannello (era il collo di bottiglia lento lamentato).
 //
-// `selected.lists` sono le liste To-Do della sezione: quella omonima e le sue
+// `selected.lists` sono le liste della sezione: quella omonima e le sue
 // consegne (`GRUPPO.Nome-YYMMDD`, vedi paraConfig.js). Il pannello le legge
 // tutte; `selected.listId` resta la principale, ed è lì che nasce un'attività
 // creata da qui — una consegna la si sceglie dalla plancia Sezioni, non da una
@@ -64,7 +65,7 @@ export default function Panel({ selected, pagesCache, tasksCache, calendarEvents
     try {
       const perList = await Promise.all(lists.map(async l => {
         const cached = tasksCache?.current?.[l.id];
-        const all = cached || await getTodoTasks(l.id);
+        const all = cached || await leggiTaskAperti(l.id);
         if (!cached && tasksCache?.current) tasksCache.current[l.id] = all;
         return all.map(t => ({ ...t, _listId: l.id, _listName: l.displayName }));
       }));
@@ -73,21 +74,20 @@ export default function Panel({ selected, pagesCache, tasksCache, calendarEvents
     setLoadingTasks(false);
   }
 
+  // Le attività con una scadenza in alto, le altre sotto. Prima le senza
+  // scadenza si ordinavano mettendo davanti quelle "importanti": era il flag
+  // di To-Do, che si poteva accendere solo dall'app To-Do — e quella non si
+  // usa. Con l'archivio nostro quel flag non esiste più, e non manca a nessuno.
   function splitTasks(all) {
-    const withDue = all.filter(t => t.dueDateTime?.dateTime);
-    const noDue = [
-      ...all.filter(t => !t.dueDateTime?.dateTime && t.importance === 'high'),
-      ...all.filter(t => !t.dueDateTime?.dateTime && t.importance !== 'high'),
-    ];
-    setTasks(withDue);
-    setNoDeadlineTasks(noDue);
+    setTasks(all.filter(t => t.scadenza));
+    setNoDeadlineTasks(all.filter(t => !t.scadenza));
   }
 
   async function handleAddTask() {
     if (!newTask.trim() || !selected?.listId) return;
     setAdding(true);
     try {
-      const created = await createTask(selected.listId, newTask.trim());
+      const created = await creaTask(selected.listId, { titolo: newTask.trim() });
       const task = { ...created, _listId: selected.listId, _listName: selected.listName };
       setNoDeadlineTasks(prev => [task, ...prev]);
       if (tasksCache?.current?.[selected.listId])
@@ -101,7 +101,7 @@ export default function Panel({ selected, pagesCache, tasksCache, calendarEvents
     const listId = task._listId || selected?.listId;
     if (!listId) return;
     try {
-      await completeTask(listId, task.id);
+      await aggiornaTask(listId, task.id, { stato: 'done' });
       setTasks(prev => prev.filter(t => t.id !== task.id));
       setNoDeadlineTasks(prev => prev.filter(t => t.id !== task.id));
       if (tasksCache?.current?.[listId])
@@ -290,9 +290,7 @@ function CalendarEventRow({ event, color }) {
 
 function TaskRow({ task, color, onComplete, showList = false }) {
   const [completing, setCompleting] = useState(false);
-  const isImportant = task.importance === 'high';
-  const appUrl = `ms-to-do://tasks/id/${task.id}`;
-  const due = formatDueDate(task.dueDateTime);
+  const due = formatDueDate(task.scadenza);
 
   async function handleComplete(e) {
     e.stopPropagation();
@@ -308,10 +306,9 @@ function TaskRow({ task, color, onComplete, showList = false }) {
           {completing && <span className="check-mark">✓</span>}
         </div>
       </button>
-      <div className="task-row-content" onClick={() => openProtocol(appUrl)} style={{ cursor: 'pointer' }}>
-        <div className="task-title" style={{ color: isImportant ? color : 'var(--text)' }}>
-          {isImportant && <span className="task-important">★ </span>}
-          {task.title}
+      <div className="task-row-content">
+        <div className="task-title">
+          {task.titolo}
         </div>
         {(due || (showList && task._listName)) && (
           <div className="task-due">

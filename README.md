@@ -1,15 +1,16 @@
 # Mente Digitale
 
 Dashboard personale (PWA) che unifica l'ecosistema Microsoft 365 in un'unica "mente digitale":
-una mappa mentale interattiva dei taccuini OneNote, un pianificatore giornaliero collegato a
-Microsoft To-Do e al calendario Outlook, e un diario con supporto AI via copia-incolla.
+una mappa mentale interattiva dei taccuini OneNote, un pianificatore giornaliero collegato al
+calendario Outlook, e un diario con supporto AI via copia-incolla. Le attività sono file JSON
+su OneDrive, nostri.
 
 ## Funzionalità
 
 - **Mappa mentale (D3)** — taccuini e sezioni OneNote come grafo force-directed navigabile;
   badge con il numero di task aperti per sezione; "orb" centrale con documenti identitari
   (Bussola / Visione) salvati su OneDrive.
-- **Pannello sezione** — pagine OneNote, task To-Do della lista omonima e link OneDrive
+- **Pannello sezione** — pagine OneNote, attività della lista omonima e link OneDrive
   per la sezione selezionata.
 - **Pianificatore giornaliero** — drag & drop dei task su una timeline a slot di 30 minuti,
   vista giorno/settimana, eventi del calendario in sola lettura, sottostep ridimensionabili,
@@ -51,7 +52,7 @@ Microsoft To-Do e al calendario Outlook, e un diario con supporto AI via copia-i
   il collegamento, tutte le altre copiano il percorso), attività della sezione — che si
   trascinano sulla giornata per programmarle, come nel Piano e sullo stesso piano — il
   dettaglio di quella scelta e la giornata di oggi. L'elenco delle sezioni si toglie di mezzo
-  appena se ne apre una. Una commessa con più **consegne** (liste To-Do annidate per nome,
+  appena se ne apre una. Una commessa con più **consegne** (liste annidate per nome,
   vedi sotto) le mostra come gruppi a tendina, ognuno con la sua scadenza; il `+` in testata
   ne crea una nuova, e un'attività si sposta da una consegna all'altra trascinandola.
   Le attività che hanno già un blocco nel piano — in un giorno qualunque — si leggono in
@@ -62,7 +63,7 @@ Microsoft To-Do e al calendario Outlook, e un diario con supporto AI via copia-i
   è falso — il pezzo è in mano a qualcuno, e quello che serve sapere è a chi, per tutta la
   commessa insieme.
 - **Attività** — le cinque colonne del flusso GTD (Inbox · Prossime azioni · In attesa · Programmate · Un giorno):
-  la colonna *è* lo stato, e trascinare una card fra colonne lo cambia su Microsoft To-Do. Un clic su una
+  la colonna *è* lo stato, e trascinare una card fra colonne lo cambia. Un clic su una
   card apre il pannello di dettaglio — note, sottoattività, stima, scadenza, stato.
   In fondo a due colonne ci sono altrettante **aree**: *Da chiedere* sotto le prossime azioni e
   *Delegati* sotto le attese. Non sono colonne nuove — sono lo stesso punto del flusso con dentro
@@ -244,27 +245,33 @@ workbook»: è il passaggio che lega la programmazione al posto di lavoro.
 
 ## Il flusso di un'attività
 
-Sei stati, un solo verso, letti e scritti sui campi veri di Microsoft To-Do:
-chi apre lo stesso task dall'app To-Do del telefono vede lo stesso stato. La
-mappatura sta in `src/taskModel.js`.
+Otto stati, un solo verso. Un'attività ne ha **uno e uno solo**, e la colonna in
+cui appare è derivata da lì, mai un'etichetta salvata a parte. La mappatura sta
+in `src/taskModel.js`, i campi in `src/taskStore.js`.
 
-| Stato | Dove vive su To-Do |
+| Stato | Dov'è scritto |
 |---|---|
-| `inbox` | lista di default (`wellknownListName === 'defaultList'`) |
-| `next` | `status: notStarted` |
-| `ask` | `status: notStarted` + riga `Da chiedere a: Nome` nelle note |
-| `waiting` | `status: waitingOnOthers` |
-| `delegated` | `status: waitingOnOthers` + riga `Delegato a: Nome` nelle note |
+| `inbox` | sta nella lista trattata come Inbox |
+| `next` | `stato: 'next'` |
+| `ask` | `stato: 'ask'` + `persona`: a chi chiedere |
+| `waiting` | `stato: 'waiting'` + `persona`: chi si aspetta |
+| `delegated` | `stato: 'delegated'` + `persona`: chi ce l'ha in mano |
 | `scheduled` | ha un blocco nel piano del giorno (`daily-plans` su OneDrive) |
-| `someday` | `status: deferred` |
-| `done` | `status: completed` |
+| `someday` | `stato: 'someday'` |
+| `done` | `stato: 'done'` |
 
-`ask` e `delegated` non hanno uno `status` tutto loro perché su To-Do non
-esiste: *da chiedere* è una prossima azione che deve partire da qualcun altro,
-*delegata* è un'attesa con un nome sopra. A distinguerle è la riga nelle note,
-che si guarda solo dove lo `status` di Graph è ambiguo — mai al posto suo, o un
-task ripreso in mano dall'app To-Do del telefono direbbe una cosa qui e
-un'altra là.
+Due soli non sono un campo, e per un motivo: `inbox` è **dove** il task sta —
+finché è nella lista Inbox è da chiarire — e `scheduled` è **avere un blocco nel
+piano**, che è un fatto del piano, non del task. Tutto il resto si legge.
+
+Fino a qui non era così. I task vivevano su Microsoft To-Do, e metà di
+`taskModel.js` spiegava come farci stare dentro cose per cui To-Do non aveva un
+posto: *da chiedere* e *delegata* non avevano uno `status` loro, quindi la
+differenza fra un'attesa e una delega stava in una riga di testo nelle note
+(`Delegato a: Sara`) da riconoscere con una regex. Cambiare stato voleva dire
+due scritture — la riga e lo `status` — e se la seconda falliva il task restava
+in *Prossime azioni* col nome di qualcuno dentro. Il perché del passaggio, per
+esteso, sta in [`docs/proposta-task-json.md`](docs/proposta-task-json.md).
 
 **Cattura** (`⌘N`) scrive solo il titolo, nella lista di default: il passo 1 non
 deve chiedere niente, o le cose non si catturano. **Chiarire** è il passo 2 e
@@ -285,9 +292,9 @@ Rivedere relazione fondazioni @2573 !domani ~45
 
 | Token | Cosa dice | Esempi |
 |---|---|---|
-| `@nome` | la lista To-Do di destinazione | `@2573`, `@ris-auto`, `@casa` |
+| `@nome` | la lista di destinazione | `@2573`, `@ris-auto`, `@casa` |
 | `!data` | la scadenza | `!oggi`, `!domani`, `!ven`, `!31/12`, `!2026-09-01` |
-| `~n` | la stima, che diventa `[MIN:n]` | `~45`, `~90m`, `~2h` |
+| `~n` | la stima, in minuti | `~45`, `~90m`, `~2h` |
 
 Scrivere `@` apre l'elenco delle sezioni, che si stringe man mano — frecce per
 scegliere, `Invio` per scegliere e catturare in un gesto solo. L'ordine a elenco
@@ -296,8 +303,8 @@ quattro posti.
 
 E quando la sezione è **già aperta a schermo** — la plancia di `#/sezioni/:id` —
 non serve nemmeno scriverla: viene proposta da sola, e la chip la mostra accesa
-col suo nome. La rotta dà una sezione OneNote, ma un task vive in una lista
-To-Do, e una commessa può avere più consegne: quindi non si propone «la lista
+col suo nome. La rotta dà una sezione OneNote, ma un task vive in una lista, e
+una commessa può avere più consegne: quindi non si propone «la lista
 della sezione», che spesso non esiste — si propongono **tutte le sue liste**, la
 più usata di recente in cima e le altre a una freccia di distanza, sotto
 l'intestazione della commessa. La proposta si smentisce come qualsiasi altra
@@ -315,17 +322,12 @@ titolo è peggio di un parser che non fa niente. La sintassi sta in
 sappia dove va, ma che non si sappia. Apre il diagramma di chiarimento col testo
 già dentro.
 
-Allo stesso modo: il **contesto** (Lavoro / Personale / Famiglia) è in
-`categories`, la **sezione** è la lista To-Do stessa, le **sottoattività** sono
-i `checklistItems`, la **nota** è `body.content`.
-
-Tre cose sole non hanno una casa nativa in To-Do. La **stima di durata** sta
-nelle note come marker `[MIN:45]`. La **sveglia** — vedi sotto — come
-`[SVEGLIA:15:30]`. La **persona** sta nella prima riga delle note, scritta per
-esteso e non come codice, perché chi apre il task da To-Do legga una frase:
-`Da chiedere a: Sara`, `In attesa da: Sara`, `Delegato a: Sara`. Le tre righe si
-escludono a vicenda — sono tre momenti della stessa cosa, e un'attività ne porta
-una sola: scriverne una cancella le altre.
+Tutto il resto di un'attività è un campo suo: il **contesto** (Lavoro /
+Personale / Famiglia) è `contesto`, la **sezione** è la lista in cui il file sta,
+le **sottoattività** sono `sottoattivita`, la **nota** è `nota` — solo testo,
+senza niente da spogliare —, la **stima** è `stimaMin`, la **sveglia** è
+`sveglia`, la **persona** è `persona`. Il suo ruolo non è un campo: è lo stato,
+e i tre si escludono a vicenda perché sono tre momenti della stessa cosa.
 
 ### Le persone
 
@@ -344,11 +346,9 @@ corrisponde a meno di maiuscole e spazi.
 
 Sorella di «Quanto ci vuole», nel pannello di dettaglio: là si dice quanto una
 cosa dura, qui a che ora si vuole essere richiamati. Non è una scadenza — quella
-è un giorno, e To-Do ce l'ha già — ma un'ora del giorno: «alle 15:30 questa
-cosa». Le pastiglie dicono *fra quanto* (5, 15, 30 minuti, un'ora) perché è così
-che la si pensa; il campo accanto tiene l'ora esatta, che è quella che finisce
-scritta nelle note come `[SVEGLIA:hh:mm]` — e da lì si legge anche dall'app To-Do
-del telefono.
+è un giorno, e c'è già — ma un'ora del giorno: «alle 15:30 questa cosa». Le
+pastiglie dicono *fra quanto* (5, 15, 30 minuti, un'ora) perché è così che la si
+pensa; il campo accanto tiene l'ora esatta, che è quella che finisce scritta.
 
 Quando l'ora arriva, sul PC succedono tre cose insieme, perché la mente digitale
 quasi mai è la finestra davanti:
@@ -379,7 +379,7 @@ consegna, la colonna Attività e le descrizioni degli strumenti MCP.
 | Livello | Orientativamente |
 |---|---|
 | Sottoattività (`checklistItem`) | meno di **2 ore** |
-| Attività (task To-Do) | meno di **2 giorni** |
+| Attività | meno di **2 giorni** |
 | Consegna (lista annidata) | meno di **1 mese** |
 
 Il senso è la scala: ogni livello è circa dieci volte quello sotto, così
@@ -389,11 +389,11 @@ attività travestite.
 
 ## Consegne dentro una commessa
 
-Una lista To-Do è una sezione OneNote, per uguaglianza di nome. Ma una commessa
-ha più consegne, ognuna con la sua data, e i gruppi di Microsoft To-Do non
+Una lista è una sezione OneNote, per uguaglianza di nome. Ma una commessa
+ha più consegne, ognuna con la sua data, e i gruppi di liste non
 servono a niente qui: **Graph non li espone** — `todoTaskList` non ha una
 proprietà di gruppo padre, e non c'è un endpoint né in v1.0 né in beta. Quindi
-la gerarchia sta nel nome, come già i prefissi PARA e il marker `[MIN:n]`:
+la gerarchia sta nel nome, come già i prefissi PARA:
 
 ```
 GRUPPO.Consegna[-YYMMDD]
@@ -433,11 +433,12 @@ distinguono restando parenti.
 
 Un'attività **si sposta da una consegna all'altra trascinandola** sul gruppo di
 destinazione, che si accende quando la può accogliere — lo stesso gesto con cui
-la si porta su Oggi. Microsoft To-Do non ha una «move»: il task viene ricreato
-nella lista di arrivo e cancellato da quella di partenza (`moveTaskToList` in
-`src/api.js`), quindi cambia id — viene riletto per intero prima di partire, o
-le sottoattività resterebbero indietro. Lo spostamento si annulla dal solito
-avviso in basso.
+la si porta su Oggi. È uno spostamento vero: l'attività esce da un file ed entra
+in un altro portandosi dietro tutto, id compreso (`spostaTask` in
+`src/taskStore.js`). Su Microsoft To-Do non esisteva una «move» — il task veniva
+ricreato nella lista di arrivo e cancellato da quella di partenza, quindi
+cambiava id, e i blocchi già a piano che lo citavano restavano orfani. Lo
+spostamento si annulla dal solito avviso in basso.
 
 Nel serbatoio del *Piano* le consegne stanno sotto l'intestazione della loro
 commessa, rientrate: lì non si richiudono, perché a nascondere quello che non
@@ -459,8 +460,8 @@ una riga, non una ricerca-e-sostituzione in dieci file.
 | Componente | Tecnologia |
 |---|---|
 | Frontend | React 19 + Vite, react-router (hash), D3 per la mappa |
-| Autenticazione | MSAL Browser (account Microsoft personale, scope Graph in sola lettura + To-Do/Files in scrittura). Il CLI e il server MCP hanno un token proprio, con in più OneNote e Calendario in scrittura |
-| Dati | Microsoft Graph (OneNote, To-Do, Calendar, OneDrive, Mail) con cache localStorage a TTL. I file JSON dell'app stanno nella cartella `mente-digitale/` di OneDrive (quelli rimasti in root vengono spostati automaticamente al primo avvio) |
+| Autenticazione | MSAL Browser (account Microsoft personale, scope Graph in sola lettura + Files in scrittura; di To-Do resta solo `Tasks.Read`, per la migrazione una tantum). Il CLI e il server MCP hanno un token proprio, con in più OneNote e Calendario in scrittura |
+| Dati | Microsoft Graph (OneNote, Calendar, OneDrive, Mail) con cache localStorage a TTL. I file JSON dell'app — attività comprese — stanno nella cartella `mente-digitale/` di OneDrive: i fissi in cima, i registri che crescono (`diario/`, `movimento/`) e le attività (`task/`) in una sottocartella loro. Quelli rimasti dove stavano prima vengono spostati automaticamente al primo avvio |
 | Backend | Nessuno: sito statico servito da Cloudflare Pages |
 | Automazioni | GitHub Actions (`sync-calendar`) |
 

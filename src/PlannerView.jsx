@@ -2,12 +2,13 @@ import { useState, useEffect, useLayoutEffect, useRef, useMemo, Fragment } from 
 import {
   loadDailyPlans, saveDailyPlans,
   loadPlannerConfig, savePlannerConfig,
-  completeTask, getCalendarEvents, getCalendars, getCalendarFetchReport, updateCalendarColor,
+  getCalendarEvents, getCalendars, getCalendarFetchReport, updateCalendarColor,
   createCalendarEvent, updateCalendarEvent, deleteCalendarEvent, moveCalendarEvent,
-  patchCalendarEvent, graphDateTime, getTask,
+  patchCalendarEvent, graphDateTime,
   loadWorkbooks, saveWorkbooks, getWorkbookCalendarId, getWorkbookEvents, WORKBOOK_CALENDAR_NAME,
   loadIdealWeek, saveIdealWeek,
 } from './api';
+import { leggiUnTask, aggiornaTask } from './taskStore';
 import { queryClient, qk, STALE } from './queryClient';
 import Skeleton from './Skeleton';
 import TaskPool from './TaskPool';
@@ -1113,7 +1114,7 @@ export default function PlannerView({
     const color   = proj?.color ?? listColor(task._listName ?? '', listColorMapRef.current);
     const endMin  = Math.min(t2m(startTime) + blockMinutesFor(task), DAY_END_MIN);
     return {
-      id: genId(), taskId: task.id, taskTitle: task.title,
+      id: genId(), taskId: task.id, taskTitle: task.titolo,
       listId: task._listId, listName: task._listName,
       projectKey: proj?.key || null, projectColor: color,
       startTime, endTime: m2t(endMin),
@@ -1509,7 +1510,7 @@ export default function PlannerView({
     }));
     if (block.listId && block.taskId) {
       try {
-        await completeTask(block.listId, block.taskId);
+        await aggiornaTask(block.listId, block.taskId, { stato: 'done' });
         onTaskCompleted?.(block.listId, block.taskId);
       } catch (e) { console.error('complete task', e); }
     }
@@ -1557,10 +1558,9 @@ export default function PlannerView({
     }
     setBreakdownModal({ block, items: null, loading: true });
     try {
-      const full = await getTask(block.listId, block.taskId);
-      const items = (full.checklistItems || [])
-        .sort((a, b) => a.isChecked - b.isChecked)
-        .map(i => ({ ...i, selected: !i.isChecked }));
+      const full = await leggiUnTask(block.listId, block.taskId);
+      const items = (full?.sottoattivita || [])
+        .map(i => ({ ...i, selected: !i.fatta }));
       setBreakdownModal({ block, items, loading: false });
     } catch {
       setBreakdownModal(prev => ({ ...prev, loading: false, items: [], error: true }));
@@ -1577,7 +1577,7 @@ export default function PlannerView({
         b.id === breakdownModal.block.id
           ? {
               ...b,
-              subSteps:  selected.map(i => ({ id: i.id, title: i.displayName, completed: i.isChecked })),
+              subSteps:  selected.map(i => ({ id: i.id, title: i.titolo, completed: i.fatta })),
               subSplits: n > 1 ? Array.from({ length: n - 1 }, (_, k) => (k + 1) / n) : [],
             }
           : b
@@ -1737,8 +1737,8 @@ export default function PlannerView({
       onClose={closeDetail}
       onCompleted={() => { onTaskCompleted?.(selectedTask._listId, selectedTask.id); closeDetail(); }}
       onDeleted={() => { onTaskDeleted?.(selectedTask._listId, selectedTask.id); closeDetail(); }}
-      onRenamed={title => { onTaskRenamed?.(selectedTask._listId, selectedTask.id, title); setSelectedTask(prev => prev && ({ ...prev, title })); }}
-      onDueChanged={dueDateTime => onTaskDueChanged?.(selectedTask._listId, selectedTask.id, dueDateTime)}
+      onRenamed={titolo => { onTaskRenamed?.(selectedTask._listId, selectedTask.id, titolo); setSelectedTask(prev => prev && ({ ...prev, titolo })); }}
+      onDueChanged={scadenza => onTaskDueChanged?.(selectedTask._listId, selectedTask.id, scadenza)}
       onPatched={patch => onTaskPatched?.(selectedTask._listId, selectedTask.id, patch)}
       onRestored={(listId, restoredTask) => onTaskRestored?.(listId, restoredTask)}
     />
@@ -2340,7 +2340,7 @@ export default function PlannerView({
               )}
               {!breakdownModal.loading && breakdownModal.noTask && (
                 <div className="planner-modal-loading" style={{ color: 'var(--muted)' }}>
-                  Questo blocco non è collegato a un task To-Do.
+                  Questo blocco non è collegato a un'attività.
                 </div>
               )}
               {!breakdownModal.loading && breakdownModal.error && (

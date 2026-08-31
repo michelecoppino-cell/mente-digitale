@@ -11,16 +11,10 @@
 // un cambiamento che di suo non tocca la logica.
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { leggiUnTask, aggiornaTask, creaTask, eliminaTask, nuovoId } from './taskStore';
 import {
-  completeTask, createTask, deleteTask, getTask,
-  createChecklistItem, updateChecklistItem, renameChecklistItem,
-  deleteChecklistItem, reorderChecklistItems,
-  updateTaskBody, updateTaskDueDate, updateTaskStatus, updateTaskTitle,
-} from './api';
-import {
-  ESTIMATE_CHOICES, DEFAULT_ESTIMATE_MIN, parseEstimate, withEstimateMarker,
-  parseAlarm, withAlarm,
-  graphStatusFor, PERSON_ROLES, personRoleFor, parsePersonLine, withPerson, waitingDays,
+  ESTIMATE_CHOICES, DEFAULT_ESTIMATE_MIN,
+  PERSON_ROLES, personRoleFor, waitingDays,
 } from './taskModel';
 import { elencoPersone, normalizzaPersona, ricordaPersona } from './persone';
 import { SVEGLIA_CHOICES, hhmmIn, chiediNotifiche, statoNotifiche } from './sveglie';
@@ -49,25 +43,18 @@ const STATUS_CHOICES = [
   { key: 'someday',   label: 'Un giorno',       hint: 'Non adesso' },
 ];
 
-/** La persona scritta nelle note, se c'è — di qualunque dei tre ruoli. */
-function whoFrom(/** @type {string} */ body) {
-  return parsePersonLine(body)?.who || '';
-}
-
-/** Lo stato del flusso a partire dallo `status` di Graph e dalle note: sono le
- *  note a dire se un `waitingOnOthers` è un'attesa o una delega, e se un
- *  `notStarted` è una prossima azione o una cosa da chiedere. Stessa regola di
- *  taskModel.taskStatus, con in mano quello che il pannello sa. */
-function flowStatusOf(/** @type {string|undefined} */ graphStatus, /** @type {string} */ body = '') {
-  const role = parsePersonLine(body)?.role;
-  if (graphStatus === 'waitingOnOthers') return role === 'delegated' ? 'delegated' : 'waiting';
-  if (graphStatus === 'deferred') return 'someday';
-  return role === 'ask' ? 'ask' : 'next';
+/** Lo stato del flusso di un'attività, per quello che il pannello sa da solo.
+ *  Chi lo apre da una board sa di più — i blocchi nel piano, la lista Inbox —
+ *  e lo passa come prop; qui si legge il campo e basta. Prima non era un campo:
+ *  bisognava mettere insieme lo `status` di Graph e la riga della persona
+ *  scritta nelle note. */
+function flowStatusOf(/** @type {import('./taskStore').Task|null|undefined} */ t) {
+  return t?.stato || 'next';
 }
 
 /**
  * @param {Object} props
- * @param {import('./types').TodoTask} props.task
+ * @param {import('./taskStore').Task} props.task
  * @param {import('./types').Notebook[]} [props.notebooks]
  * @param {Record<string, import('./types').Section[]>} [props.sectionsMap]
  * @param {{ current: Record<string, import('./types').Page[]> }|null} [props.pagesCache]
@@ -75,15 +62,15 @@ function flowStatusOf(/** @type {string|undefined} */ graphStatus, /** @type {st
  * @param {() => void} [props.onCompleted]
  * @param {() => void} [props.onDeleted]
  * @param {(title: string) => void} [props.onRenamed]
- * @param {(due: {dateTime: string, timeZone: string}|null) => void} [props.onDueChanged]
- * @param {(listId: string, task: import('./types').TodoTask) => void} [props.onRestored]
+ * @param {(scadenza: string|null) => void} [props.onDueChanged]
+ * @param {(listId: string, task: import('./taskStore').Task) => void} [props.onRestored]
  * @param {(min: number) => void} [props.onEstimateChanged]
  * @param {(patch: Object) => void} [props.onPatched]  stato/note cambiati: il pool va allineato
  * @param {string} [props.status]        stato del flusso già derivato da chi apre il pannello
- *                                       (include `scheduled` e `inbox`, che dallo `status` di
- *                                       Graph non si vedono). Senza, si ricava da Graph.
- * @param {(t: import('./types').TodoTask) => void} [props.onSchedule]    porta al Piano
- * @param {(t: import('./types').TodoTask) => Promise<void>|void} [props.onUnschedule]  toglie il blocco
+ *                                       (include `scheduled` e `inbox`, che nel task non sono
+ *                                       scritti). Senza, si legge il campo `stato`.
+ * @param {(t: import('./taskStore').Task) => void} [props.onSchedule]    porta al Piano
+ * @param {(t: import('./taskStore').Task) => Promise<void>|void} [props.onUnschedule]  toglie il blocco
  * @param {boolean} [props.showResources]  le risorse della sezione in fondo al pannello.
  *                                         Spente dove OneNote e i percorsi sono già colonne
  *                                         accanto — nella plancia di Sezioni.
@@ -111,7 +98,7 @@ export default function TaskDetailPanel({ task, notebooks = [], sectionsMap = {}
   const sectionId = section?.id || null;
   const [loading, setLoading]         = useState(true);
   const [editingTitle, setEditingTitle] = useState(false);
-  const [titleDraft, setTitleDraft]   = useState(task.title);
+  const [titleDraft, setTitleDraft]   = useState(task.titolo);
   const [working, setWorking]         = useState(false);
   const [notes, setNotes]             = useState('');
   const [items, setItems]             = useState([]);
@@ -134,36 +121,45 @@ export default function TaskDetailPanel({ task, notebooks = [], sectionsMap = {}
   // Stato del flusso e persona attesa: si conoscono solo dopo il caricamento
   // completo del task, perché chi apre il pannello da un blocco del Piano ha in
   // mano solo id, titolo e lista.
-  const [flowStatus, setFlowStatus] = useState(() => status || flowStatusOf(task?.status, task?.body?.content || ''));
+  const [flowStatus, setFlowStatus] = useState(() => status || flowStatusOf(task));
   const [who, setWho] = useState('');
   const [waitingSince, setWaitingSince] = useState(/** @type {string|null} */ (null));
   const [savingStatus, setSavingStatus] = useState(false);
-  const estimate = parseEstimate(notes) ?? DEFAULT_ESTIMATE_MIN;
-  const sveglia = parseAlarm(notes);
+  // Stima e sveglia sono campi del task, non più marker da cercare nelle note:
+  // si tengono nello stato del pannello perché si modificano da qui.
+  const [estimateMin, setEstimateMin] = useState(/** @type {number|null} */ (null));
+  const [sveglia, setSveglia] = useState(/** @type {string|null} */ (null));
+  const estimate = estimateMin ?? DEFAULT_ESTIMATE_MIN;
 
-  useEffect(() => { setTitleDraft(task.title); setEditingTitle(false); load(); }, [task.id]); // eslint-disable-line
+  useEffect(() => { setTitleDraft(task.titolo); setEditingTitle(false); load(); }, [task.id]); // eslint-disable-line
 
   // Chi ci passa uno stato già derivato (la vista Attività, che sa dei blocchi
-  // nel piano e della lista Inbox) è più informato di Graph: quando cambia —
+  // nel piano e della lista Inbox) è più informato del campo: quando cambia —
   // il task viene programmato, o il blocco tolto — la pastiglia lo segue.
   useEffect(() => { if (status) setFlowStatus(status); }, [status, task.id]);
 
+  // Chi apre il pannello da un blocco del Piano ha in mano solo id, titolo e
+  // lista: il task per intero si rilegge qui.
   async function load() {
     setLoading(true);
     try {
-      const full = await getTask(task._listId, task.id);
-      let body = full.body?.content || '';
-      if (full.body?.contentType === 'html') {
-        body = body.replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').trim();
-      }
-      setNotes(body);
-      setItems((full.checklistItems || []).sort((a, b) => a.isChecked - b.isChecked));
-      setDueDraft(full.dueDateTime?.dateTime ? full.dueDateTime.dateTime.slice(0, 10) : '');
-      setFlowStatus(status || flowStatusOf(full.status, body));
-      setWho(whoFrom(body));
-      setWaitingSince(full.lastModifiedDateTime || full.createdDateTime || null);
+      const full = await leggiUnTask(task._listId, task.id) || task;
+      setNotes(full.nota || '');
+      setItems(full.sottoattivita || []);
+      setDueDraft(full.scadenza || '');
+      setEstimateMin(full.stimaMin ?? null);
+      setSveglia(full.sveglia || null);
+      setFlowStatus(status || flowStatusOf(full));
+      setWho(full.persona || '');
+      setWaitingSince(full.modificatoIl || full.creatoIl || null);
     } catch (e) { console.error('load task detail', e); }
     setLoading(false);
+  }
+
+  /** Una modifica al task, e l'allineamento del pool che lo tiene in mano. */
+  async function scrivi(/** @type {Object} */ patch) {
+    await aggiornaTask(task._listId, task.id, patch);
+    onPatched?.(patch);
   }
 
   async function handleDueChange(e) {
@@ -175,14 +171,14 @@ export default function TaskDetailPanel({ task, notebooks = [], sectionsMap = {}
     if (val && !/^\d{4}-\d{2}-\d{2}$/.test(val)) return;
     setSavingDue(true);
     try {
-      await updateTaskDueDate(task._listId, task.id, val || null);
-      onDueChanged?.(val ? { dateTime: val, timeZone: 'UTC' } : null);
+      await aggiornaTask(task._listId, task.id, { scadenza: val || null });
+      onDueChanged?.(val || null);
       if (prevVal !== val) {
         pushUndo({
           label: 'Scadenza task modificata',
           undo: async () => {
-            await updateTaskDueDate(task._listId, task.id, prevVal || null);
-            onDueChanged?.(prevVal ? { dateTime: prevVal, timeZone: 'UTC' } : null);
+            await aggiornaTask(task._listId, task.id, { scadenza: prevVal || null });
+            onDueChanged?.(prevVal || null);
             setDueDraft(prevVal);
           },
         });
@@ -193,52 +189,44 @@ export default function TaskDetailPanel({ task, notebooks = [], sectionsMap = {}
 
   async function handleEstimateChange(min) {
     if (min === estimate || savingEstimate) return;
-    const prev = notes;
-    const next = withEstimateMarker(notes, min);
-    // Il debounce delle note sta per riscrivere il body con la versione
-    // vecchia: va fermato, o sovrascriverebbe il marker appena messo.
-    clearTimeout(notesTimerRef.current);
-    setNotes(next);
+    const prev = estimateMin;
+    setEstimateMin(min);
     setSavingEstimate(true);
     try {
-      await updateTaskBody(task._listId, task.id, next);
+      await scrivi({ stimaMin: min });
       onEstimateChanged?.(min);
       pushUndo({
         label: `Stima portata a ${ESTIMATE_CHOICES.find(c => c.min === min)?.label ?? `${min}m`}`,
         undo: async () => {
-          await updateTaskBody(task._listId, task.id, prev);
-          setNotes(prev);
-          onEstimateChanged?.(estimate);
+          await scrivi({ stimaMin: prev });
+          setEstimateMin(prev);
+          onEstimateChanged?.(prev ?? DEFAULT_ESTIMATE_MIN);
         },
       });
     } catch (e) {
       console.error('save estimate', e);
-      setNotes(prev);
+      setEstimateMin(prev);
     }
     setSavingEstimate(false);
   }
 
   // ── Sveglia ─────────────────────────────────────────────────────────────────
-  // L'ora finisce nelle note come `[SVEGLIA:hh:mm]`, esattamente come la stima
-  // ci finisce come `[MIN:n]`: stesso posto, stesso modo di scriverlo, stesso
-  // debounce da fermare prima di riscrivere il body.
+  // L'ora del giorno in cui farsi richiamare. È un campo come la stima: prima
+  // era un marker `[SVEGLIA:hh:mm]` in mezzo al testo delle note, e ogni
+  // scrittura delle note doveva stare attenta a non portarselo via.
   /** @param {string|null} hhmm  "HH:MM", oppure null per togliere la sveglia */
   async function handleAlarmChange(hhmm) {
     if (hhmm === sveglia || savingAlarm) return;
-    const prev = notes;
-    const next = withAlarm(notes, hhmm);
-    clearTimeout(notesTimerRef.current);
-    setNotes(next);
+    const prev = sveglia;
+    setSveglia(hhmm);
     setSavingAlarm(true);
     try {
-      await updateTaskBody(task._listId, task.id, next);
-      onPatched?.({ body: { content: next, contentType: 'text' } });
+      await scrivi({ sveglia: hhmm });
       pushUndo({
         label: hhmm ? `Sveglia alle ${hhmm}` : 'Sveglia tolta',
         undo: async () => {
-          await updateTaskBody(task._listId, task.id, prev);
-          setNotes(prev);
-          onPatched?.({ body: { content: prev, contentType: 'text' } });
+          await scrivi({ sveglia: prev });
+          setSveglia(prev);
         },
       });
       // Il pannello a tutto schermo arriva comunque; la notifica di sistema è
@@ -250,18 +238,18 @@ export default function TaskDetailPanel({ task, notebooks = [], sectionsMap = {}
       }
     } catch (e) {
       console.error('save alarm', e);
-      setNotes(prev);
+      setSveglia(prev);
     }
     setSavingAlarm(false);
   }
 
   // ── Stato del flusso ────────────────────────────────────────────────────────
   // Gli stati con una persona sono tre — «da chiedere», «in attesa»,
-  // «delegata» — e sono due cose insieme: lo status su Graph, così anche l'app
-  // To-Do del telefono li vede per quello che sono, e la riga "Delegato a:
-  // Nome" in testa alle note, che è dove finisce il nome della persona perché
-  // una lista personale di To-Do non ha un campo "assegnato a". Fino a qui
-  // quella riga andava scritta a mano: nessuno poteva indovinarne la forma.
+  // «delegata» — e sono lo stato più un nome. Erano la cosa più contorta di
+  // tutta l'app: lo `status` su Graph più una riga «Delegato a: Nome» in testa
+  // alle note, perché una lista personale di To-Do non ha un campo «assegnato
+  // a». Due scritture, e un task che restava a metà se la seconda falliva.
+  // Adesso sono due campi dello stesso task, e si scrivono insieme.
   /**
    * @param {string} next        stato del flusso da applicare
    * @param {string} [whoValue]  la persona, se `next` ne prevede una
@@ -274,68 +262,59 @@ export default function TaskDetailPanel({ task, notebooks = [], sectionsMap = {}
     // nella colonna Programmate.
     if (next === 'scheduled') { if (prevStatus !== 'scheduled') onSchedule?.(task); return; }
 
-    const prevNotes = notes;
     // Il nome si normalizza sul registro delle persone (`persone.json`) e, se
     // è nuovo, viene ricordato: la volta dopo l'elenco lo propone da sé, e
     // «adc» scritto di fretta non apre un gruppo suo accanto ad «ADC».
     const role = personRoleFor(next);
     const person = role ? (ricordaPersona(whoValue) || 'qualcuno') : null;
-    const nextNotes = withPerson(notes, role, person);
-    const graph = graphStatusFor(/** @type {any} */ (next));
-    const prevGraph = graphStatusFor(/** @type {any} */ (prevStatus));
-    // Uscire da Programmate vuol dire togliere il blocco dal piano: lo stato
-    // Graph di una programmata è già `notStarted`, quindi senza questo passo la
+    const prevPerson = who || null;
+    // Uscire da Programmate vuol dire togliere il blocco dal piano: il campo
+    // `stato` di una programmata è già `next`, quindi senza questo passo la
     // pastiglia direbbe «Prossima azione» e la colonna resterebbe Programmate.
     const leavingSchedule = prevStatus === 'scheduled';
-    if (next === prevStatus && nextNotes === prevNotes) return;
+    const stato = prevStatus === 'scheduled' && next === 'next' ? 'next' : next;
+    if (stato === prevStatus && person === prevPerson && !leavingSchedule) return;
 
-    // Il debounce delle note sta per riscrivere il body con la versione
-    // vecchia: va fermato, o cancellerebbe la riga appena messa.
-    clearTimeout(notesTimerRef.current);
     setFlowStatus(next);
-    setNotes(nextNotes);
     setSavingStatus(true);
     try {
       if (leavingSchedule) await onUnschedule?.(task);
-      if (nextNotes !== prevNotes) await updateTaskBody(task._listId, task.id, nextNotes);
-      if (graph !== prevGraph) await updateTaskStatus(task._listId, task.id, graph);
-      // Senza un nome la riga dice "qualcuno": il campo deve dirlo anche lui,
-      // o resterebbe vuoto mentre le note sotto raccontano un'altra cosa.
+      const patch = { stato, persona: person };
+      await scrivi(patch);
+      // Senza un nome il campo dice "qualcuno": deve dirlo anche la casella, o
+      // resterebbe vuota mentre il task racconta un'altra cosa.
       setWho(person || '');
       setWaitingSince(new Date().toISOString());
-      onPatched?.({ status: graph, body: { content: nextNotes, contentType: 'text' } });
       // Togliere il blocco dal piano ha già il suo annulla, messo da chi lo ha
       // fatto: qui se ne aggiunge uno solo se è cambiato qualcosa sul task.
-      if (nextNotes !== prevNotes || graph !== prevGraph) {
+      if (stato !== prevStatus || person !== prevPerson) {
         pushUndo({
           label: role
             ? `${PERSON_ROLES.find(r => r.role === role)?.label} ${person}`
             : `Riportata in ${STATUS_CHOICES.find(s => s.key === next)?.label ?? next}`,
           undo: async () => {
-            if (nextNotes !== prevNotes) await updateTaskBody(task._listId, task.id, prevNotes);
-            if (graph !== prevGraph) await updateTaskStatus(task._listId, task.id, prevGraph);
+            await scrivi({ stato: prevStatus === 'scheduled' ? 'next' : prevStatus, persona: prevPerson });
             setFlowStatus(prevStatus);
-            setNotes(prevNotes);
-            setWho(whoFrom(prevNotes));
-            onPatched?.({ status: prevGraph, body: { content: prevNotes, contentType: 'text' } });
+            setWho(prevPerson || '');
           },
         });
       }
     } catch (e) {
       console.error('cambio stato task', e);
       setFlowStatus(prevStatus);
-      setNotes(prevNotes);
     }
     setSavingStatus(false);
   }
 
+  // Le note sono solo le note: nessun marker da preservare, nessuna riga della
+  // persona da non calpestare. Il debounce resta, perché si scrive a mano.
   function handleNotesChange(e) {
     const val = e.target.value;
     setNotes(val);
     clearTimeout(notesTimerRef.current);
     notesTimerRef.current = setTimeout(async () => {
       setSavingNotes(true);
-      try { await updateTaskBody(task._listId, task.id, val); } catch (e) { console.error('save notes', e); }
+      try { await scrivi({ nota: val }); } catch (e) { console.error('save notes', e); }
       setSavingNotes(false);
     }, 1200);
   }
@@ -351,106 +330,86 @@ export default function TaskDetailPanel({ task, notebooks = [], sectionsMap = {}
     return () => clearTimeout(t);
   }, [itemError]);
 
-  async function handleToggle(item) {
-    const checked = !item.isChecked;
-    setItems(prev => prev.map(i => i.id === item.id ? { ...i, isChecked: checked } : i));
+  // Le sottoattività sono un campo del task: cambiarle è riscrivere l'array.
+  // Su To-Do erano oggetti a sé, con un endpoint per creare, uno per spuntare,
+  // uno per rinominare, uno per cancellare — e per riordinarle bisognava
+  // ricrearle tutte nell'ordine voluto e cancellare le originali, perché Graph
+  // non aveva un campo d'ordine. Qui l'ordine è l'ordine dell'array.
+  /**
+   * @param {any[]} prossime
+   * @param {string} etichetta      per l'annulla
+   * @param {string} cosaFallita    per il messaggio d'errore
+   */
+  async function salvaSottoattivita(prossime, etichetta, cosaFallita) {
+    const precedenti = items;
+    setItems(prossime);
     try {
-      await updateChecklistItem(task._listId, task.id, item.id, checked);
-      pushUndo({
-        label: `"${item.displayName}" ${checked ? 'spuntata' : 'da fare'}`,
-        undo: async () => {
-          await updateChecklistItem(task._listId, task.id, item.id, !checked);
-          setItems(prev => prev.map(i => i.id === item.id ? { ...i, isChecked: !checked } : i));
-        },
-      });
-    } catch (e) {
-      setItems(prev => prev.map(i => i.id === item.id ? { ...i, isChecked: !checked } : i));
-      flashItemError('spunta checklist', e);
-    }
-  }
-
-  async function handleDelete(itemId) {
-    const removed = items.find(i => i.id === itemId);
-    setItems(prev => prev.filter(i => i.id !== itemId));
-    try {
-      await deleteChecklistItem(task._listId, task.id, itemId);
-      if (removed) {
+      await scrivi({ sottoattivita: prossime });
+      if (etichetta) {
         pushUndo({
-          label: `Voce "${removed.displayName}" eliminata`,
+          label: etichetta,
           undo: async () => {
-            const created = await createChecklistItem(task._listId, task.id, removed.displayName);
-            if (removed.isChecked) await updateChecklistItem(task._listId, task.id, created.id, true);
-            setItems(prev => [...prev, { ...created, isChecked: !!removed.isChecked }]);
+            setItems(precedenti);
+            await scrivi({ sottoattivita: precedenti });
           },
         });
       }
     } catch (e) {
-      if (removed) setItems(prev => [...prev, removed]);
-      flashItemError('eliminazione voce', e);
+      setItems(precedenti);
+      flashItemError(cosaFallita, e);
     }
   }
 
-  async function handleAdd(formEvent) {
+  function handleToggle(item) {
+    const fatta = !item.fatta;
+    return salvaSottoattivita(
+      items.map(i => (i.id === item.id ? { ...i, fatta } : i)),
+      `"${item.titolo}" ${fatta ? 'spuntata' : 'da fare'}`,
+      'spunta della sottoattività',
+    );
+  }
+
+  function handleDelete(itemId) {
+    const tolta = items.find(i => i.id === itemId);
+    return salvaSottoattivita(
+      items.filter(i => i.id !== itemId),
+      tolta ? `Voce "${tolta.titolo}" eliminata` : '',
+      'eliminazione voce',
+    );
+  }
+
+  function handleAdd(formEvent) {
     formEvent.preventDefault();
-    const text = newItemText.trim();
-    if (!text) return;
+    const testo = newItemText.trim();
+    if (!testo) return;
     setNewItemText('');
-    const tmp = { id: `tmp-${Date.now()}`, displayName: text, isChecked: false };
-    setItems(prev => [...prev, tmp]);
-    try {
-      const created = await createChecklistItem(task._listId, task.id, text);
-      setItems(prev => prev.map(i => i.id === tmp.id ? created : i));
-      pushUndo({
-        label: `Voce "${text}" aggiunta`,
-        undo: async () => {
-          await deleteChecklistItem(task._listId, task.id, created.id);
-          setItems(prev => prev.filter(i => i.id !== created.id));
-        },
-      });
-    } catch (err) {
-      setItems(prev => prev.filter(i => i.id !== tmp.id));
-      setNewItemText(text);
-      flashItemError('aggiunta voce', err);
-    }
+    return salvaSottoattivita(
+      [...items, { id: nuovoId(), titolo: testo, fatta: false }],
+      `Voce "${testo}" aggiunta`,
+      'aggiunta voce',
+    );
   }
 
   function startItemRename(item) {
     setEditingItemId(item.id);
-    setItemDraft(item.displayName);
+    setItemDraft(item.titolo);
   }
 
-  async function submitItemRename() {
+  function submitItemRename() {
     const item = items.find(i => i.id === editingItemId);
     setEditingItemId(null);
-    const text = itemDraft.trim();
-    if (!item || !text || text === item.displayName) return;
-    const prevName = item.displayName;
-    setItems(prev => prev.map(i => i.id === item.id ? { ...i, displayName: text } : i));
-    try {
-      await renameChecklistItem(task._listId, task.id, item.id, text);
-      pushUndo({
-        label: `Voce rinominata in "${text}"`,
-        undo: async () => {
-          await renameChecklistItem(task._listId, task.id, item.id, prevName);
-          setItems(prev => prev.map(i => i.id === item.id ? { ...i, displayName: prevName } : i));
-        },
-      });
-    } catch (e) {
-      console.error('rename checklist item', e);
-      setItems(prev => prev.map(i => i.id === item.id ? { ...i, displayName: item.displayName } : i));
-    }
+    const testo = itemDraft.trim();
+    if (!item || !testo || testo === item.titolo) return;
+    return salvaSottoattivita(
+      items.map(i => (i.id === item.id ? { ...i, titolo: testo } : i)),
+      `Voce rinominata in "${testo}"`,
+      'rinomina voce',
+    );
   }
 
   async function persistReorder(reordered) {
-    setItems(reordered);
     setReordering(true);
-    try {
-      const created = await reorderChecklistItems(task._listId, task.id, reordered);
-      setItems(created.sort((a, b) => a.isChecked - b.isChecked));
-    } catch (e) {
-      console.error('reorder checklist items', e);
-      await load();
-    }
+    await salvaSottoattivita(reordered, '', 'riordino sottoattività');
     setReordering(false);
   }
 
@@ -474,36 +433,37 @@ export default function TaskDetailPanel({ task, notebooks = [], sectionsMap = {}
   }
 
   function submitRename() {
-    const title = titleDraft.trim();
-    const prevTitle = task.title;
+    const titolo = titleDraft.trim();
+    const prima = task.titolo;
     setEditingTitle(false);
-    if (!title || title === task.title) { setTitleDraft(task.title); return; }
-    setTitleDraft(title);
-    updateTaskTitle(task._listId, task.id, title)
+    if (!titolo || titolo === task.titolo) { setTitleDraft(task.titolo); return; }
+    setTitleDraft(titolo);
+    scrivi({ titolo })
       .then(() => {
-        onRenamed?.(title);
+        onRenamed?.(titolo);
         pushUndo({
-          label: `Task rinominato in "${title}"`,
+          label: `Task rinominato in "${titolo}"`,
           undo: async () => {
-            await updateTaskTitle(task._listId, task.id, prevTitle);
-            onRenamed?.(prevTitle);
-            setTitleDraft(prevTitle);
+            await scrivi({ titolo: prima });
+            onRenamed?.(prima);
+            setTitleDraft(prima);
           },
         });
       })
-      .catch(e => { console.error('rename task', e); setTitleDraft(task.title); });
+      .catch(e => { console.error('rename task', e); setTitleDraft(task.titolo); });
   }
 
   async function handleCompleteTask() {
     setWorking(true);
     try {
-      await completeTask(task._listId, task.id);
-      const snapshot = { ...task };
+      const prima = flowStatus === 'scheduled' ? 'next' : flowStatus;
+      await aggiornaTask(task._listId, task.id, { stato: 'done' });
+      const snapshot = { ...task, stato: prima };
       onCompleted?.();
       pushUndo({
-        label: `Task "${task.title}" completato`,
+        label: `Task "${task.titolo}" completato`,
         undo: async () => {
-          await updateTaskStatus(task._listId, task.id, 'notStarted');
+          await aggiornaTask(task._listId, task.id, { stato: prima });
           onRestored?.(task._listId, snapshot);
         },
       });
@@ -512,33 +472,31 @@ export default function TaskDetailPanel({ task, notebooks = [], sectionsMap = {}
   }
 
   async function handleDeleteTask() {
-    if (!window.confirm(`Eliminare il task "${task.title}"? Potrai annullare subito dopo con Ctrl+Z.`)) return;
+    if (!window.confirm(`Eliminare il task "${task.titolo}"? Potrai annullare subito dopo con Ctrl+Z.`)) return;
     setWorking(true);
-    // Snapshot completo (titolo, scadenza, note, checklist) per poter
-    // ricreare il task in caso di undo — Graph non offre un "ripristina".
+    // Il task per intero, per poterlo rimettere identico se si annulla — id
+    // compreso: ricreandolo con un id nuovo, i blocchi già a piano che lo
+    // citano resterebbero orfani. Prima non si poteva: To-Do assegnava lui
+    // l'id, e un task ricreato era un altro task.
     const snapshot = {
-      title: task.title,
-      listId: task._listId,
-      listName: task._listName,
-      dueDate: dueDraft || null,
-      body: notes || '',
-      items: items.map(i => ({ displayName: i.displayName, isChecked: !!i.isChecked })),
+      ...task,
+      titolo: task.titolo,
+      nota: notes,
+      scadenza: dueDraft || null,
+      stimaMin: estimateMin,
+      sveglia,
+      stato: flowStatus === 'scheduled' ? 'next' : flowStatus,
+      persona: who || null,
+      sottoattivita: items,
     };
     try {
-      await deleteTask(task._listId, task.id);
+      await eliminaTask(task._listId, task.id);
       onDeleted?.();
       pushUndo({
-        label: `Task "${snapshot.title}" eliminato`,
+        label: `Task "${snapshot.titolo}" eliminato`,
         undo: async () => {
-          const created = await createTask(snapshot.listId, snapshot.title, {
-            body: snapshot.body || undefined,
-            dueDate: snapshot.dueDate || undefined,
-          });
-          for (const it of snapshot.items) {
-            const ci = await createChecklistItem(snapshot.listId, created.id, it.displayName);
-            if (it.isChecked) await updateChecklistItem(snapshot.listId, created.id, ci.id, true);
-          }
-          onRestored?.(snapshot.listId, { ...created, _listId: snapshot.listId, _listName: snapshot.listName });
+          const ricreato = await creaTask(task._listId, snapshot);
+          onRestored?.(task._listId, ricreato);
         },
       });
     } catch (e) { console.error('delete task', e); }
@@ -557,12 +515,12 @@ export default function TaskDetailPanel({ task, notebooks = [], sectionsMap = {}
             onBlur={submitRename}
             onKeyDown={e => {
               if (e.key === 'Enter') submitRename();
-              if (e.key === 'Escape') { setTitleDraft(task.title); setEditingTitle(false); }
+              if (e.key === 'Escape') { setTitleDraft(task.titolo); setEditingTitle(false); }
             }}
           />
         ) : (
           <div className="planner-task-detail-title" onClick={() => setEditingTitle(true)} title="Clicca per rinominare">
-            {task.title}
+            {task.titolo}
           </div>
         )}
         <div className="planner-task-detail-meta">{listLabel(task._listName)}</div>
@@ -590,10 +548,9 @@ export default function TaskDetailPanel({ task, notebooks = [], sectionsMap = {}
         <Skeleton rows={5} />
       ) : (
         <>
-          {/* La stima vive nelle note come marker [MIN:n], ed è la stessa che
-              il chiarimento chiede in «Quanto ci vuole». Fino a qui si poteva
-              scrivere solo lì: da qualunque altra parte un task valeva mezz'ora
-              per definizione. Cambiarla riscala anche il blocco già a piano. */}
+          {/* La stima è un campo del task, ed è la stessa che il chiarimento
+              chiede in «Quanto ci vuole». Cambiarla riscala anche il blocco già
+              a piano. */}
           <div className="planner-task-detail-section">
             <div className="planner-task-detail-section-label">
               Quanto ci vuole {savingEstimate && <span className="planner-saving-dot">●</span>}
@@ -611,11 +568,9 @@ export default function TaskDetailPanel({ task, notebooks = [], sectionsMap = {}
           </div>
 
           {/* La sveglia, sorella di «Quanto ci vuole»: là si dice quanto dura,
-              qui a che ora bisogna essere richiamati. Anche questa vive nelle
-              note, come `[SVEGLIA:hh:mm]`, quindi si legge anche dall'app To-Do
-              del telefono. Le pastiglie dicono «fra quanto» perché è così che
-              la si pensa; il campo accanto tiene l'ora esatta, che è quella
-              che finisce scritta. */}
+              qui a che ora bisogna essere richiamati. Le pastiglie dicono «fra
+              quanto» perché è così che la si pensa; il campo accanto tiene
+              l'ora esatta, che è quella che finisce scritta. */}
           <div className="planner-task-detail-section">
             <div className="planner-task-detail-section-label">
               Sveglia {savingAlarm && <span className="planner-saving-dot">●</span>}
@@ -747,7 +702,7 @@ export default function TaskDetailPanel({ task, notebooks = [], sectionsMap = {}
             {items.map((item, index) => (
               <div
                 key={item.id}
-                className={`planner-checklist-item${item.isChecked ? ' checked' : ''}${dragOverIndex === index ? ' drag-over' : ''}`}
+                className={`planner-checklist-item${item.fatta ? ' checked' : ''}${dragOverIndex === index ? ' drag-over' : ''}`}
                 draggable
                 onDragStart={() => { dragIndexRef.current = index; }}
                 onDragOver={e => { e.preventDefault(); setDragOverIndex(index); }}
@@ -756,7 +711,7 @@ export default function TaskDetailPanel({ task, notebooks = [], sectionsMap = {}
                 onDragEnd={() => { dragIndexRef.current = null; setDragOverIndex(null); }}>
                 <span className="planner-checklist-handle" title="Trascina per riordinare">⠿</span>
                 <button className="planner-checklist-check" onClick={() => handleToggle(item)}>
-                  {item.isChecked ? '✓' : '○'}
+                  {item.fatta ? '✓' : '○'}
                 </button>
                 {editingItemId === item.id ? (
                   <input
@@ -772,7 +727,7 @@ export default function TaskDetailPanel({ task, notebooks = [], sectionsMap = {}
                   />
                 ) : (
                   <span className="planner-checklist-text" onClick={() => startItemRename(item)} title="Clicca per rinominare">
-                    {item.displayName}
+                    {item.titolo}
                   </span>
                 )}
                 <div className="planner-checklist-move">

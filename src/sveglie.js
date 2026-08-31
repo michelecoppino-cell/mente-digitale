@@ -76,18 +76,18 @@ export const RITARDO_MAX_MIN = 10;
  * Le sveglie che devono suonare adesso: le attività non completate la cui ora
  * è arrivata (o è passata da poco) e che non hanno già suonato oggi.
  *
- * @param {import('./types').TodoTask[]} tasks
- * @param {(t: import('./types').TodoTask) => string|null} alarmOf  legge l'ora dal task
+ * @param {import('./taskStore').Task[]} tasks
+ * @param {(t: import('./taskStore').Task) => string|null} alarmOf  legge l'ora dal task
  * @param {Set<string>} suonate  le chiavi già suonate (vedi ringKey)
  * @param {Date} [now]
- * @returns {{ task: import('./types').TodoTask, ora: string, key: string }[]}
+ * @returns {{ task: import('./taskStore').Task, ora: string, key: string }[]}
  */
 export function sveglieDaSuonare(tasks, alarmOf, suonate, now = new Date()) {
   const oraOra = now.getHours() * 60 + now.getMinutes();
   const giorno = dayKey(now);
   const out = [];
   for (const t of tasks || []) {
-    if (t?.status === 'completed') continue;
+    if (t?.stato === 'done') continue;
     const ora = alarmOf(t);
     const min = minutesOf(ora);
     if (min === null || !ora) continue;

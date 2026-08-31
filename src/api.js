@@ -577,207 +577,26 @@ export async function getPageContentHtml(pageId) {
   return r.text();
 }
 
+// ── Microsoft To-Do: quel che ne resta ──────────────────────────────────────
+// I task non vivono più qui: stanno nei file nostri in mente-digitale/task/
+// (taskStore.js). Di To-Do restano solo queste due letture, e servono a una
+// cosa sola — la migrazione una tantum (taskMigrazione.js), che legge il
+// vecchio archivio per riversarlo nei file. Non si scrive più niente su To-Do:
+// resta lì com'è, congelato, finché non si deciderà se cancellarlo.
+
 /** @returns {Promise<import('./types').TodoList[]>} */
 export async function getTodoLists() {
   return callPagedValues('/me/todo/lists');
 }
 
-// Creare e rinominare una lista To-Do: è così che nasce una consegna dentro una
-// commessa (`GRUPPO.Consegna-YYMMDD`, vedi paraConfig.js) e così che se ne
-// cambia la scadenza — la data sta nel nome, quindi spostarla è una rinomina.
-// Stesso permesso già usato per creare attività (Tasks.ReadWrite): nessuno
-// scope nuovo.
-/**
- * @param {string} displayName
- * @returns {Promise<import('./types').TodoList>}
- */
-export async function createTodoList(displayName) {
-  return call('/me/todo/lists', {
-    method: 'POST',
-    body: JSON.stringify({ displayName })
-  });
-}
-
-/**
- * @param {string} listId
- * @param {string} displayName
- * @returns {Promise<import('./types').TodoList>}
- */
-export async function renameTodoList(listId, displayName) {
-  return call(`/me/todo/lists/${listId}`, {
-    method: 'PATCH',
-    body: JSON.stringify({ displayName })
-  });
-}
-
-/**
- * @param {string} listId
- * @returns {Promise<import('./types').TodoTask[]>}
- */
-export async function getTodoTasks(listId) {
-  return callPagedValues(`/me/todo/lists/${listId}/tasks?$filter=status ne 'completed'&$orderby=importance desc,createdDateTime desc&$top=50`);
-}
-
 // Tutti i task di una lista, completati compresi e con le sottoattività dentro:
-// la fotografia che serve alla migrazione su file (taskMigrazione.js), che deve
-// portarsi dietro anche quello che getTodoTasks non guarda.
+// la fotografia che serve alla migrazione.
 /**
  * @param {string} listId
  * @returns {Promise<import('./types').TodoTask[]>}
  */
 export async function getTodoTasksCompleti(listId) {
   return callPagedValues(`/me/todo/lists/${listId}/tasks?$expand=checklistItems&$top=100`, 50);
-}
-
-// Task di una lista indipendentemente dallo stato (anche completati), solo
-// id+body: usata per il controllo anti-duplicati delle scadenze ricorrenti
-// (refreshDeadlineReminders in App.jsx) — getTodoTasks esclude i completati,
-// e uno spuntato non deve poter essere ricreato al giro successivo.
-/**
- * @param {string} listId
- * @returns {Promise<import('./types').TodoTask[]>}
- */
-export async function getTasksForDeadlineDedup(listId) {
-  return callPagedValues(`/me/todo/lists/${listId}/tasks?$select=id,body&$top=200`);
-}
-
-/**
- * @param {string} listId
- * @param {string} taskId
- * @returns {Promise<any>}
- */
-export async function completeTask(listId, taskId) {
-  return call(`/me/todo/lists/${listId}/tasks/${taskId}`, {
-    method: 'PATCH',
-    body: JSON.stringify({ status: 'completed' })
-  });
-}
-
-// Usata anche per annullare un completamento (status: 'notStarted').
-/**
- * @param {string} listId
- * @param {string} taskId
- * @param {string} status
- * @returns {Promise<any>}
- */
-export async function updateTaskStatus(listId, taskId, status) {
-  return call(`/me/todo/lists/${listId}/tasks/${taskId}`, {
-    method: 'PATCH',
-    body: JSON.stringify({ status })
-  });
-}
-
-/**
- * @param {string} listId
- * @param {string} title
- * @param {{ body?: string, dueDate?: string }} [opts]
- * @returns {Promise<import('./types').TodoTask>}
- */
-export async function createTask(listId, title, opts = {}) {
-  /** @type {{ title: string, body?: import('./types').ItemBody, dueDateTime?: import('./types').GraphDateTime }} */
-  const payload = { title };
-  if (opts.body) payload.body = { content: opts.body, contentType: 'text' };
-  if (opts.dueDate) payload.dueDateTime = { dateTime: opts.dueDate, timeZone: 'UTC' };
-  return call(`/me/todo/lists/${listId}/tasks`, {
-    method: 'POST',
-    body: JSON.stringify(payload)
-  });
-}
-
-/**
- * @param {string} listId
- * @param {string} taskId
- * @param {string} title
- * @returns {Promise<any>}
- */
-export async function updateTaskTitle(listId, taskId, title) {
-  return call(`/me/todo/lists/${listId}/tasks/${taskId}`, {
-    method: 'PATCH',
-    body: JSON.stringify({ title })
-  });
-}
-
-/**
- * @param {string} listId
- * @param {string} taskId
- * @param {string|null} dueDate
- * @returns {Promise<any>}
- */
-export async function updateTaskDueDate(listId, taskId, dueDate) {
-  const payload = { dueDateTime: dueDate ? { dateTime: dueDate, timeZone: 'UTC' } : null };
-  return call(`/me/todo/lists/${listId}/tasks/${taskId}`, {
-    method: 'PATCH',
-    body: JSON.stringify(payload)
-  });
-}
-
-// Contesto dell'attività: `categories` è un campo nativo di To-Do, quindi la
-// scelta resta leggibile anche aprendo il task da un'altra app.
-/**
- * @param {string} listId
- * @param {string} taskId
- * @param {string[]} categories
- * @returns {Promise<any>}
- */
-export async function updateTaskCategories(listId, taskId, categories) {
-  return call(`/me/todo/lists/${listId}/tasks/${taskId}`, {
-    method: 'PATCH',
-    body: JSON.stringify({ categories })
-  });
-}
-
-// Sposta un task in un'altra lista — cioè, nel modello PARA dell'app, in
-// un'altra sezione. Graph non ha una "move": si ricrea il task nella lista di
-// destinazione con tutto ciò che porta con sé e si cancella l'originale, in
-// quest'ordine, così un errore a metà lascia un doppione (recuperabile) invece
-// di far sparire il task.
-/**
- * @param {string} fromListId
- * @param {string} toListId
- * @param {import('./types').TodoTask} task
- * @returns {Promise<import('./types').TodoTask>}
- */
-export async function moveTaskToList(fromListId, toListId, task) {
-  /** @type {Record<string, any>} */
-  const payload = {
-    title: task.title,
-    status: task.status || 'notStarted',
-    importance: task.importance || 'normal',
-  };
-  if (task.body) payload.body = { content: task.body.content || '', contentType: 'text' };
-  if (task.dueDateTime) payload.dueDateTime = task.dueDateTime;
-  if (task.categories?.length) payload.categories = task.categories;
-
-  const created = await call(`/me/todo/lists/${toListId}/tasks`, {
-    method: 'POST',
-    body: JSON.stringify(payload)
-  });
-
-  // Le sottoattività non si possono creare nello stesso POST del task.
-  for (const item of task.checklistItems || []) {
-    try {
-      await call(`/me/todo/lists/${toListId}/tasks/${created.id}/checklistItems`, {
-        method: 'POST',
-        body: JSON.stringify({ displayName: item.displayName, isChecked: item.isChecked })
-      });
-    } catch (e) {
-      console.error('move task: sottoattività non copiata', item.displayName, e);
-    }
-  }
-
-  await call(`/me/todo/lists/${fromListId}/tasks/${task.id}`, { method: 'DELETE' });
-  return created;
-}
-
-/**
- * @param {string} listId
- * @param {string} taskId
- * @returns {Promise<any>}
- */
-export async function deleteTask(listId, taskId) {
-  return call(`/me/todo/lists/${listId}/tasks/${taskId}`, {
-    method: 'DELETE',
-  });
 }
 
 /** @param {string|null|undefined} s @returns {string} */
@@ -1759,109 +1578,6 @@ export async function deleteDiaryPhoto(name) {
     // citava sta comunque per sparire.
     if (/** @type {any} */ (e)?.status !== 404) throw e;
   }
-}
-
-/**
- * @param {string} listId
- * @param {string} taskId
- * @returns {Promise<import('./types').TodoTask>}
- */
-export async function getTask(listId, taskId) {
-  return call(`/me/todo/lists/${listId}/tasks/${taskId}?$expand=checklistItems`);
-}
-
-/**
- * @param {string} listId
- * @param {string} taskId
- * @param {string} content
- * @returns {Promise<any>}
- */
-export async function updateTaskBody(listId, taskId, content) {
-  return call(`/me/todo/lists/${listId}/tasks/${taskId}`, {
-    method: 'PATCH',
-    body: JSON.stringify({ body: { content, contentType: 'text' } }),
-  });
-}
-
-/**
- * @param {string} listId
- * @param {string} taskId
- * @param {string} displayName
- * @returns {Promise<import('./types').ChecklistItem>}
- */
-export async function createChecklistItem(listId, taskId, displayName) {
-  return call(`/me/todo/lists/${listId}/tasks/${taskId}/checklistItems`, {
-    method: 'POST',
-    body: JSON.stringify({ displayName, isChecked: false }),
-  });
-}
-
-/**
- * @param {string} listId
- * @param {string} taskId
- * @param {string} itemId
- * @param {boolean} isChecked
- * @returns {Promise<any>}
- */
-export async function updateChecklistItem(listId, taskId, itemId, isChecked) {
-  return call(`/me/todo/lists/${listId}/tasks/${taskId}/checklistItems/${itemId}`, {
-    method: 'PATCH',
-    body: JSON.stringify({ isChecked }),
-  });
-}
-
-/**
- * @param {string} listId
- * @param {string} taskId
- * @param {string} itemId
- * @param {string} displayName
- * @returns {Promise<any>}
- */
-export async function renameChecklistItem(listId, taskId, itemId, displayName) {
-  return call(`/me/todo/lists/${listId}/tasks/${taskId}/checklistItems/${itemId}`, {
-    method: 'PATCH',
-    body: JSON.stringify({ displayName }),
-  });
-}
-
-/**
- * @param {string} listId
- * @param {string} taskId
- * @param {string} itemId
- * @returns {Promise<any>}
- */
-export async function deleteChecklistItem(listId, taskId, itemId) {
-  return call(`/me/todo/lists/${listId}/tasks/${taskId}/checklistItems/${itemId}`, {
-    method: 'DELETE',
-  });
-}
-
-// Graph non espone un campo di ordinamento per i checklistItem: l'unico modo
-// per persistere un nuovo ordine è ricrearli nella sequenza voluta (l'ordine
-// restituito da Graph segue quello di creazione) ed eliminare gli originali.
-/**
- * @param {string} listId
- * @param {string} taskId
- * @param {import('./types').ChecklistItem[]} orderedItems
- * @returns {Promise<import('./types').ChecklistItem[]>}
- */
-export async function reorderChecklistItems(listId, taskId, orderedItems) {
-  const base = `/me/todo/lists/${listId}/tasks/${taskId}/checklistItems`;
-  /** @type {import('./types').ChecklistItem[]} */
-  const created = [];
-  try {
-    for (const item of orderedItems) {
-      created.push(await call(base, {
-        method: 'POST',
-        body: JSON.stringify({ displayName: item.displayName, isChecked: item.isChecked }),
-      }));
-    }
-  } catch (e) {
-    await Promise.all(created.map(c => call(`${base}/${c.id}`, { method: 'DELETE' }).catch(() => {})));
-    throw e;
-  }
-  await Promise.all(orderedItems.map(item => call(`${base}/${item.id}`, { method: 'DELETE' }).catch(() => {})));
-  return created;
 }
 
 // Elenco dei reminder (di eventi Calendario) che scattano nella finestra di

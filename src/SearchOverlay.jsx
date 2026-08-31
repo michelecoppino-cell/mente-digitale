@@ -48,8 +48,8 @@ function SearchBox({ onClose, notebooks, sectionsMap, pagesCache, tasks, onSelec
     }
 
     for (const t of tasks) {
-      const sc = score(t.title);
-      if (sc) out.push({ type: 'task', label: t.title, sub: t._listName, important: t.importance === 'high', sc, task: t });
+      const sc = score(t.titolo);
+      if (sc) out.push({ type: 'task', label: t.titolo, sub: t._listName, sc, task: t });
     }
 
     const order = { section: 0, page: 1, task: 2 };
@@ -66,7 +66,9 @@ function SearchBox({ onClose, notebooks, sectionsMap, pagesCache, tasks, onSelec
     } else if (r.type === 'page') {
       openProtocol(r.page.links?.oneNoteClientUrl?.href);
     } else if (r.type === 'task') {
-      // Apri il pannello della sezione omonima alla lista, tab ToDo; fallback: app To-Do
+      // Apre il pannello della sezione che si chiama come la lista, sulla
+      // scheda delle attività. Se non c'è, non c'è nient'altro da aprire:
+      // prima si ripiegava sull'app To-Do, che adesso non tiene più niente.
       const lower = (r.task._listName || '').toLowerCase();
       let found = null;
       for (const nb of notebooks) {
@@ -74,7 +76,6 @@ function SearchBox({ onClose, notebooks, sectionsMap, pagesCache, tasks, onSelec
         if (sec) { found = { sec, nb }; break; }
       }
       if (found) onSelectSection(found.sec, found.nb, 'todo');
-      else openProtocol(`ms-to-do://tasks/id/${r.task.id}`);
     }
     onClose();
   }
@@ -130,7 +131,6 @@ function SearchBox({ onClose, notebooks, sectionsMap, pagesCache, tasks, onSelec
                   {TYPE_META[r.type].icon}
                 </span>
                 <span className="search-result-label">
-                  {r.important && <span className="search-star">★ </span>}
                   {r.label}
                 </span>
                 <span className="search-result-sub">{r.sub}</span>

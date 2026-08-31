@@ -30,7 +30,7 @@ import {
   DEFAULT_CONFIG, findProject, buildListColorMap, listColor, formatDueDate, dueDateSortValue, isTaskOverdue,
 } from './plannerShared';
 import { listLabel } from './paraConfig';
-import { completeTask, updateTaskStatus } from './api';
+import { aggiornaTask } from './taskStore';
 import { pushUndo } from './undo';
 import { useMediaQuery } from './useMediaQuery';
 import Skeleton from './Skeleton';
@@ -119,9 +119,9 @@ function fmtWhen(/** @type {{date: string, startTime: string}} */ placement) {
 }
 
 /**
- * Le liste di To-Do in cui ci sono davvero attività, col loro conteggio, in
+ * Le liste in cui ci sono davvero attività, col loro conteggio, in
  * ordine alfabetico.
- * @param {import('./types').TodoTask[]} tasks
+ * @param {import('./taskStore').Task[]} tasks
  * @returns {{ id: string, name: string, count: number }[]}
  */
 function countByList(tasks) {
@@ -152,7 +152,7 @@ function CheckMark() {
  * ogni card ne occupava tre, e in una colonna ci stavano sei attività.
  *
  * @param {Object} props
- * @param {import('./types').TodoTask} props.task
+ * @param {import('./taskStore').Task} props.task
  * @param {string} props.status
  * @param {string} props.color
  * @param {{ date: string, startTime: string, endTime: string, completed: boolean }|null} props.placement
@@ -160,9 +160,9 @@ function CheckMark() {
  * @param {boolean} props.selected
  * @param {boolean} [props.showPerson]  il nome della persona a destra: spento dentro
  *                                      le aree, dove il gruppo lo dice già
- * @param {(t: import('./types').TodoTask) => void} props.onClick
- * @param {(t: import('./types').TodoTask) => void} props.onComplete
- * @param {(t: import('./types').TodoTask) => void} props.onDragStart
+ * @param {(t: import('./taskStore').Task) => void} props.onClick
+ * @param {(t: import('./taskStore').Task) => void} props.onComplete
+ * @param {(t: import('./taskStore').Task) => void} props.onDragStart
  * @param {() => void} props.onDragEnd
  */
 function TaskRow({ task, status, color, placement, dragging, selected, showPerson = true, onClick, onComplete, onDragStart, onDragEnd }) {
@@ -171,7 +171,7 @@ function TaskRow({ task, status, color, placement, dragging, selected, showPerso
   // ripeterlo su ogni riga sarebbe scriverlo due volte.
   const person = showPerson && personRoleFor(status) ? taskPerson(task) : null;
   const days = person ? waitingDays(person.since) : null;
-  const due = formatDueDate(task.dueDateTime);
+  const due = formatDueDate(task.scadenza);
   const slipped = placement ? isSlipped(placement, todayStr()) : false;
 
   // La riga non è un <button>: dentro ce n'è uno vero, la spunta, e un bottone
@@ -183,7 +183,7 @@ function TaskRow({ task, status, color, placement, dragging, selected, showPerso
       role="button"
       tabIndex={0}
       draggable
-      title={task.title}
+      title={task.titolo}
       onDragStart={e => { e.dataTransfer.effectAllowed = 'move'; onDragStart(task); }}
       onDragEnd={onDragEnd}
       onClick={() => onClick(task)}
@@ -195,11 +195,11 @@ function TaskRow({ task, status, color, placement, dragging, selected, showPerso
       <button
         className="ab-row-check"
         title="Segna come fatta"
-        aria-label={`Segna "${task.title}" come fatta`}
+        aria-label={`Segna "${task.titolo}" come fatta`}
         onClick={e => { e.stopPropagation(); onComplete(task); }}>
         <CheckMark />
       </button>
-      <span className="ab-row-title">{task.title}</span>
+      <span className="ab-row-title">{task.titolo}</span>
 
       <span className="ab-row-meta">
         {person && (
@@ -208,7 +208,7 @@ function TaskRow({ task, status, color, placement, dragging, selected, showPerso
           </span>
         )}
         {due && status !== 'scheduled' && (
-          <span className={`ab-due${isTaskOverdue(task.dueDateTime) ? ' overdue' : ''}`} title={`Scade il ${due}`}>{due}</span>
+          <span className={`ab-due${isTaskOverdue(task.scadenza) ? ' overdue' : ''}`} title={`Scade il ${due}`}>{due}</span>
         )}
         {status === 'scheduled' && placement ? (
           <span className={`ab-when${slipped ? ' slipped' : ''}`} title={slipped ? 'Non finita nel blocco previsto' : 'Quando è in programma'}>
@@ -224,7 +224,7 @@ function TaskRow({ task, status, color, placement, dragging, selected, showPerso
 
 /**
  * @param {Object} props
- * @param {import('./types').TodoTask[]} props.tasks
+ * @param {import('./taskStore').Task[]} props.tasks
  * @param {import('./types').TodoList[]} props.todoLists
  * @param {Record<string, import('./types').DayPlan>} props.plans
  * @param {import('./types').PlannerConfig} [props.config]
@@ -232,13 +232,13 @@ function TaskRow({ task, status, color, placement, dragging, selected, showPerso
  * @param {import('./types').Notebook[]} [props.notebooks]
  * @param {Record<string, import('./types').Section[]>} [props.sectionsMap]
  * @param {{ current: Record<string, import('./types').Page[]> }|null} [props.pagesCache]
- * @param {(t: import('./types').TodoTask) => void} props.onClarify        card di Inbox: va chiarita, non spostata
- * @param {(t: import('./types').TodoTask, s: string) => void} props.onChangeStatus
- * @param {(t: import('./types').TodoTask) => void} props.onSchedule       porta al Piano sul giorno corrente
- * @param {(t: import('./types').TodoTask) => void} props.onUnschedule     toglie il blocco dal piano
+ * @param {(t: import('./taskStore').Task) => void} props.onClarify        card di Inbox: va chiarita, non spostata
+ * @param {(t: import('./taskStore').Task, s: string) => void} props.onChangeStatus
+ * @param {(t: import('./taskStore').Task) => void} props.onSchedule       porta al Piano sul giorno corrente
+ * @param {(t: import('./taskStore').Task) => void} props.onUnschedule     toglie il blocco dal piano
  * @param {(listId: string, taskId: string) => void} [props.onTaskRemoved]
  * @param {(listId: string, taskId: string, patch: Object) => void} [props.onTaskPatched]
- * @param {(listId: string, task: import('./types').TodoTask) => void} [props.onTaskRestored]
+ * @param {(listId: string, task: import('./taskStore').Task) => void} [props.onTaskRestored]
  */
 export default function ActivityBoard({
   tasks = [], todoLists = [], plans = {}, config = DEFAULT_CONFIG, loading = false,
@@ -255,11 +255,11 @@ export default function ActivityBoard({
   const ctxFilter = useMemo(() => parseFilter(params.get('ctx')), [params]);
   const listFilter = useMemo(() => parseFilter(params.get('lista')), [params]);
   const [query, setQuery] = useState('');
-  const [dragTask, setDragTask] = useState(/** @type {import('./types').TodoTask|null} */ (null));
+  const [dragTask, setDragTask] = useState(/** @type {import('./taskStore').Task|null} */ (null));
   const [dragOver, setDragOver] = useState(/** @type {string|null} */ (null));
   // L'attività aperta nel dettaglio. È stato di vista, non del pool: chiuderla
   // non cambia niente su Graph.
-  const [openTask, setOpenTask] = useState(/** @type {import('./types').TodoTask|null} */ (null));
+  const [openTask, setOpenTask] = useState(/** @type {import('./taskStore').Task|null} */ (null));
   // Le colonne che l'utente ha aperto o chiuso a mano, contro il loro default:
   // solo «Inbox» e «Un giorno» hanno una striscia da cui riaprirsi. `true` =
   // tenuta aperta, `false` = tenuta chiusa, assente = come dice il default.
@@ -304,7 +304,7 @@ export default function ActivityBoard({
     [notebooks, sectionsMap, todoLists]
   );
 
-  /** @param {import('./types').TodoTask} t */
+  /** @param {import('./taskStore').Task} t */
   function colorForTask(t) {
     const proj = findProject(t, config);
     return proj?.color || listColor(t._listName || '', listColorMap);
@@ -319,21 +319,21 @@ export default function ActivityBoard({
     [detailTask, scheduled, inboxId],
   );
 
-  // Le liste di To-Do in cui ci sono davvero attività, col loro conteggio: è
+  // Le liste in cui ci sono davvero attività, col loro conteggio: è
   // così che le attività sono organizzate qui dentro — una lista per sezione
-  // PARA — e finora la testata offriva solo i contesti, che sono le
-  // `categories` di To-Do. Chi non le usa aveva tre filtri che non filtravano
-  // niente: «Lavoro» svuotava la board invece di mostrare il lavoro.
+  // PARA — e finora la testata offriva solo i contesti. Chi non li usa aveva
+  // tre filtri che non filtravano niente: «Lavoro» svuotava la board invece di
+  // mostrare il lavoro.
   const lists = useMemo(() => countByList(tasks), [tasks]);
 
   // I contesti restano, ma solo per chi li usa davvero: le pastiglie compaiono
-  // se almeno un'attività porta una categoria.
+  // se almeno un'attività ne porta uno.
   const hasContexts = useMemo(() => tasks.some(t => taskContext(t)), [tasks]);
 
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase();
     return tasks.filter(t => {
-      if (q && !(t.title || '').toLowerCase().includes(q)) return false;
+      if (q && !(t.titolo || '').toLowerCase().includes(q)) return false;
       if (listFilter.size && !listFilter.has(t._listId || '')) return false;
       if (ctxFilter.size && !ctxFilter.has(taskContext(t) || '')) return false;
       return true;
@@ -341,7 +341,7 @@ export default function ActivityBoard({
   }, [tasks, query, ctxFilter, listFilter]);
 
   const byStatus = useMemo(() => {
-    /** @type {Record<string, import('./types').TodoTask[]>} */
+    /** @type {Record<string, import('./taskStore').Task[]>} */
     const out = {};
     for (const k of BOARD_STATUSES) out[k] = [];
     for (const t of visible) {
@@ -355,7 +355,7 @@ export default function ActivityBoard({
       return `${pa?.date} ${pa?.startTime}`.localeCompare(`${pb?.date} ${pb?.startTime}`);
     });
     for (const k of ['next', 'ask', 'waiting', 'delegated', 'someday', 'inbox']) {
-      out[k].sort((a, b) => dueDateSortValue(a.dueDateTime) - dueDateSortValue(b.dueDateTime));
+      out[k].sort((a, b) => dueDateSortValue(a.scadenza) - dueDateSortValue(b.scadenza));
     }
     return out;
   }, [visible, scheduled, inboxId]);
@@ -364,10 +364,10 @@ export default function ActivityBoard({
   // con lo stesso colore. L'ordine dei gruppi è alfabetico — l'ordine interno
   // resta quello della colonna (orario o scadenza).
   const groupedByStatus = useMemo(() => {
-    /** @type {Record<string, { key: string, name: string, color: string, tasks: import('./types').TodoTask[] }[]>} */
+    /** @type {Record<string, { key: string, name: string, color: string, tasks: import('./taskStore').Task[] }[]>} */
     const out = {};
     for (const col of COLUMNS) {
-      /** @type {Map<string, { key: string, name: string, color: string, tasks: import('./types').TodoTask[] }>} */
+      /** @type {Map<string, { key: string, name: string, color: string, tasks: import('./taskStore').Task[] }>} */
       const groups = new Map();
       for (const t of byStatus[col.status]) {
         const proj = findProject(t, config);
@@ -393,10 +393,10 @@ export default function ActivityBoard({
   // «ADC». Il nome è quello scritto sul task — il pannello lo normalizza sul
   // registro (`persone.json`), così «adc» e «ADC» non fanno due gruppi.
   const groupedByPerson = useMemo(() => {
-    /** @type {Record<string, { key: string, name: string, tasks: import('./types').TodoTask[] }[]>} */
+    /** @type {Record<string, { key: string, name: string, tasks: import('./taskStore').Task[] }[]>} */
     const out = {};
     for (const status of Object.keys(SUB_AREAS)) {
-      /** @type {Map<string, { key: string, name: string, tasks: import('./types').TodoTask[] }>} */
+      /** @type {Map<string, { key: string, name: string, tasks: import('./taskStore').Task[] }>} */
       const groups = new Map();
       for (const t of byStatus[status]) {
         const who = taskPerson(t)?.who || 'Senza nome';
@@ -466,28 +466,28 @@ export default function ActivityBoard({
     if (from === 'scheduled') onUnschedule(task);
     onChangeStatus(task, target);
     // Attesa, domanda e delega restano mute finché non si dice di chi si
-    // tratta: il nome vive nelle note, e nessuno può indovinarlo. Trascinarci
-    // dentro un'attività senza persona apre quindi il dettaglio, dove c'è il
-    // campo — con l'elenco delle solite persone già pronto.
+    // tratta, e nessuno può indovinarlo. Trascinarci dentro un'attività senza
+    // persona apre quindi il dettaglio, dove c'è il campo — con l'elenco delle
+    // solite persone già pronto.
     if (personRoleFor(target) && !taskPerson(task)) setOpenTask(task);
   }
 
-  // Spuntare un'attività dalla board. Il completamento sta su Graph — la
+  // Spuntare un'attività dalla board. Il completamento sta nel file — la
   // colonna sparisce perché il task esce dal pool, non perché la board tenga
   // un elenco di "fatte" per conto suo — e l'annulla lo riporta indietro come
   // ovunque nell'app.
-  async function handleComplete(/** @type {import('./types').TodoTask} */ task) {
+  async function handleComplete(/** @type {import('./taskStore').Task} */ task) {
     const listId = task._listId || '';
     const snapshot = { ...task };
-    const before = task.status || 'notStarted';
+    const prima = task.stato || 'next';
     onTaskRemoved?.(listId, task.id);
     if (openTask?.id === task.id) setOpenTask(null);
     try {
-      await completeTask(listId, task.id);
+      await aggiornaTask(listId, task.id, { stato: 'done' });
       pushUndo({
-        label: `"${task.title}" fatta`,
+        label: `"${task.titolo}" fatta`,
         undo: async () => {
-          await updateTaskStatus(listId, task.id, before);
+          await aggiornaTask(listId, task.id, { stato: prima });
           onTaskRestored?.(listId, snapshot);
         },
       });
@@ -558,13 +558,14 @@ export default function ActivityBoard({
     onClose: () => setOpenTask(null),
     onCompleted: () => { if (detailTask) onTaskRemoved?.(detailTask._listId || '', detailTask.id); setOpenTask(null); },
     onDeleted: () => { if (detailTask) onTaskRemoved?.(detailTask._listId || '', detailTask.id); setOpenTask(null); },
-    onRenamed: (/** @type {string} */ title) => { if (detailTask) onTaskPatched?.(detailTask._listId || '', detailTask.id, { title }); },
-    onDueChanged: (/** @type {any} */ dueDateTime) => { if (detailTask) onTaskPatched?.(detailTask._listId || '', detailTask.id, { dueDateTime }); },
+    onRenamed: (/** @type {string} */ titolo) => { if (detailTask) onTaskPatched?.(detailTask._listId || '', detailTask.id, { titolo }); },
+    onDueChanged: (/** @type {string|null} */ scadenza) => { if (detailTask) onTaskPatched?.(detailTask._listId || '', detailTask.id, { scadenza }); },
     onPatched: (/** @type {Object} */ patch) => { if (detailTask) onTaskPatched?.(detailTask._listId || '', detailTask.id, patch); },
     onRestored: (/** @type {string} */ listId, /** @type {any} */ restored) => onTaskRestored?.(listId, restored),
-    // Lo stato lo sa la board, non Graph: una programmata su To-Do è un
-    // `notStarted` come tutti gli altri, e il pannello mostrava «Prossima
-    // azione» per un'attività aperta dalla colonna Programmate.
+    // Lo stato lo sa la board, non il file: `scheduled` non è scritto da
+    // nessuna parte — è la presenza di un blocco nel piano — e senza dirglielo
+    // il pannello mostrerebbe «Prossima azione» per un'attività aperta dalla
+    // colonna Programmate.
     status: detailStatus,
     onSchedule,
     onUnschedule,
@@ -608,11 +609,11 @@ export default function ActivityBoard({
     );
   }
 
-  // Scadenza: un solo elenco, ordinato per dueDateTime, di tutto ciò che ne ha una.
+  // Scadenza: un solo elenco, ordinato per scadenza, di tutto ciò che ne ha una.
   if (view === 'scadenza') {
     const withDue = visible
-      .filter(t => t.dueDateTime)
-      .sort((a, b) => dueDateSortValue(a.dueDateTime) - dueDateSortValue(b.dueDateTime));
+      .filter(t => t.scadenza)
+      .sort((a, b) => dueDateSortValue(a.scadenza) - dueDateSortValue(b.scadenza));
     return (
       <div className="ab">
         {header}
@@ -631,12 +632,12 @@ export default function ActivityBoard({
                 <button
                   className="ab-row-check"
                   title="Segna come fatta"
-                  aria-label={`Segna "${t.title}" come fatta`}
+                  aria-label={`Segna "${t.titolo}" come fatta`}
                   onClick={e => { e.stopPropagation(); handleComplete(t); }}>
                   <CheckMark />
                 </button>
-                <span className={`ab-due${isTaskOverdue(t.dueDateTime) ? ' overdue' : ''}`}>{formatDueDate(t.dueDateTime)}</span>
-                <span className="ab-deadline-title">{t.title}</span>
+                <span className={`ab-due${isTaskOverdue(t.scadenza) ? ' overdue' : ''}`}>{formatDueDate(t.scadenza)}</span>
+                <span className="ab-deadline-title">{t.titolo}</span>
                 <span className="ab-deadline-list">{listLabel(t._listName)}</span>
               </div>
             ))}

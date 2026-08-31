@@ -1,7 +1,9 @@
 import { useState, useEffect, useMemo, useRef, lazy, Suspense } from 'react';
 import { Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { initAuth, getAccount, login, trySsoSilent, getAuthDiagnostics, onInteractionRequired, isInteractionRequired, reconnect, startTokenKeepAlive } from './auth';
-import { getNotebooks, getSections, getTodoLists, getTodoTasks, getPages, getRecentEmails, getPageContentHtml, markOneNoteTagDone, getReminders, createTask, getCalendarEvents, getTasksForDeadlineDedup, invalidateCalendarsCache, loadColorSettings, saveColorSettings, migrateLegacyDriveFiles, loadPlannerConfig, loadDailyPlans, saveDailyPlans, updateTaskStatus, updateTaskBody, completeTask, createTodoList, renameTodoList } from './api';
+import { getNotebooks, getSections, getPages, getRecentEmails, getPageContentHtml, markOneNoteTagDone, getReminders, getCalendarEvents, invalidateCalendarsCache, loadColorSettings, saveColorSettings, migrateLegacyDriveFiles, loadPlannerConfig, loadDailyPlans, saveDailyPlans } from './api';
+import { elencoListe, leggiTask, leggiTaskAperti, creaTask, aggiornaTask, creaLista, rinominaLista } from './taskStore';
+import { migraSeServe } from './taskMigrazione';
 import { getMarker, setMarker, clearMarkers } from './markers';
 import { queryClient, qk, STALE } from './queryClient';
 import { extractEmailCandidates, extractOneNoteCandidates } from './dailyReview';
@@ -23,7 +25,7 @@ import AppShell from './AppShell';
 import ShortcutsPanel from './ShortcutsPanel';
 import TodayView from './TodayView';
 import SectionsView from './SectionsView';
-import { graphStatusFor, personRoleFor, taskPerson, withPerson, STATUS_LABELS } from './taskModel';
+import { personRoleFor, taskPerson, STATUS_LABELS } from './taskModel';
 import { pushUndo } from './undo';
 import { COLORS, BUILD_TIME } from './config';
 import UndoToast from './UndoToast';
@@ -304,7 +306,7 @@ export default function App() {
   // Config del Piano: la vista Attività ne ha bisogno per i colori di
   // progetto, altrimenti mostrerebbe quelli segnaposto del default.
   const [plannerConfig, setPlannerConfig] = useState(DEFAULT_CONFIG);
-  // Le liste To-Do servono alla board (per sapere qual è l'Inbox) e al
+  // Le liste servono alla board (per sapere qual è l'Inbox) e al
   // chiarimento (per scegliere la sezione). todoListsRef non basta: è un ref,
   // non fa ri-renderizzare quando arriva.
   const [todoLists, setTodoLists] = useState([]);
@@ -595,8 +597,14 @@ export default function App() {
       notebooksRef.current = nbs;
       setNotebooks(nbs);
 
-      // Liste ToDo
-      const lists = await fetchCached(qk.todolists(), getTodoLists, STALE.todolists, forceRefresh);
+      // Le liste dei task. Se è la prima apertura dopo il passaggio ai file
+      // nostri non c'è ancora niente da leggere: i task stanno solo su To-Do e
+      // vanno portati di qua prima. Si chiede solo quando non se ne ha già una
+      // copia in cache, altrimenti sarebbe una lettura in più a ogni avvio.
+      if (!(/** @type {any[]|undefined} */ (queryClient.getQueryData(qk.todolists()))?.length)) {
+        await migraSeServe().catch(e => console.error('migrazione task da To-Do', e));
+      }
+      const lists = await fetchCached(qk.todolists(), elencoListe, STALE.todolists, forceRefresh);
       todoListsRef.current = lists;
       setTodoLists(lists);
       const map = {};
@@ -700,11 +708,11 @@ export default function App() {
 
   // Scadenze ricorrenti (assicurazioni, salute, tasse...): un evento Calendario
   // ricorrente intitolato "[NOME-LISTA] Titolo", con reminder nativo impostato
-  // con l'anticipo desiderato, fa comparire un task nella lista To-Do di
+  // con l'anticipo desiderato, fa comparire un task nella lista di
   // quell'Area nel momento in cui il reminder scatta — letto tramite
   // reminderView sulla finestra dall'ultimo controllo riuscito a oggi.
-  // Nessuna proposta da accettare: il task compare direttamente, coerente con
-  // l'uso quotidiano di To-Do (resta lì finché non lo spunti).
+  // Nessuna proposta da accettare: il task compare direttamente e resta lì
+  // finché non lo si spunta.
   async function refreshDeadlineReminders(todoLists) {
     try {
       const lastCheck = getMarker(DEADLINE_LAST_CHECK_KEY);
@@ -727,13 +735,19 @@ export default function App() {
         const marker = reminderMarker(r.eventId, startIso);
 
         if (!tasksByListId[list.id]) {
-          tasksByListId[list.id] = await getTasksForDeadlineDedup(list.id).catch(e => { console.error('deadline tasks', list.displayName, e); return []; });
+          tasksByListId[list.id] = await leggiTask(list.id).catch(e => { console.error('deadline tasks', list.displayName, e); return []; });
         }
         if (tasksByListId[list.id].some(t => hasReminderMarker(t, marker))) continue;
 
         try {
-          const dueDate = startIso ? startIso.slice(0, 19) : undefined;
-          const task = await createTask(list.id, parsed.title, { body: marker, ...(dueDate ? { dueDate } : {}) });
+          const task = await creaTask(list.id, {
+            titolo: parsed.title,
+            ...(startIso ? { scadenza: startIso.slice(0, 10) } : {}),
+            // Quale occorrenza di quale evento ha generato il task: è così che
+            // alla scansione dopo non lo si ricrea. Prima era un marker nelle
+            // note, adesso è un campo.
+            origineScadenza: marker,
+          });
           tasksByListId[list.id].push(task);
           setScheduledTasks(prev => [...(prev || []), { ...task, _listName: list.displayName, _listId: list.id }]);
         } catch (e) { console.error('create deadline task', parsed.title, e); }
@@ -810,7 +824,7 @@ export default function App() {
     let anyError = false;
     for (const l of lists) {
       try {
-        const tasks = await fetchCached(qk.tasks(l.id), () => getTodoTasks(l.id), STALE.tasks, forceRefresh);
+        const tasks = await fetchCached(qk.tasks(l.id), () => leggiTaskAperti(l.id), STALE.tasks, forceRefresh);
         tasksCache.current[l.id] = tasks;
         tasks.forEach(t => allTasks.push({ ...t, _listName: l.displayName, _listId: l.id }));
         await new Promise(r => setTimeout(r, 200));
@@ -915,7 +929,7 @@ export default function App() {
     applyColorSettings({ notebooks: cur.notebooks, sections: nextSections });
   }
 
-  // Le liste To-Do di una sezione: quella omonima di sempre, più le consegne
+  // Le liste di una sezione: quella omonima di sempre, più le consegne
   // annidate sotto la commessa (`2573.A60-260831` sta in `2573-ABS`, vedi
   // paraConfig.js). Sono N, non una: una commessa con tre consegne ha tre
   // liste, e il pannello le deve vedere tutte.
@@ -959,7 +973,7 @@ export default function App() {
   // Una consegna nuova (o rinominata per spostarne la scadenza) cambia
   // l'elenco delle liste: senza rileggerlo, comparirebbe solo al reload.
   async function refreshTodoLists() {
-    const lists = await fetchCached(qk.todolists(), getTodoLists, STALE.todolists, true);
+    const lists = await fetchCached(qk.todolists(), elencoListe, STALE.todolists, true);
     todoListsRef.current = lists;
     setTodoLists(lists);
     const map = {};
@@ -969,13 +983,13 @@ export default function App() {
   }
 
   async function handleCreateDeliverable(displayName) {
-    const created = await createTodoList(displayName);
+    const created = await creaLista(displayName);
     await refreshTodoLists();
     return created;
   }
 
   async function handleRenameDeliverable(listId, displayName) {
-    const renamed = await renameTodoList(listId, displayName);
+    const renamed = await rinominaLista(listId, displayName);
     await refreshTodoLists();
     // I task portano con sé il nome della lista (`_listName`): dopo una
     // rinomina quello vecchio direbbe la scadenza sbagliata.
@@ -1011,36 +1025,38 @@ export default function App() {
   }
 
   // ── Vista Attività: le transizioni di stato ──────────────────────────────
-  // Lo stato vive su Graph, non in memoria: si scrive prima lì e si aggiorna
-  // il pool solo dopo, così una schermata che dice "In attesa" corrisponde
-  // sempre a un task che su To-Do è davvero waitingOnOthers.
+  // Lo stato vive nel file su OneDrive, non in memoria: si scrive prima lì e si
+  // aggiorna il pool solo dopo, così una schermata che dice "In attesa"
+  // corrisponde sempre a un task che nel file è davvero `waiting`.
 
-  // «Da chiedere» e «Delegati» non sono uno `status` di To-Do ma una riga nelle
-  // note: spostarci dentro un'attività, o portarla via, vuol dire riscrivere
-  // quella riga oltre allo stato. `persona` è il nome scelto da chi sposta —
-  // senza, si tiene quello che l'attività aveva già, perché passare da «in
-  // attesa da Sara» a «delegato» non deve far dimenticare Sara.
+  // Una scrittura sola. Prima ne servivano due — una per la riga della persona
+  // nelle note, una per lo `status` — e se la seconda falliva il task restava
+  // con «Delegato a: Sara» nelle note e `notStarted` come stato, cioè in
+  // Prossime azioni col nome di qualcuno dentro. Adesso stato e persona sono
+  // due campi dello stesso task e cambiano insieme.
+  //
+  // `persona` è il nome scelto da chi sposta — senza, si tiene quello che
+  // l'attività aveva già, perché passare da «in attesa da Sara» a «delegato»
+  // non deve far dimenticare Sara.
   async function handleChangeTaskStatus(task, status, persona) {
     const listId = task._listId;
-    const before = task.status;
-    const beforeBody = task.body?.content || '';
+    const prima = { stato: task.stato, persona: task.persona ?? null };
     const role = personRoleFor(status);
-    const who = role ? (persona || taskPerson(task)?.who || 'qualcuno') : null;
-    const nextBody = withPerson(beforeBody, role, who);
-    const graph = graphStatusFor(status);
+    const dopo = {
+      stato: status === 'scheduled' ? 'next' : status,
+      persona: role ? (persona || taskPerson(task)?.who || 'qualcuno') : null,
+    };
     // Trascinare un'attività dove già sta non è un cambiamento: senza questo
     // controllo lascerebbe comunque un «annulla» che non annulla niente.
-    if (nextBody === beforeBody && graph === before) return;
+    if (dopo.stato === prima.stato && dopo.persona === prima.persona) return;
     try {
-      if (nextBody !== beforeBody) await updateTaskBody(listId, task.id, nextBody);
-      if (graph !== before) await updateTaskStatus(listId, task.id, graph);
-      handleTaskPatched(listId, task.id, { status: graph, body: { content: nextBody, contentType: 'text' } });
+      await aggiornaTask(listId, task.id, dopo);
+      handleTaskPatched(listId, task.id, dopo);
       pushUndo({
         label: `Spostata in ${STATUS_LABELS[status]}`,
         undo: async () => {
-          if (nextBody !== beforeBody) await updateTaskBody(listId, task.id, beforeBody);
-          if (graph !== before) await updateTaskStatus(listId, task.id, before || 'notStarted');
-          handleTaskPatched(listId, task.id, { status: before, body: { content: beforeBody, contentType: 'text' } });
+          await aggiornaTask(listId, task.id, prima);
+          handleTaskPatched(listId, task.id, prima);
         },
       });
     } catch (e) {
@@ -1099,7 +1115,7 @@ export default function App() {
     }
   }
 
-  // Completare un'azione da Oggi tocca due cose: il task su To-Do e il blocco
+  // Completare un'azione da Oggi tocca due cose: il task nel suo file e il blocco
   // nel piano del giorno. Il blocco va segnato comunque — è lo storico della
   // giornata, e serve al Diario — anche se il task nel frattempo non esiste
   // più su Graph (cancellato dal telefono, per dire).
@@ -1123,7 +1139,7 @@ export default function App() {
 
     try {
       if (block.taskId && block.listId) {
-        await completeTask(block.listId, block.taskId);
+        await aggiornaTask(block.listId, block.taskId, { stato: 'done' });
         handleTaskRemoved(block.listId, block.taskId);
       }
     } catch (e) {
@@ -1276,8 +1292,8 @@ export default function App() {
               onAutoAdded={() => setPendingPlannerTask(null)}
               onTaskCompleted={handleTaskRemoved}
               onTaskDeleted={handleTaskRemoved}
-              onTaskRenamed={(listId, taskId, title) => handleTaskPatched(listId, taskId, { title })}
-              onTaskDueChanged={(listId, taskId, dueDateTime) => handleTaskPatched(listId, taskId, { dueDateTime })}
+              onTaskRenamed={(listId, taskId, titolo) => handleTaskPatched(listId, taskId, { titolo })}
+              onTaskDueChanged={(listId, taskId, scadenza) => handleTaskPatched(listId, taskId, { scadenza })}
               onTaskPatched={handleTaskPatched}
               onTaskRestored={handleTaskRestored}
               calendarDirtyToken={calendarDirtyToken}
@@ -1294,7 +1310,7 @@ export default function App() {
               notebooks={notebooks}
               sectionsMap={sectionsMap}
               pagesCache={pagesCache}
-              onClarify={task => { setClarifyTask(task); setGtdSeedText(task.title || ''); setGtdOpen(true); }}
+              onClarify={task => { setClarifyTask(task); setGtdSeedText(task.titolo || ''); setGtdOpen(true); }}
               onChangeStatus={handleChangeTaskStatus}
               onSchedule={handleScheduleTask}
               onUnschedule={handleUnscheduleTask}

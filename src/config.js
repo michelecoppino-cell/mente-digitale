@@ -18,8 +18,14 @@ export const PREFERRED_LOGIN_HINT = 'michelecoppino@gmail.com';
 // (`Calendars.ReadWrite.Shared` è solo work/school). In sola lettura: gli
 // eventi dei calendari altrui si vedono, non si modificano.
 // Aggiungere uno scope significa un nuovo consenso: al primo avvio dopo
-// l'aggiornamento l'app chiede di riconnettersi una volta.
-export const SCOPES = ['offline_access', 'Notes.Read', 'Notes.Read.All', 'Notes.ReadWrite', 'Tasks.Read', 'Tasks.ReadWrite', 'Calendars.ReadWrite', 'Calendars.Read.Shared', 'Files.ReadWrite', 'Mail.Read'];
+// l'aggiornamento l'app chiede di riconnettersi una volta. Toglierne uno no.
+//
+// Di Microsoft To-Do resta `Tasks.Read` e non più `Tasks.ReadWrite`: le
+// attività vivono nei file nostri su OneDrive, e di To-Do si legge soltanto —
+// una volta, per la migrazione (taskMigrazione.js). Il permesso di scrittura
+// non serve più a niente, e non averlo è la garanzia più semplice che nessuno
+// tocchi per sbaglio l'archivio vecchio finché resta lì come rete di sicurezza.
+export const SCOPES = ['offline_access', 'Notes.Read', 'Notes.Read.All', 'Notes.ReadWrite', 'Tasks.Read', 'Calendars.ReadWrite', 'Calendars.Read.Shared', 'Files.ReadWrite', 'Mail.Read'];
 export const COLORS = [
   '#7eb8c9','#c084a0','#86c07a',
   '#c8a96e','#a084c8','#c8907a','#7ab8a0'

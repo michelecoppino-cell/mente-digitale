@@ -12,20 +12,23 @@
 // scegliere l'attività, leggerne le note e vedere quando la si fa sono tre
 // gesti che si fanno di seguito, senza aprire e chiudere niente.
 //
-// La colonna ATTIVITÀ non guarda più una lista To-Do sola. Una commessa può
+// La colonna ATTIVITÀ non guarda più una lista sola. Una commessa può
 // avere più consegne — una lista ciascuna, chiamata `GRUPPO.Consegna-YYMMDD`
 // (la convenzione sta in paraConfig.js) — e qui si vedono tutte, raggruppate
 // per consegna, ognuna con la sua scadenza e richiudibile. Una sezione senza
 // liste col punto resta esattamente com'era: un elenco piatto di attività.
 //
 // Un'attività si sposta da una consegna all'altra trascinandola sul gruppo di
-// destinazione — lo stesso gesto con cui la si porta su Oggi. Su To-Do non
-// esiste una «move»: il task viene ricreato nella lista di arrivo e cancellato
-// da quella di partenza (api.js `moveTaskToList`), quindi cambia id, e per non
-// perdere le sottoattività va riletto per intero prima di spostarlo.
+// destinazione — lo stesso gesto con cui la si porta su Oggi. Adesso è
+// davvero uno spostamento: il task esce da un file ed entra in un altro
+// portandosi dietro tutto, id compreso (taskStore.spostaTask). Su To-Do non
+// esisteva una «move» — il task veniva ricreato nella lista di arrivo e
+// cancellato da quella di partenza, quindi cambiava id, e i blocchi già a
+// piano che lo citavano restavano orfani.
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { getPages, getTask, moveTaskToList } from './api';
+import { getPages } from './api';
+import { spostaTask } from './taskStore';
 import {
   paraSectionLabel, sectionRole, listsForSection, listGroupKey, listDeliverableLabel,
   listDueDate, buildListName, groupKeyForSection, sectionNameForList, toDateInputValue,
@@ -33,7 +36,7 @@ import {
 import { buildListColorMap, listColor, formatDeliverableDue, daysUntil, daysUntilLabel } from './plannerShared';
 import { useFolds } from './viewPrefs';
 import {
-  taskContext, contextColor, parseEstimate, indexScheduled, taskStatus, taskPerson,
+  taskContext, contextColor, indexScheduled, taskStatus, taskPerson,
   STATUS_LABELS, GRANULARITY_MEMO_LINE,
 } from './taskModel';
 import SectionPaths from './SectionPaths';
@@ -80,11 +83,11 @@ const DUE_SOON_DAYS = 7;
 // l'anno (0002, 0020, 0202…) e nessuno di quelli è una scadenza.
 const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
-/** La stima scritta nelle note, come la si legge in fondo alla riga
- *  dell'attività. Solo quella davvero scritta: mostrare la mezz'ora di
- *  partenza su tutte le righe sarebbe un numero inventato. */
-function estimateLabel(/** @type {import('./types').TodoTask} */ t) {
-  const min = parseEstimate(/** @type {any} */ (t)?.body?.content);
+/** La stima, come la si legge in fondo alla riga dell'attività. Solo quella
+ *  davvero detta: mostrare la mezz'ora di partenza su tutte le righe sarebbe
+ *  un numero inventato. */
+function estimateLabel(/** @type {import('./taskStore').Task} */ t) {
+  const min = t?.stimaMin;
   if (!min) return null;
   const h = Math.floor(min / 60), m = min % 60;
   if (!h) return `${m}m`;
@@ -127,18 +130,18 @@ function flattenSections(notebooks, sectionsMap) {
  * @param {Object} props
  * @param {import('./types').Notebook[]} props.notebooks
  * @param {Record<string, import('./types').Section[]>} props.sectionsMap
- * @param {import('./types').TodoList[]} props.todoLists  tutte le liste To-Do: da qui
+ * @param {import('./types').TodoList[]} props.todoLists  tutte le liste: da qui
  *        escono le consegne della sezione aperta
- * @param {import('./types').TodoTask[]} props.tasks
+ * @param {import('./taskStore').Task[]} props.tasks
  * @param {{ current: Record<string, import('./types').Page[]> }} props.pagesCache
  * @param {Record<string, {blocks?: any[]}>} [props.plans]  i piani giornalieri, per la colonna Oggi
  * @param {(plans: Record<string, any>) => void} [props.onPlansChanged]  il piano di oggi
  *        cambiato trascinando un'attività sulla colonna Oggi
  * @param {(listId: string, taskId: string) => void} [props.onTaskRemoved]
  * @param {(listId: string, taskId: string, patch: Object) => void} [props.onTaskPatched]
- * @param {(listId: string, task: import('./types').TodoTask) => void} [props.onTaskRestored]
+ * @param {(listId: string, task: import('./taskStore').Task) => void} [props.onTaskRestored]
  * @param {(displayName: string) => Promise<any>} [props.onCreateDeliverable]  crea una
- *        lista To-Do per una nuova consegna
+ *        lista per una nuova consegna
  * @param {(listId: string, displayName: string) => Promise<any>} [props.onRenameDeliverable]
  *        rinomina una consegna: è così che se ne sposta la scadenza
  */
@@ -226,7 +229,7 @@ export default function SectionsView({
     return () => { cancelled = true; };
   }, [sectionId, pagesCache]);
 
-  // Le liste To-Do della sezione: quella omonima — la convenzione su cui poggia
+  // Le liste della sezione: quella omonima — la convenzione su cui poggia
   // tutta l'app — e le consegne annidate sotto la stessa commessa.
   const sectionLists = useMemo(
     () => (active ? listsForSection(active.displayName, todoLists, sectionNames) : []),
@@ -252,10 +255,10 @@ export default function SectionsView({
   // insieme e non consegna per consegna.
   const perPersona = useMemo(() => {
     const scheduledIds = new Set(scheduledPlacements.keys());
-    /** @type {Record<string, { key: string, name: string, tasks: import('./types').TodoTask[] }[]>} */
+    /** @type {Record<string, { key: string, name: string, tasks: import('./taskStore').Task[] }[]>} */
     const out = {};
     for (const status of PERSON_LISTS) {
-      /** @type {Map<string, { key: string, name: string, tasks: import('./types').TodoTask[] }>} */
+      /** @type {Map<string, { key: string, name: string, tasks: import('./taskStore').Task[] }>} */
       const groups = new Map();
       for (const t of sectionTasks) {
         if (taskStatus(t, { scheduledIds }) !== status) continue;
@@ -318,7 +321,7 @@ export default function SectionsView({
   /** Una riga di attività: la stessa dentro le consegne e dentro i due elenchi
    *  per persona — sono le stesse attività, e devono comportarsi allo stesso
    *  modo (si aprono, si trascinano su un'altra consegna o sulla giornata).
-   *  @param {import('./types').TodoTask} t */
+   *  @param {import('./taskStore').Task} t */
   function taskButton(t) {
     const est = estimateLabel(t);
     const placement = scheduledPlacements.get(t.id) || null;
@@ -346,7 +349,7 @@ export default function SectionsView({
           className="sv-task-dot"
           style={/** @type {import('react').CSSProperties} */ ({ background: contextColor(taskContext(t)) })}
         />
-        <span className="sv-task-title">{t.title}</span>
+        <span className="sv-task-title">{t.titolo}</span>
         {est && <span className="sv-task-est">{est}</span>}
       </button>
     );
@@ -355,39 +358,29 @@ export default function SectionsView({
   // Il trascinamento di un'attività fra consegne: quale si sta trascinando (per
   // sapere quali gruppi possono accoglierla), su quale gruppo sta passando, e
   // quale spostamento è in corso o è andato storto.
-  const [dragTask, setDragTask] = useState(/** @type {import('./types').TodoTask|null} */ (null));
+  const [dragTask, setDragTask] = useState(/** @type {import('./taskStore').Task|null} */ (null));
   const [dropListId, setDropListId] = useState(/** @type {string|null} */ (null));
   const [movingListId, setMovingListId] = useState(/** @type {string|null} */ (null));
   const [moveError, setMoveError] = useState(/** @type {{listId: string, message: string}|null} */ (null));
 
   /** Sposta un'attività in un'altra lista: la ricrea di là e la toglie di qua.
-   *  @param {import('./types').TodoTask} task
+   *  @param {import('./taskStore').Task} task
    *  @param {{ id: string, displayName: string }} toList */
   async function moveTaskToDeliverable(task, toList) {
     const fromListId = task._listId || '';
     if (!fromListId || fromListId === toList.id) return;
-    // Se il dettaglio stava mostrando proprio questa attività deve seguirla:
-    // dopo lo spostamento l'id è un altro, e la colonna scivolerebbe su
-    // un'attività a caso.
-    const eraAperta = detailTask?.id === task.id;
     setMovingListId(toList.id);
     setMoveError(null);
     try {
-      // Il pool tiene i task senza sottoattività (getTodoTasks non le espande):
-      // spostare quella copia le perderebbe per strada, in silenzio.
-      const full = await getTask(fromListId, task.id);
-      const moved = await moveTaskToList(fromListId, toList.id, full);
-      const decorato = { ...moved, _listId: toList.id, _listName: toList.displayName };
+      const spostato = await spostaTask(fromListId, toList.id, task.id);
       onTaskRemoved?.(fromListId, task.id);
-      onTaskRestored?.(toList.id, decorato);
-      if (eraAperta) setSelectedTaskId(decorato.id);
+      if (spostato) onTaskRestored?.(toList.id, spostato);
       pushUndo({
         label: `Spostata in ${listDeliverableLabel(toList.displayName)}`,
         undo: async () => {
-          const back = await moveTaskToList(toList.id, fromListId, { ...full, id: decorato.id });
-          onTaskRemoved?.(toList.id, decorato.id);
-          onTaskRestored?.(fromListId, { ...back, _listId: fromListId, _listName: task._listName });
-          if (eraAperta) setSelectedTaskId(back.id);
+          const indietro = await spostaTask(toList.id, fromListId, task.id);
+          onTaskRemoved?.(toList.id, task.id);
+          if (indietro) onTaskRestored?.(fromListId, indietro);
         },
       });
     } catch (e) {
@@ -564,7 +557,7 @@ export default function SectionsView({
 
               {deliverables.length === 0 && (
                 <p className="sv-empty">
-                  Nessuna lista To-Do per questa commessa: serve una lista che si chiami
+                  Nessuna lista per questa commessa: serve una lista che si chiami
                   «{active.displayName}», oppure una consegna «{groupKeyForSection(active.displayName)}.Nome».
                 </p>
               )}
@@ -681,8 +674,8 @@ export default function SectionsView({
                   showWorkbook={false}
                   onCompleted={() => { onTaskRemoved?.(detailTask._listId || '', detailTask.id); setSelectedTaskId(null); }}
                   onDeleted={() => { onTaskRemoved?.(detailTask._listId || '', detailTask.id); setSelectedTaskId(null); }}
-                  onRenamed={title => onTaskPatched?.(detailTask._listId || '', detailTask.id, { title })}
-                  onDueChanged={dueDateTime => onTaskPatched?.(detailTask._listId || '', detailTask.id, { dueDateTime })}
+                  onRenamed={titolo => onTaskPatched?.(detailTask._listId || '', detailTask.id, { titolo })}
+                  onDueChanged={scadenza => onTaskPatched?.(detailTask._listId || '', detailTask.id, { scadenza })}
                   onPatched={patch => onTaskPatched?.(detailTask._listId || '', detailTask.id, patch)}
                   onRestored={(listId, restored) => onTaskRestored?.(listId, restored)}
                 />
@@ -710,7 +703,7 @@ export default function SectionsView({
  * L'intestazione a tendina di una consegna: nome, scadenza con quanto manca,
  * quante attività sono ancora aperte. La data si mostra sempre formattata e
  * mai dentro il nome — nel nome della lista ci sta come `-YYMMDD`, ma quello
- * è il modo in cui To-Do la conserva, non il modo in cui si legge.
+ * è il modo in cui la lista la conserva, non il modo in cui si legge.
  * @param {Object} props
  * @param {any} props.deliverable
  * @param {boolean} props.folded
@@ -746,7 +739,7 @@ function DeliverableHead({ deliverable: d, folded, moving = false, onToggle, sec
 
   async function saveDue(/** @type {string} */ value) {
     // Una data monca (l'anno a metà) non è una scadenza: si chiude senza
-    // scrivere, invece di mandare a To-Do l'anno 20.
+    // scrivere, invece di registrare l'anno 20.
     if (value && !ISO_DATE_RE.test(value)) {
       setEditingDue(false);
       return;
@@ -846,7 +839,7 @@ function NewDeliverableForm({ sectionName, sectionNames, onCancel, onCreate }) {
       const displayName = buildListName({ gruppo, consegna: nome, scadenza: scadenza || null });
       // Una commessa che non ritrova la propria sezione creerebbe una lista
       // orfana: senza colore, senza attività in colonna e senza un modo ovvio
-      // di capire perché. Meglio dirlo prima di scrivere su To-Do.
+      // di capire perché. Meglio dirlo prima di crearla.
       const resolved = sectionNameForList(displayName, sectionNames);
       if ((resolved || '').toLowerCase() !== sectionName.toLowerCase()) {
         throw new Error(`«${gruppo}» non identifica questa sezione da sola: rinomina la sezione o la commessa.`);

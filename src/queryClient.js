@@ -106,7 +106,13 @@ export const qk = {
 // sono già in cache quando parte il primo load(), esattamente come la lettura
 // sincrona di cacheGet(). Con il provider async di TanStack le sezioni già viste
 // sarebbero sparite finché non si riespandeva un taccuino.
-const PERSIST_KEY = 'md_rq_cache_v1';
+// La chiave porta la versione della *forma* dei dati in cache, non della cache
+// in sé: i task hanno cambiato forma passando da Microsoft To-Do ai file
+// nostri (`titolo` invece di `title`, `stato` invece di `status`…), e una
+// cache scritta prima del passaggio si ripristinerebbe all'avvio piena di
+// attività senza titolo. Cambiando chiave, la vecchia viene semplicemente
+// ignorata e si riparte da una lettura vera.
+const PERSIST_KEY = 'md_rq_cache_v2';
 
 // Quanto spazio può prendersi la cache, e perché un tetto ci vuole.
 //

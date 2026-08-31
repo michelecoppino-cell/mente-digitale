@@ -25,7 +25,7 @@ export const DEFAULT_CONFIG = {
 };
 
 /**
- * @param {import('./types').TodoTask} task
+ * @param {import('./taskStore').Task} task
  * @param {import('./types').PlannerConfig} cfg
  * @returns {import('./types').ProjectConfig|null}
  */
@@ -164,17 +164,20 @@ export function shadeColor(hex, step) {
   return `#${((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1)}`;
 }
 
-// Scadenza dei task ToDo (dueDateTime) — formattazione e ordinamento condivisi
-// tra TaskPool e Panel, così la data appare identica ovunque venga mostrata.
+// Scadenza di un'attività — formattazione e ordinamento condivisi fra TaskPool,
+// Panel e la vista Attività, così la data appare identica ovunque.
+//
+// La scadenza è un giorno, 'YYYY-MM-DD', e si legge come tale: niente fusi
+// orari da riportare indietro. Prima era la coppia data/ora di Graph, e ogni
+// lettura doveva ricordarsi di aggiungere la 'Z' mancante prima di convertirla.
 /**
- * @param {import('./types').GraphDateTime|null|undefined} dueDateTime
+ * @param {string|null|undefined} scadenza  'YYYY-MM-DD'
  * @returns {string|null}
  */
-export function formatDueDate(dueDateTime) {
-  const iso = dueDateTime?.dateTime;
-  if (!iso) return null;
-  const d = new Date(iso.endsWith('Z') ? iso : iso + 'Z');
-  return new Date(d.getFullYear(), d.getMonth(), d.getDate()).toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit' });
+export function formatDueDate(scadenza) {
+  if (!scadenza) return null;
+  const [, mese, giorno] = scadenza.split('-');
+  return `${giorno}/${mese}`;
 }
 
 // Scadenza di una consegna (non di un task): giorno intero, quindi si scrive
@@ -215,25 +218,21 @@ export function daysUntilLabel(days) {
   return `fra ${days} giorni`;
 }
 
-// Timestamp per ordinare per scadenza — i task senza scadenza vanno in fondo.
+// Chiave per ordinare per scadenza — le attività senza scadenza vanno in fondo.
 /**
- * @param {import('./types').GraphDateTime|null|undefined} dueDateTime
+ * @param {string|null|undefined} scadenza  'YYYY-MM-DD'
  * @returns {number}
  */
-export function dueDateSortValue(dueDateTime) {
-  const iso = dueDateTime?.dateTime;
-  if (!iso) return Infinity;
-  return new Date(iso.endsWith('Z') ? iso : iso + 'Z').getTime();
+export function dueDateSortValue(scadenza) {
+  if (!scadenza) return Infinity;
+  return new Date(`${scadenza}T00:00:00`).getTime();
 }
 
 /**
- * @param {import('./types').GraphDateTime|null|undefined} dueDateTime
+ * @param {string|null|undefined} scadenza  'YYYY-MM-DD'
  * @returns {boolean}
  */
-export function isTaskOverdue(dueDateTime) {
-  const iso = dueDateTime?.dateTime;
-  if (!iso) return false;
-  const d = new Date(iso.endsWith('Z') ? iso : iso + 'Z');
-  const dueDay = new Date(d.getFullYear(), d.getMonth(), d.getDate());
-  return dueDay.getTime() < new Date().setHours(0, 0, 0, 0);
+export function isTaskOverdue(scadenza) {
+  if (!scadenza) return false;
+  return dueDateSortValue(scadenza) < new Date().setHours(0, 0, 0, 0);
 }

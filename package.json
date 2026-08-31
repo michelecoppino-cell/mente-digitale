@@ -13,6 +13,7 @@
     "prova-onedrive": "node scripts/prova-onedrive.mjs",
     "prova-task": "node scripts/prova-task.mjs",
     "prova-migrazione": "node scripts/prova-migrazione.mjs",
+    "prova-flusso": "node scripts/prova-flusso.mjs",
     "preview": "vite preview"
   },
   "dependencies": {

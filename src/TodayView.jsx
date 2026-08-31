@@ -255,7 +255,7 @@ function useRituale() {
 /**
  * @param {Object} props
  * @param {Record<string, import('./types').DayPlan>} props.plans
- * @param {import('./types').TodoTask[]} props.tasks
+ * @param {import('./taskStore').Task[]} props.tasks
  * @param {import('./types').TodoList[]} [props.todoLists]
  * @param {import('./types').CalendarEvent[]} props.calendarEvents
  * @param {(block: any) => void} props.onCompleteBlock
@@ -592,7 +592,7 @@ function EventRow({ event, recurrence, day, soon, passato }) {
  * le due righe è la casella — un evento non si completa, un'azione sì.
  * @param {Object} props
  * @param {any} props.blocco
- * @param {import('./types').TodoTask} [props.task]
+ * @param {import('./taskStore').Task} [props.task]
  * @param {boolean} [props.passato]
  * @param {(block: any) => void} props.onCompleta
  */

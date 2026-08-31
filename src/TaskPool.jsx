@@ -263,12 +263,12 @@ export default function TaskPool({
   }
 
   const deadlineSortedTasks = [...poolTasks].sort((a, b) =>
-    dueDateSortValue(a.dueDateTime) - dueDateSortValue(b.dueDateTime));
+    dueDateSortValue(a.scadenza) - dueDateSortValue(b.scadenza));
 
   function handleDragStart(e, task, color) {
     e.dataTransfer.setData('text/plain', JSON.stringify({ type: 'task', task }));
     const ghost = document.createElement('div');
-    ghost.textContent = task.title;
+    ghost.textContent = task.titolo;
     Object.assign(ghost.style, {
       position: 'fixed', top: '-9999px', left: '-9999px',
       background: color, border: '1.5px dashed rgba(255,255,255,0.6)',
@@ -455,16 +455,16 @@ function fmtEstimate(min) {
 }
 
 function PoolTaskRow({ task, color, isScheduled, selected, draggable, onTaskClick, onDragStart, showListName = false }) {
-  const due = formatDueDate(task.dueDateTime);
-  const overdue = isTaskOverdue(task.dueDateTime);
+  const due = formatDueDate(task.scadenza);
+  const overdue = isTaskOverdue(task.scadenza);
   return (
     <div
-      className={`planner-pool-task${isScheduled ? ' scheduled' : ''}${task.importance === 'high' ? ' important' : ''}${selected ? ' selected' : ''}`}
+      className={`planner-pool-task${isScheduled ? ' scheduled' : ''}${selected ? ' selected' : ''}`}
       draggable={draggable && !isScheduled}
       onClick={() => onTaskClick?.(task)}
       onDragStart={draggable && !isScheduled ? e => onDragStart(e, task, color) : undefined}>
       <span className="planner-task-dot" style={{ background: color }} />
-      <span className="planner-task-title">{task.title}</span>
+      <span className="planner-task-title">{task.titolo}</span>
       {showListName && task._listName && (
         <span className="planner-pool-task-section">{listLabel(task._listName)}</span>
       )}
@@ -474,7 +474,6 @@ function PoolTaskRow({ task, color, isScheduled, selected, draggable, onTaskClic
       {due && (
         <span className={`planner-due-badge${overdue ? ' overdue' : ''}`} title={`Scadenza: ${due}`}>{due}</span>
       )}
-      {task.importance === 'high' && !isScheduled && <span className="planner-task-star">★</span>}
     </div>
   );
 }

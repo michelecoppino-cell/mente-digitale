@@ -376,6 +376,29 @@ export async function leggiTask(listId) {
 }
 
 /**
+ * I task ancora aperti di una lista: è quello che l'app mostra nel serbatoio e
+ * nelle colonne, dove le cose fatte non compaiono — la loro traccia sta nello
+ * storico del giorno, non qui. Gli spuntati restano nel file (li vuole la
+ * deduplica delle scadenze ricorrenti, e la colonna «Fatte» del Piano), quindi
+ * chi vuole tutto usa leggiTask.
+ * @param {string} listId
+ * @returns {Promise<Task[]>}
+ */
+export async function leggiTaskAperti(listId) {
+  return (await leggiTask(listId)).filter(t => t.stato !== 'done');
+}
+
+/**
+ * Un task solo, quando si sa dove sta.
+ * @param {string} listId
+ * @param {string} taskId
+ * @returns {Promise<Task|null>}
+ */
+export async function leggiUnTask(listId, taskId) {
+  return (await leggiTask(listId)).find(t => t.id === taskId) || null;
+}
+
+/**
  * Tutti i task di tutte le liste. Le liste si leggono in parallelo: sono una
  * ventina di file piccoli, ed è la stessa cosa che l'app fa oggi lista per lista.
  * @returns {Promise<Task[]>}
