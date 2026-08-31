@@ -390,6 +390,24 @@ export async function login() {
   return msal.loginRedirect({ scopes: SCOPES, loginHint: getLoginHint() });
 }
 
+/**
+ * Rientra scegliendo l'account a mano. È l'opposto di `login()`: là l'hint
+ * serve a saltare lo chooser, qui lo si vuole vedere.
+ *
+ * Serve perché di account Microsoft ce n'è più d'uno, e ognuno ha il suo
+ * OneDrive: entrato con quello sbagliato, l'app funziona benissimo e non
+ * trova niente — nessun errore, tutti i riquadri vuoti, che è la diagnosi
+ * più difficile di tutte. L'hint ricordato va tolto prima, o riporterebbe
+ * dritti all'account da cui si sta cercando di uscire.
+ */
+export async function cambiaAccount() {
+  try {
+    localStorage.removeItem(PERSONAL_ID_KEY);
+    localStorage.removeItem(PERSONAL_USERNAME_KEY);
+  } catch { /* storage non disponibile */ }
+  return msal.loginRedirect({ scopes: SCOPES, prompt: 'select_account' });
+}
+
 // ── Sessione scaduta: si avvisa, non si scaraventa fuori ────────────────────
 //
 // Prima, il primo errore "serve interazione" faceva partire un

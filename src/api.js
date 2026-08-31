@@ -55,6 +55,11 @@ async function callRaw(path, options = {}, retries = 3) {
   // arrivano già completi di host.
   const url = path.startsWith('https://') ? path : GRAPH + path;
   let retried401 = false;
+  // L'ultimo esito che ha fatto ritentare. Senza, «tentativi esauriti» non dice
+  // di che morte si e' morti: 429 e' Graph che chiede di rallentare, 503 e 504
+  // sono suoi problemi, e da un telefono e' l'unica cosa che si legge.
+  /** @type {number|null} */
+  let ultimoStatus = null;
   for (let attempt = 0; attempt < retries; attempt++) {
     let r;
     // Il guinzaglio della richiesta. `fetch` non ne ha uno suo: su iPhone una
@@ -109,6 +114,7 @@ async function callRaw(path, options = {}, retries = 3) {
       continue;
     }
     if (r.status === 429 || r.status === 503 || r.status === 504) {
+      ultimoStatus = r.status;
       const retry = r.headers.get('Retry-After');
       const wait = retry ? parseInt(retry) * 1000 : (attempt + 1) * 1000;
       await new Promise(res => setTimeout(res, wait));
@@ -130,7 +136,12 @@ async function callRaw(path, options = {}, retries = 3) {
     }
     return r;
   }
-  throw new Error(`Graph error: tentativi esauriti per ${path}`);
+  // Il percorso senza query: da telefono la riga e' larga quanto lo schermo, e
+  // sessanta caratteri di `$select` coprono la sola cosa che conta.
+  const dove = path.split('?')[0];
+  throw new Error(
+    `Graph ${ultimoStatus ?? 'error'}: tentativi esauriti per ${dove}`
+  );
 }
 
 /**
@@ -363,15 +374,13 @@ export async function migrateLegacyDriveFiles() {
 // poi l'errore sale.
 //
 // Una cautela in piu' rispetto al classico: insieme all'ETag si tiene anche il
-// **corpo** della versione su cui si sta lavorando. Serve a due cose. La prima
-// e' distinguere, su un 412, il conflitto vero (qualcuno ha scritto davvero) da
-// un ETag semplicemente inutilizzabile: il GET del contenuto passa per un
-// redirect a un URL di download, e non e' detto che l'header ETag della
-// risposta finale sia quello dell'item — se il contenuto fresco e' identico a
-// quello che avevamo, non c'e' niente da fondere e si riscrive. La seconda e'
-// avere comunque un controllo di concorrenza quando l'ETag non arriva affatto:
-// in quel caso, prima di scrivere, si confronta il contenuto remoto con la
-// nostra base. Meglio un confronto sul contenuto che niente.
+// **corpo** della versione su cui si sta lavorando. Serve a distinguere, su un
+// 412, il conflitto vero (qualcuno ha scritto davvero) da un ETag semplicemente
+// inutilizzabile: se il contenuto fresco e' identico a quello che avevamo, non
+// c'e' niente da fondere e si riscrive. E a poter controllare la concorrenza
+// anche quando l'ETag non c'e' affatto: in quel caso, prima di scrivere, si
+// confronta il contenuto remoto con la nostra base. Meglio un confronto sul
+// contenuto che niente.
 
 /**
  * @typedef {object} DriveVersion
@@ -402,23 +411,64 @@ function ricordaVersione(filename, etag, data, absent = false) {
   });
 }
 
-/** @param {Response} r @returns {string|null} */
-function etagDiRisposta(r) {
-  const raw = r.headers.get('ETag') || r.headers.get('etag');
-  return raw ? raw.replace(/^W\//, '') : null;
+/**
+ * Scarica un URL di download pre-autenticato di OneDrive — quello che Graph
+ * mette in `@microsoft.graph.downloadUrl` — e ne legge il JSON.
+ *
+ * Nessun header nostro, ed e' il punto: quell'URL sta su un altro host (la
+ * storage di OneDrive), porta gia' con se' l'autorizzazione nella query, e
+ * mandargli `Authorization` e `Content-Type` trasforma una richiesta semplice
+ * in una preflighted che quell'host non accetta. E' esattamente cio' che
+ * succedeva leggendo `:/content`: Graph risponde 302 verso questo stesso URL, e
+ * il browser rimanda al seguito gli header della richiesta di partenza. Safari
+ * ci si e' rotto ("Load failed" su ogni file, quindi ogni riquadro vuoto),
+ * mentre altrove passava.
+ * @param {string} url
+ * @param {number} [retries]
+ * @returns {Promise<any>}
+ */
+async function scaricaJson(url, retries = 3) {
+  for (let attempt = 0; attempt < retries; attempt++) {
+    const guinzaglio = new AbortController();
+    const scadenza = setTimeout(() => guinzaglio.abort(), TIMEOUT_MS);
+    try {
+      const r = await fetch(url, { signal: guinzaglio.signal });
+      if (!r.ok) {
+        const err = /** @type {Error & { status?: number }} */ (
+          new Error(`Download del file: ${r.status}`)
+        );
+        err.status = r.status;
+        throw err;
+      }
+      const testo = await r.text();
+      return testo ? JSON.parse(testo) : null;
+    } catch (e) {
+      // Una risposta d'errore del server e' una risposta: non la si ritenta.
+      // Si ritenta solo quello che non e' arrivato — rete caduta, richiesta
+      // scaduta — che dal telefono e' il caso frequente.
+      if (/** @type {any} */ (e)?.status) throw e;
+      if (attempt === retries - 1) {
+        throw /** @type {any} */ (e)?.name === 'AbortError'
+          ? new Error(`Download del file: nessuna risposta entro ${TIMEOUT_MS / 1000}s`)
+          : e;
+      }
+      await new Promise(res => setTimeout(res, (attempt + 1) * 1000));
+    } finally {
+      clearTimeout(scadenza);
+    }
+  }
 }
 
 /**
- * ETag autorevole dell'item, chiesto ai metadati. Costa una richiesta, quindi
- * si usa solo dove serve davvero: quando si sta per riscrivere un file e il GET
- * del contenuto non aveva esposto l'header.
+ * I metadati dell'item, con dentro l'URL di download e l'ETag.
  * @param {string} filename
- * @returns {Promise<string|null>}
+ * @param {boolean} [interi] tutti i campi, senza `$select`
+ * @returns {Promise<any|null>} null se il file non c'e'
  */
-async function etagDiItem(filename) {
+async function itemDiFile(filename, interi = false) {
+  const q = interi ? '' : '?$select=id,eTag,cTag,@microsoft.graph.downloadUrl';
   try {
-    const item = await call(`${drivePath(filename)}?$select=id,eTag,cTag`);
-    return item?.eTag || item?.cTag || null;
+    return await call(`${drivePath(filename)}${q}`);
   } catch (e) {
     if (/** @type {any} */ (e)?.status === 404) return null;
     throw e;
@@ -429,29 +479,37 @@ async function etagDiItem(filename) {
  * Legge un file della cartella dell'app insieme al suo ETag e registra la
  * versione letta. Sul 404 prova la migrazione dalla vecchia posizione in root
  * (vedi migrateLegacyFile) prima di dichiarare il file inesistente.
+ *
+ * Due richieste invece di una — prima i metadati, poi il contenuto — e non e'
+ * un costo aggiunto per niente: la prima e' una normale risposta di Graph
+ * (nessun redirect da seguire con i nostri header al seguito, vedi
+ * scaricaJson) e porta l'ETag autorevole dell'item, quello che prima costava
+ * comunque una richiesta in piu' ogni volta che il GET del contenuto non
+ * esponeva l'header. La seconda non ha bisogno di token.
  * @param {string} filename
- * @param {{ conEtagDiItem?: boolean }} [opts] chiede i metadati se il GET non espone l'ETag
  * @returns {Promise<{ data: any, etag: string|null, absent: boolean }>}
  */
-async function readDriveFile(filename, opts = {}) {
-  /** @param {Response} r */
-  const leggi = async (r) => {
-    const data = r.status === 204 ? null : await r.json();
-    let etag = etagDiRisposta(r);
-    if (!etag && opts.conEtagDiItem) etag = await etagDiItem(filename);
-    ricordaVersione(filename, etag, data);
-    return { data, etag, absent: false };
-  };
-  try {
-    return await leggi(await callRaw(`${drivePath(filename)}:/content`));
-  } catch (e) {
-    if (/** @type {any} */ (e)?.status !== 404) throw e;
-    if (await migrateLegacyFile(filename)) {
-      return leggi(await callRaw(`${drivePath(filename)}:/content`));
-    }
+async function readDriveFile(filename) {
+  let item = await itemDiFile(filename);
+  if (!item && await migrateLegacyFile(filename)) item = await itemDiFile(filename);
+  if (!item) {
     ricordaVersione(filename, null, null, true);
     return { data: null, etag: null, absent: true };
   }
+  const etag = item.eTag || item.cTag || null;
+  let url = item['@microsoft.graph.downloadUrl'];
+  // Senza URL non si legge, e «non si legge» non deve mai diventare «il file e'
+  // vuoto»: un documento letto vuoto viene riscritto vuoto, e li' si perde
+  // roba. Si richiedono i metadati interi (l'annotazione potrebbe essere
+  // caduta con il `$select`) e, se non c'e' nemmeno li', e' un errore.
+  if (!url) {
+    const intero = await itemDiFile(filename, true);
+    url = intero?.['@microsoft.graph.downloadUrl'];
+  }
+  if (!url) throw new Error(`${filename}: OneDrive non da' un URL di download`);
+  const data = await scaricaJson(url);
+  ricordaVersione(filename, etag, data);
+  return { data, etag, absent: false };
 }
 
 /**
@@ -527,7 +585,7 @@ async function putDriveJson(filename, data, opts = {}) {
  * @returns {Promise<any>}
  */
 async function risolviConflitto(filename, data, nota, opts) {
-  const fresco = await readDriveFile(filename, { conEtagDiItem: true });
+  const fresco = await readDriveFile(filename);
   const corpoFresco = fresco.absent ? null : serializzaPerConfronto(fresco.data);
 
   if (corpoFresco === nota.body) {

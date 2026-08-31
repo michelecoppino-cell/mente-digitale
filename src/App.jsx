@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef, lazy, Suspense } from 'react';
 import { Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom';
-import { initAuth, getAccount, login, trySsoSilent, getAuthDiagnostics, onInteractionRequired, isInteractionRequired, reconnect, startTokenKeepAlive } from './auth';
+import { initAuth, getAccount, login, trySsoSilent, getAuthDiagnostics, onInteractionRequired, isInteractionRequired, reconnect, startTokenKeepAlive, cambiaAccount } from './auth';
 import { getNotebooks, getSections, getPages, getRecentEmails, getPageContentHtml, markOneNoteTagDone, getReminders, getCalendarEvents, invalidateCalendarsCache, loadColorSettings, saveColorSettings, migrateLegacyDriveFiles, loadPlannerConfig, loadDailyPlans, saveDailyPlans } from './api';
 import { elencoListe, leggiTask, leggiTaskAperti, creaTask, aggiornaTask, creaLista, rinominaLista } from './taskStore';
 import { migraSeServe } from './taskMigrazione';
@@ -27,7 +27,7 @@ import TodayView from './TodayView';
 import SectionsView from './SectionsView';
 import { personRoleFor, taskPerson, STATUS_LABELS } from './taskModel';
 import { pushUndo } from './undo';
-import { COLORS, BUILD_TIME } from './config';
+import { COLORS, BUILD_TIME, PREFERRED_LOGIN_HINT } from './config';
 import UndoToast from './UndoToast';
 import SvegliaAlert from './SvegliaAlert';
 import { useSveglie } from './useSveglie';
@@ -298,6 +298,10 @@ function descriviErrore(e) {
  *   onChiudi: () => void, onAggiorna: () => void }} props
  */
 function PannelloStato({ sync, problemi, account, onChiudi, onAggiorna }) {
+  // Di account Microsoft ce n'è più d'uno e ognuno ha il suo OneDrive: entrati
+  // con quello sbagliato non c'è nessun errore da mostrare, solo riquadri
+  // vuoti. Quando non è quello di sempre, lo si dice qui.
+  const altroAccount = !!account && account !== PREFERRED_LOGIN_HINT;
   return (
     <div className="stato-dropdown" role="dialog" aria-label="Stato caricamento">
       <div className="stato-header">
@@ -317,10 +321,14 @@ function PannelloStato({ sync, problemi, account, onChiudi, onAggiorna }) {
         {/* L'account collegato: quando tutto è vuoto ma niente è in errore,
             la prima domanda è se si sta guardando il OneDrive giusto. */}
         {account || 'nessun account'}
+        {altroAccount && (
+          <span className="stato-avviso"> — non è {PREFERRED_LOGIN_HINT}, il suo OneDrive è un altro</span>
+        )}
         <br />build {oraLeggibile(BUILD_TIME)}
         {' · '}{typeof navigator !== 'undefined' && navigator.onLine === false ? 'offline' : 'online'}
       </div>
       <button className="stato-aggiorna" onClick={onAggiorna}>Aggiorna tutto</button>
+      <button className="stato-aggiorna" onClick={() => cambiaAccount()}>Cambia account</button>
     </div>
   );
 }
