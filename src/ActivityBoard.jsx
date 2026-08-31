@@ -77,6 +77,23 @@ const VIEWS = [
  *  leggibili. */
 const WIDE = '(min-width: 1280px)';
 
+/** Le chiavi attive di un filtro, dal parametro dell'URL: `''` (assente) è il
+ *  Set vuoto, cioè «nessun filtro, si vede tutto».
+ *  @param {string|null} raw */
+function parseFilter(raw) {
+  return new Set((raw || '').split(',').filter(Boolean));
+}
+
+/** Lo stesso gesto del pool del Piano: dal «tutte» il primo clic isola quella
+ *  pastiglia, i clic successivi aggiungono o tolgono. Tolta l'ultima si torna
+ *  a vedere tutto.
+ *  @param {Set<string>} current @param {string} key */
+function toggleFilter(current, key) {
+  const next = new Set(current);
+  if (next.has(key)) next.delete(key); else next.add(key);
+  return Array.from(next).join(',');
+}
+
 /** 'YYYY-MM-DD' locale. */
 function todayStr() {
   const d = new Date();
@@ -233,8 +250,10 @@ export default function ActivityBoard({
   // com'è, invece di ripartire sempre da capo.
   const [params, setParams] = useSearchParams();
   const view = VIEWS.some(v => v.key === params.get('vista')) ? params.get('vista') : 'flusso';
-  const ctxFilter = params.get('ctx') || '';
-  const listFilter = params.get('lista') || '';
+  // Filtri multipli: nell'URL restano una lista di chiavi separate da virgola
+  // (`?lista=a,b`). Un Set vuoto vuol dire «nessun filtro», cioè tutte.
+  const ctxFilter = useMemo(() => parseFilter(params.get('ctx')), [params]);
+  const listFilter = useMemo(() => parseFilter(params.get('lista')), [params]);
   const [query, setQuery] = useState('');
   const [dragTask, setDragTask] = useState(/** @type {import('./types').TodoTask|null} */ (null));
   const [dragOver, setDragOver] = useState(/** @type {string|null} */ (null));
@@ -310,8 +329,8 @@ export default function ActivityBoard({
     const q = query.trim().toLowerCase();
     return tasks.filter(t => {
       if (q && !(t.title || '').toLowerCase().includes(q)) return false;
-      if (listFilter && t._listId !== listFilter) return false;
-      if (ctxFilter && taskContext(t) !== ctxFilter) return false;
+      if (listFilter.size && !listFilter.has(t._listId || '')) return false;
+      if (ctxFilter.size && !ctxFilter.has(taskContext(t) || '')) return false;
       return true;
     });
   }, [tasks, query, ctxFilter, listFilter]);
@@ -484,17 +503,17 @@ export default function ActivityBoard({
       />
       <div className="ab-chips">
         <button
-          className={`ab-filter${!listFilter && !ctxFilter ? ' active' : ''}`}
+          className={`ab-filter${!listFilter.size && !ctxFilter.size ? ' active' : ''}`}
           onClick={() => setParam({ lista: '', ctx: '' })}>
           Tutte
         </button>
         {lists.map(l => (
           <button
             key={l.id}
-            className={`ab-filter${listFilter === l.id ? ' active' : ''}`}
+            className={`ab-filter${!listFilter.size || listFilter.has(l.id) ? ' active' : ''}`}
             style={/** @type {import('react').CSSProperties} */ ({ '--chip': listColor(l.name, listColorMap) })}
             title={`Solo le attività della lista ${listLabel(l.name)}`}
-            onClick={() => setParam({ lista: listFilter === l.id ? '' : l.id })}>
+            onClick={() => setParam({ lista: toggleFilter(listFilter, l.id) })}>
             {listLabel(l.name)}
             <span className="ab-filter-count">{l.count}</span>
           </button>
@@ -502,9 +521,9 @@ export default function ActivityBoard({
         {hasContexts && CONTEXTS.map(c => (
           <button
             key={c.key}
-            className={`ab-filter${ctxFilter === c.key ? ' active' : ''}`}
+            className={`ab-filter${!ctxFilter.size || ctxFilter.has(c.key) ? ' active' : ''}`}
             style={/** @type {import('react').CSSProperties} */ ({ '--chip': c.color })}
-            onClick={() => setParam({ ctx: ctxFilter === c.key ? '' : c.key })}>
+            onClick={() => setParam({ ctx: toggleFilter(ctxFilter, c.key) })}>
             {c.label}
           </button>
         ))}
