@@ -267,6 +267,61 @@ function LoginDiagnostics() {
   );
 }
 
+/**
+ * Un errore come si racconta a chi guarda lo schermo del telefono. Lo status
+ * di Graph davanti perché è la cosa che distingue i casi: 401 è la sessione,
+ * 403 un permesso mai concesso, 404 un file che non c'è, 429 troppa fretta.
+ * Un errore di rete non ha status, e allora conta sapere se il telefono era
+ * online.
+ * @param {unknown} e
+ * @returns {string}
+ */
+function descriviErrore(e) {
+  const err = /** @type {any} */ (e);
+  const status = err?.status ? `${err.status} · ` : '';
+  const testo = err?.message || String(e);
+  const offline = typeof navigator !== 'undefined' && navigator.onLine === false
+    ? ' (dispositivo offline)' : '';
+  return `${status}${testo}${offline}`;
+}
+
+/**
+ * Cosa è andato storto nell'ultimo caricamento, in chiaro. Esiste per una
+ * ragione sola: da iPhone la spia di stato è un puntino di sei pixel e il suo
+ * testo è nascosto sotto gli 860px (vedi .sync-label-text in App.css), quindi
+ * un caricamento fallito era indistinguibile da un'app che non ha niente da
+ * mostrare. Qui si tocca il puntino e si legge cosa è successo — compresa la
+ * build in esecuzione, che dice se il telefono sta girando l'ultimo deploy o
+ * una copia vecchia rimasta nella cache del service worker.
+ * @param {{ sync: {state: string, label: string},
+ *   problemi: {dove: string, messaggio: string}[],
+ *   onChiudi: () => void, onAggiorna: () => void }} props
+ */
+function PannelloStato({ sync, problemi, onChiudi, onAggiorna }) {
+  return (
+    <div className="stato-dropdown" role="dialog" aria-label="Stato caricamento">
+      <div className="stato-header">
+        <span>{sync.label}</span>
+        <button onClick={onChiudi} aria-label="Chiudi">✕</button>
+      </div>
+      {problemi.length === 0 && (
+        <div className="stato-riga stato-ok">Nessun errore nell&rsquo;ultimo caricamento.</div>
+      )}
+      {problemi.map((p, i) => (
+        <div className="stato-riga" key={i}>
+          <div className="stato-dove">{p.dove}</div>
+          <div className="stato-messaggio">{p.messaggio}</div>
+        </div>
+      ))}
+      <div className="stato-meta">
+        build {oraLeggibile(BUILD_TIME)}
+        {' · '}{typeof navigator !== 'undefined' && navigator.onLine === false ? 'offline' : 'online'}
+      </div>
+      <button className="stato-aggiorna" onClick={onAggiorna}>Aggiorna tutto</button>
+    </div>
+  );
+}
+
 export default function App() {
   const [ready, setReady] = useState(false);
   const [account, setAccount] = useState(null);
@@ -275,6 +330,10 @@ export default function App() {
   const [todoListsMap, setTodoListsMap] = useState({});
   const [selected, setSelected] = useState(null);
   const [sync, setSync] = useState({ state: 'idle', label: 'Non connesso' });
+  // I passi del caricamento che non sono riusciti, e il pannello che li mostra.
+  /** @type {[{dove: string, messaggio: string}[], Function]} */
+  const [problemi, setProblemi] = useState([]);
+  const [statoOpen, setStatoOpen] = useState(false);
   // La sessione Microsoft è scaduta e serve un accesso interattivo. Non è più
   // un redirect automatico: è una striscia in cima con un bottone, e finché
   // non la si tocca l'app continua a funzionare con quello che ha già in cache.
@@ -573,6 +632,18 @@ export default function App() {
       tasksCache.current = {};
     }
 
+    // I guai di questo caricamento, uno per passo che non è riuscito. Servono
+    // a due cose che prima non c'erano: tenere in piedi i passi successivi
+    // (uno che fallisce non porta giù gli altri) e poterli leggere dal
+    // telefono, dove la spia di stato è un puntino di sei pixel senza testo.
+    /** @type {{dove: string, messaggio: string}[]} */
+    const problemi = [];
+    /** @param {string} dove @param {unknown} e */
+    const registraProblema = (dove, e) => {
+      console.error(dove, e);
+      problemi.push({ dove, messaggio: descriviErrore(e) });
+    };
+
     try {
       // Colori personalizzati (taccuini/sezioni) scelti dall'utente
       // nell'ingranaggio impostazioni — vanno applicati subito dopo aver
@@ -591,8 +662,18 @@ export default function App() {
         .then(cfg => { if (cfg) setPlannerConfig(cfg); })
         .catch(e => console.error('planner config load', e));
 
-      // Taccuini
-      const nbs = await fetchCached(qk.notebooks(), getNotebooks, STALE.notebooks, forceRefresh);
+      // Taccuini. Se OneNote non risponde si tiene l'ultima copia e si va
+      // avanti: prima un errore qui saltava tutto il resto della funzione —
+      // niente liste, niente attività, niente piano — e da iPhone il risultato
+      // era un'app che si apre vuota senza dire perché.
+      /** @type {any[]} */
+      let nbs = [];
+      try {
+        nbs = await fetchCached(qk.notebooks(), getNotebooks, STALE.notebooks, forceRefresh);
+      } catch (e) {
+        registraProblema('Taccuini OneNote', e);
+        nbs = queryClient.getQueryData(qk.notebooks()) || [];
+      }
       nbs.forEach((nb, i) => applyNotebookColor(nb, i, overrides));
       notebooksRef.current = nbs;
       setNotebooks(nbs);
@@ -602,9 +683,16 @@ export default function App() {
       // vanno portati di qua prima. Si chiede solo quando non se ne ha già una
       // copia in cache, altrimenti sarebbe una lettura in più a ogni avvio.
       if (!(/** @type {any[]|undefined} */ (queryClient.getQueryData(qk.todolists()))?.length)) {
-        await migraSeServe().catch(e => console.error('migrazione task da To-Do', e));
+        await migraSeServe().catch(e => registraProblema('Migrazione attività da To-Do', e));
       }
-      const lists = await fetchCached(qk.todolists(), elencoListe, STALE.todolists, forceRefresh);
+      /** @type {any[]} */
+      let lists = [];
+      try {
+        lists = await fetchCached(qk.todolists(), elencoListe, STALE.todolists, forceRefresh);
+      } catch (e) {
+        registraProblema('Elenco attività', e);
+        lists = queryClient.getQueryData(qk.todolists()) || [];
+      }
       todoListsRef.current = lists;
       setTodoLists(lists);
       const map = {};
@@ -631,7 +719,10 @@ export default function App() {
       }
       if (Object.keys(sectMap).length > 0) setSectionsMap(sectMap);
 
-      setSync({ state: 'ok', label: `${nbs.length} taccuini` });
+      setProblemi(problemi);
+      setSync(problemi.length
+        ? { state: 'error', label: `Caricamento incompleto (${problemi.length})` }
+        : { state: 'ok', label: `${nbs.length} taccuini` });
 
       // Precarica task in background
       setTimeout(() => preloadAllTasks(lists, forceRefresh), 1000);
@@ -653,7 +744,8 @@ export default function App() {
       setTimeout(() => preloadSectionCalendarEvents(forceRefresh), 3000);
 
     } catch (e) {
-      console.error('load', e);
+      registraProblema('Caricamento', e);
+      setProblemi(problemi);
       setSync({ state: 'error', label: 'Errore caricamento' });
     }
   }
@@ -822,6 +914,8 @@ export default function App() {
   async function preloadAllTasks(lists, forceRefresh = false) {
     const allTasks = [];
     let anyError = false;
+    /** @type {{dove: string, messaggio: string}[]} */
+    const problemiTask = [];
     for (const l of lists) {
       try {
         const tasks = await fetchCached(qk.tasks(l.id), () => leggiTaskAperti(l.id), STALE.tasks, forceRefresh);
@@ -831,6 +925,7 @@ export default function App() {
       } catch (e) {
         console.error('preload tasks', l.displayName, e);
         anyError = true;
+        problemiTask.push({ dove: `Attività · ${l.displayName}`, messaggio: descriviErrore(e) });
         // Non lasciare la lista vuota per un errore transitorio (es. 401 dopo
         // una pausa lunga): ripiega sull'ultima copia in cache così l'utente
         // non vede la pianificazione sparire del tutto.
@@ -843,6 +938,10 @@ export default function App() {
     }
     setScheduledTasks(allTasks);
     if (anyError) {
+      // In coda a quelli del caricamento, non al loro posto: il pannello di
+      // stato deve mostrare tutto quello che non è riuscito, non solo l'ultima
+      // cosa andata storta.
+      setProblemi(p => [...p, ...problemiTask]);
       setSync({ state: 'error', label: 'Errore aggiornamento task — dati non aggiornati' });
     }
   }
@@ -1203,9 +1302,23 @@ export default function App() {
 
   const topbar = (
     <>
-      <div className="sync-status" title={sync.label}>
-        <span className={`sync-dot ${sync.state}`} />
-        <span className="sync-label-text">{sync.label}</span>
+      <div className="sync-wrap">
+        <button
+          className="sync-status tap-44"
+          title={sync.label}
+          aria-label={`Stato: ${sync.label}`}
+          onClick={() => setStatoOpen(o => !o)}>
+          <span className={`sync-dot ${sync.state}`} />
+          <span className="sync-label-text">{sync.label}</span>
+        </button>
+        {statoOpen && (
+          <PannelloStato
+            sync={sync}
+            problemi={problemi}
+            onChiudi={() => setStatoOpen(false)}
+            onAggiorna={() => { setStatoOpen(false); handleRefresh(); }}
+          />
+        )}
       </div>
       {onMap && (
         <div className="map-view-toggle">

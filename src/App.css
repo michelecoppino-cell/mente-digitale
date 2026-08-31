@@ -54,7 +54,51 @@
 }
 
 /* Sync status */
-.sync-status { display: flex; align-items: center; gap: 7px; font-size: 11px; color: var(--muted); }
+.sync-wrap { position: relative; }
+.sync-status {
+  display: flex; align-items: center; gap: 7px;
+  font-size: 11px; color: var(--muted);
+  background: none; border: none; padding: 0; cursor: pointer;
+}
+
+/* Il pannello di stato: cosa non è riuscito nell'ultimo caricamento. Da
+   telefono è l'unico modo di leggerlo — l'etichetta accanto al puntino sparisce
+   sotto gli 860px. */
+.stato-dropdown {
+  position: absolute;
+  top: 26px;
+  left: 0;
+  width: 290px;
+  max-width: calc(100vw - 24px);
+  max-height: 60vh;
+  overflow-y: auto;
+  background: var(--surface);
+  border: 1px solid var(--border2);
+  border-radius: 10px;
+  box-shadow: 0 16px 48px rgba(0,0,0,0.5);
+  z-index: 450;
+  padding: 4px 0 10px;
+}
+.stato-header {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 8px; padding: 8px 12px;
+  font-size: 12px; color: var(--text);
+  border-bottom: 1px solid var(--border2);
+}
+.stato-header button { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 13px; }
+.stato-riga { padding: 8px 12px; border-bottom: 1px solid var(--border2); }
+.stato-riga:last-of-type { border-bottom: none; }
+.stato-ok { font-size: 11px; color: var(--muted); }
+.stato-dove { font-size: 11px; color: var(--text); margin-bottom: 2px; }
+.stato-messaggio { font-size: 11px; color: #c07a7a; word-break: break-word; }
+.stato-meta { padding: 8px 12px 0; font-size: 10px; color: var(--muted); }
+.stato-aggiorna {
+  margin: 8px 12px 0;
+  padding: 6px 10px;
+  font-size: 11px;
+  background: none; color: var(--muted);
+  border: 1px solid var(--border2); border-radius: 8px; cursor: pointer;
+}
 
 .sync-dot {
   width: 6px; height: 6px;
