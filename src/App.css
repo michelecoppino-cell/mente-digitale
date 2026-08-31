@@ -92,6 +92,7 @@
 .stato-dove { font-size: 11px; color: var(--text); margin-bottom: 2px; }
 .stato-messaggio { font-size: 11px; color: #c07a7a; word-break: break-word; }
 .stato-meta { padding: 8px 12px 0; font-size: 10px; color: var(--muted); }
+.stato-avviso { color: #c8a96e; }
 .stato-aggiorna {
   margin: 8px 12px 0;
   padding: 6px 10px;
