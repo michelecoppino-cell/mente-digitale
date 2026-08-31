@@ -11,6 +11,7 @@
     "importa-diario": "node scripts/importa-diario-apple.mjs",
     "mente": "node scripts/mente.mjs",
     "prova-onedrive": "node scripts/prova-onedrive.mjs",
+    "prova-task": "node scripts/prova-task.mjs",
     "preview": "vite preview"
   },
   "dependencies": {

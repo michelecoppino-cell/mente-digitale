@@ -200,6 +200,16 @@ function ensureFolder(sub) {
   return pronta;
 }
 
+// Lo strato dei task (taskStore.js) tiene i suoi file nella stessa cartella e
+// passa dagli stessi primitivi: stessa concorrenza, stessa migrazione, stesse
+// cartelle create al bisogno.
+/** @param {string} nomeFile @returns {string} percorso relativo alla cartella dell'app */
+export function percorsoTask(nomeFile) {
+  return `${SUB_TASK}/${nomeFile}`;
+}
+
+export { getDriveJson, putDriveJson };
+
 /** La cartella che serve per scrivere un certo file. @param {string} relPath */
 function ensureFolderFor(relPath) {
   const i = relPath.indexOf('/');
