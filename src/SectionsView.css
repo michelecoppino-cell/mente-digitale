@@ -604,6 +604,10 @@
 }
 .sv-persone-head:focus-visible { outline: 1px solid var(--accent); outline-offset: -1px; }
 
+/* Il segno dello stato accanto al titolo della categoria (StatusIcon.jsx):
+   prende il colore del titolo, quindi si accende con lui. */
+.sv-persone-head .status-icon { flex: 0 0 auto; }
+
 .sv-persone-chevron {
   flex: 0 0 auto;
   font-size: 13px;

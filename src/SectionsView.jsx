@@ -37,8 +37,9 @@ import { buildListColorMap, listColor, formatDeliverableDue, daysUntil, daysUnti
 import { useFolds } from './viewPrefs';
 import {
   taskContext, contextColor, indexScheduled, taskStatus, taskPerson,
-  STATUS_LABELS, GRANULARITY_MEMO_LINE,
+  STATUS_LABELS, STATUS_HINTS, GRANULARITY_MEMO_LINE,
 } from './taskModel';
+import StatusIcon from './StatusIcon';
 import { ordinaAMano, riordinaGruppo, CON_MOUSE } from './taskOrder';
 import { useMediaQuery } from './useMediaQuery';
 import SectionPaths from './SectionPaths';
@@ -724,10 +725,14 @@ export default function SectionsView({
                   aria-expanded={!!openPersone[status] && quante > 0}
                   disabled={quante === 0}
                   title={quante === 0
-                    ? `${STATUS_LABELS[status]}: niente, per questa commessa`
-                    : (openPersone[status] ? `Chiudi «${STATUS_LABELS[status]}»` : `Apri «${STATUS_LABELS[status]}»`)}
+                    ? `${STATUS_HINTS[status]}\nNiente, per questa commessa`
+                    : `${STATUS_HINTS[status]}\n${openPersone[status] ? 'Chiudi' : 'Apri'} «${STATUS_LABELS[status]}»`}
                   onClick={() => setOpenPersone(o => ({ ...o, [status]: !o[status] }))}>
                   <span className="sv-persone-chevron" aria-hidden="true">›</span>
+                  {/* Il segno dello stato sta qui, sul titolo della categoria:
+                      le righe sotto sono tutte di questo stato, e ripeterglielo
+                      addosso una per una non distinguerebbe niente. */}
+                  <StatusIcon status={status} size={12} />
                   <span className="eyebrow">{STATUS_LABELS[status]}</span>
                   {/* Zero è una notizia buona e resta spento; da uno in su il
                       numero si accende, perché è roba ferma in mano a qualcuno

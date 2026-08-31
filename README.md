@@ -381,8 +381,12 @@ prossima azione, il calendario per la programmata, il punto di domanda per quell
 da chiedere, le due lineette della pausa per quella in attesa, una persona per la
 delegata, una nuvola per «un giorno». Il nome resta a un passaggio del cursore, e
 quello dello stato acceso è scritto accanto alla fila. Le stesse icone tornano
-sulle righe delle colonne della vista Attività: un segno vuol dire la stessa cosa
-ovunque lo si incontri. Stanno in `src/StatusIcon.jsx` — disegni e non caratteri,
+**sui titoli delle categorie** — le colonne della vista Attività, le aree «Da
+chiedere» e «Delegati» in fondo a due di esse, le tre righe per persona nella
+colonna Attività di Sezioni — e non sulle singole righe: la colonna *è* lo stato,
+e tutte le attività che ci stanno dentro lo hanno per definizione, quindi
+ripeterglielo addosso una per una sarebbe un'icona ripetuta venti volte che non
+distingue niente. Stanno in `src/StatusIcon.jsx` — disegni e non caratteri,
 perché ⏸ e ▶ diventano emoji a colori su qualche sistema e la fila si
 sfalserebbe.
 
