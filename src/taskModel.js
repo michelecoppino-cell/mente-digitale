@@ -9,7 +9,9 @@
 //
 //   inbox      lista di default di To-Do (wellknownListName === 'defaultList')
 //   next       status 'notStarted'
+//   ask        status 'notStarted' + riga "Da chiedere a: Nome" nelle note
 //   waiting    status 'waitingOnOthers'
+//   delegated  status 'waitingOnOthers' + riga "Delegato a: Nome" nelle note
 //   someday    status 'deferred'
 //   done       status 'completed'
 //   scheduled  ha un blocco nel piano del giorno (daily-plans su OneDrive)
@@ -20,32 +22,41 @@
 //   subtasks    checklistItems
 //   note        body.content
 //   completedAt completedDateTime
-//   estimateMin marker [MIN:n] nelle note      ← l'unico campo senza casa nativa
+//   estimateMin marker [MIN:n] nelle note      ← senza casa nativa
+//   persona     riga "In attesa da:" / "Da chiedere a:" / "Delegato a:" nelle note
 //
 // Invariante: un task ha uno e un solo stato. La colonna in cui appare è
 // derivata da qui, mai un'etichetta salvata a parte.
 
-/** @typedef {'inbox'|'next'|'waiting'|'scheduled'|'someday'|'done'} TaskStatus */
+/** @typedef {'inbox'|'next'|'ask'|'waiting'|'delegated'|'scheduled'|'someday'|'done'} TaskStatus */
 
-/** Gli stati nell'ordine delle colonne della vista Attività. */
+/** Gli stati nell'ordine in cui si leggono nella vista Attività: `ask` sta
+ *  sotto `next` e `delegated` sotto `waiting`, che è dove stanno anche a
+ *  schermo — due aree dentro quelle colonne, non due colonne in più. */
 export const TASK_STATUSES = /** @type {TaskStatus[]} */ ([
-  'inbox', 'next', 'waiting', 'scheduled', 'someday', 'done',
+  'inbox', 'next', 'ask', 'waiting', 'delegated', 'scheduled', 'someday', 'done',
 ]);
 
 export const STATUS_LABELS = {
   inbox:     'Inbox',
   next:      'Prossime azioni',
+  ask:       'Da chiedere',
   waiting:   'In attesa',
+  delegated: 'Delegati',
   scheduled: 'Programmate',
   someday:   'Un giorno',
   done:      'Fatte',
 };
 
-/** Stato Graph corrispondente a ciascuno stato del flusso. */
+/** Stato Graph corrispondente a ciascuno stato del flusso. `ask` è una
+ *  prossima azione — la domanda la devi fare tu — e `delegated` è un'attesa:
+ *  a distinguerli da `next` e `waiting` è la riga della persona nelle note. */
 const GRAPH_STATUS = {
   inbox:     'notStarted',
   next:      'notStarted',
+  ask:       'notStarted',
   waiting:   'waitingOnOthers',
+  delegated: 'waitingOnOthers',
   scheduled: 'notStarted',
   someday:   'deferred',
   done:      'completed',
@@ -187,33 +198,79 @@ export function taskAlarm(task) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// In attesa di qualcuno
+// La persona di un'attività — attesa, da chiedere, delegata
 // ─────────────────────────────────────────────────────────────────────────────
 
 // To-Do non ha un campo "assegnato a" sulle liste personali. Il nome della
 // persona finisce quindi nella prima riga delle note, ma scritto per esteso e
 // non come marker: chi apre il task da To-Do legge una frase, non un codice.
-const WAITING_RE = /^\s*In attesa da:\s*(.+?)\s*$/im;
+//
+// I ruoli sono tre e si escludono a vicenda, perché dicono tre momenti diversi
+// della stessa cosa: la domanda la devo ancora fare (`ask`), l'ho fatta e
+// aspetto (`waiting`), l'ho passata a qualcuno che la porti a casa
+// (`delegated`). Un task ha una riga sola: scriverne una cancella le altre.
+export const PERSON_ROLES = /** @type {const} */ ([
+  { role: 'ask',       label: 'Da chiedere a', prompt: 'A chi lo chiedi…',        empty: 'Niente da chiedere' },
+  { role: 'waiting',   label: 'In attesa da',  prompt: 'Da chi aspetti…',         empty: 'Non aspetti nessuno' },
+  { role: 'delegated', label: 'Delegato a',    prompt: "A chi l'hai delegato…",   empty: 'Niente di delegato' },
+]);
+
+/** @typedef {'ask'|'waiting'|'delegated'} PersonRole */
+
+/** Il ruolo della persona per uno stato del flusso, se quello stato ne ha uno. */
+export function personRoleFor(/** @type {string|null|undefined} */ status) {
+  return /** @type {PersonRole|null} */ (
+    PERSON_ROLES.find(r => r.role === status)?.role || null
+  );
+}
+
+const PERSON_LINE_RES = PERSON_ROLES.map(r => ({
+  role: r.role,
+  re: new RegExp(`^\\s*${r.label}:\\s*(.+?)\\s*$`, 'im'),
+}));
 
 /**
- * @param {import('./types').TodoTask} task
- * @returns {{ who: string, since: string|null }|null}
+ * La riga della persona scritta nelle note: ruolo e nome, o null se non c'è.
+ * @param {string|null|undefined} bodyContent
+ * @returns {{ role: PersonRole, who: string }|null}
  */
-export function parseWaitingFor(task) {
-  const m = (task?.body?.content || '').match(WAITING_RE);
-  if (!m) return null;
-  return { who: m[1], since: task?.lastModifiedDateTime || task?.createdDateTime || null };
+export function parsePersonLine(bodyContent) {
+  const body = bodyContent || '';
+  for (const { role, re } of PERSON_LINE_RES) {
+    const m = body.match(re);
+    if (m) return { role: /** @type {PersonRole} */ (role), who: m[1] };
+  }
+  return null;
 }
 
 /**
+ * La persona di un task, col ruolo e da quando: `since` è l'ultima modifica,
+ * che è il momento in cui la riga è stata scritta o riscritta.
+ * @param {import('./types').TodoTask} task
+ * @returns {{ role: PersonRole, who: string, since: string|null }|null}
+ */
+export function taskPerson(task) {
+  const found = parsePersonLine(task?.body?.content);
+  if (!found) return null;
+  return { ...found, since: task?.lastModifiedDateTime || task?.createdDateTime || null };
+}
+
+/**
+ * Riscrive la riga della persona: toglie quella che c'è — di qualunque ruolo —
+ * e mette la nuova in testa. Con `who` nullo la toglie soltanto, ed è così che
+ * un'attività torna una prossima azione qualunque.
  * @param {string|null|undefined} bodyContent
+ * @param {PersonRole|null} role
  * @param {string|null} who
  * @returns {string}
  */
-export function withWaitingFor(bodyContent, who) {
-  const rest = (bodyContent || '').replace(WAITING_RE, '').replace(/^\n+/, '');
-  if (!who) return rest;
-  return rest ? `In attesa da: ${who}\n${rest}` : `In attesa da: ${who}`;
+export function withPerson(bodyContent, role, who) {
+  let rest = bodyContent || '';
+  for (const { re } of PERSON_LINE_RES) rest = rest.replace(re, '');
+  rest = rest.replace(/^\n+/, '');
+  const label = PERSON_ROLES.find(r => r.role === role)?.label;
+  if (!label || !who) return rest;
+  return rest ? `${label}: ${who}\n${rest}` : `${label}: ${who}`;
 }
 
 /**
@@ -233,7 +290,7 @@ export function waitingDays(sinceIso) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Il testo della nota senza i marker e senza la riga dell'attesa: quello che
+ * Il testo della nota senza i marker e senza la riga della persona: quello che
  * va mostrato nel campo "Nota" del pannello di dettaglio.
  * @param {string|null|undefined} bodyContent
  * @returns {string}
@@ -243,7 +300,9 @@ export function noteText(bodyContent) {
     .replace(LEGACY_EIS_MARKER_RE, '')
     .replace(MIN_MARKER_RE, '')
     .replace(ALARM_MARKER_RE, '')
-    .replace(WAITING_RE, '')
+    .replace(PERSON_LINE_RES[0].re, '')
+    .replace(PERSON_LINE_RES[1].re, '')
+    .replace(PERSON_LINE_RES[2].re, '')
     .replace(/^[ \t\n]+/, '')
     .trimEnd();
 }
@@ -288,9 +347,9 @@ export function contextColor(contextKey) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Lo stato del task nel flusso. `scheduled` vince su `next` perché avere un
- * blocco nel piano è la cosa più specifica che si possa sapere di un task
- * altrimenti semplicemente "da fare".
+ * Lo stato del task nel flusso. `scheduled` vince su `next` e su `ask` perché
+ * avere un blocco nel piano è la cosa più specifica che si possa sapere di un
+ * task altrimenti semplicemente "da fare".
  *
  * @param {import('./types').TodoTask} task
  * @param {{ scheduledIds?: Set<string>, inboxListId?: string|null }} [ctx]
@@ -299,10 +358,17 @@ export function contextColor(contextKey) {
 export function taskStatus(task, ctx = {}) {
   if (!task) return 'next';
   if (task.status === 'completed') return 'done';
-  if (task.status === 'waitingOnOthers') return 'waiting';
+  // Delegata e da chiedere non hanno uno `status` tutto loro su To-Do: sono
+  // un'attesa e una prossima azione con dentro un nome, e a distinguerle è la
+  // riga nelle note. Si guarda quindi la riga dove lo stato Graph è ambiguo,
+  // mai al posto suo — così un task ripreso in mano da To-Do (spuntato,
+  // rimesso in attesa) resta d'accordo con quello che To-Do dice di lui.
+  const person = parsePersonLine(task?.body?.content);
+  if (task.status === 'waitingOnOthers') return person?.role === 'delegated' ? 'delegated' : 'waiting';
   if (task.status === 'deferred') return 'someday';
   if (ctx.scheduledIds?.has(task.id)) return 'scheduled';
   if (ctx.inboxListId && task._listId === ctx.inboxListId) return 'inbox';
+  if (person?.role === 'ask') return 'ask';
   return 'next';
 }
 

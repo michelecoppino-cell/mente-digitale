@@ -57,9 +57,18 @@ Microsoft To-Do e al calendario Outlook, e un diario con supporto AI via copia-i
   Le attività che hanno già un blocco nel piano — in un giorno qualunque — si leggono in
   grigio, col giorno e l'ora nel titolo: la colonna dice a colpo d'occhio cosa resta da
   collocare, senza rimettere a piano due volte la stessa cosa.
+  In fondo alla colonna, fuori dalle consegne, due elenchi a parte raccolti per persona:
+  **da chiedere** e **delegati**. Dentro una consegna direbbero «manca questo pezzo», che
+  è falso — il pezzo è in mano a qualcuno, e quello che serve sapere è a chi, per tutta la
+  commessa insieme.
 - **Attività** — le cinque colonne del flusso GTD (Inbox · Prossime azioni · In attesa · Programmate · Un giorno):
   la colonna *è* lo stato, e trascinare una card fra colonne lo cambia su Microsoft To-Do. Un clic su una
   card apre il pannello di dettaglio — note, sottoattività, stima, scadenza, stato.
+  In fondo a due colonne ci sono altrettante **aree**: *Da chiedere* sotto le prossime azioni e
+  *Delegati* sotto le attese. Non sono colonne nuove — sono lo stesso punto del flusso con dentro
+  una persona — e lì il raggruppamento cambia: per nome invece che per sezione, così quando si becca
+  Sara si vede in un colpo tutto quello che le si deve chiedere. I nomi che ricorrono stanno in
+  `src/persone.json` e nel pannello arrivano come pastiglie da toccare.
 - **Diario** (voce *Diario* nel menù, `⌘J`) — tre modalità distinte: *svuota testa* a schermo
   intero (timer 5/10 min, domanda selezionabile dall'elenco o rimovibile, righe che sbiadiscono
   mentre scrivi, pannello "come funziona" con il metodo e le fonti), *rituale della sera* (tre
@@ -243,10 +252,19 @@ mappatura sta in `src/taskModel.js`.
 |---|---|
 | `inbox` | lista di default (`wellknownListName === 'defaultList'`) |
 | `next` | `status: notStarted` |
+| `ask` | `status: notStarted` + riga `Da chiedere a: Nome` nelle note |
 | `waiting` | `status: waitingOnOthers` |
+| `delegated` | `status: waitingOnOthers` + riga `Delegato a: Nome` nelle note |
 | `scheduled` | ha un blocco nel piano del giorno (`daily-plans` su OneDrive) |
 | `someday` | `status: deferred` |
 | `done` | `status: completed` |
+
+`ask` e `delegated` non hanno uno `status` tutto loro perché su To-Do non
+esiste: *da chiedere* è una prossima azione che deve partire da qualcun altro,
+*delegata* è un'attesa con un nome sopra. A distinguerle è la riga nelle note,
+che si guarda solo dove lo `status` di Graph è ambiguo — mai al posto suo, o un
+task ripreso in mano dall'app To-Do del telefono direbbe una cosa qui e
+un'altra là.
 
 **Cattura** (`⌘N`) scrive solo il titolo, nella lista di default: il passo 1 non
 deve chiedere niente, o le cose non si catturano. **Chiarire** è il passo 2 e
@@ -303,9 +321,24 @@ i `checklistItems`, la **nota** è `body.content`.
 
 Tre cose sole non hanno una casa nativa in To-Do. La **stima di durata** sta
 nelle note come marker `[MIN:45]`. La **sveglia** — vedi sotto — come
-`[SVEGLIA:15:30]`. La **persona che si aspetta**, quando un'attività
-è in attesa, sta nella prima riga delle note come `In attesa da: Nome` — scritta
-per esteso e non come codice, perché chi apre il task da To-Do legga una frase.
+`[SVEGLIA:15:30]`. La **persona** sta nella prima riga delle note, scritta per
+esteso e non come codice, perché chi apre il task da To-Do legga una frase:
+`Da chiedere a: Sara`, `In attesa da: Sara`, `Delegato a: Sara`. Le tre righe si
+escludono a vicenda — sono tre momenti della stessa cosa, e un'attività ne porta
+una sola: scriverne una cancella le altre.
+
+### Le persone
+
+Sono sempre le stesse, e un nome riscritto a mano ogni volta è un nome scritto
+ogni volta diverso: «ADC» e «adc» diventerebbero due gruppi nella colonna, che è
+esattamente quello che il raggruppamento per persona serve a evitare. L'elenco
+sta quindi in **`src/persone.json`**, versionato col resto — è lì che si aggiunge
+chi manca — e nel pannello di dettaglio compare come pastiglie sopra al campo.
+
+Un nome scritto al volo nel campo funziona lo stesso e viene ricordato in locale,
+così la volta dopo l'elenco lo propone da sé; il posto stabile però resta il
+JSON. Quello che si scrive viene ricondotto al nome del registro quando
+corrisponde a meno di maiuscole e spazi.
 
 ### La sveglia di un'attività
 
@@ -467,6 +500,7 @@ node scripts/mente.mjs diario leggi --giorni 30 --tag lavoro
 node scripts/mente.mjs note leggi Manutenzioni --sezione Casa
 
 node scripts/mente.mjs attivita crea "Preventivo caldaia" --sezione Casa --stima 20
+node scripts/mente.mjs attivita stato "Preventivo" ask --persona Sara
 node scripts/mente.mjs diario scrivi --testo "Giornata piena." --umore 4
 ```
 
@@ -475,7 +509,8 @@ Ogni comando accetta `--json`: la stessa risposta in una forma che un programma
 
 Non è un secondo modello di dati: le attività passano da `src/taskModel.js` e le
 voci di diario da `src/diary.js`, gli stessi moduli dell'app — quindi il marker
-`[MIN:45]`, la riga `In attesa da:` e la forma di una voce restano quelle di
+`[MIN:45]`, la riga della persona (`In attesa da:`, `Da chiedere a:`,
+`Delegato a:`, con `--persona "Nome"`) e la forma di una voce restano quelle di
 prima. Un'attività creata da qui compare su To-Do e nell'app senza differenze.
 
 **Cosa non fa.** Calendario, OneNote, Bussola, Visione e piani del giorno si

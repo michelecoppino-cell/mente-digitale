@@ -143,13 +143,14 @@ async function esegui(args, opts) {
           titolo: resto.slice(1).join(' ').trim() || s(opts.titolo),
           sezione: s(opts.sezione), stato: s(opts.stato), stimaMin: n(opts.stima),
           scadenza: s(opts.scadenza), contesto: s(opts.contesto),
-          nota: s(opts.nota), attesa: s(opts.attesa),
+          nota: s(opts.nota), attesa: s(opts.persona) || s(opts.attesa),
         });
       }
       if (sub === 'stato' || sub === 'completa') {
         return mente.attivitaStato({
           attivita: resto[1],
           stato: sub === 'completa' ? 'done' : resto[2],
+          persona: s(opts.persona) || s(opts.attesa),
         });
       }
       throw new Error(`attivita: sottocomando sconosciuto "${sub}" (lista, crea, stato, completa)`);
@@ -220,8 +221,8 @@ Lettura
 Scrittura
   attivita crea "titolo" [--sezione s] [--stato ${STATI_CREABILI.join('|')}]
                          [--stima 45] [--scadenza YYYY-MM-DD]
-                         [--contesto ${CONTEXTS.map(c => c.key).join('|')}] [--nota "…"] [--attesa "Nome"]
-  attivita stato <id|titolo> <${STATI_SCRIVIBILI.join('|')}>
+                         [--contesto ${CONTEXTS.map(c => c.key).join('|')}] [--nota "…"] [--persona "Nome"]
+  attivita stato <id|titolo> <${STATI_SCRIVIBILI.join('|')}> [--persona "Nome"]
   attivita completa <id|titolo>
   sezione crea "NOME"  |  sezione crea --commessa 2573 --consegna ABS --scadenza YYYY-MM-DD
 
@@ -245,6 +246,8 @@ Globali
   --json                          esce in JSON invece che in testo
 
 Stati del flusso: ${TASK_STATUSES.join(', ')}.
+Gli stati ask, waiting e delegated portano una persona: --persona "Nome".
+I nomi che ricorrono stanno in src/persone.json.
 
 Niente, da qui, cancella niente: su OneNote si scrive solo in fondo a una
 pagina, mai sopra a quello che c'era, e la Bussola e la Visione si leggono

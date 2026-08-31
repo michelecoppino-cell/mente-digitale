@@ -270,7 +270,9 @@ const TOOLS = [
         scadenza: stringa('Scadenza, YYYY-MM-DD.'),
         contesto: { type: 'string', enum: CONTEXTS.map(c => c.key), description: 'Contesto GTD.' },
         nota: stringa('Testo della nota.'),
-        attesa: stringa('Nome della persona attesa. Solo con stato waiting.'),
+        attesa: stringa(
+          'Nome della persona. Solo con stato ask, waiting o delegated — obbligatorio con ask e delegated. ' +
+          'I nomi che ricorrono stanno in src/persone.json.'),
       },
     },
     run: a => mente.attivitaCrea(a),
@@ -278,7 +280,9 @@ const TOOLS = [
   {
     name: 'attivita_stato',
     description:
-      `Sposta un'attività nel flusso: ${STATI_SCRIVIBILI.join(', ')}. L'attività si indica con un pezzo del suo ` +
+      `Sposta un'attività nel flusso: ${STATI_SCRIVIBILI.join(', ')}. «ask» (da chiedere) e «delegated» ` +
+      'portano il nome di una persona, che finisce in una riga delle note. ' +
+      "L'attività si indica con un pezzo del suo " +
       'id o del suo titolo, purché identifichi una sola attività. «inbox» e «scheduled» non si impostano da qui: ' +
       'il primo è la lista di default, il secondo un blocco nel piano.',
     sola_lettura: false,
@@ -288,6 +292,9 @@ const TOOLS = [
       properties: {
         attivita: stringa("Id (anche solo l'inizio) o pezzo di titolo dell'attività."),
         stato: { type: 'string', enum: [...STATI_SCRIVIBILI], description: 'Nuovo stato.' },
+        persona: stringa(
+          'Nome della persona, per gli stati ask, waiting e delegated. Senza, si tiene quella che ' +
+          "l'attività aveva già."),
       },
     },
     run: a => mente.attivitaStato(a),

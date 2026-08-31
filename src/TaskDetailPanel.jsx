@@ -20,8 +20,9 @@ import {
 import {
   ESTIMATE_CHOICES, DEFAULT_ESTIMATE_MIN, parseEstimate, withEstimateMarker,
   parseAlarm, withAlarm,
-  graphStatusFor, parseWaitingFor, withWaitingFor, waitingDays,
+  graphStatusFor, PERSON_ROLES, personRoleFor, parsePersonLine, withPerson, waitingDays,
 } from './taskModel';
+import { elencoPersone, normalizzaPersona, ricordaPersona } from './persone';
 import { SVEGLIA_CHOICES, hhmmIn, chiediNotifiche, statoNotifiche } from './sveglie';
 import { listLabel, sectionNameForList } from './paraConfig';
 import { pushUndo } from './undo';
@@ -42,20 +43,26 @@ import './PlannerView.css';
 const STATUS_CHOICES = [
   { key: 'next',      label: 'Prossima azione', hint: 'Fattibile, senza data' },
   { key: 'scheduled', label: 'Programmata',     hint: 'Ha un blocco nel Piano' },
+  { key: 'ask',       label: 'Da chiedere',     hint: 'Prima devi chiederlo a qualcuno' },
   { key: 'waiting',   label: 'In attesa',       hint: 'Dipende da qualcun altro' },
+  { key: 'delegated', label: 'Delegata',        hint: "L'ha in mano qualcun altro" },
   { key: 'someday',   label: 'Un giorno',       hint: 'Non adesso' },
 ];
 
-/** La persona attesa scritta nelle note, se c'è. */
+/** La persona scritta nelle note, se c'è — di qualunque dei tre ruoli. */
 function whoFrom(/** @type {string} */ body) {
-  return parseWaitingFor(/** @type {any} */ ({ body: { content: body } }))?.who || '';
+  return parsePersonLine(body)?.who || '';
 }
 
-/** Lo stato del flusso a partire dallo `status` di Graph. */
-function flowStatusOf(/** @type {string|undefined} */ graphStatus) {
-  if (graphStatus === 'waitingOnOthers') return 'waiting';
+/** Lo stato del flusso a partire dallo `status` di Graph e dalle note: sono le
+ *  note a dire se un `waitingOnOthers` è un'attesa o una delega, e se un
+ *  `notStarted` è una prossima azione o una cosa da chiedere. Stessa regola di
+ *  taskModel.taskStatus, con in mano quello che il pannello sa. */
+function flowStatusOf(/** @type {string|undefined} */ graphStatus, /** @type {string} */ body = '') {
+  const role = parsePersonLine(body)?.role;
+  if (graphStatus === 'waitingOnOthers') return role === 'delegated' ? 'delegated' : 'waiting';
   if (graphStatus === 'deferred') return 'someday';
-  return 'next';
+  return role === 'ask' ? 'ask' : 'next';
 }
 
 /**
@@ -124,7 +131,7 @@ export default function TaskDetailPanel({ task, notebooks = [], sectionsMap = {}
   // Stato del flusso e persona attesa: si conoscono solo dopo il caricamento
   // completo del task, perché chi apre il pannello da un blocco del Piano ha in
   // mano solo id, titolo e lista.
-  const [flowStatus, setFlowStatus] = useState(() => status || flowStatusOf(task?.status));
+  const [flowStatus, setFlowStatus] = useState(() => status || flowStatusOf(task?.status, task?.body?.content || ''));
   const [who, setWho] = useState('');
   const [waitingSince, setWaitingSince] = useState(/** @type {string|null} */ (null));
   const [savingStatus, setSavingStatus] = useState(false);
@@ -149,7 +156,7 @@ export default function TaskDetailPanel({ task, notebooks = [], sectionsMap = {}
       setNotes(body);
       setItems((full.checklistItems || []).sort((a, b) => a.isChecked - b.isChecked));
       setDueDraft(full.dueDateTime?.dateTime ? full.dueDateTime.dateTime.slice(0, 10) : '');
-      setFlowStatus(status || flowStatusOf(full.status));
+      setFlowStatus(status || flowStatusOf(full.status, body));
       setWho(whoFrom(body));
       setWaitingSince(full.lastModifiedDateTime || full.createdDateTime || null);
     } catch (e) { console.error('load task detail', e); }
@@ -243,14 +250,15 @@ export default function TaskDetailPanel({ task, notebooks = [], sectionsMap = {}
   }
 
   // ── Stato del flusso ────────────────────────────────────────────────────────
-  // "In attesa" è due cose insieme: lo status waitingOnOthers su Graph — così
-  // anche l'app To-Do del telefono la vede in attesa — e la riga "In attesa da:
+  // Gli stati con una persona sono tre — «da chiedere», «in attesa»,
+  // «delegata» — e sono due cose insieme: lo status su Graph, così anche l'app
+  // To-Do del telefono li vede per quello che sono, e la riga "Delegato a:
   // Nome" in testa alle note, che è dove finisce il nome della persona perché
   // una lista personale di To-Do non ha un campo "assegnato a". Fino a qui
   // quella riga andava scritta a mano: nessuno poteva indovinarne la forma.
   /**
    * @param {string} next        stato del flusso da applicare
-   * @param {string} [whoValue]  persona attesa, se `next` è 'waiting'
+   * @param {string} [whoValue]  la persona, se `next` ne prevede una
    */
   async function applyStatus(next, whoValue = who) {
     if (savingStatus) return;
@@ -261,8 +269,12 @@ export default function TaskDetailPanel({ task, notebooks = [], sectionsMap = {}
     if (next === 'scheduled') { if (prevStatus !== 'scheduled') onSchedule?.(task); return; }
 
     const prevNotes = notes;
-    const person = next === 'waiting' ? (whoValue.trim() || 'qualcuno') : null;
-    const nextNotes = withWaitingFor(notes, person);
+    // Il nome si normalizza sul registro delle persone (`persone.json`) e, se
+    // è nuovo, viene ricordato: la volta dopo l'elenco lo propone da sé, e
+    // «adc» scritto di fretta non apre un gruppo suo accanto ad «ADC».
+    const role = personRoleFor(next);
+    const person = role ? (ricordaPersona(whoValue) || 'qualcuno') : null;
+    const nextNotes = withPerson(notes, role, person);
     const graph = graphStatusFor(/** @type {any} */ (next));
     const prevGraph = graphStatusFor(/** @type {any} */ (prevStatus));
     // Uscire da Programmate vuol dire togliere il blocco dal piano: lo stato
@@ -290,8 +302,8 @@ export default function TaskDetailPanel({ task, notebooks = [], sectionsMap = {}
       // fatto: qui se ne aggiunge uno solo se è cambiato qualcosa sul task.
       if (nextNotes !== prevNotes || graph !== prevGraph) {
         pushUndo({
-          label: next === 'waiting'
-            ? `In attesa da ${person}`
+          label: role
+            ? `${PERSON_ROLES.find(r => r.role === role)?.label} ${person}`
             : `Riportata in ${STATUS_CHOICES.find(s => s.key === next)?.label ?? next}`,
           undo: async () => {
             if (nextNotes !== prevNotes) await updateTaskBody(task._listId, task.id, prevNotes);
@@ -640,8 +652,9 @@ export default function TaskDetailPanel({ task, notebooks = [], sectionsMap = {}
           </div>
 
           {/* Lo stato del flusso, e con esso il modo di mettere un'attività in
-              attesa: si sceglie la pastiglia e si scrive chi si aspetta, invece
-              di dover conoscere a memoria la riga da mettere nelle note. */}
+              attesa, di segnarla da chiedere o di delegarla: si sceglie la
+              pastiglia e poi la persona, invece di dover conoscere a memoria la
+              riga da mettere nelle note. */}
           <div className="planner-task-detail-section">
             <div className="planner-task-detail-section-label">
               Stato {savingStatus && <span className="planner-saving-dot">●</span>}
@@ -670,24 +683,43 @@ export default function TaskDetailPanel({ task, notebooks = [], sectionsMap = {}
                   </button>
                 ))}
             </div>
-            {flowStatus === 'waiting' && (
-              <div className="planner-waiting">
-                <input
-                  className="planner-waiting-input"
-                  value={who}
-                  onChange={e => setWho(e.target.value)}
-                  onBlur={() => applyStatus('waiting', who)}
-                  onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur(); }}
-                  placeholder="Da chi aspetti…"
-                />
-                <span className="planner-waiting-since">
-                  {(() => {
-                    const d = waitingDays(waitingSince);
-                    if (d === null) return null;
-                    return d === 0 ? 'da oggi' : `da ${d} ${d === 1 ? 'giorno' : 'giorni'}`;
-                  })()}
-                </span>
-              </div>
+            {/* Il campo della persona, uguale per i tre stati che ne hanno una.
+                Le solite persone stanno in `persone.json` e arrivano come
+                pastiglie: un nome si sceglie con un dito, e chi manca lo si
+                scrive lo stesso nel campo — verrà ricordato per la volta dopo,
+                ma il posto stabile dove aggiungerlo resta il JSON. */}
+            {personRoleFor(flowStatus) && (
+              <>
+                <div className="planner-persone">
+                  {elencoPersone().map(nome => (
+                    <button
+                      key={nome}
+                      className={`planner-estimate-chip${normalizzaPersona(who) === nome ? ' active' : ''}`}
+                      disabled={savingStatus}
+                      title={`${PERSON_ROLES.find(r => r.role === personRoleFor(flowStatus))?.label} ${nome}`}
+                      onClick={() => { setWho(nome); applyStatus(flowStatus, nome); }}>
+                      {nome}
+                    </button>
+                  ))}
+                </div>
+                <div className="planner-waiting">
+                  <input
+                    className="planner-waiting-input"
+                    value={who}
+                    onChange={e => setWho(e.target.value)}
+                    onBlur={() => applyStatus(flowStatus, who)}
+                    onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur(); }}
+                    placeholder={PERSON_ROLES.find(r => r.role === personRoleFor(flowStatus))?.prompt}
+                  />
+                  <span className="planner-waiting-since">
+                    {(() => {
+                      const d = waitingDays(waitingSince);
+                      if (d === null) return null;
+                      return d === 0 ? 'da oggi' : `da ${d} ${d === 1 ? 'giorno' : 'giorni'}`;
+                    })()}
+                  </span>
+                </div>
+              </>
             )}
           </div>
 

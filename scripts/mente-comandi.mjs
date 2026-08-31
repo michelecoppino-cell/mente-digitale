@@ -33,7 +33,7 @@ import {
 
 import {
   taskStatus, inboxListId, indexScheduled, taskEstimateMin, noteText,
-  taskContext, withEstimateMarker, withWaitingFor, withContext,
+  taskContext, withEstimateMarker, withPerson, withContext, personRoleFor, taskPerson,
   graphStatusFor, STATUS_LABELS, TASK_STATUSES, CONTEXTS, GRANULARITY_MEMO_LINE,
 } from '../src/taskModel.js';
 
@@ -54,8 +54,8 @@ import {
 // Gli stati che si possono scrivere da fuori l'app. `inbox` e `scheduled` non
 // ci sono: il primo è la lista di default di To-Do, il secondo un blocco nel
 // piano del giorno. Nessuno dei due è un campo che si possa impostare.
-export const STATI_SCRIVIBILI = ['next', 'waiting', 'someday', 'done'];
-export const STATI_CREABILI = ['inbox', 'next', 'waiting', 'someday'];
+export const STATI_SCRIVIBILI = ['next', 'ask', 'waiting', 'delegated', 'someday', 'done'];
+export const STATI_CREABILI = ['inbox', 'next', 'ask', 'waiting', 'delegated', 'someday'];
 export const TIPI_DIARIO = Object.keys(DIARY_TYPES);
 export { TASK_STATUSES, CONTEXTS, STATUS_LABELS, GRANULARITY_MEMO_LINE };
 
@@ -198,6 +198,8 @@ function taskLine(t) {
   if (t._listName) meta.push(listLabel(t._listName));
   const ctx = taskContext(t);
   if (ctx) meta.push(CONTEXTS.find(c => c.key === ctx)?.label || ctx);
+  const persona = taskPerson(t);
+  if (persona) meta.push(persona.who);
   meta.push(`${taskEstimateMin(t)}m`);
   if (t.dueDateTime?.dateTime) meta.push(`scade ${String(t.dueDateTime.dateTime).slice(0, 10)}`);
   if (t._placement) meta.push(`${t._placement.date} ${t._placement.startTime}`);
@@ -222,6 +224,9 @@ function riassuntoTask(t) {
     stimaMin: taskEstimateMin(t),
     scadenza: t.dueDateTime?.dateTime?.slice(0, 10) || null,
     nota: noteText(t.body?.content) || null,
+    // Chi ha in mano la cosa, per gli stati che ne prevedono una: è dentro le
+    // note come riga, ma un programma non deve doverla rileggere a mano.
+    persona: taskPerson(t)?.who || null,
     sottoattivita: (t.checklistItems || []).map(c => ({ testo: c.displayName, fatta: !!c.isChecked })),
     programmata: t._placement,
   };
@@ -387,7 +392,13 @@ export async function attivitaCrea(opts = {}) {
   }
 
   const attesa = testo(opts.attesa);
-  if (attesa && stato !== 'waiting') throw new Error('La persona attesa vale solo per lo stato «waiting».');
+  const ruolo = personRoleFor(stato);
+  if (attesa && !ruolo) {
+    throw new Error('La persona vale solo per gli stati «ask», «waiting» e «delegated».');
+  }
+  if (!attesa && (stato === 'ask' || stato === 'delegated')) {
+    throw new Error(`Lo stato «${stato}» ha bisogno di una persona: aggiungi --persona "Nome".`);
+  }
 
   const contestoRaw = testo(opts.contesto);
   if (contestoRaw && !CONTEXTS.some(c => c.key === contestoRaw.toLowerCase())) {
@@ -408,7 +419,7 @@ export async function attivitaCrea(opts = {}) {
   let body = testo(opts.nota) || '';
   const stima = numero(opts.stimaMin);
   if (stima) body = withEstimateMarker(body, stima);
-  if (attesa) body = withWaitingFor(body, attesa);
+  if (attesa) body = withPerson(body, ruolo, attesa);
 
   const contesto = contestoRaw?.toLowerCase() || null;
   const creato = await createTask(lista.id, {
@@ -426,7 +437,7 @@ export async function attivitaCrea(opts = {}) {
 }
 
 /**
- * @param {{ attivita?: string, stato?: string }} opts
+ * @param {{ attivita?: string, stato?: string, persona?: string }} opts
  * @returns {Promise<{ data: any, text: string }>}
  */
 export async function attivitaStato(opts = {}) {
@@ -441,19 +452,37 @@ export async function attivitaStato(opts = {}) {
     );
   }
 
+  const persona = testo(opts.persona);
+  const ruolo = personRoleFor(stato);
+  if (persona && !ruolo) {
+    throw new Error('La persona vale solo per gli stati «ask», «waiting» e «delegated».');
+  }
+
   const { tasks } = await collectTasks({ includeDone: true });
   const task = findTask(tasks, query);
-  if (task._status === stato) {
+
+  // Da chiedere e delegata non sono uno stato di To-Do ma una riga nelle note,
+  // e uscirne vuol dire cancellarla: quindi qui si riscrive sempre il corpo,
+  // non solo lo `status`. Senza un nome nuovo si tiene quello che c'era —
+  // passare da «in attesa da Sara» a «delegata» non deve perdere Sara.
+  const bodyPrima = task.body?.content || '';
+  const chi = ruolo ? (persona || taskPerson(task)?.who || 'qualcuno') : null;
+  const bodyDopo = withPerson(bodyPrima, ruolo, chi);
+
+  if (task._status === stato && bodyDopo === bodyPrima) {
     return {
       data: { id: task.id, titolo: task.title, stato, invariato: true },
       text: `${tronca(task.title, 60)} era già ${STATUS_LABELS[stato]}.`,
     };
   }
 
-  await patchTask(task._listId, task.id, { status: graphStatusFor(/** @type {any} */ (stato)) });
+  await patchTask(task._listId, task.id, {
+    status: graphStatusFor(/** @type {any} */ (stato)),
+    ...(bodyDopo !== bodyPrima ? { body: { content: bodyDopo, contentType: 'text' } } : {}),
+  });
   return {
-    data: { id: task.id, titolo: task.title, stato, precedente: task._status },
-    text: `✓ ${tronca(task.title, 60)} → ${STATUS_LABELS[stato]}`,
+    data: { id: task.id, titolo: task.title, stato, persona: chi, precedente: task._status },
+    text: `✓ ${tronca(task.title, 60)} → ${STATUS_LABELS[stato]}${chi ? ` · ${chi}` : ''}`,
   };
 }
 

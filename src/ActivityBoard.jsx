@@ -1,5 +1,6 @@
 // @ts-check
-// Vista Attività: le cinque colonne del flusso GTD.
+// Vista Attività: le cinque colonne del flusso GTD, e dentro due di esse le
+// aree «Da chiedere» e «Delegati».
 //
 // Prima questa vista era un elenco unico filtrabile per PARA/taccuino/sezione:
 // diceva *dove* stava un task, non *a che punto* fosse. Qui la colonna è lo
@@ -13,11 +14,17 @@
 // destra; le colonne che non servono — «Un giorno» sempre, «Inbox» quando è
 // vuota — si riducono a una striscia, e lo spazio che liberano va al dettaglio
 // dell'attività, che sta sempre lì a destra invece di aprirsi sopra la board.
+//
+// «Da chiedere» e «Delegati» sono due aree in fondo alle colonne «Prossime
+// azioni» e «In attesa», non due colonne nuove: le colonne dicono a che punto
+// è una cosa, e queste due non sono un punto diverso — sono lo stesso punto
+// con dentro una persona. Lì il raggruppamento cambia: per nome e non per
+// sezione, perché è la persona il motivo per cui quelle righe stanno insieme.
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
   taskStatus, inboxListId, indexScheduled, taskContext, taskEstimateMin,
-  parseWaitingFor, waitingDays, CONTEXTS, isSlipped,
+  taskPerson, personRoleFor, waitingDays, CONTEXTS, isSlipped, STATUS_LABELS,
 } from './taskModel';
 import {
   DEFAULT_CONFIG, findProject, buildListColorMap, listColor, formatDueDate, dueDateSortValue, isTaskOverdue,
@@ -38,11 +45,25 @@ import './ActivityBoard.css';
  *  (a posta letta non ha niente da dire). */
 const COLUMNS = [
   { status: 'inbox',     label: 'Inbox',           empty: 'Niente da chiarire',  collapse: 'empty' },
-  { status: 'next',      label: 'Prossime azioni', empty: 'Nessuna azione pronta' },
-  { status: 'waiting',   label: 'In attesa',       empty: 'Non aspetti nessuno' },
+  { status: 'next',      label: 'Prossime azioni', empty: 'Nessuna azione pronta', sub: 'ask' },
+  { status: 'waiting',   label: 'In attesa',       empty: 'Non aspetti nessuno',   sub: 'delegated' },
   { status: 'scheduled', label: 'Programmate',     empty: 'Nessuna in agenda' },
   { status: 'someday',   label: 'Un giorno',       empty: 'Niente in sospeso',   collapse: 'always' },
 ];
+
+/** Le due aree che stanno *dentro* una colonna, in fondo: le cose da chiedere
+ *  sotto le prossime azioni — chiedere è una prossima azione, solo che la fa
+ *  partire qualcun altro — e le delegate sotto le attese, perché una cosa
+ *  delegata è un'attesa con un nome sopra. Dentro l'area i task si raggruppano
+ *  per persona e non per sezione: quando si becca Sara si vuole sapere cosa
+ *  chiederle, non a quale commessa appartiene ogni domanda. */
+const SUB_AREAS = /** @type {Record<string, { label: string, empty: string }>} */ ({
+  ask:       { label: 'Da chiedere', empty: 'Niente da chiedere' },
+  delegated: { label: 'Delegati',    empty: 'Niente di delegato' },
+});
+
+/** Gli stati che la board disegna: le cinque colonne più le due aree. */
+const BOARD_STATUSES = [...COLUMNS.map(c => c.status), ...Object.keys(SUB_AREAS)];
 
 const VIEWS = [
   { key: 'flusso',    label: 'Flusso' },
@@ -110,7 +131,7 @@ function CheckMark() {
 /**
  * Una riga di attività: spunta, titolo, e a destra il solo dato che conta in
  * quella colonna — la stima fra le prossime azioni, l'orario fra le
- * programmate, da chi si aspetta fra quelle in attesa. Una riga sola: prima
+ * programmate, la persona fra le attese, le delegate e le cose da chiedere. Una riga sola: prima
  * ogni card ne occupava tre, e in una colonna ci stavano sei attività.
  *
  * @param {Object} props
@@ -120,14 +141,19 @@ function CheckMark() {
  * @param {{ date: string, startTime: string, endTime: string, completed: boolean }|null} props.placement
  * @param {boolean} props.dragging
  * @param {boolean} props.selected
+ * @param {boolean} [props.showPerson]  il nome della persona a destra: spento dentro
+ *                                      le aree, dove il gruppo lo dice già
  * @param {(t: import('./types').TodoTask) => void} props.onClick
  * @param {(t: import('./types').TodoTask) => void} props.onComplete
  * @param {(t: import('./types').TodoTask) => void} props.onDragStart
  * @param {() => void} props.onDragEnd
  */
-function TaskRow({ task, status, color, placement, dragging, selected, onClick, onComplete, onDragStart, onDragEnd }) {
-  const waiting = status === 'waiting' ? parseWaitingFor(task) : null;
-  const days = waiting ? waitingDays(waiting.since) : null;
+function TaskRow({ task, status, color, placement, dragging, selected, showPerson = true, onClick, onComplete, onDragStart, onDragEnd }) {
+  // Il nome si mostra dove la riga non sta già sotto l'intestazione di quella
+  // persona: nella colonna «In attesa» sì, dentro le aree per persona no —
+  // ripeterlo su ogni riga sarebbe scriverlo due volte.
+  const person = showPerson && personRoleFor(status) ? taskPerson(task) : null;
+  const days = person ? waitingDays(person.since) : null;
   const due = formatDueDate(task.dueDateTime);
   const slipped = placement ? isSlipped(placement, todayStr()) : false;
 
@@ -159,9 +185,9 @@ function TaskRow({ task, status, color, placement, dragging, selected, onClick, 
       <span className="ab-row-title">{task.title}</span>
 
       <span className="ab-row-meta">
-        {waiting && (
-          <span className="ab-waiting" title={`In attesa da ${waiting.who}`}>
-            {waiting.who}{days !== null ? ` · ${days === 0 ? 'oggi' : `${days}g`}` : ''}
+        {person && (
+          <span className="ab-waiting" title={`${STATUS_LABELS[person.role]}: ${person.who}`}>
+            {person.who}{days !== null ? ` · ${days === 0 ? 'oggi' : `${days}g`}` : ''}
           </span>
         )}
         {due && status !== 'scheduled' && (
@@ -292,7 +318,8 @@ export default function ActivityBoard({
 
   const byStatus = useMemo(() => {
     /** @type {Record<string, import('./types').TodoTask[]>} */
-    const out = { inbox: [], next: [], waiting: [], scheduled: [], someday: [] };
+    const out = {};
+    for (const k of BOARD_STATUSES) out[k] = [];
     for (const t of visible) {
       const s = taskStatus(t, { scheduledIds: new Set(scheduled.keys()), inboxListId: inboxId });
       if (out[s]) out[s].push(t);
@@ -303,7 +330,7 @@ export default function ActivityBoard({
       const pa = scheduled.get(a.id), pb = scheduled.get(b.id);
       return `${pa?.date} ${pa?.startTime}`.localeCompare(`${pb?.date} ${pb?.startTime}`);
     });
-    for (const k of ['next', 'waiting', 'someday', 'inbox']) {
+    for (const k of ['next', 'ask', 'waiting', 'delegated', 'someday', 'inbox']) {
       out[k].sort((a, b) => dueDateSortValue(a.dueDateTime) - dueDateSortValue(b.dueDateTime));
     }
     return out;
@@ -338,13 +365,39 @@ export default function ActivityBoard({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [byStatus, config, listColorMap]);
 
+  // Le aree, invece, raggruppano per persona: una riga per «Sara», una per
+  // «ADC». Il nome è quello scritto sul task — il pannello lo normalizza sul
+  // registro (`persone.json`), così «adc» e «ADC» non fanno due gruppi.
+  const groupedByPerson = useMemo(() => {
+    /** @type {Record<string, { key: string, name: string, tasks: import('./types').TodoTask[] }[]>} */
+    const out = {};
+    for (const status of Object.keys(SUB_AREAS)) {
+      /** @type {Map<string, { key: string, name: string, tasks: import('./types').TodoTask[] }>} */
+      const groups = new Map();
+      for (const t of byStatus[status]) {
+        const who = taskPerson(t)?.who || 'Senza nome';
+        const key = who.toLowerCase();
+        if (!groups.has(key)) groups.set(key, { key, name: who, tasks: [] });
+        groups.get(key)?.tasks.push(t);
+      }
+      out[status] = Array.from(groups.values()).sort((a, b) => a.name.localeCompare(b.name, 'it'));
+    }
+    return out;
+  }, [byStatus]);
+
+  /** Quante attività mostra una colonna in tutto: le sue, più quelle dell'area
+   *  che le sta in fondo. @param {{status: string, sub?: string}} col */
+  function columnCount(col) {
+    return byStatus[col.status].length + (col.sub ? byStatus[col.sub].length : 0);
+  }
+
   /** Una colonna è ridotta a striscia se il suo default lo dice e l'utente non
-   *  l'ha aperta a mano. @param {{status: string, collapse?: string}} col */
+   *  l'ha aperta a mano. @param {{status: string, collapse?: string, sub?: string}} col */
   function isCollapsed(col) {
     if (!col.collapse) return false;
     if (col.status in expandedCols) return !expandedCols[col.status];
     if (col.collapse === 'always') return true;
-    return byStatus[col.status].length === 0;
+    return columnCount(col) === 0;
   }
 
   // La pastiglia attiva segue lo scorrimento: si ricava dalla posizione, non
@@ -386,12 +439,13 @@ export default function ActivityBoard({
     if (target === 'inbox') return;
 
     if (target === 'scheduled') { onSchedule(task); return; }
-    if (from === 'scheduled') { onUnschedule(task); if (target !== 'next') onChangeStatus(task, target); return; }
+    if (from === 'scheduled') onUnschedule(task);
     onChangeStatus(task, target);
-    // «In attesa» resta una colonna muta finché non si dice da chi si aspetta:
-    // il nome vive nelle note, e nessuno può indovinarne la forma. Trascinarci
-    // dentro un'attività apre quindi il dettaglio, dove il campo c'è.
-    if (target === 'waiting' && !parseWaitingFor(task)) setOpenTask(task);
+    // Attesa, domanda e delega restano mute finché non si dice di chi si
+    // tratta: il nome vive nelle note, e nessuno può indovinarlo. Trascinarci
+    // dentro un'attività senza persona apre quindi il dettaglio, dove c'è il
+    // campo — con l'elenco delle solite persone già pronto.
+    if (personRoleFor(target) && !taskPerson(task)) setOpenTask(task);
   }
 
   // Spuntare un'attività dalla board. Il completamento sta su Graph — la
@@ -578,7 +632,7 @@ export default function ActivityBoard({
             className={`ab-pill${visibleCol === i ? ' active' : ''}`}
             onClick={() => scrollToColumn(i)}>
             {col.label}
-            <span className="ab-pill-count">{byStatus[col.status].length}</span>
+            <span className="ab-pill-count">{columnCount(col)}</span>
           </button>
         ))}
       </div>
@@ -586,7 +640,7 @@ export default function ActivityBoard({
         <div className="ab-columns" ref={columnsRef}>
           {COLUMNS.map(col => {
             const collapsed = isCollapsed(col);
-            const count = byStatus[col.status].length;
+            const count = columnCount(col);
             return (
               <div
                 key={col.status}
@@ -648,6 +702,51 @@ export default function ActivityBoard({
                           ))}
                         </div>
                       ))}
+                      {/* L'area in fondo alla colonna. È un bersaglio suo per
+                          il trascinamento — con lo stop alla risalita, o il
+                          rilascio finirebbe alla colonna che la contiene. */}
+                      {col.sub && (
+                        <div
+                          className={`ab-area${dragOver === col.sub ? ' drag-over' : ''}`}
+                          onDragOver={e => { e.preventDefault(); e.stopPropagation(); setDragOver(col.sub); }}
+                          onDragLeave={e => {
+                            if (e.currentTarget.contains(/** @type {any} */ (e.relatedTarget))) return;
+                            setDragOver(o => (o === col.sub ? null : o));
+                          }}
+                          onDrop={e => { e.preventDefault(); e.stopPropagation(); handleDrop(col.sub); }}>
+                          <div className="ab-area-head">
+                            <span className="eyebrow">{SUB_AREAS[col.sub].label}</span>
+                            <span className="ab-count">{byStatus[col.sub].length}</span>
+                          </div>
+                          {byStatus[col.sub].length === 0 && (
+                            <div className="ab-empty">{SUB_AREAS[col.sub].empty}</div>
+                          )}
+                          {groupedByPerson[col.sub].map(group => (
+                            <div className="ab-group ab-group-person" key={group.key}>
+                              <div className="ab-group-head">
+                                <span className="ab-group-name">{group.name}</span>
+                                <span className="ab-group-count">{group.tasks.length}</span>
+                              </div>
+                              {group.tasks.map(t => (
+                                <TaskRow
+                                  key={t.id}
+                                  task={t}
+                                  status={col.sub}
+                                  color={colorForTask(t)}
+                                  placement={scheduled.get(t.id) || null}
+                                  dragging={dragTask?.id === t.id}
+                                  selected={openTask?.id === t.id}
+                                  showPerson={false}
+                                  onClick={setOpenTask}
+                                  onComplete={handleComplete}
+                                  onDragStart={setDragTask}
+                                  onDragEnd={() => { setDragTask(null); setDragOver(null); }}
+                                />
+                              ))}
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   </>
                 )}

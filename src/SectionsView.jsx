@@ -32,7 +32,10 @@ import {
 } from './paraConfig';
 import { buildListColorMap, listColor, formatDeliverableDue, daysUntil, daysUntilLabel } from './plannerShared';
 import { useFolds } from './viewPrefs';
-import { taskContext, contextColor, parseEstimate, indexScheduled, GRANULARITY_MEMO_LINE } from './taskModel';
+import {
+  taskContext, contextColor, parseEstimate, indexScheduled, taskStatus, taskPerson,
+  STATUS_LABELS, GRANULARITY_MEMO_LINE,
+} from './taskModel';
 import SectionPaths from './SectionPaths';
 import SectionTimeline from './SectionTimeline';
 import Skeleton from './Skeleton';
@@ -41,6 +44,11 @@ import { PageTree } from './Panel';
 import { pushUndo } from './undo';
 import { openProtocol } from './protocolLink';
 import './SectionsView.css';
+
+/** I due elenchi per persona in fondo alla colonna Attività, nell'ordine in
+ *  cui si leggono: prima quello che tocca a te far partire, poi quello che sta
+ *  già camminando per conto suo. */
+const PERSON_LISTS = /** @type {const} */ (['ask', 'delegated']);
 
 /** Le quattro famiglie PARA, nell'ordine in cui si guardano: prima quello che
  *  ha una fine, poi quello che va mantenuto, poi il materiale, infine quel che
@@ -226,6 +234,43 @@ export default function SectionsView({
     [tasks, sectionListIds]
   );
 
+  // I task che hanno già un blocco nel piano — in un giorno qualunque, non
+  // solo oggi: una cosa messa in agenda per giovedì è pianificata quanto una
+  // di stamattina, e riproporla in nero significherebbe pianificarla due
+  // volte. La riga li mostra in grigio, col giorno e l'ora nel titolo. È lo
+  // stesso indice che dà lo stato «programmata» al resto dell'app.
+  const scheduledPlacements = useMemo(() => indexScheduled(/** @type {any} */ (plans) || {}), [plans]);
+
+  // Le cose da chiedere e quelle delegate escono dalle consegne e vanno in due
+  // elenchi loro, in fondo alla colonna, raggruppate per persona: dentro la
+  // consegna direbbero «manca questo pezzo», che è falso — il pezzo è in mano
+  // a qualcuno, e quello che serve sapere è a chi, per tutta la commessa
+  // insieme e non consegna per consegna.
+  const perPersona = useMemo(() => {
+    const scheduledIds = new Set(scheduledPlacements.keys());
+    /** @type {Record<string, { key: string, name: string, tasks: import('./types').TodoTask[] }[]>} */
+    const out = {};
+    for (const status of PERSON_LISTS) {
+      /** @type {Map<string, { key: string, name: string, tasks: import('./types').TodoTask[] }>} */
+      const groups = new Map();
+      for (const t of sectionTasks) {
+        if (taskStatus(t, { scheduledIds }) !== status) continue;
+        const who = taskPerson(t)?.who || 'Senza nome';
+        const key = who.toLowerCase();
+        if (!groups.has(key)) groups.set(key, { key, name: who, tasks: [] });
+        groups.get(key)?.tasks.push(t);
+      }
+      out[status] = Array.from(groups.values()).sort((a, b) => a.name.localeCompare(b.name, 'it'));
+    }
+    return out;
+  }, [sectionTasks, scheduledPlacements]);
+
+  /** Gli id già finiti nei due elenchi per persona: nelle consegne non tornano. */
+  const idsPerPersona = useMemo(
+    () => new Set(PERSON_LISTS.flatMap(s => perPersona[s].flatMap(g => g.tasks.map(t => t.id)))),
+    [perPersona],
+  );
+
   // Una consegna per gruppo, nell'ordine in cui listsForSection le mette
   // (scadenza più vicina per prima). Con una lista sola e senza punto nel nome
   // il gruppo è uno solo e la colonna resta l'elenco piatto di prima.
@@ -239,9 +284,9 @@ export default function SectionsView({
       due,
       days,
       color: listColor(l.displayName, colorMap, 'var(--line)'),
-      tasks: sectionTasks.filter(t => t._listId === l.id),
+      tasks: sectionTasks.filter(t => t._listId === l.id && !idsPerPersona.has(t.id)),
     };
-  }), [sectionLists, sectionTasks, colorMap]);
+  }), [sectionLists, sectionTasks, colorMap, idsPerPersona]);
 
   // Le consegne chiuse restano chiuse anche domani, come le altre preferenze
   // di vista. Chiave per id di lista: rinominare una consegna (cioè spostarne
@@ -250,12 +295,6 @@ export default function SectionsView({
   // Il form della consegna nuova, aperto dal `+` in testata alla colonna.
   const [newOpen, setNewOpen] = useState(false);
 
-  // I task che hanno già un blocco nel piano — in un giorno qualunque, non
-  // solo oggi: una cosa messa in agenda per giovedì è pianificata quanto una
-  // di stamattina, e riproporla in nero significherebbe pianificarla due
-  // volte. La riga li mostra in grigio, col giorno e l'ora nel titolo. È lo
-  // stesso indice che dà lo stato «programmata» al resto dell'app.
-  const scheduledPlacements = useMemo(() => indexScheduled(/** @type {any} */ (plans) || {}), [plans]);
   // La colonna Dettagli non è mai vuota se c'è qualcosa da mostrare: senza una
   // scelta esplicita apre la prima attività della sezione. Il task va riletto
   // dal pool, perché rinominarlo dal pannello aggiorna il pool e la copia
@@ -266,6 +305,43 @@ export default function SectionsView({
   }, [sectionTasks, selectedTaskId]);
   // Il link `onenote:` che apre l'intera sezione nell'app desktop.
   const sectionClientUrl = active?.links?.oneNoteClientUrl?.href || null;
+
+  /** Una riga di attività: la stessa dentro le consegne e dentro i due elenchi
+   *  per persona — sono le stesse attività, e devono comportarsi allo stesso
+   *  modo (si aprono, si trascinano su un'altra consegna o sulla giornata).
+   *  @param {import('./types').TodoTask} t */
+  function taskButton(t) {
+    const est = estimateLabel(t);
+    const placement = scheduledPlacements.get(t.id) || null;
+    return (
+      <button
+        className={`sv-task${t.id === detailTask?.id ? ' selected' : ''}${placement ? ' scheduled' : ''}`}
+        key={t.id}
+        draggable
+        onDragStart={e => {
+          // Lo stesso payload del pool del Piano: la colonna Oggi qui accanto e
+          // la griglia del Piano leggono lo stesso trascinamento.
+          e.dataTransfer.setData('text/plain', JSON.stringify({ type: 'task', task: t }));
+          e.dataTransfer.effectAllowed = 'move';
+          setDragTask(t);
+        }}
+        onDragEnd={() => { setDragTask(null); setDropListId(null); }}
+        onClick={() => setSelectedTaskId(t.id)}
+        title={[
+          placement && `Già nel piano: ${plannedWhen(placement)}`,
+          deliverables.length > 1
+            ? "Apri note, sottoattività e stato · trascina su un'altra consegna per spostarla, o su Oggi per programmarla"
+            : 'Apri note, sottoattività e stato · trascina su Oggi per programmarla',
+        ].filter(Boolean).join('\n')}>
+        <span
+          className="sv-task-dot"
+          style={/** @type {import('react').CSSProperties} */ ({ background: contextColor(taskContext(t)) })}
+        />
+        <span className="sv-task-title">{t.title}</span>
+        {est && <span className="sv-task-est">{est}</span>}
+      </button>
+    );
+  }
 
   // Il trascinamento di un'attività fra consegne: quale si sta trascinando (per
   // sapere quali gruppi possono accoglierla), su quale gruppo sta passando, e
@@ -531,42 +607,34 @@ export default function SectionsView({
                           : 'Nessuna attività aperta'}
                       </p>
                     )}
-                    {!folded && d.tasks.map(t => {
-                      const est = estimateLabel(t);
-                      const placement = scheduledPlacements.get(t.id) || null;
-                      return (
-                        <button
-                          className={`sv-task${t.id === detailTask?.id ? ' selected' : ''}${placement ? ' scheduled' : ''}`}
-                          key={t.id}
-                          draggable
-                          onDragStart={e => {
-                            // Lo stesso payload del pool del Piano: la colonna Oggi
-                            // qui accanto e la griglia del Piano leggono lo stesso
-                            // trascinamento.
-                            e.dataTransfer.setData('text/plain', JSON.stringify({ type: 'task', task: t }));
-                            e.dataTransfer.effectAllowed = 'move';
-                            setDragTask(t);
-                          }}
-                          onDragEnd={() => { setDragTask(null); setDropListId(null); }}
-                          onClick={() => setSelectedTaskId(t.id)}
-                          title={[
-                            placement && `Già nel piano: ${plannedWhen(placement)}`,
-                            deliverables.length > 1
-                              ? "Apri note, sottoattività e stato · trascina su un'altra consegna per spostarla, o su Oggi per programmarla"
-                              : 'Apri note, sottoattività e stato · trascina su Oggi per programmarla',
-                          ].filter(Boolean).join('\n')}>
-                          <span
-                            className="sv-task-dot"
-                            style={/** @type {import('react').CSSProperties} */ ({ background: contextColor(taskContext(t)) })}
-                          />
-                          <span className="sv-task-title">{t.title}</span>
-                          {est && <span className="sv-task-est">{est}</span>}
-                        </button>
-                      );
-                    })}
+                    {!folded && d.tasks.map(t => taskButton(t))}
                   </div>
                 );
               })}
+
+              {/* Da chiedere e delegati: due elenchi a parte, in fondo, con una
+                  riga per persona. Sono attività di queste consegne come le
+                  altre — si trascinano, si aprono, si spostano — ma raccolte
+                  per chi le ha in mano invece che per dove stanno. */}
+              {PERSON_LISTS.filter(status => perPersona[status].length > 0).map(status => (
+                <div className="sv-persone" key={status}>
+                  <div className="sv-persone-head">
+                    <span className="eyebrow">{STATUS_LABELS[status]}</span>
+                    <span className="sv-persone-count">
+                      {perPersona[status].reduce((n, g) => n + g.tasks.length, 0)}
+                    </span>
+                  </div>
+                  {perPersona[status].map(group => (
+                    <div className="sv-persona" key={group.key}>
+                      <div className="sv-persona-name">
+                        {group.name}
+                        <span className="sv-persone-count">{group.tasks.length}</span>
+                      </div>
+                      {group.tasks.map(t => taskButton(t))}
+                    </div>
+                  ))}
+                </div>
+              ))}
             </div>
           </section>
 
