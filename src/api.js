@@ -3,6 +3,13 @@ import { getToken } from './auth';
 
 const GRAPH = 'https://graph.microsoft.com/v1.0';
 
+// Quanto si aspetta una singola richiesta prima di considerarla persa. Venti
+// secondi sono lunghi per una rete che funziona e corti per una che si è
+// piantata, che è esattamente la distinzione che serve: i tentativi sono tre,
+// quindi nel caso peggiore un minuto e poi un errore vero, invece dell'attesa
+// infinita di prima.
+const TIMEOUT_MS = 20_000;
+
 // Cache token in memoria per evitare acquireTokenSilent ad ogni chiamata
 /** @type {string|null} */
 let _cachedToken = null;
@@ -50,10 +57,20 @@ async function callRaw(path, options = {}, retries = 3) {
   let retried401 = false;
   for (let attempt = 0; attempt < retries; attempt++) {
     let r;
+    // Il guinzaglio della richiesta. `fetch` non ne ha uno suo: su iPhone una
+    // connessione che si impianta — il wi-fi che c'è ma non porta da nessuna
+    // parte, il passaggio a rete mobile con una tacca — lascia la promise
+    // pendente per sempre, e chi l'aspetta aspetta per sempre. Da fuori è
+    // un'app che dice «Caricamento…» e non finisce mai: non un errore, e
+    // quindi nemmeno un ripiego sulla copia in cache. Meglio un tentativo
+    // troncato e rifatto che un'attesa senza fine.
+    const guinzaglio = new AbortController();
+    const scadenza = setTimeout(() => guinzaglio.abort(), TIMEOUT_MS);
     try {
       const token = await getTokenCached(retried401);
       r = await fetch(url, {
         ...options,
+        signal: guinzaglio.signal,
         // Gli header dei chiamanti si sommano ai nostri invece di sostituirli:
         // `If-Match` deve poter viaggiare senza portarsi via l'Authorization.
         headers: {
@@ -63,9 +80,18 @@ async function callRaw(path, options = {}, retries = 3) {
         },
       });
     } catch (e) {
-      if (attempt === retries - 1) throw e;
+      const scaduta = /** @type {any} */ (e)?.name === 'AbortError';
+      if (attempt === retries - 1) {
+        // Un AbortError nudo non dice niente a chi legge dal telefono: qui
+        // diventa la frase che il pannello di stato mostrerà.
+        throw scaduta
+          ? new Error(`Nessuna risposta entro ${TIMEOUT_MS / 1000}s (${path})`)
+          : e;
+      }
       await new Promise(res => setTimeout(res, (attempt + 1) * 1000));
       continue;
+    } finally {
+      clearTimeout(scadenza);
     }
     if (r.status === 204) return r;
     // Il token cachato può risultare scaduto (es. dopo una pausa lunga):

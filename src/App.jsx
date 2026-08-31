@@ -294,10 +294,10 @@ function descriviErrore(e) {
  * build in esecuzione, che dice se il telefono sta girando l'ultimo deploy o
  * una copia vecchia rimasta nella cache del service worker.
  * @param {{ sync: {state: string, label: string},
- *   problemi: {dove: string, messaggio: string}[],
+ *   problemi: {dove: string, messaggio: string}[], account: string|null,
  *   onChiudi: () => void, onAggiorna: () => void }} props
  */
-function PannelloStato({ sync, problemi, onChiudi, onAggiorna }) {
+function PannelloStato({ sync, problemi, account, onChiudi, onAggiorna }) {
   return (
     <div className="stato-dropdown" role="dialog" aria-label="Stato caricamento">
       <div className="stato-header">
@@ -314,7 +314,10 @@ function PannelloStato({ sync, problemi, onChiudi, onAggiorna }) {
         </div>
       ))}
       <div className="stato-meta">
-        build {oraLeggibile(BUILD_TIME)}
+        {/* L'account collegato: quando tutto è vuoto ma niente è in errore,
+            la prima domanda è se si sta guardando il OneDrive giusto. */}
+        {account || 'nessun account'}
+        <br />build {oraLeggibile(BUILD_TIME)}
         {' · '}{typeof navigator !== 'undefined' && navigator.onLine === false ? 'offline' : 'online'}
       </div>
       <button className="stato-aggiorna" onClick={onAggiorna}>Aggiorna tutto</button>
@@ -648,6 +651,7 @@ export default function App() {
       // Colori personalizzati (taccuini/sezioni) scelti dall'utente
       // nell'ingranaggio impostazioni — vanno applicati subito dopo aver
       // ricevuto taccuini e sezioni, prima di renderli nello stato.
+      setSync({ state: 'loading', label: 'Caricamento… colori' });
       const colorCfg = await fetchCached(qk.colorSettings(), loadColorSettings, STALE.colorSettings, forceRefresh)
         .catch(e => { console.error('color settings load', e); return queryClient.getQueryData(qk.colorSettings()) || null; });
       const overrides = colorCfg || DEFAULT_COLOR_SETTINGS;
@@ -668,6 +672,7 @@ export default function App() {
       // era un'app che si apre vuota senza dire perché.
       /** @type {any[]} */
       let nbs = [];
+      setSync({ state: 'loading', label: 'Caricamento… taccuini' });
       try {
         nbs = await fetchCached(qk.notebooks(), getNotebooks, STALE.notebooks, forceRefresh);
       } catch (e) {
@@ -683,8 +688,10 @@ export default function App() {
       // vanno portati di qua prima. Si chiede solo quando non se ne ha già una
       // copia in cache, altrimenti sarebbe una lettura in più a ogni avvio.
       if (!(/** @type {any[]|undefined} */ (queryClient.getQueryData(qk.todolists()))?.length)) {
+        setSync({ state: 'loading', label: 'Caricamento… migrazione attività' });
         await migraSeServe().catch(e => registraProblema('Migrazione attività da To-Do', e));
       }
+      setSync({ state: 'loading', label: 'Caricamento… elenco attività' });
       /** @type {any[]} */
       let lists = [];
       try {
@@ -1315,6 +1322,7 @@ export default function App() {
           <PannelloStato
             sync={sync}
             problemi={problemi}
+            account={account?.username || null}
             onChiudi={() => setStatoOpen(false)}
             onAggiorna={() => { setStatoOpen(false); handleRefresh(); }}
           />
