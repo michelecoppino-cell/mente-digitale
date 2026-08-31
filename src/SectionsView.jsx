@@ -76,6 +76,10 @@ const DELIVERABLE_FOLDS_KEY = 'md_sv_deliverable_folds_v1';
  *  diventi una cosa da guardare. */
 const DUE_SOON_DAYS = 7;
 
+// Una data completa: `type="date"` propone valori parziali mentre si scrive
+// l'anno (0002, 0020, 0202…) e nessuno di quelli è una scadenza.
+const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
 /** La stima scritta nelle note, come la si legge in fondo alla riga
  *  dell'attività. Solo quella davvero scritta: mostrare la mezz'ora di
  *  partenza su tutte le righe sarebbe un numero inventato. */
@@ -700,6 +704,10 @@ function DeliverableHead({ deliverable: d, folded, moving = false, onToggle, sec
   // La data aperta in modifica: cambiarla rinomina la lista, ma il nome
   // composto non si vede mai — si tocca solo il campo data.
   const [editingDue, setEditingDue] = useState(false);
+  // Il campo data è controllato: `type="date"` emette un change a ogni cifra
+  // dell'anno (2 → 0002, 20 → 0020…), quindi salvare sul change chiuderebbe
+  // il campo al primo numero digitato. Si salva solo su Invio o uscendo.
+  const [dueDraft, setDueDraft] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(/** @type {string|null} */ (null));
 
@@ -711,7 +719,23 @@ function DeliverableHead({ deliverable: d, folded, moving = false, onToggle, sec
   // annidata. Rinominare la lista omonima romperebbe il legame con la sezione.
   const canEditDue = !!onRename && d.nested;
 
+  function openDueEditor() {
+    setDueDraft(toDateInputValue(d.due) || '');
+    setError(null);
+    setEditingDue(true);
+  }
+
   async function saveDue(/** @type {string} */ value) {
+    // Una data monca (l'anno a metà) non è una scadenza: si chiude senza
+    // scrivere, invece di mandare a To-Do l'anno 20.
+    if (value && !ISO_DATE_RE.test(value)) {
+      setEditingDue(false);
+      return;
+    }
+    if ((value || '') === (toDateInputValue(d.due) || '')) {
+      setEditingDue(false);
+      return;
+    }
     setSaving(true);
     setError(null);
     try {
@@ -753,15 +777,18 @@ function DeliverableHead({ deliverable: d, folded, moving = false, onToggle, sec
             type="date"
             autoFocus
             disabled={saving}
-            defaultValue={toDateInputValue(d.due)}
-            onBlur={() => !saving && setEditingDue(false)}
-            onKeyDown={e => { if (e.key === 'Escape') setEditingDue(false); }}
-            onChange={e => saveDue(e.target.value)}
+            value={dueDraft}
+            onChange={e => setDueDraft(e.target.value)}
+            onBlur={() => !saving && saveDue(dueDraft)}
+            onKeyDown={e => {
+              if (e.key === 'Escape') setEditingDue(false);
+              if (e.key === 'Enter') { e.preventDefault(); saveDue(dueDraft); }
+            }}
           />
         ) : (
           <button
             className="sv-icon-btn sv-deliverable-date-btn"
-            onClick={() => setEditingDue(true)}
+            onClick={openDueEditor}
             title={dueLabel ? `Sposta la scadenza (ora ${dueLabel})` : 'Dai una scadenza alla consegna'}
             aria-label="Cambia la scadenza della consegna">
             🗓
