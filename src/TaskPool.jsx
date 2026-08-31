@@ -11,6 +11,8 @@
 // sparire le stesse righe si sarebbero solo dati fastidio.
 import { useMemo, useState } from 'react';
 import Skeleton from './Skeleton';
+import { ordinaAMano, riordinaGruppo, CON_MOUSE } from './taskOrder';
+import { useMediaQuery } from './useMediaQuery';
 import {
   DEFAULT_CONFIG, findProject, buildListColorMap, listColor,
   formatDueDate, dueDateSortValue, isTaskOverdue, formatDeliverableDue, daysUntil, daysUntilLabel,
@@ -62,10 +64,17 @@ export default function TaskPool({
   scheduledIds = EMPTY_SET,
   selectedTaskId = null,
   onTaskClick,
+  onTaskPatched,
   draggable = true,
   showViewToggle = true,
   title = null,
 }) {
+  // Il riordino a mano si fa col mouse: vedi taskOrder.js.
+  const conMouse = useMediaQuery(CON_MOUSE);
+  // Su quale riga si sta passando trascinandone un'altra, per la linea che
+  // dice dove finirà.
+  const [dropOnId, setDropOnId] = useState(null);
+  const [dragTaskId, setDragTaskId] = useState(null);
   // PARA: quali ruoli di sezione mostrare — di default "progetti" e "aree"
   // (le sezioni senza prefisso PARA + quelle con prefisso "area").
   const [paraFilter, setParaFilter]       = useState(() => new Set(['project', 'area']));
@@ -225,6 +234,12 @@ export default function TaskPool({
     poolByProject[key].tasks.push(t);
   }
 
+  // Dentro il gruppo comanda l'ordine messo a mano, dove c'è: è l'unico che
+  // dice in che ordine si vogliono fare le cose, invece di quale scade prima.
+  for (const group of Object.values(poolByProject)) {
+    group.tasks = ordinaAMano(group.tasks);
+  }
+
   // I gruppi di una stessa commessa, uno sotto l'altro sotto la sua
   // intestazione. Dove le consegne non ci sono l'intestazione non compare, e
   // l'elenco è quello di sempre.
@@ -264,6 +279,22 @@ export default function TaskPool({
 
   const deadlineSortedTasks = [...poolTasks].sort((a, b) =>
     dueDateSortValue(a.scadenza) - dueDateSortValue(b.scadenza));
+
+  /** Il rilascio di una riga sopra un'altra dello stesso gruppo: si riordina.
+   *  Fra liste diverse non si fa niente — quello è uno spostamento, e ha il suo
+   *  gesto nella colonna Attività di Sezioni. */
+  async function handleReorderDrop(gruppo, daTask, suTask) {
+    setDropOnId(null);
+    setDragTaskId(null);
+    const listId = daTask?._listId || '';
+    if (!listId || listId !== (suTask?._listId || '') || daTask.id === suTask.id) return;
+    try {
+      await riordinaGruppo({
+        listId, gruppo, daId: daTask.id, suId: suTask.id,
+        onOrdinato: (lid, id, patch) => onTaskPatched?.(lid, id, patch),
+      });
+    } catch (e) { console.error('riordino task', e); }
+  }
 
   function handleDragStart(e, task, color) {
     e.dataTransfer.setData('text/plain', JSON.stringify({ type: 'task', task }));
@@ -389,6 +420,21 @@ export default function TaskPool({
                       draggable={draggable}
                       onTaskClick={onTaskClick}
                       onDragStart={handleDragStart}
+                      onDragEnd={() => { setDragTaskId(null); setDropOnId(null); }}
+                      onDragTask={setDragTaskId}
+                      // Il riordino vale dentro il gruppo, che è una lista: le
+                      // righe di un progetto a mano possono venire da liste
+                      // diverse, e lì riordinare non vuol dire niente.
+                      riordinabile={conMouse && !!onTaskPatched
+                        && dragTaskId !== null && dragTaskId !== task.id
+                        && group.tasks.some(t => t.id === dragTaskId)}
+                      dropOn={dropOnId === task.id}
+                      onDropOn={() => setDropOnId(task.id)}
+                      onDropLeave={() => setDropOnId(prev => (prev === task.id ? null : prev))}
+                      onReorder={() => {
+                        const da = group.tasks.find(t => t.id === dragTaskId);
+                        if (da) handleReorderDrop(group.tasks, da, task);
+                      }}
                     />
                   ))}
                 </div>
@@ -454,15 +500,22 @@ function fmtEstimate(min) {
   return m ? `${h}h${String(m).padStart(2, '0')}` : `${h}h`;
 }
 
-function PoolTaskRow({ task, color, isScheduled, selected, draggable, onTaskClick, onDragStart, showListName = false }) {
+function PoolTaskRow({
+  task, color, isScheduled, selected, draggable, onTaskClick, onDragStart, showListName = false,
+  onDragEnd, onDragTask, riordinabile = false, dropOn = false, onDropOn, onDropLeave, onReorder,
+}) {
   const due = formatDueDate(task.scadenza);
   const overdue = isTaskOverdue(task.scadenza);
   return (
     <div
-      className={`planner-pool-task${isScheduled ? ' scheduled' : ''}${selected ? ' selected' : ''}`}
+      className={`planner-pool-task${isScheduled ? ' scheduled' : ''}${selected ? ' selected' : ''}${dropOn ? ' drop-on' : ''}`}
       draggable={draggable && !isScheduled}
       onClick={() => onTaskClick?.(task)}
-      onDragStart={draggable && !isScheduled ? e => onDragStart(e, task, color) : undefined}>
+      onDragStart={draggable && !isScheduled ? e => { onDragTask?.(task.id); onDragStart(e, task, color); } : undefined}
+      onDragEnd={onDragEnd}
+      onDragOver={riordinabile ? e => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; onDropOn?.(); } : undefined}
+      onDragLeave={riordinabile ? () => onDropLeave?.() : undefined}
+      onDrop={riordinabile ? e => { e.preventDefault(); e.stopPropagation(); onReorder?.(); } : undefined}>
       <span className="planner-task-dot" style={{ background: color }} />
       <span className="planner-task-title">{task.titolo}</span>
       {showListName && task._listName && (

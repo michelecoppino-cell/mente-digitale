@@ -279,7 +279,7 @@ function VerticalTitle({ text, layout, className }) {
 
 // ── Main PlannerView ──────────────────────────────────────────────────────────
 export default function PlannerView({
-  open, onClose, preloadedTasks = [], notebooks = [], sectionsMap = {}, todoLists = [], pagesCache = null, autoAddTask = null, onAutoAdded,
+  open, onClose, preloadedTasks = [], notebooks = [], sectionsMap = {}, todoLists = [], autoAddTask = null, onAutoAdded,
   onTaskCompleted, onTaskDeleted, onTaskRenamed, onTaskDueChanged, onTaskPatched, onTaskRestored,
   calendarDirtyToken = 0,
 }) {
@@ -1730,9 +1730,7 @@ export default function PlannerView({
   const detailBody = selectedTask ? (
     <TaskDetailPanel
       task={selectedTask}
-      notebooks={notebooks}
       sectionsMap={sectionsMap}
-      pagesCache={pagesCache}
       onEstimateChanged={min => resizeBlocksForTask(selectedTask.id, min)}
       onClose={closeDetail}
       onCompleted={() => { onTaskCompleted?.(selectedTask._listId, selectedTask.id); closeDetail(); }}
@@ -1953,6 +1951,7 @@ export default function PlannerView({
               todoLists={todoLists}
               scheduledIds={weekScheduledIds}
               draggable
+              onTaskPatched={onTaskPatched}
             />
           ) : (
             <WorkbookPool workbooks={workbooks} onChange={persistWorkbooks} draggable notebooks={notebooks} stats={workbookMinuteStats} />
@@ -2014,6 +2013,7 @@ export default function PlannerView({
               selectedTaskId={selectedTask?.id ?? null}
               draggable
               onTaskClick={setSelectedTask}
+              onTaskPatched={onTaskPatched}
             />
           ) : (
             <WorkbookPool workbooks={workbooks} onChange={persistWorkbooks} draggable notebooks={notebooks} stats={workbookMinuteStats} />
