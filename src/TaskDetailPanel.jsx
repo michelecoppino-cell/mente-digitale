@@ -167,6 +167,9 @@ export default function TaskDetailPanel({ task, notebooks = [], sectionsMap = {}
     const val = e.target.value;
     const prevVal = dueDraft;
     setDueDraft(val);
+    // Mentre si digita l'anno il campo data propone date parziali (0002,
+    // 0020, 0202…): si salva solo quando la data è completa.
+    if (val && !/^\d{4}-\d{2}-\d{2}$/.test(val)) return;
     setSavingDue(true);
     try {
       await updateTaskDueDate(task._listId, task.id, val || null);
