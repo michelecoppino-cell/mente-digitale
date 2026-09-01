@@ -748,13 +748,35 @@ processo all'inizio della chat e lo tiene fino alla fine.
 npm install
 npm run dev       # dev server Vite
 npm run lint      # ESLint
+npm run typecheck # tipi dai JSDoc (checkJs)
 npm run build     # build di produzione in dist/
+npm run prova     # le prove: OneDrive finto in memoria, senza rete né account
 ```
+
+### Le prove
+
+Quattro suite, tutte contro un OneDrive finto (`scripts/finto-onedrive.mjs`):
+non chiedono connessione né account Microsoft, e importano i moduli veri di
+`src/` sostituendo solo l'autenticazione — così provano il codice che gira
+davvero, non una copia che può divergere.
+
+| | cosa prova |
+|---|---|
+| `prova-onedrive` | lo strato dei file: ETag, `If-Match`, il conflitto fra due dispositivi, le cartelle e la migrazione dai posti vecchi |
+| `prova-task` | `taskStore`: liste, campi, riordino a mano, spostamenti, il rifiuto di una scrittura che svuota un file |
+| `prova-migrazione` | la passata una tantum da Microsoft To-Do ai file nostri |
+| `prova-flusso` | gli otto stati del flusso GTD e le loro precedenze |
+
+Girano in CI insieme a tipi, lint e build. Prima non ci giravano, e tre suite
+su quattro si erano rotte in silenzio quando `api.js` ha cambiato il modo di
+leggere i file: il finto OneDrive era rimasto indietro, e nessuno se n'era
+accorto perché nessuno le eseguiva.
 
 ### Workflow git
 
 Niente push diretto su `main`: ogni modifica va su un branch, poi pull request
-e merge su `main`. La CI (type-check, lint, build) gira su ogni push e ogni PR.
+e merge su `main`. La CI (type-check, lint, build, prove) gira su ogni push e
+ogni PR.
 
 ### Configurazione MSAL
 
