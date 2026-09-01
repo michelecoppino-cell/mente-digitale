@@ -50,6 +50,7 @@ import { PageTree } from './Panel';
 import { pushUndo } from './undo';
 import { openProtocol } from './protocolLink';
 import './SectionsView.css';
+import { durataBreve, ymd } from './tempo';
 
 /** I tre elenchi per persona in fondo alla colonna Attività, nell'ordine in
  *  cui si leggono: prima quello che tocca a te far partire, poi quello che hai
@@ -98,9 +99,7 @@ const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 function estimateLabel(/** @type {import('./taskStore').Task} */ t) {
   const min = t?.stimaMin;
   if (!min) return null;
-  const h = Math.floor(min / 60), m = min % 60;
-  if (!h) return `${m}m`;
-  return m ? `${h}h${String(m).padStart(2, '0')}` : `${h}h`;
+  return durataBreve(min);
 }
 
 /** Quando un'attività è già a piano, detto in una riga: «oggi 09:00»,
@@ -108,8 +107,7 @@ function estimateLabel(/** @type {import('./taskStore').Task} */ t) {
  *  grigia — vedere che è pianificata senza sapere quando non aiuta. */
 function plannedWhen(/** @type {{date: string, startTime: string}} */ p) {
   const oggi = new Date();
-  const key = (/** @type {Date} */ d) =>
-    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  const key = ymd;
   const domani = new Date(oggi); domani.setDate(oggi.getDate() + 1);
   const giorno = p.date === key(oggi) ? 'oggi'
     : p.date === key(domani) ? 'domani'

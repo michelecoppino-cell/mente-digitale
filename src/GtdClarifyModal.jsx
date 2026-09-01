@@ -3,6 +3,7 @@ import { createNotePage, createCalendarEvent, deleteCalendarEvent } from './api'
 import { creaTask, eliminaTask, aggiornaTask } from './taskStore';
 import { sectionRole, paraSectionLabel, listLabel } from './paraConfig';
 import { pushUndo } from './undo';
+import { useEscape } from './useEscape';
 import './GtdClarifyModal.css';
 
 // Diagramma di flusso GTD "Chiarire" (David Allen), adattato al metodo PARA
@@ -97,6 +98,9 @@ export default function GtdClarifyModal({ open, onClose, todoLists = [], noteboo
     resourceTask: { id: 'resourceTask', icon: '💡', label: 'Risorse/Idee', kind: 'list', consume: 'delete', todoLists: resourceLists, onSubmit: submitProjectTask, confirmLabel: 'Crea task', confirmMsg: 'Task creato' },
     area:         { id: 'area', icon: '🔁', label: 'Aree', kind: 'list', consume: 'delete', todoLists: areaLists, onSubmit: submitProjectTask, confirmLabel: 'Crea task', confirmMsg: 'Task creato' },
   };
+
+  // Escape chiude, come in ogni altro pannello dell'app.
+  useEscape(open, handleClose);
 
   if (!open) return null;
 

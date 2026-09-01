@@ -34,6 +34,7 @@ import { parseCapture, matchDestinations } from './captureParse';
 import DestinationPicker from './DestinationPicker';
 import { byRecentUse, pushDestMru } from './destinationMru';
 import './QuickCapture.css';
+import { durataBreve } from './tempo';
 
 /**
  * @param {Object} props
@@ -335,8 +336,5 @@ function formatDay(dateStr) {
  * @returns {string}
  */
 function formatMin(min) {
-  if (min < 60) return `${min}m`;
-  const h = Math.floor(min / 60);
-  const rest = min % 60;
-  return rest ? `${h}h${String(rest).padStart(2, '0')}` : `${h}h`;
+  return durataBreve(min);
 }

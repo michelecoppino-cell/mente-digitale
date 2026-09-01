@@ -1,5 +1,6 @@
 // @ts-check
 import { getToken } from './auth';
+import { ymd } from './tempo';
 
 const GRAPH = 'https://graph.microsoft.com/v1.0';
 
@@ -1603,7 +1604,7 @@ export async function saveRituale(giorni) {
     const unito = { ...(base && typeof base === 'object' && !Array.isArray(base) ? base : {}), ...giorni };
     const taglio = new Date();
     taglio.setDate(taglio.getDate() - RITUALE_GIORNI);
-    const limite = `${taglio.getFullYear()}-${String(taglio.getMonth() + 1).padStart(2, '0')}-${String(taglio.getDate()).padStart(2, '0')}`;
+    const limite = ymd(taglio);
     /** @type {Record<string, import('./types').RitualeGiorno>} */
     const potato = {};
     for (const [data, giorno] of Object.entries(unito)) {

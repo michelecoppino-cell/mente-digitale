@@ -13,22 +13,15 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { taskEstimateMin } from './taskModel';
 import { listLabel } from './paraConfig';
+import { minutiDaOra, oraDaMinuti, ymd } from './tempo';
 
 const SLOT_MIN = 30;
 const SLOT_H = 24;      // altezza di mezz'ora, px
 const DAY_START = 8 * 60;
 const DAY_END = 24 * 60;
 
-function t2m(/** @type {string} */ t) {
-  const [h, m] = (t || '0:0').split(':').map(Number);
-  return h * 60 + (m || 0);
-}
-function m2t(/** @type {number} */ min) {
-  return `${String(Math.floor(min / 60)).padStart(2, '0')}:${String(min % 60).padStart(2, '0')}`;
-}
-function ymd(/** @type {Date} */ d) {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
+const t2m = minutiDaOra;
+const m2t = oraDaMinuti;
 function fmtDur(/** @type {number} */ min) {
   const h = Math.floor(min / 60), m = min % 60;
   if (!h) return `${m}m`;

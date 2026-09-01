@@ -5,6 +5,8 @@
 // sezione, quindi si usa un prefisso invece del nome letterale fisso. Tutte le
 // altre sezioni sono considerate "progetti attivi" — nessuna configurazione
 // aggiuntiva richiesta, basta rispettare i prefissi.
+import { ymd } from './tempo';
+
 export const PARA_SECTION_PREFIXES = {
   area: ['AREA'],
   resources: ['RIS-', 'IDEE-'],
@@ -302,6 +304,5 @@ export function buildListName({ gruppo, consegna, scadenza = null }) {
  * @returns {string}
  */
 export function toDateInputValue(d) {
-  if (!d) return '';
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  return d ? ymd(d) : '';
 }

@@ -18,7 +18,24 @@
     <!-- Theme color -->
     <meta name="theme-color" content="#0e1013" />
 
-    <link rel="icon" type="image/svg+xml" href="/icons.svg" />
+    <!-- I caratteri, chiesti da qui e non da un `@import` in cima a index.css.
+         Un `@import` dentro un CSS il browser lo scopre solo dopo aver
+         scaricato e letto quel CSS: sono due viaggi in fila sul percorso
+         critico, e su rete mobile il testo resta senza il suo carattere per
+         tutto il secondo. Qui la richiesta parte mentre l'HTML si sta ancora
+         leggendo, e il preconnect apre in anticipo la connessione al dominio
+         da cui arrivano i file veri (gstatic). -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;500&family=Inter:wght@400;500;600&display=swap"
+    />
+
+    <!-- L'icona della scheda era `/icons.svg`: uno sprite di `<symbol>` di
+         loghi social rimasto da un boilerplate, che come favicon disegna il
+         vuoto. Adesso è il marchio dell'app, lo stesso di icon-192.png. -->
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
   </head>
   <body>
     <div id="root"></div>

@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { COLORS } from './config';
 import { shadeColor, hexToRgb, rgbToHex } from './plannerShared';
+import { durataInOre } from './tempo';
 
 function genId() {
   return Math.random().toString(36).slice(2) + Date.now().toString(36);
@@ -10,10 +11,7 @@ function genId() {
 // Formato compatto "3h30" per la colonna Ore — niente decimali per restare
 // leggibile in uno spazio stretto quanto quello del pannello.
 function fmtHours(min) {
-  const m = Math.max(0, Math.round(min));
-  const h = Math.floor(m / 60);
-  const mm = m % 60;
-  return mm === 0 ? `${h}h` : `${h}h${String(mm).padStart(2, '0')}`;
+  return durataInOre(min);
 }
 
 // Pannello sinistro "Workbook" — alternativa a TaskPool nella colonna sinistra

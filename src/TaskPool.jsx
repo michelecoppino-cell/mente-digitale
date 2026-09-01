@@ -22,6 +22,7 @@ import {
   sectionNameForList, paraSectionLabel,
 } from './paraConfig';
 import { taskEstimateMin } from './taskModel';
+import { durataBreve } from './tempo';
 
 const EMPTY_SET = new Set();
 
@@ -494,11 +495,7 @@ function DeliverableDue({ due }) {
 }
 
 /** "30m", "1h", "1h30" — la stima, nello spazio di una chip. */
-function fmtEstimate(min) {
-  if (min < 60) return `${min}m`;
-  const h = Math.floor(min / 60), m = min % 60;
-  return m ? `${h}h${String(m).padStart(2, '0')}` : `${h}h`;
-}
+const fmtEstimate = durataBreve;
 
 function PoolTaskRow({
   task, color, isScheduled, selected, draggable, onTaskClick, onDragStart, showListName = false,

@@ -1,4 +1,6 @@
-@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;500&family=Inter:wght@400;500;600&display=swap');
+/* I caratteri si chiedono da index.html, non da qui: un `@import` in cima a
+   un foglio di stile è un secondo viaggio in fila al primo, e va scoperto
+   dopo che questo file è arrivato. Vedi il `<link>` nell'head. */
 @import './tokens.css';
 
 * { margin: 0; padding: 0; box-sizing: border-box; }

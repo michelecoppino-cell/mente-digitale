@@ -14,6 +14,8 @@
 // `useSveglie.js`. Qui restano solo le funzioni pure, che si possono leggere
 // e correggere senza pensare al ciclo di vita di un componente.
 
+import { ymd } from './tempo';
+
 /** Le ore proposte come pastiglie: fra quanto suona, non a che ora. */
 export const SVEGLIA_CHOICES = [
   { min: 5,   label: 'fra 5 min' },
@@ -28,9 +30,7 @@ export function hhmm(d) {
 }
 
 /** @param {Date} d @returns {string} "YYYY-MM-DD" nel fuso locale */
-export function dayKey(d) {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
+export const dayKey = ymd;
 
 /**
  * L'ora che si ottiene aggiungendo `min` minuti a adesso, arrotondata al

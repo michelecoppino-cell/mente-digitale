@@ -37,6 +37,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
   // True appena l'utente modifica qualcosa: il sync all'avvio non deve mai
   // sovrascrivere modifiche fatte mentre il download era in corso.
   const modificato = useRef(false);
+  // Lo stato calcolato dall'ultimo `aggiorna`, in attesa di essere scritto.
+  const daPersistere = useRef<DatiApp | null>(null);
 
   useEffect(() => {
     let attivo = true;
@@ -114,21 +116,32 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }, 3000);
   }
 
-  // Persistenza con debounce per non scrivere su ogni tasto.
+  // Persistenza con debounce per non scrivere su ogni tasto. Il dato in coda
+  // resta a portata di mano: uscendo dalla sezione va scritto subito, non
+  // buttato via insieme al timer.
+  const inAttesaLocale = useRef<DatiApp | null>(null);
+
   function persisti(d: DatiApp) {
     modificato.current = true;
     segnaModificaLocale();
+    inAttesaLocale.current = d;
     if (timer.current) clearTimeout(timer.current);
     timer.current = setTimeout(() => {
+      inAttesaLocale.current = null;
       void salvaDati(d);
     }, 300);
     sincronizzaOneDrive(d);
   }
 
+  // La persistenza sta *fuori* dall'updater di setDati, e non è un dettaglio:
+  // React invoca l'updater più di una volta (in StrictMode, sempre due), e un
+  // salvataggio infilato lì dentro faceva partire due debounce, due marcatori
+  // di modifica e due sincronizzazioni verso OneDrive per una modifica sola.
+  // L'updater calcola e basta; a scrivere si va dopo, una volta.
   function aggiorna(mut: (d: DatiApp) => DatiApp) {
     setDati((prev) => {
       const next = mut(prev);
-      persisti(next);
+      daPersistere.current = next;
       return next;
     });
   }
@@ -140,6 +153,33 @@ export function AppProvider({ children }: { children: ReactNode }) {
     void salvaDati(d);
     sincronizzaOneDrive(d);
   }
+
+  useEffect(() => {
+    const next = daPersistere.current;
+    if (!next) return;
+    daPersistere.current = null;
+    persisti(next);
+  });
+
+  // Uscendo da Finanze i due debounce si chiudono, ma in due modi opposti.
+  //
+  // Quello locale si **porta a termine**: fra la modifica e la scrittura su
+  // IndexedDB passano trecento millisecondi, e uscire dalla sezione in quella
+  // finestra — che è il gesto normale: cambio un importo e torno a «Oggi» —
+  // non deve costare la modifica appena fatta.
+  //
+  // Quello di OneDrive si **annulla**: è un backup, il dato vero è già al
+  // sicuro qui sotto, e la prossima modifica lo rimanderà comunque. Vale la
+  // pena non lasciare partire una richiesta di rete per una schermata chiusa.
+  useEffect(() => () => {
+    if (timer.current) clearTimeout(timer.current);
+    if (timerOneDrive.current) clearTimeout(timerOneDrive.current);
+    const inSospeso = inAttesaLocale.current;
+    if (inSospeso) {
+      inAttesaLocale.current = null;
+      void salvaDati(inSospeso);
+    }
+  }, []);
 
   return (
     <AppCtx.Provider
