@@ -4,6 +4,7 @@
 // e non riflettono quanto "costano" le tasse in un intervallo qualsiasi.
 
 import { AllocazioneTasse, AnnoTasse, Transazione } from "../types";
+import { toIso } from "../util";
 
 /** Totale tasse dichiarato per l'anno: importi reali se presenti, altrimenti stima da fatturato x aliquota. */
 export function stimaAnnoTasse(t: AnnoTasse): number {
@@ -147,9 +148,7 @@ function giornoPrima(iso: string): string {
   const [y, m, d] = iso.split("-").map(Number);
   const dt = new Date(y, m - 1, d);
   dt.setDate(dt.getDate() - 1);
-  return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-${String(
-    dt.getDate(),
-  ).padStart(2, "0")}`;
+  return toIso(dt);
 }
 
 /**

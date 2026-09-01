@@ -26,6 +26,31 @@ h1, h2, h3, .title { font-family: var(--font-title); font-weight: 400; }
   outline-offset: 2px;
 }
 
-::-webkit-scrollbar { width: 4px; }
+/* La barra di scorrimento è un filo, e deve esserlo in tutte e due le
+   direzioni: `width` vale per quella verticale, `height` per quella
+   orizzontale, e senza la seconda le colonne che scorrono di lato — la vista
+   Attività, la plancia di Sezioni, il diagramma del chiarimento — si tenevano
+   la barra di sistema, quindici pixel grossi accanto ai quattro di tutte le
+   altre. */
+::-webkit-scrollbar { width: 4px; height: 4px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 4px; }
+
+/* Chi tiene le animazioni spente sul proprio sistema le tiene spente anche
+   qui.
+   Non è una preferenza estetica: per chi ha disturbi vestibolari il movimento
+   sullo schermo dà nausea e vertigine, ed è il motivo per cui il sistema
+   operativo quell'interruttore ce l'ha. L'app ne rispettava uno solo — la
+   sveglia che oscilla — mentre gli altri centotrenta fra scorrimenti,
+   dissolvenze e pannelli che entrano da un lato erano rimasti accesi.
+   Le transizioni non si spengono del tutto ma si accorciano a un istante:
+   `none` toglierebbe l'evento `transitionend`, e c'è chi ci si appoggia per
+   sapere quando un pannello ha finito di aprirsi. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

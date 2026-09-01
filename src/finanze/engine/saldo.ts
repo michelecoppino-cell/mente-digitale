@@ -12,6 +12,7 @@
 // per giorno, col "manca da pagare oggi" mostrato nella scheda Tasse.
 
 import { AnnoTasse, Parametri, Transazione } from "../types";
+import { toIso } from "../util";
 import { confrontoTasse } from "./tasse";
 
 export interface PuntoSaldo {
@@ -34,12 +35,9 @@ export interface SaldoRisultato {
   conti: string[];
 }
 
-function pad(n: number): string {
-  return String(n).padStart(2, "0");
-}
-function isoDa(d: Date): string {
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-}
+// Il giorno locale in ISO è uno solo per tutta la sezione: sta in util.ts, e
+// qui se ne prende quello invece di riscriverlo.
+const isoDa = toIso;
 function giorniNelMese(anno: number, mese1: number): number {
   return new Date(anno, mese1, 0).getDate();
 }
