@@ -477,14 +477,21 @@ async function scaricaJson(url, retries = 3) {
 
 /**
  * I metadati dell'item, con dentro l'URL di download e l'ETag.
+ *
+ * Senza `$select`, e non e' una svista. Chiedendo esplicitamente
+ * `@microsoft.graph.downloadUrl` fra i campi, su questo OneDrive personale
+ * l'annotazione non torna affatto — la prova di connessione dal telefono lo ha
+ * mostrato in chiaro: «nessun URL di download» sulla richiesta con `$select`,
+ * e l'URL puntualmente presente in quella senza. Costava una seconda richiesta
+ * di ripiego per ogni file letto, che su una rete da quasi sette secondi a
+ * richiesta e' un'attesa raddoppiata per niente. I metadati interi sono
+ * qualche riga di JSON in piu' e una richiesta in meno.
  * @param {string} filename
- * @param {boolean} [interi] tutti i campi, senza `$select`
  * @returns {Promise<any|null>} null se il file non c'e'
  */
-async function itemDiFile(filename, interi = false) {
-  const q = interi ? '' : '?$select=id,eTag,cTag,@microsoft.graph.downloadUrl';
+async function itemDiFile(filename) {
   try {
-    return await call(`${drivePath(filename)}${q}`);
+    return await call(drivePath(filename));
   } catch (e) {
     if (/** @type {any} */ (e)?.status === 404) return null;
     throw e;
@@ -513,15 +520,10 @@ async function readDriveFile(filename) {
     return { data: null, etag: null, absent: true };
   }
   const etag = item.eTag || item.cTag || null;
-  let url = item['@microsoft.graph.downloadUrl'];
+  const url = item['@microsoft.graph.downloadUrl'];
   // Senza URL non si legge, e «non si legge» non deve mai diventare «il file e'
-  // vuoto»: un documento letto vuoto viene riscritto vuoto, e li' si perde
-  // roba. Si richiedono i metadati interi (l'annotazione potrebbe essere
-  // caduta con il `$select`) e, se non c'e' nemmeno li', e' un errore.
-  if (!url) {
-    const intero = await itemDiFile(filename, true);
-    url = intero?.['@microsoft.graph.downloadUrl'];
-  }
+  // vuoto»: un documento letto vuoto verrebbe poi riscritto vuoto, e li' si
+  // perde roba.
   if (!url) throw new Error(`${filename}: OneDrive non da' un URL di download`);
   const data = await scaricaJson(url);
   ricordaVersione(filename, etag, data);
