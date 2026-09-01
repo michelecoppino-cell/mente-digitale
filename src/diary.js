@@ -9,6 +9,8 @@
 // fatta per il resto dei dati personali (browser ↔ Microsoft Graph, niente
 // backend proprio).
 
+import { ymd } from './tempo.js';
+
 /** @typedef {import('./types').DiaryEntry} DiaryEntry */
 
 export const DIARY_TYPES = {
@@ -83,12 +85,8 @@ export const SVUOTA_TESTA_METHOD = {
   ],
 };
 
-/** @param {Date} [date] @returns {string} 'YYYY-MM-DD' in ora locale */
-export function dateKey(date = new Date()) {
-  const d = date;
-  const p = /** @param {number} n */ n => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
-}
+/** 'YYYY-MM-DD' in ora locale — vedi tempo.js. */
+export const dateKey = ymd;
 
 /** @param {string|Date} [value] @returns {string} 'YYYY-MM' */
 export function monthKey(value = new Date()) {

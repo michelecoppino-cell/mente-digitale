@@ -50,7 +50,7 @@ import { PageTree } from './Panel';
 import { pushUndo } from './undo';
 import { openProtocol } from './protocolLink';
 import './SectionsView.css';
-import { durataBreve, ymd } from './tempo';
+import { durataBreve, ymd } from './tempo.js';
 
 /** I tre elenchi per persona in fondo alla colonna Attività, nell'ordine in
  *  cui si leggono: prima quello che tocca a te far partire, poi quello che hai

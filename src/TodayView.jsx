@@ -68,7 +68,7 @@ import { readPref, writePref } from './viewPrefs';
 import { qk, STALE } from './queryClient';
 import { useDatoPersistito } from './useDatoPersistito';
 import { caricaRiepilogoOggi } from './finanze/riepilogoOggi';
-import { durataDistesa, minutiDaOra, ymd } from './tempo';
+import { durataDistesa, minutiDaOra, ymd } from './tempo.js';
 import './TodayView.css';
 
 const todayStr = ymd;

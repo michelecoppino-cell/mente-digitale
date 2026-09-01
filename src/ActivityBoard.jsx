@@ -39,7 +39,7 @@ import Skeleton from './Skeleton';
 import TaskDetailPanel from './TaskDetailPanel';
 import TaskDetailDrawer from './TaskDetailDrawer';
 import './ActivityBoard.css';
-import { durataBreve, ymd } from './tempo';
+import { durataBreve, ymd } from './tempo.js';
 
 /** Le cinque colonne, nell'ordine del flusso. `done` non ha colonna: i task
  *  completati vivono nello storico del giorno, non nel serbatoio.

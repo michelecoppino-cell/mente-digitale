@@ -40,11 +40,19 @@ function urlDi(nome) {
       // (`import('./api.js')`, con cui taskStore carica il suo trasporto).
       // I `import('./types')` dei commenti JSDoc non si toccano: non sono
       // import veri e non hanno l'estensione.
-      const statici = [...testo.matchAll(/^import\b[^;]*?from '\.\/([\w-]+)'/gm)].map(m => m[1]);
+      //
+      // L'estensione negli statici è facoltativa perché nel codice lo è: i
+      // moduli che anche Node importa davvero — diary, paraConfig, api — la
+      // scrivono, perché il risolutore di Node la pretende; gli altri no,
+      // perché a Vite non serve. Qui vanno rilegati entrambi, e prima
+      // l'espressione ne vedeva una forma sola: un `from './tempo.js'` restava
+      // com'era e da un modulo `data:` non si risolve niente di relativo.
+      const statici = [...testo.matchAll(/^import\b[^;]*?from '\.\/([\w-]+)(\.js)?'/gm)];
       const dinamici = [...testo.matchAll(/import\('\.\/([\w-]+)\.js'\)/g)].map(m => m[1]);
-      for (const rif of [...new Set([...statici, ...dinamici])]) {
+      for (const rif of [...new Set([...statici.map(m => m[1]), ...dinamici])]) {
         const url = await urlDi(`${rif}.js`);
         testo = testo.replaceAll(`from './${rif}'`, `from '${url}'`)
+                     .replaceAll(`from './${rif}.js'`, `from '${url}'`)
                      .replaceAll(`import('./${rif}.js')`, `import('${url}')`);
       }
       return comeModulo(testo);
@@ -87,6 +95,10 @@ export function montaFintoOnedrive() {
     status,
     headers: { get: k => headers[k] ?? headers[k.toLowerCase()] ?? null },
     json: async () => (typeof corpo === 'string' ? JSON.parse(corpo) : corpo),
+    // Il contenuto dei file si legge come testo, non come JSON già letto:
+    // `scaricaJson` fa `r.text()` e poi il parse, per distinguere un file
+    // vuoto da un file con dentro `null`.
+    text: async () => (typeof corpo === 'string' ? corpo : JSON.stringify(corpo)),
   });
   const nonTrovato = () => risposta(404, { error: { code: 'itemNotFound', message: 'non esiste' } });
 
@@ -108,9 +120,25 @@ export function montaFintoOnedrive() {
   /** Rotte aggiunte dalle prove (es. il finto Microsoft To-Do). @type {Function[]} */
   const rotte = [];
 
+  // I file di OneDrive non stanno su graph.microsoft.com: i metadati sì, il
+  // contenuto no — quello arriva da una storage con un host suo, tramite un
+  // URL pre-autenticato che Graph mette in `@microsoft.graph.downloadUrl`.
+  // Anche qui è un host a parte, e la richiesta che ci arriva non porta né
+  // token né header nostri: è esattamente la forma che l'app usa dal vero, e
+  // quindi l'unica su cui provarla abbia senso.
+  const HOST_CONTENUTO = 'https://prova-storage.onedrive/scarica/';
+  const urlContenuto = percorso => HOST_CONTENUTO + encodeURIComponent(percorso);
+
   globalThis.fetch = async (url, opt = {}) => {
     const metodo = opt.method || 'GET';
-    const senzaHost = String(url).replace('https://graph.microsoft.com/v1.0', '');
+    const indirizzo = String(url);
+
+    if (indirizzo.startsWith(HOST_CONTENUTO)) {
+      const voce = archivio.get(decodeURIComponent(indirizzo.slice(HOST_CONTENUTO.length)));
+      return voce ? risposta(200, voce.testo) : nonTrovato();
+    }
+
+    const senzaHost = indirizzo.replace('https://graph.microsoft.com/v1.0', '');
 
     for (const rotta of rotte) {
       const esito = await rotta(senzaHost, opt, risposta);
@@ -152,13 +180,16 @@ export function montaFintoOnedrive() {
       if (!file) return nonTrovato();
       return sposta(decodificato, file, JSON.parse(opt.body));
     }
-    if (metodo === 'GET' && senzaHost.includes(':/content')) {
-      if (!file) return nonTrovato();
-      return risposta(200, file.testo, stato.esponeEtag ? { ETag: file.etag } : {});
-    }
     if (metodo === 'GET') {
       if (!file) return nonTrovato();
-      return risposta(200, { id: file.id, eTag: file.etag, cTag: 'c:' + file.etag });
+      // `esponeEtag: false` mette in scena un item senza eTag né cTag: è da lì
+      // che l'app prende la versione letta, e senza deve accorgersi di un
+      // conflitto confrontando il contenuto.
+      return risposta(200, {
+        id: file.id,
+        ...(stato.esponeEtag ? { eTag: file.etag, cTag: 'c:' + file.etag } : {}),
+        '@microsoft.graph.downloadUrl': urlContenuto(decodificato),
+      });
     }
     if (metodo === 'PUT') {
       const ifMatch = opt.headers?.['If-Match'];

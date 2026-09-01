@@ -34,7 +34,7 @@ import { parseCapture, matchDestinations } from './captureParse';
 import DestinationPicker from './DestinationPicker';
 import { byRecentUse, pushDestMru } from './destinationMru';
 import './QuickCapture.css';
-import { durataBreve } from './tempo';
+import { durataBreve } from './tempo.js';
 
 /**
  * @param {Object} props

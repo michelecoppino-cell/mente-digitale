@@ -5,7 +5,7 @@
 // sezione, quindi si usa un prefisso invece del nome letterale fisso. Tutte le
 // altre sezioni sono considerate "progetti attivi" — nessuna configurazione
 // aggiuntiva richiesta, basta rispettare i prefissi.
-import { ymd } from './tempo';
+import { ymd } from './tempo.js';
 
 export const PARA_SECTION_PREFIXES = {
   area: ['AREA'],

@@ -20,7 +20,7 @@ import { listLabel } from './paraConfig';
 import { ESTIMATE_CHOICES, DEFAULT_ESTIMATE_MIN, taskEstimateMin } from './taskModel';
 import { pushUndo } from './undo';
 import './PlannerView.css';
-import { durataDistesa, durataInOre, minutiDaOra, oraDaMinuti, ymd } from './tempo';
+import { durataDistesa, durataInOre, minutiDaOra, oraDaMinuti, ymd } from './tempo.js';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 const SLOT_HEIGHT      = 32;  // px per 30-min slot (32 → ~12h visible at once)

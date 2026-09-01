@@ -22,7 +22,7 @@ import {
   sectionNameForList, paraSectionLabel,
 } from './paraConfig';
 import { taskEstimateMin } from './taskModel';
-import { durataBreve } from './tempo';
+import { durataBreve } from './tempo.js';
 
 const EMPTY_SET = new Set();
 

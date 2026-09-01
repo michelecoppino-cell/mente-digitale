@@ -30,7 +30,7 @@ import MovimentoQuickAdd from './MovimentoQuickAdd';
 import { Matita } from './Matita';
 import { riassuntoDelGiorno } from './rituale';
 import './MovimentoCard.css';
-import { ymd } from './tempo';
+import { ymd } from './tempo.js';
 
 /** Altezza della colonna più alta, in pixel. Vedi altezzaSegmento. */
 const MAX_PX = 40;

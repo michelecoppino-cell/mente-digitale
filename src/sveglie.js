@@ -14,7 +14,7 @@
 // `useSveglie.js`. Qui restano solo le funzioni pure, che si possono leggere
 // e correggere senza pensare al ciclo di vita di un componente.
 
-import { ymd } from './tempo';
+import { ymd } from './tempo.js';
 
 /** Le ore proposte come pastiglie: fra quanto suona, non a che ora. */
 export const SVEGLIA_CHOICES = [

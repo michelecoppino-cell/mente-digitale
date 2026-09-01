@@ -1,6 +1,6 @@
 // @ts-check
 import { getToken } from './auth';
-import { ymd } from './tempo';
+import { ymd } from './tempo.js';
 
 const GRAPH = 'https://graph.microsoft.com/v1.0';
 

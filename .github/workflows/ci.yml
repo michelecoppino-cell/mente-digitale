@@ -1,9 +1,17 @@
 name: CI
 
-# Verifica statica ad ogni push/PR: type-check (JSDoc + checkJs), lint e build.
+# Verifica a ogni push/PR: type-check (JSDoc + checkJs), lint, build e le prove.
 # Utile soprattutto perché l'app va provata a mano solo su main (le API Graph
-# rispondono solo sull'URL di produzione): almeno tipi rotti, errori di lint o
-# build fallito vengono intercettati sul branch, prima del merge.
+# rispondono solo sull'URL di produzione): almeno tipi rotti, errori di lint,
+# build fallito o una regressione sugli strati provati vengono intercettati sul
+# branch, prima del merge.
+#
+# Le prove qui non c'erano, e si è visto: girano contro un OneDrive finto in
+# memoria, quindi non chiedono né rete né account — non c'era nessuna ragione
+# per lasciarle fuori se non che nessuno le aveva messe. Nel frattempo tre
+# suite su quattro si erano rotte in silenzio, perché lo strato che provano ha
+# cambiato il modo di leggere i file e il finto OneDrive era rimasto indietro:
+# tipi, lint e build passavano tutti, e nessuno se n'era accorto.
 on:
   push:
     branches-ignore:
@@ -31,3 +39,6 @@ jobs:
 
       - name: Build
         run: npm run build
+
+      - name: Prove (OneDrive finto, senza rete)
+        run: npm run prova

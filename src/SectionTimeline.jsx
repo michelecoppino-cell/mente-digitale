@@ -13,7 +13,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { taskEstimateMin } from './taskModel';
 import { listLabel } from './paraConfig';
-import { minutiDaOra, oraDaMinuti, ymd } from './tempo';
+import { minutiDaOra, oraDaMinuti, ymd } from './tempo.js';
 
 const SLOT_MIN = 30;
 const SLOT_H = 24;      // altezza di mezz'ora, px

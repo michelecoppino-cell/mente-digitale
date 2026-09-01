@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { COLORS } from './config';
 import { shadeColor, hexToRgb, rgbToHex } from './plannerShared';
-import { durataInOre } from './tempo';
+import { durataInOre } from './tempo.js';
 
 function genId() {
   return Math.random().toString(36).slice(2) + Date.now().toString(36);

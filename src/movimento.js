@@ -13,7 +13,7 @@
 // Senza quel campo la stessa palestra comparirebbe due volte in settimana:
 // una tratteggiata e una piena.
 
-import { durataDistesa, meseDi as meseDiData, ymd } from './tempo';
+import { durataDistesa, meseDi as meseDiData, ymd } from './tempo.js';
 
 /**
  * Le tre famiglie, con i tipi che si scelgono davvero al momento di

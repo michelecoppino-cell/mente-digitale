@@ -32,7 +32,7 @@ import UndoToast from './UndoToast';
 import SvegliaAlert from './SvegliaAlert';
 import { useSveglie } from './useSveglie';
 import './App.css';
-import { ymd } from './tempo';
+import { ymd } from './tempo.js';
 
 const FinanzeSection = lazy(() => import('./finanze/FinanzeSection'));
 
