@@ -9,6 +9,7 @@ import {
 } from './diary';
 import { addPhotos, removePhotos, getDiaryPhotoUrl, MAX_PHOTOS_PER_ENTRY } from './diaryPhotos';
 import DiaryImport from './DiaryImport';
+import { useEscape } from './useEscape';
 import './DiaryPanel.css';
 
 // Bozza in corso: lo svuota testa è la modalità in cui è più facile perdere
@@ -118,6 +119,13 @@ export default function DiaryPanel() {
   }
 
   const hasOlder = months.some(m => !loadedMonths.includes(m));
+
+  // Escape torna alla timeline dalle due sotto-viste che non chiedono niente:
+  // l'esportazione per l'AI e l'importazione dal Diario di Apple, dove si
+  // guarda e basta e l'unica uscita era il bottone «Indietro». Non dalle
+  // schermate di scrittura: da lì si esce con conserva, cassetto o lascia
+  // andare, e un tasto che butta via un foglio pieno non ci va.
+  useEscape(view === 'ai' || view === 'importa', () => setView('home'));
 
   return (
     <div className="diary-page">

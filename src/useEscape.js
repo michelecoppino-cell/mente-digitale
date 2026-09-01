@@ -9,24 +9,22 @@
 // vicoli ciechi, e in un'app che ha una scorciatoia per aprire ogni cosa
 // quella era l'unica strada senza uscita.
 //
-// L'ascolto sta su `window` in fase di cattura, come i modali che ce l'avevano
-// già: un campo di testo dentro il pannello non deve poter mangiare il tasto.
+// L'ascolto sta su `window` in fase di risalita, esattamente come nei modali
+// che il gesto ce l'avevano già scritto a mano: chi sta dentro — una casella
+// che annulla la modifica in corso — vede il tasto per primo, e questo hook
+// non gli cambia l'ordine sotto i piedi. Un pannello chiuso non ascolta.
 import { useEffect } from 'react';
 
 /**
- * @param {boolean} attivo   in genere è `open`: un pannello chiuso non ascolta
+ * @param {boolean} attivo   in genere è `open`
  * @param {() => void} chiudi
  */
 export function useEscape(attivo, chiudi) {
   useEffect(() => {
     if (!attivo) return undefined;
     /** @param {KeyboardEvent} e */
-    function suTasto(e) {
-      if (e.key !== 'Escape') return;
-      e.stopPropagation();   // il modale sopra vince su quello sotto
-      chiudi();
-    }
-    window.addEventListener('keydown', suTasto, true);
-    return () => window.removeEventListener('keydown', suTasto, true);
+    function suTasto(e) { if (e.key === 'Escape') chiudi(); }
+    window.addEventListener('keydown', suTasto);
+    return () => window.removeEventListener('keydown', suTasto);
   }, [attivo, chiudi]);
 }
