@@ -1,6 +1,7 @@
 // @ts-check
-// Shell di navigazione: rail a sinistra, topbar, e il contenuto della rotta
-// corrente.
+// Shell di navigazione: rail a sinistra, barra dei comandi, e il contenuto
+// della rotta corrente. Da telefono il rail è un drawer e la barra scende in
+// fondo allo schermo, dove arriva il pollice.
 //
 // Prima la navigazione era una manciata di booleani in App.jsx (plannerOpen,
 // diaryOpen, scheduleOpen…): nessuna vista aveva un indirizzo, il tasto
@@ -123,9 +124,9 @@ export default function AppShell({ children, topbar, onCapture, onOpenSettings }
 
   // Un solo comando, un solo handler: da telefono apre e chiude il drawer, da
   // desktop riduce e riespande il rail. Il bottone è disegnato due volte —
-  // in testa al rail e in topbar — ma non se ne vede mai più di uno: quello
-  // del rail è fuori schermo finché il drawer è chiuso, quello della topbar
-  // sparisce sopra gli 860px.
+  // in testa al rail e nella barra dei comandi — ma non se ne vede mai più di
+  // uno: quello del rail è fuori schermo finché il drawer è chiuso, quello
+  // della barra sparisce sopra gli 860px.
   function toggleMenu() {
     if (narrow) setDrawerOpen(o => !o);
     else setCollapsed(c => !c);
@@ -148,7 +149,8 @@ export default function AppShell({ children, topbar, onCapture, onOpenSettings }
         {/* Da telefono la cattura non sta qui: è il comando che si usa più
             spesso di tutti, e seppellirlo nel drawer voleva dire tre tocchi
             (panino, Cattura, scrivi) per un gesto che dev'essere uno solo.
-            Sopra gli 860px il rail è sempre a schermo e il posto è questo. */}
+            Sta nella barra in fondo, a portata di pollice. Sopra gli 860px il
+            rail è sempre a schermo e il posto è questo. */}
         {!narrow && (
           <button
             className="rail-capture"
@@ -186,12 +188,16 @@ export default function AppShell({ children, topbar, onCapture, onOpenSettings }
       </nav>
 
       <div className="shell-main">
+        {/* La barra dei comandi. Da telefono la colonna la dispone in fondo
+            invece che in cima (vedi AppShell.css): il pollice arriva lì. Il
+            markup è lo stesso — panino, cattura, azioni — e le colonne che
+            mettono il panino in mezzo sono tutte nel CSS. */}
         <header className="shell-topbar">
           <button className="shell-drawer-btn tap-44" onClick={toggleMenu} title={menuBtnTitle}>
             <Icon name="menu" />
           </button>
 
-          {/* Il «+» del rail, portato in topbar da telefono: la cattura resta
+          {/* Il «+» del rail, portato nella barra da telefono: la cattura resta
               a un tocco anche quando il rail è chiuso nel drawer. */}
           {narrow && (
             <button

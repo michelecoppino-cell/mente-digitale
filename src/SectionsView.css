@@ -452,7 +452,9 @@
 .sv-toast {
   position: fixed;
   left: 50%;
-  bottom: 22px;
+  /* Sopra la barra dei comandi, che da telefono sta in fondo: `--barra-bassa`
+     vale 0 su schermo grande, dove sotto non c'è niente. */
+  bottom: calc(var(--barra-bassa, 0px) + 22px);
   transform: translateX(-50%);
   z-index: 60;
   padding: var(--sp-3) var(--sp-5);

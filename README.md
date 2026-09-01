@@ -183,6 +183,21 @@ chiederebbe al server un file che non esiste. Con l'hash la rotta non lascia mai
 il client, e le due pagine-scorciatoia (`/gtd.html`, `/diario.html`) restano
 file veri.
 
+**Da telefono la barra dei comandi sta in fondo** (sotto gli 860 px). In cima era
+il posto peggiore che avesse: il telefono si tiene in una mano, il pollice arriva
+al bordo basso, e lassù finivano proprio i tre comandi presenti su ogni
+schermata. Non è una barra nuova — è la stessa `<header>` del desktop, che la
+colonna dispone in coda invece che in testa: resta nel flusso, il contenuto si
+accorcia da solo e non c'è nessuna barra fissa da compensare. Il **panino sta in
+mezzo** — è il comando che si tocca più spesso, e al centro ci arriva il pollice
+di tutt'e due le mani — con la **cattura a sinistra** e le **azioni a destra**
+(stato, campanella, scorciatoie, ricerca, aggiorna). I pannelli appesi a quelle
+icone si aprono verso l'alto e a tutta larghezza: 300 px appesi a un'icona di 34
+in mezzo al gruppo uscivano dal bordo dello schermo. Chi resta fisso in fondo —
+la striscia della sessione scaduta, i toast, il foglietto (i) di Finanze — si
+appoggia sopra la barra leggendo `--barra-bassa`, che su schermo grande vale
+zero. Vedi `AppShell.css` e `tokens.css`.
+
 **Bussola**, **Finanze** e **Diario**, in Oggi, sono i tre riquadri *riservati*:
 stanno in una colonna sola e **partono visibili**. Il gesto è al contrario di
 com'era: si vede, e si copre con l'occhio sbarrato in testa al riquadro — nel
