@@ -74,6 +74,16 @@
   /* ── Target ─────────────────────────────────────────────────────────── */
   --tap: 44px;     /* lato minimo di un elemento cliccabile */
 
+  /* Altezza della barra dei comandi quando è in fondo allo schermo, cioè da
+     telefono (vedi AppShell.css, che sotto gli 860px la manda in coda alla
+     colonna). Su schermo grande la barra è in cima e questo vale 0: chiunque
+     stia fisso in fondo — la striscia della sessione scaduta, i toast, i
+     pannelli della barra — ci somma sopra la propria distanza dal bordo, senza
+     dover sapere su che schermo si trova. Il valore per telefono sta qui sotto
+     e non in AppShell.css: due `:root` di pari peso in file diversi le decide
+     l'ordine in cui il bundler impila i CSS, e quell'ordine non è nostro. */
+  --barra-bassa: 0px;
+
   /* ── Transizioni ────────────────────────────────────────────────────── */
   --t: 140ms ease-out;
 
@@ -90,6 +100,12 @@
   --border-radius-md: var(--r-sm);
   --border-radius-lg: var(--r);
   --border-radius-xl: var(--r-lg);
+}
+
+/* La misura della barra bassa: 56px di riga più l'indicatore Home. La soglia è
+   la stessa che in AppShell.css fa scendere la barra in fondo. */
+@media (max-width: 860px) {
+  :root { --barra-bassa: calc(56px + env(safe-area-inset-bottom, 0px)); }
 }
 
 /* Etichetta di sezione: maiuscoletto spaziato. Tenuta a 11px e non ai 10px

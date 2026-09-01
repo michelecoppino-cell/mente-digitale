@@ -1,7 +1,9 @@
 .undo-toast {
   position: fixed;
   left: 50%;
-  bottom: 24px;
+  /* Sopra la barra dei comandi, che da telefono sta in fondo: `--barra-bassa`
+     vale 0 su schermo grande, dove sotto non c'è niente. */
+  bottom: calc(var(--barra-bassa, 0px) + 24px);
   transform: translateX(-50%);
   z-index: 10000;
   display: flex;

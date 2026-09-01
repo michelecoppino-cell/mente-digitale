@@ -152,7 +152,8 @@
 
 /* Lo stesso panino del rail, per quando il rail è un drawer fuori schermo e
    quindi il suo non è raggiungibile. Sopra gli 860px questo sparisce e resta
-   solo quello in testa al rail. */
+   solo quello in testa al rail; sotto è il comando centrale della barra bassa
+   (vedi il blocco mobile in fondo al file). */
 .shell-drawer-btn {
   display: none;
   width: 36px;
@@ -166,7 +167,7 @@
   cursor: pointer;
 }
 
-/* Il «+» della cattura in topbar, da telefono. Contorno d'accento e non
+/* Il «+» della cattura nella barra, da telefono. Contorno d'accento e non
    un'icona spenta come il panino: è il comando principale della barra, non un
    interruttore di navigazione. */
 .shell-capture-btn {
@@ -224,16 +225,82 @@
   .shell.rail-collapsed .rail-menu,
   .shell.rail-collapsed .rail-item { justify-content: flex-start; padding-inline: var(--sp-4); }
 
-  /* In standalone su iPhone il fondo della colonna finisce sotto l'indicatore
-     Home. Il margine però non va preso qui sul contenitore delle rotte: fatto
-     così accorcia l'area che scorre e lascia sotto una fascia di fondo app
-     alta 34px, vuota e ferma, che è la banda nera che si vede in fondo alla
-     web app. Il posto giusto è dentro l'area che scorre — diventa coda di
-     scorrimento invece che bordo morto, e il contenuto arriva fino in fondo
-     allo schermo. Le viste elencate qui sotto sono quelle che, da telefono,
-     toccano il bordo inferiore. */
-  .shell-content { padding-bottom: 0; }
+  /* ── La barra dei comandi, in fondo ─────────────────────────────────
+     In cima era il posto peggiore che avesse: il telefono si tiene in una
+     mano e il pollice arriva al bordo basso, non a quello alto, e lassù
+     finivano proprio i tre comandi sempre a schermo — menù, cattura,
+     azioni. Non è una barra nuova: è lo stesso <header> del desktop, che la
+     colonna dispone in coda invece che in testa. Restando nel flusso il
+     contenuto si accorcia da solo — niente barra fissa da compensare con un
+     padding, niente riga che finisce coperta.
 
+     Il panino sta in mezzo e gli altri ai lati: è il comando che si tocca
+     più spesso di tutti, e al centro ci arriva il pollice di tutt'e due le
+     mani. Il gruppo delle azioni è più largo del «+», quindi le due colonne
+     laterali non pareggiano al pixel e il centro cade un po' a sinistra
+     della metà: è la posizione più centrale che si può dare al panino senza
+     che il gruppo di destra gli finisca sotto. */
+  .shell-main { flex-direction: column-reverse; }
+
+  .shell-topbar {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    /* Come nel gruppo delle azioni: i bottoni portano .tap-44, che allarga
+       l'area cliccabile oltre il disegno. Con le colonne più strette le aree
+       del panino e della prima azione si sovrapporrebbero. */
+    gap: var(--sp-4);
+    min-height: 56px;
+    /* L'inset che la barra si prendeva in cima non serve più: la fascia da
+       schivare adesso è quella dell'indicatore Home, in fondo. */
+    padding: var(--sp-2) var(--sp-4);
+    padding-bottom: calc(var(--sp-2) + env(safe-area-inset-bottom, 0px));
+    background: var(--bg-rail);
+    border-bottom: none;
+    border-top: 1px solid var(--line);
+  }
+
+  /* Le colonne sono assegnate a mano e non dall'ordine nel DOM: nel markup il
+     panino resta il primo elemento della barra — è il primo che incontrano
+     tastiera e lettore di schermo, come in ogni intestazione — ma a schermo
+     finisce in mezzo. La riga va detta insieme alla colonna: senza, il
+     posizionamento automatico manda in una riga nuova ogni elemento che
+     chiede una colonna già scavalcata, e la barra diventa alta tre righe. */
+  .shell-capture-btn { grid-row: 1; grid-column: 1; justify-self: start; }
+  .shell-drawer-btn { grid-row: 1; grid-column: 2; justify-self: center; }
+  .shell-topbar-actions { grid-row: 1; grid-column: 3; justify-self: end; margin-left: 0; }
+
+  /* Al centro il panino non può più essere l'icona spenta di un angolo:
+     senza un fondo sotto sembra caduta lì per sbaglio, invece è l'ancora
+     della barra. */
+  .shell-drawer-btn {
+    width: 46px;
+    height: 40px;
+    /* Sopra le aree cliccabili dei vicini: quella della prima azione — un
+       puntino di 6px allargato a 44 da .tap-44 — arriva a coprire l'ultima
+       striscia del panino, e senza questo un tocco sul suo bordo destro
+       aprirebbe il pannello di stato. */
+    z-index: 1;
+    background: rgba(255, 255, 255, .05);
+    border: 1px solid var(--line);
+    border-radius: var(--r);
+    color: var(--text);
+  }
+  .shell.drawer-open .shell-drawer-btn {
+    background: var(--accent-tint);
+    border-color: var(--accent-line);
+    color: var(--accent);
+  }
+
+  /* In standalone su iPhone la fascia della barra di stato adesso è scoperta:
+     davanti al contenuto non c'è più niente, e il margine che prima si
+     prendeva la topbar va richiesto qui. In fondo invece non serve nulla —
+     l'indicatore Home lo copre la barra dei comandi, che ci mette il suo
+     padding. */
+  .shell-content { padding-top: env(safe-area-inset-top, 0px); padding-bottom: 0; }
+
+  /* Le viste che da telefono toccano il bordo inferiore: la coda di
+     scorrimento resta, ma senza l'inset dell'indicatore Home — sopra c'è la
+     barra, non più il bordo dello schermo. */
   .today,
   .ab-col-body,
   .ab-deadlines,
@@ -242,7 +309,7 @@
   .sv-list,
   .diary-page,
   .finanze-root {
-    padding-bottom: calc(var(--sp-5) + env(safe-area-inset-bottom, 0px));
+    padding-bottom: var(--sp-5);
   }
 
   .shell.drawer-open .shell-scrim {

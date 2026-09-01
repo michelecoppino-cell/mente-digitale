@@ -648,12 +648,13 @@
       grid-template-columns: 1fr;
       gap: 4px;
     }
-  /* Su schermi stretti il popover (i) diventa un foglietto in basso. */
+  /* Su schermi stretti il popover (i) diventa un foglietto in basso, appoggiato
+     sulla barra dei comandi (`--barra-bassa`, vedi tokens.css). */
   .finanze-root .info-pop {
       position: fixed;
       left: 12px;
       right: 12px;
-      bottom: 16px;
+      bottom: calc(var(--barra-bassa, 0px) + 16px);
       top: auto;
       transform: none;
       width: auto;

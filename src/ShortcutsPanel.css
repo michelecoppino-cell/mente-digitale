@@ -22,6 +22,21 @@
   font-family: var(--font-ui);
 }
 
+/* Da telefono la barra dei comandi è in fondo allo schermo (vedi AppShell.css):
+   il pannello si apre verso l'alto, non verso il basso dove non c'è più niente,
+   e si aggancia allo schermo invece che alla (i) — 320px appesi a un'icona di
+   34 in mezzo al gruppo delle azioni uscivano dal bordo. */
+@media (max-width: 860px) {
+  .shell-topbar .sc-dropdown {
+    position: fixed;
+    top: auto;
+    bottom: calc(var(--barra-bassa) + var(--sp-3));
+    left: var(--sp-4);
+    right: var(--sp-4);
+    width: auto;
+  }
+}
+
 .sc-group { padding: 8px 14px 4px; }
 .sc-group + .sc-group { border-top: 1px solid var(--border); }
 

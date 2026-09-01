@@ -22,13 +22,13 @@
 .map-view-toggle button.active { background: rgba(212,164,74,0.12); border-color: var(--accent); color: var(--accent); }
 
 /* Striscia «sessione scaduta» — fissa in fondo, sopra tutto tranne i modali.
-   Sta in fondo e non in cima perché in cima c'è già la topbar, e perché
-   l'indicatore Home dell'iPhone lascia lì una fascia libera che è esattamente
-   lo spazio che serve. Non blocca niente: l'app sotto continua a funzionare. */
+   Non blocca niente: l'app sotto continua a funzionare. Da telefono si appoggia
+   sulla barra dei comandi invece di coprirla — `--barra-bassa` vale 0 su
+   schermo grande, dove la barra è in cima e in fondo non c'è niente. */
 .auth-banner {
   position: fixed;
   z-index: 200;
-  left: 0; right: 0; bottom: 0;
+  left: 0; right: 0; bottom: var(--barra-bassa);
   display: flex;
   align-items: center;
   gap: var(--sp-4);
@@ -118,6 +118,36 @@
    trabocchi e vada a sovrapporsi al logo centrale. */
 @media (max-width: 860px) {
   .sync-label-text { display: none; }
+
+  /* La barra dei comandi è in fondo allo schermo (vedi AppShell.css): i suoi
+     pannelli si aprono verso l'alto, non verso il basso dove non c'è più
+     niente. E si agganciano allo schermo, non al bottone: sono larghi 300px
+     contro i 34 di un'icona, e appesi a un bottone che sta a metà del gruppo
+     delle azioni uscivano dal viewport da una parte o dall'altra. Qui sono un
+     foglio che occupa la larghezza dello schermo, appoggiato sulla barra. */
+  .shell-topbar .stato-dropdown,
+  .shell-topbar .bell-dropdown {
+    position: fixed;
+    top: auto;
+    bottom: calc(var(--barra-bassa) + var(--sp-3));
+    left: var(--sp-4);
+    right: var(--sp-4);
+    width: auto;
+    max-width: none;
+  }
+
+  /* Lo scostamento in cima teneva il titolo del pannello sotto la topbar. Qui
+     la topbar è scesa in fondo: sopra resta solo la barra di stato del
+     sistema, e in fondo va lasciata libera la barra dei comandi. */
+  .panel {
+    top: env(safe-area-inset-top, 0px);
+    bottom: var(--barra-bassa);
+  }
+
+  /* L'inset dell'indicatore Home se lo prende già la barra dei comandi, che
+     adesso sta sotto la striscia: sommarlo di nuovo qui lascerebbe dentro una
+     fascia vuota alta 34px. */
+  .auth-banner { padding-bottom: var(--sp-4); }
 }
 
 /* ── Ricerca globale / icone header (smista, review, cerca, colori) ── */
