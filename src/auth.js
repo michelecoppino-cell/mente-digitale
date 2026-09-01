@@ -347,8 +347,15 @@ export async function trySsoSilent() {
 }
 
 function rememberAccount(account) {
-  localStorage.setItem(PERSONAL_ID_KEY, account.homeAccountId);
-  localStorage.setItem(PERSONAL_USERNAME_KEY, account.username);
+  // Senza storage non si ricorda niente, e va bene: la sessione dura quanto la
+  // scheda. Quello che non va bene è sollevare — questa funzione sta dentro
+  // `trySsoSilent`, dove un'eccezione qualunque diventa «nessun account», e un
+  // accesso silenzioso perfettamente riuscito veniva buttato via perché non
+  // c'era dove annotarlo.
+  try {
+    localStorage.setItem(PERSONAL_ID_KEY, account.homeAccountId);
+    localStorage.setItem(PERSONAL_USERNAME_KEY, account.username);
+  } catch { /* navigazione privata, o cookie bloccati */ }
 }
 
 /**

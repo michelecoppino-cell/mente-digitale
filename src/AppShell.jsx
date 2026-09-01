@@ -9,6 +9,8 @@
 import { useEffect, useState } from 'react';
 import { NavLink } from 'react-router-dom';
 import { useMediaQuery } from './useMediaQuery';
+import { readPref, writePref } from './viewPrefs';
+import { useEscape } from './useEscape';
 import './AppShell.css';
 
 /**
@@ -29,7 +31,11 @@ const DESTINATIONS = [
   { to: '/finanze',  label: 'Finanze',  icon: 'euro' },
 ];
 
-const RAIL_COLLAPSED_KEY = 'md_rail_collapsed_v1';
+// La versione nel nome sale con la forma del valore: era la stringa '1'/'0',
+// adesso è il booleano che `viewPrefs` serializza in JSON. Chi aveva il rail
+// ridotto lo ritrova esteso una volta sola, invece di leggere `'1'` come un
+// JSON rotto.
+const RAIL_COLLAPSED_KEY = 'md_rail_collapsed_v2';
 
 /**
  * Icone di linea, disegnate a mano: il riferimento di design chiede forme
@@ -96,13 +102,24 @@ function Icon({ name }) {
  * @param {() => void} [props.onOpenSettings]
  */
 export default function AppShell({ children, topbar, onCapture, onOpenSettings }) {
-  const [collapsed, setCollapsed] = useState(() => localStorage.getItem(RAIL_COLLAPSED_KEY) === '1');
+  // Via `viewPrefs` e non `localStorage` nudo, come ogni altra preferenza di
+  // vista dell'app. Qui la differenza non è di stile: queste due righe girano
+  // in cima allo shell, cioè sopra ogni schermata, e in navigazione privata o
+  // con i cookie bloccati `localStorage` non risponde con `null` — solleva. Il
+  // menù ridotto è la preferenza meno importante che ci sia, e portava giù
+  // tutta l'app in un contesto per cui la schermata di accesso ha perfino un
+  // messaggio pronto.
+  const [collapsed, setCollapsed] = useState(() => readPref(RAIL_COLLAPSED_KEY, false) === true);
   // Su schermo stretto il rail è un drawer sopra il contenuto, non una colonna
   // che gli ruba larghezza.
   const [drawerOpen, setDrawerOpen] = useState(false);
   const narrow = useMediaQuery('(max-width: 860px)');
 
-  useEffect(() => { localStorage.setItem(RAIL_COLLAPSED_KEY, collapsed ? '1' : '0'); }, [collapsed]);
+  useEffect(() => { writePref(RAIL_COLLAPSED_KEY, collapsed); }, [collapsed]);
+
+  // Escape chiude il menù a scomparsa: da tastiera era l'unico pannello
+  // dell'app da cui si usciva solo col dito o col mouse.
+  useEscape(drawerOpen, () => setDrawerOpen(false));
 
   // Un solo comando, un solo handler: da telefono apre e chiude il drawer, da
   // desktop riduce e riespande il rail. Il bottone è disegnato due volte —
