@@ -32,6 +32,7 @@ import UndoToast from './UndoToast';
 import SvegliaAlert from './SvegliaAlert';
 import { useSveglie } from './useSveglie';
 import './App.css';
+import { ymd } from './tempo.js';
 
 const FinanzeSection = lazy(() => import('./finanze/FinanzeSection'));
 
@@ -669,12 +670,16 @@ export default function App() {
     // a due cose che prima non c'erano: tenere in piedi i passi successivi
     // (uno che fallisce non porta giù gli altri) e poterli leggere dal
     // telefono, dove la spia di stato è un puntino di sei pixel senza testo.
+    // Nome diverso dallo stato `problemi` che sta qui sopra, e non è pedanteria:
+    // dentro `load` quel nome era ombreggiato da questa lista, e le due cose
+    // sono diverse — questa è l'elenco *di questo giro*, quello è quanto il
+    // pannello di stato sta mostrando adesso.
     /** @type {{dove: string, messaggio: string}[]} */
-    const problemi = [];
+    const guai = [];
     /** @param {string} dove @param {unknown} e */
     const registraProblema = (dove, e) => {
       console.error(dove, e);
-      problemi.push({ dove, messaggio: descriviErrore(e) });
+      guai.push({ dove, messaggio: descriviErrore(e) });
     };
 
     try {
@@ -759,9 +764,9 @@ export default function App() {
       }
       if (Object.keys(sectMap).length > 0) setSectionsMap(sectMap);
 
-      setProblemi(problemi);
-      setSync(problemi.length
-        ? { state: 'error', label: `Caricamento incompleto (${problemi.length})` }
+      setProblemi(guai);
+      setSync(guai.length
+        ? { state: 'error', label: `Caricamento incompleto (${guai.length})` }
         : { state: 'ok', label: `${nbs.length} taccuini` });
 
       // Precarica task in background
@@ -785,7 +790,7 @@ export default function App() {
 
     } catch (e) {
       registraProblema('Caricamento', e);
-      setProblemi(problemi);
+      setProblemi(guai);
       setSync({ state: 'error', label: 'Errore caricamento' });
     }
   }
@@ -1225,9 +1230,20 @@ export default function App() {
   async function handleUnscheduleTask(task) {
     const previous = dailyPlans;
     const next = {};
+    // Si toccano solo i giorni che quel blocco ce l'hanno davvero. Prima ogni
+    // giorno veniva ricostruito comunque, e quando il task non era in nessun
+    // piano il risultato era un file riscritto identico su OneDrive più un
+    // «annulla» in fondo allo schermo che non annullava niente — cioè
+    // un'azione dichiarata a chi guarda e mai avvenuta.
+    let tolto = false;
     for (const [date, plan] of Object.entries(dailyPlans || {})) {
-      next[date] = { ...plan, blocks: (plan.blocks || []).filter(b => b.taskId !== task.id) };
+      const blocks = plan.blocks || [];
+      const rimasti = blocks.filter(b => b.taskId !== task.id);
+      if (rimasti.length === blocks.length) { next[date] = plan; continue; }
+      tolto = true;
+      next[date] = { ...plan, blocks: rimasti };
     }
+    if (!tolto) return;
     setDailyPlans(next);
     try {
       await saveDailyPlans(next);
@@ -1267,8 +1283,7 @@ export default function App() {
   // giornata, e serve al Diario — anche se il task nel frattempo non esiste
   // più su Graph (cancellato dal telefono, per dire).
   async function handleCompleteBlock(block) {
-    const today = new Date();
-    const dateStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+    const dateStr = ymd();
     const previous = dailyPlans;
     const plan = dailyPlans?.[dateStr];
     if (!plan) return;

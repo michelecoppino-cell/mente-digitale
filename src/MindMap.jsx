@@ -97,6 +97,19 @@ export default function MindMap({
     if (gRef.current) drawBadgesStatic();
   }, [todoCountMap]);
 
+  // Uscendo dalla Mappa la simulazione si ferma.
+  //
+  // Un force layout di D3 non finisce quando il componente sparisce: continua
+  // a battere il suo tick finché l'alpha non decade, e a ogni tick ridisegna
+  // nodi, archi e contorni su un SVG che non è più nella pagina. Chi passa
+  // dalla Mappa a «Oggi» si porta dietro qualche secondo di calcolo per
+  // niente — e su iPhone quel calcolo è batteria. Peggio col trascinamento,
+  // che rilancia la simulazione con `alphaTarget`: lasciare la Mappa nel
+  // mezzo di un trascinamento la teneva viva a tempo indeterminato.
+  useEffect(() => () => {
+    if (simRef.current) simRef.current.stop();
+  }, []);
+
   // Debounce: ricostruire il grafo D3 è costoso, non va rifatto ad ogni
   // singolo evento resize durante il trascinamento della finestra.
   useEffect(() => {

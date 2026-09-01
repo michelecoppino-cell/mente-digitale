@@ -30,6 +30,7 @@ import MovimentoQuickAdd from './MovimentoQuickAdd';
 import { Matita } from './Matita';
 import { riassuntoDelGiorno } from './rituale';
 import './MovimentoCard.css';
+import { ymd } from './tempo.js';
 
 /** Altezza della colonna più alta, in pixel. Vedi altezzaSegmento. */
 const MAX_PX = 40;
@@ -38,8 +39,7 @@ const MAX_PX = 40;
 function dataEvento(/** @type {any} */ ev) {
   const iso = ev?.start?.dateTime;
   if (!iso) return '';
-  const d = new Date(iso.endsWith('Z') ? iso : iso + 'Z');
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  return ymd(new Date(iso.endsWith('Z') ? iso : iso + 'Z'));
 }
 
 /** "18:30" */

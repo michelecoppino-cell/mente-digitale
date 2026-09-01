@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { ColorPickerPopup } from './WorkbookPool';
+import { useEscape } from './useEscape';
 import './ColorSettingsModal.css';
 
 // Impostazioni colori — apribile dall'ingranaggio nell'header. Permette di
@@ -24,6 +25,11 @@ export default function ColorSettingsModal({
     if (!open) return;
     notebooks.forEach(nb => { if (!sectionsMap[nb.id]) onExpandNotebook?.(nb); });
   }, [open, notebooks]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Escape chiude il pannello — e prima, se è aperto, la tavolozza: chiudere
+  // tutto in un colpo mentre si stava solo scegliendo un colore vorrebbe dire
+  // annullare il gesto sbagliato.
+  useEscape(open, () => (pickerFor ? setPickerFor(null) : onClose()));
 
   if (!open) return null;
 

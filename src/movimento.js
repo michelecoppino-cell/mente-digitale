@@ -13,6 +13,8 @@
 // Senza quel campo la stessa palestra comparirebbe due volte in settimana:
 // una tratteggiata e una piena.
 
+import { durataDistesa, meseDi as meseDiData, ymd } from './tempo.js';
+
 /**
  * Le tre famiglie, con i tipi che si scelgono davvero al momento di
  * registrare.
@@ -62,15 +64,13 @@ export function coloreFamiglia(/** @type {string} */ famiglia) {
   return FAMIGLIE[/** @type {keyof typeof FAMIGLIE} */ (famiglia)]?.colore || '#868b98';
 }
 
-/** 'YYYY-MM-DD' locale. Il fuso non c'entra: è il giorno in cui l'hai fatto. */
-export function ymd(d = new Date()) {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
+// 'YYYY-MM-DD' locale e il mese che lo contiene: il fuso non c'entra, è il
+// giorno in cui l'hai fatto. Le due funzioni vivono in tempo.js — qui restano
+// esportate perché è da `movimento` che il resto della scheda le importa.
+export { ymd };
 
 /** Il mese 'YYYY-MM' di una data 'YYYY-MM-DD'. */
-export function meseDi(/** @type {string} */ data) {
-  return data.slice(0, 7);
-}
+export const meseDi = meseDiData;
 
 /** Il mese precedente a 'YYYY-MM'. */
 export function mesePrecedente(/** @type {string} */ ym) {
@@ -184,12 +184,7 @@ export function bersaglioDi(indice, famiglia) {
 }
 
 /** "2h15", "45min" — la durata come la direbbe una persona. */
-export function fmtDurata(/** @type {number} */ min) {
-  if (!min) return '0min';
-  const h = Math.floor(min / 60), m = min % 60;
-  if (!h) return `${m}min`;
-  return m ? `${h}h${String(m).padStart(2, '0')}` : `${h}h`;
-}
+export const fmtDurata = durataDistesa;
 
 /**
  * Le note usate di recente, per suggerirle come tag nel modulo.

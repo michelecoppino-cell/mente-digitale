@@ -7,6 +7,7 @@ import OneDriveBox from './OneDriveBox';
 import { formatDueDate } from './plannerShared';
 import { listDeliverableLabel } from './paraConfig';
 import { openProtocol } from './protocolLink';
+import { useEscape } from './useEscape';
 
 // calendarEvents: elenco già precaricato in App.jsx (preloadSectionCalendarEvents,
 // un'unica chiamata Graph in coda dopo task/pagine) — qui si filtra solo
@@ -108,6 +109,9 @@ export default function Panel({ selected, pagesCache, tasksCache, calendarEvents
         tasksCache.current[listId] = tasksCache.current[listId].filter(t => t.id !== task.id);
     } catch(e) { console.error(e); }
   }
+
+  // Escape chiude la striscia laterale, come chiude ogni altro pannello.
+  useEscape(!!selected, onClose);
 
   if (!selected) return <div className="panel" />;
 

@@ -11,18 +11,34 @@
 // sezione, un ricaricamento non riporta sempre al saldo, e `/finanze/movimenti`
 // è un indirizzo da mettere in un collegamento.
 
-import { Suspense } from "react";
+import { lazy, Suspense } from "react";
 import { NavLink, Navigate, useParams } from "react-router-dom";
 import { AppProvider, useApp } from "./store/AppStore";
 import { PinLock, useLock } from "./PinLock";
-import { Movimenti } from "./pages/Movimenti";
-import { AnalisiSpese } from "./pages/AnalisiSpese";
-import { Saldo } from "./pages/Saldo";
-import { Tasse } from "./pages/Tasse";
-import { Fatture } from "./pages/Fatture";
-import { Proiezione } from "./pages/Proiezione";
-import { Impostazioni } from "./pages/Impostazioni";
 import "./finanze.css";
+
+// Una scheda alla volta, non tutte e sette.
+//
+// La sezione intera è già caricata a richiesta da App.jsx — è la ragione per
+// cui recharts non pesa sull'avvio di «Oggi» — ma dentro la sezione le sette
+// pagine erano import statici, e quindi un unico blocco: aprire il Saldo
+// scaricava anche i movimenti, le fatture, le tasse e le impostazioni.
+//
+// Contano soprattutto due cose. Movimenti da solo è un terzo del codice della
+// sezione (2300 righe) e non tocca i grafici; e dei grafici hanno bisogno solo
+// tre schede su sette — Saldo, Analisi spese e Proiezione — mentre le altre
+// quattro si trascinavano dietro un quarto di megabyte di recharts per
+// mostrare delle tabelle.
+//
+// Il `<Suspense>` che le avvolge c'era già: era un'attesa messa lì per dei
+// figli pigri che non erano mai arrivati.
+const Saldo = lazy(() => import("./pages/Saldo").then((m) => ({ default: m.Saldo })));
+const AnalisiSpese = lazy(() => import("./pages/AnalisiSpese").then((m) => ({ default: m.AnalisiSpese })));
+const Proiezione = lazy(() => import("./pages/Proiezione").then((m) => ({ default: m.Proiezione })));
+const Fatture = lazy(() => import("./pages/Fatture").then((m) => ({ default: m.Fatture })));
+const Tasse = lazy(() => import("./pages/Tasse").then((m) => ({ default: m.Tasse })));
+const Movimenti = lazy(() => import("./pages/Movimenti").then((m) => ({ default: m.Movimenti })));
+const Impostazioni = lazy(() => import("./pages/Impostazioni").then((m) => ({ default: m.Impostazioni })));
 
 type IdScheda =
   | "saldo"

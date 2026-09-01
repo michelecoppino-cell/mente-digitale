@@ -20,6 +20,8 @@
 // testo normale, e il task va in Inbox — cioè il comportamento di sempre. Un
 // parser che mangia pezzi di titolo è peggio di un parser che non fa niente.
 
+import { ymd } from './tempo.js';
+
 /** Un token all'inizio di una parola: preceduto da inizio riga o spazio. */
 const DEST_RE = /(^|\s)@([^\s@]+)/;
 const DUE_RE = /(^|\s)!([^\s!]+)/;
@@ -77,11 +79,8 @@ export function matchDestinations(query, destinations) {
   return [...starts, ...contains];
 }
 
-/** @param {Date} d @returns {string} la data come `YYYY-MM-DD` locale */
-function toDateStr(d) {
-  return [d.getFullYear(), d.getMonth() + 1, d.getDate()]
-    .map((n, i) => String(n).padStart(i === 0 ? 4 : 2, '0')).join('-');
-}
+/** La data come `YYYY-MM-DD` locale — vedi tempo.js. */
+const toDateStr = ymd;
 
 /** @param {Date} base @param {number} days @returns {Date} */
 function addDays(base, days) {

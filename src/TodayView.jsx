@@ -68,24 +68,12 @@ import { readPref, writePref } from './viewPrefs';
 import { qk, STALE } from './queryClient';
 import { useDatoPersistito } from './useDatoPersistito';
 import { caricaRiepilogoOggi } from './finanze/riepilogoOggi';
+import { durataDistesa, minutiDaOra, ymd } from './tempo.js';
 import './TodayView.css';
 
-/** 'YYYY-MM-DD' locale. */
-function todayStr(d = new Date()) {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
-
-/** Minuti da mezzanotte di una "HH:MM". */
-function t2m(/** @type {string} */ t) {
-  const [h, m] = (t || '0:0').split(':').map(Number);
-  return h * 60 + (m || 0);
-}
-
-function fmtHours(/** @type {number} */ min) {
-  const h = Math.floor(min / 60), m = min % 60;
-  if (!h) return `${m}min`;
-  return m ? `${h}h${String(m).padStart(2, '0')}` : `${h}h`;
-}
+const todayStr = ymd;
+const t2m = minutiDaOra;
+const fmtHours = durataDistesa;
 
 /** L'ora di inizio di un evento Graph, come "HH:MM". */
 function evTime(/** @type {any} */ iso) {
@@ -773,32 +761,25 @@ function CodaCard({ voci, onApri }) {
   );
 }
 
-// La Bussola sta su OneDrive e cambia una volta ogni tanto: una volta letta
-// resta qui per tutta la sessione, così passare da Oggi a un'altra vista e
-// tornare non rifà la chiamata.
+// La Bussola sta su OneDrive e cambia una volta ogni tanto.
 //
 // Si legge un documento solo, e non più anche la Visione: da quando il
 // riquadro non ne mostra l'assaggio, quella lettura era mezza schermata di
 // testo scaricata per non mostrarla a nessuno. La porta della Visione resta —
 // apre il documento intero, che è il posto in cui si legge davvero.
-/** @type {{bussola: any}|null} */
-let identityMemo = null;
-
+//
+// Sta nella cache di query come tutto il resto di «Oggi», e non più in una
+// variabile di modulo. Quella variabile si riempiva una volta sola e non si
+// svuotava mai: modificata la Bussola dal suo pannello, il desiderio del
+// giorno qui restava quello di prima fino a un ricaricamento della pagina —
+// cioè la modifica appena salvata non si vedeva nel punto in cui la si guarda
+// ogni mattina. Con la chiave condivisa, chi scrive aggiorna anche chi legge.
 /** @returns {{docs: {bussola: any}|null}} */
 function useIdentityDocs() {
-  const [docs, setDocs] = useState(identityMemo);
-  useEffect(() => {
-    if (identityMemo) return;
-    let cancelled = false;
-    loadIdentityDoc('bussola')
-      .catch(() => null)
-      .then(bussola => {
-        identityMemo = { bussola };
-        if (!cancelled) setDocs(identityMemo);
-      });
-    return () => { cancelled = true; };
-  }, []);
-  return { docs };
+  const { dato } = useDatoPersistito(
+    qk.identita('bussola'), () => loadIdentityDoc('bussola').catch(() => null),
+    STALE.identita, /** @type {any} */ (undefined));
+  return { docs: dato === undefined ? null : { bussola: dato } };
 }
 
 /** Bussola: la rosa dei venti — la porta del documento che dà il nome al riquadro. */

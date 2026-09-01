@@ -39,6 +39,7 @@ import Skeleton from './Skeleton';
 import TaskDetailPanel from './TaskDetailPanel';
 import TaskDetailDrawer from './TaskDetailDrawer';
 import './ActivityBoard.css';
+import { durataBreve, ymd } from './tempo.js';
 
 /** Le cinque colonne, nell'ordine del flusso. `done` non ha colonna: i task
  *  completati vivono nello storico del giorno, non nel serbatoio.
@@ -97,17 +98,10 @@ function toggleFilter(current, key) {
 }
 
 /** 'YYYY-MM-DD' locale. */
-function todayStr() {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
+const todayStr = ymd;
 
 /** "1h", "45m", "1h30" — la stima, compatta. */
-function fmtEstimate(/** @type {number} */ min) {
-  if (min < 60) return `${min}m`;
-  const h = Math.floor(min / 60), m = min % 60;
-  return m ? `${h}h${String(m).padStart(2, '0')}` : `${h}h`;
-}
+const fmtEstimate = durataBreve;
 
 /** "oggi 14:30", "dom 9:00", "17/07 9:00" a seconda di quanto è lontano. */
 function fmtWhen(/** @type {{date: string, startTime: string}} */ placement) {
@@ -315,6 +309,13 @@ export default function ActivityBoard({
 
   const scheduled = useMemo(() => indexScheduled(plans), [plans]);
   const inboxId = useMemo(() => inboxListId(todoLists), [todoLists]);
+  // L'insieme degli id programmati, costruito una volta sola. Prima nasceva
+  // *dentro* il ciclo che smista i task nelle colonne — un Set nuovo per ogni
+  // attività, cioè tanti Set quanti sono i task moltiplicati per i blocchi nel
+  // piano. Con quattro liste e un piano di qualche settimana non si notava; è
+  // il genere di costo che si fa sentire quando l'archivio cresce, e sta tutto
+  // in una riga spostata.
+  const scheduledIds = useMemo(() => new Set(scheduled.keys()), [scheduled]);
 
   // Il colore di ogni sezione, lo stesso che il Piano dà ai blocchi: qui tinge
   // il bordo della riga e il pallino del gruppo.
@@ -336,9 +337,9 @@ export default function ActivityBoard({
   // conosce i blocchi nel piano e la lista Inbox — e il pannello no.
   const detailStatus = useMemo(
     () => (detailTask
-      ? taskStatus(detailTask, { scheduledIds: new Set(scheduled.keys()), inboxListId: inboxId })
+      ? taskStatus(detailTask, { scheduledIds, inboxListId: inboxId })
       : undefined),
-    [detailTask, scheduled, inboxId],
+    [detailTask, scheduledIds, inboxId],
   );
 
   // Le liste in cui ci sono davvero attività, col loro conteggio: è
@@ -367,7 +368,7 @@ export default function ActivityBoard({
     const out = {};
     for (const k of BOARD_STATUSES) out[k] = [];
     for (const t of visible) {
-      const s = taskStatus(t, { scheduledIds: new Set(scheduled.keys()), inboxListId: inboxId });
+      const s = taskStatus(t, { scheduledIds, inboxListId: inboxId });
       if (out[s]) out[s].push(t);
     }
     // Le programmate in ordine di quando toccano; le altre per scadenza, che è
@@ -383,7 +384,7 @@ export default function ActivityBoard({
       out[k] = ordinaAMano(out[k], (a, b) => dueDateSortValue(a.scadenza) - dueDateSortValue(b.scadenza));
     }
     return out;
-  }, [visible, scheduled, inboxId]);
+  }, [visible, scheduled, scheduledIds, inboxId]);
 
   // Dentro la colonna, i task per sezione: lo stesso raggruppamento del Piano,
   // con lo stesso colore. L'ordine dei gruppi è alfabetico — l'ordine interno
@@ -476,7 +477,7 @@ export default function ActivityBoard({
     setDragTask(null);
     if (!task) return;
 
-    const from = taskStatus(task, { scheduledIds: new Set(scheduled.keys()), inboxListId: inboxId });
+    const from = taskStatus(task, { scheduledIds, inboxListId: inboxId });
     if (from === target) return;
 
     // Uscire da Inbox non è uno spostamento ma il passo di chiarimento: un

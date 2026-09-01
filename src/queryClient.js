@@ -45,6 +45,12 @@ export const STALE = {
   movimento:        5 * MIN,
   diarioDate:      15 * MIN,
   calEventiSezioni: 30 * MIN,
+  // Bussola e Visione: si scrivono una volta ogni tanto, si leggono da due
+  // schermate (il riquadro di «Oggi» e il pannello che le apre). Passano di
+  // qui perché la cache è anche il modo in cui le due schermate restano
+  // d'accordo: modificare la Bussola dal pannello deve cambiare il desiderio
+  // del giorno subito, non al prossimo ricaricamento della pagina.
+  identita:        30 * MIN,
 };
 
 // gcTime lungo: un dato diventato "vecchio" resta comunque in cache (e
@@ -99,6 +105,8 @@ export const qk = {
   movimento:        (oggi) => /** @type {const} */ (['movimento', oggi.slice(0, 7)]),
   diarioDate:       () => /** @type {const} */ (['diarioDate']),
   calEventiSezioni: () => /** @type {const} */ (['calEventiSezioni']),
+  /** @param {'bussola'|'visione'} quale */
+  identita:         (quale) => /** @type {const} */ (['identita', quale]),
 };
 
 // ── Persistenza su localStorage ──────────────────────────────────────────────
@@ -139,25 +147,52 @@ const STORAGE_FULL_KEY = 'md_storage_full';
  * Sfoltisce la cache da persistere finché non sta nel budget, buttando prima
  * le query più grosse. Perdere gli eventi di tre mesi vuol dire riscaricarli;
  * perdere l'account vuol dire rifare l'accesso — non è lo stesso prezzo.
+ *
+ * Quali buttare si decide contando, non riscrivendo. Prima ogni query tolta
+ * costava una serializzazione dell'intera cache da capo: sfoltirne dieci
+ * voleva dire serializzare dieci volte un megabyte, sul filo principale e a
+ * ogni salvataggio — cioè proprio quando la cache è grossa e il telefono ha
+ * già poco fiato. Le misure delle singole query si prendono una volta sola,
+ * si sottraggono finché il totale non rientra, e si serializza una volta.
  * @param {ReturnType<typeof dehydrate>} clientState
  * @returns {string} il JSON da scrivere, già sotto al budget
  */
 function serializzaEntroIlBudget(clientState) {
-  const payload = { timestamp: Date.now(), clientState };
-  let json = JSON.stringify(payload);
+  const timestamp = Date.now();
+  let json = JSON.stringify({ timestamp, clientState });
   if (json.length <= PERSIST_BUDGET) return json;
 
+  // Dalla più grossa alla più piccola. `size + 1` tiene conto della virgola
+  // che separa una query dalla successiva nell'array serializzato: è una
+  // stima, e va bene che lo sia — il controllo vero è la misura finale qui
+  // sotto, questa serve solo a scegliere cosa togliere.
   const queries = [...(clientState.queries || [])]
-    .map(q => ({ q, size: JSON.stringify(q).length }))
+    .map(q => ({ q, size: JSON.stringify(q).length + 1 }))
     .sort((a, b) => b.size - a.size);
+
+  let stima = json.length;
   const tenute = new Set(queries.map(x => x.q));
-  for (const { q } of queries) {
+  for (const { q, size } of queries) {
+    if (stima <= PERSIST_BUDGET) break;
     tenute.delete(q);
+    stima -= size;
+  }
+
+  json = JSON.stringify({
+    timestamp,
+    clientState: { ...clientState, queries: [...tenute] },
+  });
+  // La stima può sbagliare per difetto (l'escaping di una stringa cambia
+  // lunghezza fra una passata e l'altra): se dopo il taglio siamo ancora
+  // sopra, si continua a togliere dalla più grossa, una serializzazione per
+  // giro ma partendo da un insieme già sfoltito.
+  for (const { q } of queries) {
+    if (json.length <= PERSIST_BUDGET || !tenute.size) break;
+    if (!tenute.delete(q)) continue;
     json = JSON.stringify({
-      timestamp: payload.timestamp,
+      timestamp,
       clientState: { ...clientState, queries: [...tenute] },
     });
-    if (json.length <= PERSIST_BUDGET) break;
   }
   return json;
 }

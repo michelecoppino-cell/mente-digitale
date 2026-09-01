@@ -20,6 +20,7 @@ import { listLabel } from './paraConfig';
 import { ESTIMATE_CHOICES, DEFAULT_ESTIMATE_MIN, taskEstimateMin } from './taskModel';
 import { pushUndo } from './undo';
 import './PlannerView.css';
+import { durataDistesa, durataInOre, minutiDaOra, oraDaMinuti, ymd } from './tempo.js';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 const SLOT_HEIGHT      = 32;  // px per 30-min slot (32 → ~12h visible at once)
@@ -34,13 +35,8 @@ const DEFAULT_DURATION = 60;
 const SNAP_MIN = 30; // la griglia è a mezz'ore: le durate ci si allineano
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
-function t2m(t) {
-  const [h, m] = t.split(':').map(Number);
-  return h * 60 + (m || 0);
-}
-function m2t(min) {
-  return `${String(Math.floor(min / 60)).padStart(2,'0')}:${String(min % 60).padStart(2,'0')}`;
-}
+const t2m = minutiDaOra;
+const m2t = oraDaMinuti;
 /** La stima del task, arrotondata in su alla mezz'ora della griglia. */
 function blockMinutesFor(task) {
   const est = taskEstimateMin(task);
@@ -145,9 +141,7 @@ function defaultScrollOffset(workStartMin) {
   return workStartPx + extra;
 }
 // Data in formato YYYY-MM-DD nel fuso orario locale (toISOString darebbe UTC)
-function localDateStr(d) {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
+const localDateStr = ymd;
 function todayStr() {
   return localDateStr(new Date());
 }
@@ -240,12 +234,7 @@ function eventSpan(ev) {
 }
 // Durata di un blocco/evento in layout verticale, mostrata in basso nella
 // colonna etichetta — formato compatto "2h" oppure "2h30" senza minuti a zero.
-function fmtBlockDuration(min) {
-  const m = Math.max(0, Math.round(min || 0));
-  const h = Math.floor(m / 60);
-  const rest = m % 60;
-  return rest === 0 ? `${h}h` : `${h}h${String(rest).padStart(2, '0')}`;
-}
+const fmtBlockDuration = durataInOre;
 function getWeekDays(dateStr) {
   const d = new Date(dateStr + 'T12:00:00');
   const dow = d.getDay();
@@ -2420,11 +2409,7 @@ function DayCapacity({ blocks, config }) {
   const free = Math.max(0, available - planned - done);
 
   const pct = (/** @type {number} */ v) => available ? Math.min(100, (v / available) * 100) : 0;
-  const fmt = (/** @type {number} */ min) => {
-    const h = Math.floor(min / 60), m = min % 60;
-    if (!h) return `${m}min`;
-    return m ? `${h}h${String(m).padStart(2, '0')}` : `${h}h`;
-  };
+  const fmt = durataDistesa;
 
   return (
     <div className="planner-capacity" title={`Giornata lavorativa ${config.workdayStart}–${config.workdayEnd}`}>

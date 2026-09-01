@@ -1,4 +1,4 @@
-const CACHE = 'mente-digitale-v4';
+const CACHE = 'mente-digitale-v5';
 // Le due pagine-scorciatoia della schermata Home vanno in precache come
 // l'app: sono la prima cosa che si apre toccando la loro icona.
 const PRECACHE = ['/', '/index.html', '/gtd.html', '/diario.html'];
@@ -18,6 +18,10 @@ self.addEventListener('activate', e => {
 });
 
 self.addEventListener('fetch', e => {
+  // Una cache è fatta di GET. `caches.put` su una POST solleva un TypeError,
+  // e siccome qui sotto la put non è attesa da nessuno quell'errore
+  // diventerebbe una promise rifiutata e basta — invisibile, ma vera.
+  if (e.request.method !== 'GET') return;
   // Solo per richieste alla stessa origine (non API Microsoft)
   if (!e.request.url.startsWith(self.location.origin)) return;
   if (e.request.url.includes('/v1.0/')) return;

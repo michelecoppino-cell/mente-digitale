@@ -1,17 +1,11 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
+import { openProtocol } from './protocolLink';
 
 const TYPE_META = {
   section: { icon: '▦', label: 'Sezione' },
   page:    { icon: '❐', label: 'Pagina' },
   task:    { icon: '✓', label: 'Task' },
 };
-
-function openProtocol(url) {
-  if (!url) return;
-  const a = document.createElement('a');
-  a.href = url;
-  a.click();
-}
 
 // Cerca tra i dati già in cache (sezioni, pagine OneNote, task) — nessuna chiamata API.
 // Il contenuto è montato solo quando open: lo stato riparte pulito a ogni apertura.

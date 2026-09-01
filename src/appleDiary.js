@@ -14,6 +14,8 @@
 // bodyText), che è il motivo per cui qui bastano delle regex e non serve un
 // parser HTML vero.
 
+import { ymd } from './tempo.js';
+
 /** @typedef {{ id: string, tipi: string[], html: string, file: string|null, didascalia: string, quando: number|null }} AppleAsset */
 /** @typedef {{ nome: string, data: string|null, titolo: string, domanda: string, testo: string, asset: AppleAsset[] }} AppleVoce */
 
@@ -158,12 +160,8 @@ export function dataDaAppleEpoch(secondi) {
   return new Date(EPOCA_APPLE + secondi * 1000);
 }
 
-/** 'YYYY-MM-DD' nel fuso locale, come fa il resto del Diario.
- *  @param {Date} d @returns {string} */
-function giornoLocale(d) {
-  const p = /** @param {number} n */ n => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
-}
+/** 'YYYY-MM-DD' nel fuso locale, come fa il resto del Diario. */
+const giornoLocale = ymd;
 
 // ── Allegati ────────────────────────────────────────────────────────────────
 

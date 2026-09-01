@@ -1,6 +1,8 @@
 import { useState, useEffect, useMemo } from 'react';
 import { loadIdentityDoc, saveIdentityDoc } from './api';
 import { parseWishGroups, WISH_TITLE_RE } from './wishes';
+import { qk, queryClient } from './queryClient';
+import { useEscape } from './useEscape';
 
 const OCRA = '#d4a44a';
 
@@ -147,16 +149,24 @@ export default function IdentityPanel({ open, onClose }) {
       setLoadFailed(false);
       return;
     }
-    setLoading(true);
+    const quale = open === 'desideri' ? 'bussola' : open;
+    // La copia dell'ultimo caricamento va in pagina subito: è la stessa cache
+    // da cui «Oggi» pesca il desiderio del giorno, e senza questa riga il
+    // pannello ripartiva da «Caricamento…» anche per un documento che sullo
+    // schermo accanto era già scritto.
+    const inCache = queryClient.getQueryData(qk.identita(quale));
+    if (inCache) setDoc(inCache);
+    setLoading(!inCache);
     setLoadFailed(false);
-    loadIdentityDoc(open === 'desideri' ? 'bussola' : open)
+    loadIdentityDoc(quale)
       .then(data => {
         // null = file non ancora creato (404): i default sono un punto di
         // partenza legittimo. Un errore transitorio invece NON deve mostrare
         // i default: un "Salva" successivo sovrascriverebbe il documento vero.
         setDoc(data || (open === 'visione' ? DEFAULT_VISIONE : DEFAULT_BUSSOLA));
+        if (data) queryClient.setQueryData(qk.identita(quale), data);
       })
-      .catch(() => setLoadFailed(true))
+      .catch(() => { if (!inCache) setLoadFailed(true); })
       .finally(() => setLoading(false));
   }, [open]);
 
@@ -191,8 +201,13 @@ export default function IdentityPanel({ open, onClose }) {
     try {
       // Si salva sempre il documento intero, anche quando se ne stava
       // guardando una sezione sola: le altre sono nel draft, intatte.
-      await saveIdentityDoc(open === 'desideri' ? 'bussola' : open, draft);
+      const quale = open === 'desideri' ? 'bussola' : open;
+      await saveIdentityDoc(quale, draft);
       setDoc(draft);
+      // Anche nella cache condivisa: è da lì che «Oggi» legge il desiderio del
+      // giorno, e una Bussola salvata che sulla home resta quella di ieri è
+      // una modifica che sembra non aver preso.
+      queryClient.setQueryData(qk.identita(quale), draft);
       setEditing(false);
       setDraft(null);
     } catch {
@@ -220,6 +235,10 @@ export default function IdentityPanel({ open, onClose }) {
         return true;
       });
   }, [doc, draft, editing, open]);
+
+  // Escape chiude. Non mentre si sta scrivendo: da lì si esce con «Annulla»,
+  // che è una decisione, non un tasto premuto per sbaglio a metà di una frase.
+  useEscape(!!open && !editing, handleClose);
 
   if (!open) return null;
 

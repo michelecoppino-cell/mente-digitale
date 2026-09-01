@@ -24,6 +24,8 @@
 //    Per questo un obiettivo può dichiarare una `fonte` invece del campo
 //    `fatti`, e il numero si deriva a ogni apertura di «Oggi».
 
+import { meseDi } from './tempo.js';
+
 /** @typedef {import('./types').Obiettivo} Obiettivo */
 
 /** Sotto i tre è un elenco della spesa, sopra i sei non è più una scelta. */
@@ -47,10 +49,9 @@ export const ORDINE_FONTI = /** @type {(keyof typeof FONTI)[]} */ ([
   'movimento', 'movimento:movimento', 'movimento:meditazione', 'movimento:yoga', 'diario',
 ]);
 
-/** 'YYYY-MM' del mese di una data 'YYYY-MM-DD'. */
-export function meseDi(/** @type {string} */ data) {
-  return data.slice(0, 7);
-}
+/** 'YYYY-MM' del mese di una data 'YYYY-MM-DD' — vedi tempo.js. Resta
+ *  esportato da qui perché è da `obiettivi` che «Oggi» lo importa. */
+export { meseDi };
 
 /** Quanti giorni ha il mese 'YYYY-MM'. */
 export function giorniDelMese(/** @type {string} */ ym) {

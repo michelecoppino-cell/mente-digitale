@@ -9,6 +9,7 @@ import {
 } from './diary';
 import { addPhotos, removePhotos, getDiaryPhotoUrl, MAX_PHOTOS_PER_ENTRY } from './diaryPhotos';
 import DiaryImport from './DiaryImport';
+import { useEscape } from './useEscape';
 import './DiaryPanel.css';
 
 // Bozza in corso: lo svuota testa è la modalità in cui è più facile perdere
@@ -118,6 +119,13 @@ export default function DiaryPanel() {
   }
 
   const hasOlder = months.some(m => !loadedMonths.includes(m));
+
+  // Escape torna alla timeline dalle due sotto-viste che non chiedono niente:
+  // l'esportazione per l'AI e l'importazione dal Diario di Apple, dove si
+  // guarda e basta e l'unica uscita era il bottone «Indietro». Non dalle
+  // schermate di scrittura: da lì si esce con conserva, cassetto o lascia
+  // andare, e un tasto che butta via un foglio pieno non ci va.
+  useEscape(view === 'ai' || view === 'importa', () => setView('home'));
 
   return (
     <div className="diary-page">
@@ -585,12 +593,24 @@ function DiaryWriter({ type, initial, onSave, onCancel }) {
 
   // Bozza salvata a intervalli, non a ogni tasto: scrivere di getto non deve
   // trascinarsi dietro una scrittura su localStorage per carattere.
+  //
+  // L'intervallo va acceso una volta e lasciato correre. Prima aveva `text`
+  // fra le dipendenze, quindi ogni tasto lo spegneva e lo riaccendeva da capo:
+  // i tre secondi ripartivano da zero a ogni lettera, e la bozza si salvava
+  // solo se ci si fermava tre secondi buoni. Che è l'esatto contrario di come
+  // si usa questa schermata — lo svuota testa chiede di scrivere senza
+  // staccare per cinque o dieci minuti, ed erano cinque o dieci minuti senza
+  // che niente venisse messo al sicuro. Le ultime parole scritte si leggono da
+  // un ref, così l'intervallo non ha bisogno di ricominciare per vederle.
+  const bozzaRef = useRef({ type, text, photos });
+  useEffect(() => { bozzaRef.current = { type, text, photos }; }, [type, text, photos]);
   useEffect(() => {
     const id = setInterval(() => {
-      if (text.trim() || photos.length) saveDraft({ type, text, photos });
+      const b = bozzaRef.current;
+      if (b.text.trim() || b.photos.length) saveDraft(b);
     }, 3000);
     return () => clearInterval(id);
-  }, [text, photos, type]);
+  }, []);
 
   useEffect(() => {
     if (!minutes) return;
