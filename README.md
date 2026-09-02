@@ -778,7 +778,8 @@ processo all'inizio della chat e lo tiene fino alla fine.
 
 ```bash
 npm install
-npm run dev       # dev server Vite
+npm run dev       # dev server Vite, contro il OneDrive vero
+npm run dev:finto # l'app in locale, senza rete e senza account
 npm run lint      # ESLint
 npm run typecheck # tipi dai JSDoc (checkJs)
 npm run build     # build di produzione in dist/
@@ -803,6 +804,25 @@ Girano in CI insieme a tipi, lint e build. Prima non ci giravano, e tre suite
 su quattro si erano rotte in silenzio quando `api.js` ha cambiato il modo di
 leggere i file: il finto OneDrive era rimasto indietro, e nessuno se n'era
 accorto perché nessuno le eseguiva.
+
+### Provare l'app in locale
+
+Le API Graph rispondono solo sull'URL di produzione: con `npm run dev` l'app si
+apre ma non trova niente. Ogni modifica all'interfaccia si verificava quindi
+dopo il merge, sui dati veri.
+
+`npm run dev:finto` mette al posto dell'autenticazione e di Graph un **OneDrive
+finto in memoria** — lo stesso su cui girano le prove — con dentro una giornata
+plausibile: due commesse con le loro consegne, attività in ognuno degli stati
+del flusso, un piano del giorno, appuntamenti, un mese di diario, gli obiettivi,
+la coda di letture, il movimento della settimana. Tutto inventato, niente rete,
+niente account. Ricaricare la pagina riporta i dati come erano; dalla console
+del browser `__finto.archivio` mostra cosa è stato scritto e `__finto.richieste`
+le chiamate fatte.
+
+È una **sostituzione di file** decisa da Vite (`MD_FINTO=1`), non un
+interruttore dentro l'app: nel pacchetto di produzione non c'è una riga di
+codice finto, perché quei file non vengono mai importati.
 
 ### Workflow git
 
