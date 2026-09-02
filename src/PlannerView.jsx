@@ -42,6 +42,7 @@ import {
   fmtBlockDuration, getWeekDays,
 } from './planner/griglia.js';
 import { VerticalTitle } from './planner/VerticalTitle.jsx';
+import { CAL_LAVORO_ID, CAL_LAVORO_NOME } from './calendarioLavoro.js';
 // I quattro pezzi che stavano in fondo a questo file: erano già componenti a
 // sé, gli mancava solo la riga di confine.
 import { DayCapacity } from './planner/DayCapacity.jsx';
@@ -1400,6 +1401,12 @@ export default function PlannerView({
   const timedEventsLayout = overlapColumns(timedEvents.map(eventSpan));
   const dayWorkbookPlan  = workbookPlans[currentDate] || { blocks: [] };
   const workbookCalHidden = getHiddenCalendarIds().includes(WORKBOOK_CAL_ID);
+  // Lo specchio del calendario di lavoro non è un calendario di Graph e non
+  // sta in `calendarsList`: come i blocchi Workbook, ha una riga sintetica nel
+  // filtro. Compare solo se lo specchio esiste davvero — una riga per una cosa
+  // che nessuno ha messo in piedi sarebbe un interruttore che non fa niente.
+  const lavoroReport = calReport.find(r => r.calId === CAL_LAVORO_ID) || null;
+  const lavoroCalHidden = getHiddenCalendarIds().includes(CAL_LAVORO_ID);
 
   // Quanti eventi ha portato ogni calendario, e chi non ce l'ha fatta: si
   // legge nel filtro "Calendari", che è il posto dove ci si accorge che un
@@ -1540,6 +1547,22 @@ export default function PlannerView({
                     <span className="planner-cal-filter-dot" style={{ background: '#d4a44a' }} />
                     <span className="planner-cal-filter-name">Workbook</span>
                   </label>
+                  {lavoroReport && (
+                    <label className="planner-cal-filter-item">
+                      <input
+                        type="checkbox"
+                        checked={!lavoroCalHidden}
+                        onChange={() => toggleCalendarVisibility(CAL_LAVORO_ID)}
+                      />
+                      <span className="planner-cal-filter-dot" style={{ background: calendarColor(CAL_LAVORO_ID, null, coloriCalendari) }} />
+                      <span className="planner-cal-filter-name">{CAL_LAVORO_NOME}</span>
+                      <span
+                        className={`planner-cal-filter-count${lavoroReport.count === 0 ? ' zero' : ''}`}
+                        title={lavoroReport.message || 'Specchio del calendario di lavoro, in sola lettura'}>
+                        {lavoroReport.count}
+                      </span>
+                    </label>
+                  )}
                   <div className="planner-cal-filter-divider" />
                   {calendarsList.length === 0 ? (
                     <div className="planner-cal-filter-empty">Nessun calendario</div>

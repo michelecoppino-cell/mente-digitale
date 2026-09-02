@@ -1,0 +1,49 @@
+# Lo specchio del calendario di lavoro dentro OneDrive.
+#
+# Non crea niente sul calendario personale: scrive un solo file JSON, che l'app
+# legge in sola lettura. Ogni giro riscrive tutta la finestra da capo, quindi un
+# giro saltato non lascia buchi — quello dopo rimette in pari. Il perché per
+# esteso sta in scripts/sync-calendario-lavoro.mjs, le istruzioni per metterlo
+# in piedi in docs/calendario-lavoro.md.
+name: Calendario di lavoro
+
+on:
+  schedule:
+    - cron: '17 5-19/2 * * 1-5'   # ogni due ore nei giorni e nelle ore di lavoro
+  workflow_dispatch:
+
+concurrency:
+  group: calendario-lavoro
+  cancel-in-progress: false
+
+jobs:
+  specchio:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Leggi il feed e scrivi lo specchio
+        env:
+          CALENDARIO_LAVORO_ICS: ${{ secrets.CALENDARIO_LAVORO_ICS }}
+          MENTE_REFRESH_TOKEN: ${{ secrets.MENTE_REFRESH_TOKEN }}
+        run: node scripts/sync-calendario-lavoro.mjs
+
+      # Il refresh token ruota a ogni rinnovo: se non si riscrive il segreto,
+      # fra qualche settimana quello vecchio smette di funzionare senza un
+      # motivo apparente. `mente-graph.mjs` lascia il nuovo in questo file.
+      - name: Aggiorna il refresh token nel segreto
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+        run: |
+          NUOVO=$(cat scripts/.new-refresh-token 2>/dev/null || echo "")
+          if [ -n "$NUOVO" ] && [ -n "$GH_TOKEN" ]; then
+            gh secret set MENTE_REFRESH_TOKEN --body "$NUOVO" --repo ${{ github.repository }}
+            echo "Refresh token aggiornato."
+          else
+            echo "Nessun nuovo refresh token da salvare."
+          fi

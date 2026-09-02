@@ -272,7 +272,7 @@ Le stesse operazioni sono disponibili come server MCP (scripts/mente-mcp.mjs),
 per usarle da una chat invece che da un terminale.
 
 Autenticazione: refresh token in scripts/.mente-refresh-token o in
-MENTE_REFRESH_TOKEN. Per ottenerlo: node scripts/get-refresh-token.mjs --mente
+MENTE_REFRESH_TOKEN. Per ottenerlo: node scripts/get-refresh-token.mjs
 `;
 
 async function main() {

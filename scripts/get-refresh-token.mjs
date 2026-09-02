@@ -3,18 +3,19 @@
  * Esegui UNA SOLA VOLTA in locale per ottenere il refresh token.
  * Richiede Node 18+, nessuna dipendenza.
  *
- *   node scripts/get-refresh-token.mjs           token per sync-calendar (Actions)
- *   node scripts/get-refresh-token.mjs --mente    token per il CLI mente.mjs
+ *   node scripts/get-refresh-token.mjs
  *
- * I due token restano separati: quello di sync-calendar vive come segreto su
- * GitHub e può fare pochissimo (mail e calendario), quello del CLI vive solo
- * sulla macchina di chi lo usa e arriva fino a diario e attività.
+ * Il token serve a tutto quello che parla con Graph da fuori dal browser: il
+ * CLI `mente.mjs`, il server MCP, e la GitHub Action del calendario di lavoro.
+ *
+ * Ce n'era un secondo, più stretto, per la vecchia sincronizzazione via mail:
+ * quella non c'è più (vedi sync-calendario-lavoro.mjs), e con lei il motivo di
+ * tenerne due. Gli scope sono quelli di MENTE_SCOPE, cuciti dentro il token.
  */
 
 import { CLIENT_ID, MENTE_SCOPE, TOKEN_FILE } from './mente-graph.mjs';
 
-const MENTE      = process.argv.includes('--mente');
-const SCOPE      = MENTE ? MENTE_SCOPE : 'Mail.ReadWrite Calendars.ReadWrite offline_access';
+const SCOPE = MENTE_SCOPE;
 
 async function main() {
   // 1 — Richiedi device code
@@ -55,9 +56,10 @@ async function main() {
     if (tok.refresh_token) {
       console.log('✓ Autenticato!\n');
       console.log('━'.repeat(60));
-      console.log(MENTE
-        ? `REFRESH TOKEN — salvalo in ${TOKEN_FILE}\n(oppure esportalo come MENTE_REFRESH_TOKEN):\n`
-        : 'REFRESH TOKEN — copialo come segreto GitHub MS_REFRESH_TOKEN:\n');
+      console.log(
+        `REFRESH TOKEN — salvalo in ${TOKEN_FILE} per usarlo da qui\n` +
+        '(oppure esportalo come MENTE_REFRESH_TOKEN), e mettilo come segreto\n' +
+        'GitHub MENTE_REFRESH_TOKEN per la Action del calendario di lavoro:\n');
       console.log(tok.refresh_token);
       console.log('━'.repeat(60));
       return;

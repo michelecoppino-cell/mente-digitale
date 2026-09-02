@@ -99,7 +99,6 @@ export function montaFintoGraph(finto) {
     }
 
     // ── Promemoria e posta ────────────────────────────────────────────────
-    if (nudo.startsWith('/me/reminderView')) return risposta(200, { value: [] });
     if (nudo.startsWith('/me/messages')) return risposta(200, { value: [] });
 
     return null;   // non è roba nostra: se ne occupa il drive

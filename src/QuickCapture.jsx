@@ -24,17 +24,38 @@
 // testa all'elenco (`captureContext.js`). Proposta, non imposta: la chip resta
 // cliccabile e Inbox è sempre la prima voce.
 //
-// "Decidi ora" resta per il caso opposto: non è che si sa dove va, è che non
-// si sa — apre l'albero di decisione di sempre, col testo già scritto dentro.
-import { useMemo, useRef, useState } from 'react';
+// ── Perché non c'è più «Decidi ora» ─────────────────────────────────────────
+//
+// Il bottone apriva il diagramma GTD del chiarimento: sei domande in fila per
+// decidere dove va una cosa. È il passo 2, e metterlo qui dentro era chiedere
+// **proprio nel momento in cui non si vuole essere interrotti** — cioè
+// rimettere l'ostacolo che la cattura serve a togliere. Il chiarimento non è
+// sparito: sta dove serve, sulla colonna Inbox della vista Attività, quando ci
+// si siede a smaltirla. Da lì si apre col testo già dentro, come prima.
+//
+// Al suo posto c'è la cosa che davvero mancava: **un evento**. Metà di quello
+// che si cattura al volo non è un'attività ma un appuntamento — «riunione
+// cantiere giovedì 9:30» — e per metterlo in agenda bisognava uscire, aprire
+// il Piano, andare al giorno giusto e usare «+ Evento». Adesso è la stessa
+// riga, letta con una domanda in più (vedi `modo` in captureParse.js):
+//
+//   Riunione cantiere !giovedi 9:30-11
+//
+// Restano quindi due cose sole, che sono le due che si fanno di getto: butto
+// dentro un pensiero, o fisso un appuntamento. Quello che non si sa ancora
+// come catalogare finisce in Inbox — cioè il comportamento di default, senza
+// scegliere niente.
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { creaTask } from './taskStore';
 import { inboxListId } from './taskModel';
 import { sectionRole, listLabel } from './paraConfig';
 import { parseCapture, matchDestinations } from './captureParse';
+import { getCalendars } from './api';
+import { salvaEvento } from './eventiCalendario';
 import DestinationPicker from './DestinationPicker';
 import { byRecentUse, pushDestMru } from './destinationMru';
 import './QuickCapture.css';
-import { durataBreve } from './tempo.js';
+import { durataBreve, ymd } from './tempo.js';
 
 /**
  * @param {Object} props
@@ -42,13 +63,18 @@ import { durataBreve } from './tempo.js';
  * @param {import('./types').TodoList[]} props.todoLists
  * @param {() => void} props.onClose
  * @param {(task: import('./taskStore').Task) => void} props.onCaptured
- * @param {(text: string) => void} props.onDecideNow
+ * @param {() => Promise<void>|void} [props.onEventoCreato]  le viste che mostrano il calendario si rileggono
  * @param {import('./captureContext').CaptureContext|null} [props.context]  la sezione aperta, se si sta guardando una
  */
-export default function QuickCapture({ open, todoLists, onClose, onCaptured, onDecideNow, context = null }) {
+export default function QuickCapture({ open, todoLists, onClose, onCaptured, onEventoCreato, context = null }) {
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  // Cosa si sta scrivendo. Un interruttore e non due finestre: la riga è la
+  // stessa, cambia solo cosa se ne ricava.
+  const [modo, setModo] = useState(/** @type {'attivita'|'evento'} */ ('attivita'));
+  const [calendari, setCalendari] = useState(/** @type {any[]} */ ([]));
+  const [calendarioId, setCalendarioId] = useState('');
   // La destinazione scelta a mano (clic o frecce), insieme a com'era scritto
   // il token `@` quando è stata scelta: appena si riprende a scrivere il token
   // la scelta decade, altrimenti resterebbe appiccicata a un testo che nel
@@ -68,8 +94,21 @@ export default function QuickCapture({ open, todoLists, onClose, onCaptured, onD
     if (open) {
       setText(''); setBusy(false); setError('');
       setPick(null); setPickerOpen(false); setCursor({ key: '', index: -1 });
+      setModo('attivita');
     }
   }
+
+  // I calendari si chiedono solo quando servono davvero, e una volta sola: la
+  // lista è memorizzata in api.js per dieci minuti, quindi passare da attività
+  // a evento e ritorno non è una richiesta a testa.
+  useEffect(() => {
+    if (modo !== 'evento' || calendari.length) return;
+    let vivo = true;
+    getCalendars()
+      .then(cals => { if (vivo) setCalendari(cals || []); })
+      .catch(e => console.error('cattura: calendari', e));
+    return () => { vivo = false; };
+  }, [modo, calendari.length]);
 
   const inboxId = inboxListId(todoLists);
 
@@ -84,15 +123,17 @@ export default function QuickCapture({ open, todoLists, onClose, onCaptured, onD
   // Prima lettura, senza la scelta a mano: serve a sapere *se* c'è un token
   // `@` e cosa c'è scritto dentro, che è quello che decide se la scelta
   // precedente vale ancora.
-  const probe = parseCapture(text, destinations);
+  const probe = parseCapture(text, destinations, { modo });
   const pickApplies = !!pick && pick.forQuery === probe.destQuery;
   const parsed = pickApplies
-    ? parseCapture(text, destinations, { overrideDestination: pick?.value ?? null })
+    ? parseCapture(text, destinations, { modo, overrideDestination: pick?.value ?? null })
     : probe;
 
   // Il pannello si apre da solo appena si scrive `@`: è il gesto che chiede
-  // «dove?», e chiederlo di nuovo con un clic sarebbe una domanda in più.
-  const showPicker = pickerOpen || (probe.hasDestToken && !pickApplies);
+  // «dove?», e chiederlo di nuovo con un clic sarebbe una domanda in più. Per
+  // un evento non si apre mai: la sua destinazione è il calendario, e sta nel
+  // suo menù.
+  const showPicker = modo === 'attivita' && (pickerOpen || (probe.hasDestToken && !pickApplies));
 
   // Le liste della sezione aperta vanno in testa, e non ricompaiono più sotto:
   // la stessa lista due volte nello stesso elenco è una scelta finta. Con una
@@ -145,6 +186,20 @@ export default function QuickCapture({ open, todoLists, onClose, onCaptured, onD
   const fromContext = !decided && !!proposed;
   const canSubmit = !!parsed.title && !busy;
 
+  // ── L'evento, letto dalla riga ────────────────────────────────────────────
+  // Senza giorno è oggi: è la cosa che si scrive più spesso di getto, e
+  // chiedere «!oggi» per dire oggi sarebbe una domanda per niente. Senza ora è
+  // un evento di tutto il giorno, che è il modo giusto di dire «quel giorno,
+  // non so quando»; con l'ora ma senza fine dura quanto dice `~`, e in
+  // mancanza un'ora tonda.
+  const giornoEvento = parsed.dueDate || ymd();
+  const oraInizio = parsed.oraInizio;
+  const oraFine = oraInizio
+    ? (parsed.oraFine || sommaMinuti(oraInizio, parsed.estimateMin || 60))
+    : null;
+  const calendarioDefault = calendari.find(c => c.isDefaultCalendar)?.id || calendari[0]?.id || '';
+  const calendarioScelto = calendarioId || calendarioDefault;
+
   /** @param {import('./captureParse').Destination|null} dest */
   function choose(dest) {
     setPick({ value: dest, forQuery: probe.destQuery });
@@ -193,12 +248,49 @@ export default function QuickCapture({ open, todoLists, onClose, onCaptured, onD
     // «titolo @sezione ⏎» resta un solo gesto anche con la destinazione.
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
+      if (modo === 'evento') { creaEvento(); return; }
       if (showPicker) {
         choose(highlighted);
         captureInto(highlighted);
         return;
       }
       captureInto(target);
+    }
+  }
+
+  // L'evento finisce su Graph passando dallo stesso `salvaEvento` del Piano —
+  // stessa scrittura, stesso annulla. Riscriverlo qui vorrebbe dire due modi
+  // di creare un evento che, il giorno che uno dei due cambia, divergono.
+  async function creaEvento() {
+    const next = parseCapture(text, destinations, { modo: 'evento' });
+    if (!next.title || busy) return;
+    if (!calendarioScelto) {
+      setError('Non trovo un calendario su cui scrivere. Riprova fra un istante.');
+      return;
+    }
+    setBusy(true);
+    setError('');
+    try {
+      await salvaEvento({
+        mode: 'create',
+        form: {
+          calendarId: calendarioScelto,
+          subject: next.title,
+          startDate: giornoEvento,
+          endDate: giornoEvento,
+          startTime: oraInizio,
+          endTime: oraFine,
+        },
+        calendars: calendari,
+        dopo: () => onEventoCreato?.(),
+      });
+      setText('');
+      setBusy(false);
+      onClose();
+    } catch (e) {
+      console.error('cattura evento', e);
+      setError('Non è riuscito a crearlo. Riprova.');
+      setBusy(false);
     }
   }
 
@@ -246,35 +338,76 @@ export default function QuickCapture({ open, todoLists, onClose, onCaptured, onD
         onKeyDown={onKeyDown}
         role="dialog"
         aria-label="Cattura un pensiero">
-        <span className="eyebrow">Cattura</span>
+        {/* L'interruttore in testa e non due bottoni in fondo: si sceglie
+            *prima* di scrivere, perché è quello che cambia come la riga viene
+            letta — e la riga la si vede cambiare mentre si scrive. */}
+        <div className="qc-testa">
+          <span className="eyebrow">Cattura</span>
+          <div className="qc-modo">
+            <button
+              type="button"
+              className={modo === 'attivita' ? 'attivo' : ''}
+              onClick={() => { setModo('attivita'); focusInput(); }}>
+              Attività
+            </button>
+            <button
+              type="button"
+              className={modo === 'evento' ? 'attivo' : ''}
+              onClick={() => { setModo('evento'); setPickerOpen(false); focusInput(); }}>
+              Evento
+            </button>
+          </div>
+        </div>
         <textarea
           className="qc-input"
           ref={inputRef}
           value={text}
           onChange={e => setText(e.target.value)}
-          placeholder="Cosa ti è venuto in mente?"
+          placeholder={modo === 'evento' ? 'Che appuntamento è?' : 'Cosa ti è venuto in mente?'}
           rows={3}
           autoFocus
         />
 
         {/* Dove finisce, scritto prima di premere Invio: la destinazione non
-            deve mai essere una sorpresa a cose fatte. */}
+            deve mai essere una sorpresa a cose fatte. Per un evento la
+            destinazione è il calendario, e la riga dice giorno e ora. */}
         <div className="qc-target-row">
-          <button
-            type="button"
-            className={`qc-target${target ? ' set' : ''}`}
-            aria-expanded={showPicker}
-            onClick={() => {
-              setPickerOpen(o => !o);
-              setActiveIndex(target ? items.findIndex(i => i.id === target.id) : -1);
-              focusInput();
-            }}>
-            <span className="qc-target-arrow" aria-hidden="true">→</span>
-            <span className="qc-target-name">{target ? target.label : 'Inbox'}</span>
-            <span className="qc-target-caret" aria-hidden="true">⌄</span>
-          </button>
-          {parsed.dueDate && <span className="qc-chip">📅 {formatDay(parsed.dueDate)}</span>}
-          {parsed.estimateMin && <span className="qc-chip">⏱ {formatMin(parsed.estimateMin)}</span>}
+          {modo === 'attivita' ? (
+            <button
+              type="button"
+              className={`qc-target${target ? ' set' : ''}`}
+              aria-expanded={showPicker}
+              onClick={() => {
+                setPickerOpen(o => !o);
+                setActiveIndex(target ? items.findIndex(i => i.id === target.id) : -1);
+                focusInput();
+              }}>
+              <span className="qc-target-arrow" aria-hidden="true">→</span>
+              <span className="qc-target-name">{target ? target.label : 'Inbox'}</span>
+              <span className="qc-target-caret" aria-hidden="true">⌄</span>
+            </button>
+          ) : (
+            <label className="qc-target set qc-target-cal">
+              <span className="qc-target-arrow" aria-hidden="true">→</span>
+              <select
+                className="qc-cal-select"
+                value={calendarioScelto}
+                onChange={e => setCalendarioId(e.target.value)}
+                aria-label="Calendario">
+                {calendari.length === 0 && <option value="">Calendario…</option>}
+                {calendari.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+            </label>
+          )}
+          {modo === 'evento'
+            ? (<>
+              <span className="qc-chip">📅 {formatDay(giornoEvento)}</span>
+              <span className="qc-chip">{oraInizio ? `🕘 ${oraInizio}–${oraFine}` : '🕘 tutto il giorno'}</span>
+            </>)
+            : (<>
+              {parsed.dueDate && <span className="qc-chip">📅 {formatDay(parsed.dueDate)}</span>}
+              {parsed.estimateMin && <span className="qc-chip">⏱ {formatMin(parsed.estimateMin)}</span>}
+            </>)}
         </div>
 
         {showPicker && (
@@ -289,26 +422,30 @@ export default function QuickCapture({ open, todoLists, onClose, onCaptured, onD
         )}
 
         <p className="qc-hint">
-          {fromContext
-            ? 'Proposta dalla sezione che stai guardando. Cambiala se non è lì che va.'
-            : target
-              ? 'Va dritta in sezione: niente giro dall’Inbox.'
-              : 'Finisce in Inbox. La chiarisci dopo, da Attività.'}
-          {' '}Scrivi <code>@</code> per la sezione, <code>!</code> per la scadenza, <code>~</code> per i minuti.
+          {modo === 'evento'
+            ? (<>Finisce in calendario. Scrivi <code>!</code> per il giorno e <code>9:30-11</code> per l’ora; senza ora è tutto il giorno.</>)
+            : (<>
+              {fromContext
+                ? 'Proposta dalla sezione che stai guardando. Cambiala se non è lì che va.'
+                : target
+                  ? 'Va dritta in sezione: niente giro dall’Inbox.'
+                  : 'Finisce in Inbox. La chiarisci dopo, da Attività.'}
+              {' '}Scrivi <code>@</code> per la sezione, <code>!</code> per la scadenza, <code>~</code> per i minuti.
+            </>)}
         </p>
 
         {error && <div className="qc-error">{error}</div>}
 
         <div className="qc-actions">
-          <button
-            className="qc-btn"
-            onClick={() => { onDecideNow(text.trim()); setText(''); onClose(); }}
-            disabled={busy}>
-            Decidi ora
-          </button>
-          <button className="qc-btn primary" onClick={() => captureInto(target)} disabled={!canSubmit}>
-            {busy ? 'Salvo…' : target ? 'Crea in sezione' : 'Cattura'}
-          </button>
+          {modo === 'evento' ? (
+            <button className="qc-btn primary" onClick={creaEvento} disabled={!canSubmit}>
+              {busy ? 'Salvo…' : 'Metti in calendario'}
+            </button>
+          ) : (
+            <button className="qc-btn primary" onClick={() => captureInto(target)} disabled={!canSubmit}>
+              {busy ? 'Salvo…' : target ? 'Crea in sezione' : 'Cattura'}
+            </button>
+          )}
         </div>
       </div>
     </div>
@@ -337,4 +474,18 @@ function formatDay(dateStr) {
  */
 function formatMin(min) {
   return durataBreve(min);
+}
+
+/**
+ * `09:30` + 90 → `11:00`. Si ferma alle 23:59: un evento che scavalca la
+ * mezzanotte da qui non si scrive, e farlo finire il giorno dopo senza averlo
+ * detto sarebbe peggio che accorciarlo.
+ * @param {string} ora  `HH:MM`
+ * @param {number} minuti
+ * @returns {string}
+ */
+function sommaMinuti(ora, minuti) {
+  const [h, m] = ora.split(':').map(Number);
+  const tot = Math.min(h * 60 + m + minuti, 23 * 60 + 59);
+  return `${String(Math.floor(tot / 60)).padStart(2, '0')}:${String(tot % 60).padStart(2, '0')}`;
 }

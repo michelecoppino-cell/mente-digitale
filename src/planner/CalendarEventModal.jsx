@@ -72,6 +72,50 @@ export function CalendarEventModal({ mode, event, defaultDate, defaultStartTime,
     }
   }
 
+  // Gli eventi del calendario di lavoro sono uno specchio: una GitHub Action
+  // riscrive tutta la finestra ogni paio d'ore (vedi src/calendarioLavoro.js).
+  // Una modifica fatta qui sopravvivrebbe fino al giro dopo e poi sparirebbe
+  // senza dire niente — e sarebbe l'unica cosa peggiore di non poterla fare.
+  // Quindi la scheda si apre, dice tutto quello che c'è da sapere, e non
+  // offre né Salva né Elimina.
+  if (event?._soloLettura) {
+    const inizio = isAllDay(event) ? null : isoToHHMM(event.start?.dateTime);
+    const fine   = isAllDay(event) ? null : isoToHHMM(event.end?.dateTime);
+    return (
+      <div className="planner-modal-overlay" onClick={onClose}>
+        <div className="planner-modal" onClick={e => e.stopPropagation()}>
+          <div className="planner-modal-header">
+            <span>Evento di lavoro</span>
+            <button onClick={onClose}>✕</button>
+          </div>
+          <div className="planner-modal-body planner-event-form">
+            <div className="planner-modal-field">
+              <span>Titolo</span>
+              <div className="planner-evento-letto">{event.subject}</div>
+            </div>
+            <div className="planner-modal-field">
+              <span>Quando</span>
+              <div className="planner-evento-letto">
+                {date}{inizio ? ` · ${inizio}–${fine}` : ' · tutto il giorno'}
+              </div>
+            </div>
+            <div className="planner-modal-field">
+              <span>Da</span>
+              <div className="planner-evento-letto">{event._calName || 'Lavoro'}</div>
+            </div>
+            <p className="planner-modal-nota">
+              Arriva dal calendario di lavoro, che qui si legge soltanto: si modifica
+              là, e torna in pari al giro successivo.
+            </p>
+            <div className="planner-event-form-actions">
+              <button className="planner-modal-apply-btn" onClick={onClose}>Chiudi</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="planner-modal-overlay" onClick={busy ? undefined : onClose}>
       <div className="planner-modal" onClick={e => e.stopPropagation()}>

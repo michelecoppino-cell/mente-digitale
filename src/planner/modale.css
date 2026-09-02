@@ -155,6 +155,25 @@ input[type="time"].planner-modal-select::-webkit-calendar-picker-indicator {
   gap: 10px;
 }
 .planner-event-time-row .planner-modal-field { flex: 1; }
+/* Un evento del calendario di lavoro: si legge e basta (vedi
+   src/calendarioLavoro.js). Il valore ha il peso del testo normale e non
+   quello dell'etichetta sopra, che è maiuscoletto spento. */
+.planner-evento-letto {
+  font-size: 13px;
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--text);
+}
+.planner-modal-nota {
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
 .planner-modal-error {
   font-size: 11px;
   color: #c07a7a;

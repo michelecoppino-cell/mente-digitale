@@ -206,16 +206,34 @@
 @media (max-width: 860px) {
   .shell-drawer-btn { display: flex; }
 
+  /* Il drawer entra da **destra**, dal lato in cui sta il panino che lo apre:
+     un pannello che parte dall'angolo opposto al dito che l'ha chiamato è un
+     movimento che non si spiega. E il pollice, che il telefono lo tiene da
+     quella parte, ce lo trova sotto. */
   .rail {
     position: fixed;
-    left: 0; top: 0; bottom: 0;
+    right: 0; left: auto; top: 0; bottom: 0;
     z-index: 120;
     width: 240px;
     flex-basis: 240px;
-    transform: translateX(-100%);
+    transform: translateX(100%);
     transition: transform var(--t);
+    /* Il bordo passa dall'altra parte insieme al pannello: appoggiato al
+       margine destro dello schermo, quello di destra non si vedrebbe e il
+       drawer resterebbe senza stacco dal contenuto. */
+    border-right: none;
+    border-left: 1px solid var(--line);
   }
   .shell.drawer-open .rail { transform: translateX(0); }
+
+  /* Le voci in **fondo**, non in cima. Aperto il drawer si continua a tenere
+     il telefono con una mano sola, e il pollice arriva al terzo basso dello
+     schermo: in cima finivano proprio le otto destinazioni, cioè l'unica cosa
+     per cui il drawer si apre. Il «Menù» che lo richiude scende per ultimo,
+     così si chiude col dito già fermo dov'è il panino della barra. */
+  .rail-nav { order: 1; margin-top: auto; }
+  .rail-foot { order: 2; margin-top: var(--sp-3); }
+  .rail-menu { order: 3; }
 
   /* Da telefono il rail è sempre a piena etichetta: il collasso a sole icone
      serve a recuperare larghezza su schermo grande, non qui. */
@@ -234,17 +252,27 @@
      contenuto si accorcia da solo — niente barra fissa da compensare con un
      padding, niente riga che finisce coperta.
 
-     Il panino sta in mezzo e gli altri ai lati: è il comando che si tocca
-     più spesso di tutti, e al centro ci arriva il pollice di tutt'e due le
-     mani. Il gruppo delle azioni è più largo del «+», quindi le due colonne
-     laterali non pareggiano al pixel e il centro cade un po' a sinistra
-     della metà: è la posizione più centrale che si può dare al panino senza
-     che il gruppo di destra gli finisca sotto. */
+     **Al centro la cattura, a destra il panino, a sinistra le azioni.** Il
+     centro va al comando che si usa più spesso e che *fa* qualcosa: il
+     panino apre un menù, la cattura mette dentro un pensiero, e fra i due è
+     la seconda quella che non deve mai costare un aggiustamento della presa.
+     Il panino a destra perché di lì entra il drawer, e perché quello che si
+     apre lo apre il pollice della mano che tiene il telefono. Le azioni —
+     stato, campanella, ricerca, aggiorna — vanno a sinistra: sono quattro
+     icone piccole, si toccano di rado, e sono le uniche che possono
+     permettersi il lato scomodo. */
   .shell-main { flex-direction: column-reverse; }
 
   .shell-topbar {
     display: grid;
-    grid-template-columns: 1fr auto 1fr;
+    /* Le due colonne laterali non possono crescere oltre la loro parte: con un
+       `1fr` semplice il gruppo delle azioni, più largo del panino, allargava la
+       sua colonna e spingeva il centro a destra — il «+» finiva a due terzi
+       dello schermo invece che in mezzo. Con `minmax(0, 1fr)` le due colonne
+       restano uguali e il centro cade davvero al centro; perché le azioni ci
+       stiano dentro, quelle che valgono solo da tastiera non si disegnano da
+       telefono (vedi `.solo-schermo-largo` in tokens.css). */
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
     /* Come nel gruppo delle azioni: i bottoni portano .tap-44, che allarga
        l'area cliccabile oltre il disegno. Con le colonne più strette le aree
        del panino e della prima azione si sovrapporrebbero. */
@@ -274,46 +302,60 @@
      cliccabile allargata a 44 da .tap-44, cinque per lato, e servivano 12px
      perché due aree non si accavallassero. Qui il disegno è già 40px, l'area
      sborda di due, e gli 8px risparmiati per volta li prende la colonna di
-     mezzo: il panino si avvicina al centro dello schermo. */
+     mezzo: la cattura si avvicina al centro dello schermo. */
   .shell-topbar-actions { gap: var(--sp-3); }
 
-  .shell-capture-btn { grid-row: 1; grid-column: 1; justify-self: start; }
-  .shell-drawer-btn { grid-row: 1; grid-column: 2; justify-self: center; }
-  .shell-topbar-actions { grid-row: 1; grid-column: 3; justify-self: end; margin-left: 0; }
+  /* Le colonne sono assegnate a mano e non dall'ordine nel DOM: nel markup il
+     panino resta il primo elemento della barra — è il primo che incontrano
+     tastiera e lettore di schermo, come in ogni intestazione — ma a schermo
+     finisce a destra. */
+  .shell-topbar-actions { grid-row: 1; grid-column: 1; justify-self: start; margin-left: 0; }
+  .shell-capture-btn { grid-row: 1; grid-column: 2; justify-self: center; }
+  .shell-drawer-btn { grid-row: 1; grid-column: 3; justify-self: end; }
 
   /* I bottoni sono più grandi che su schermo grande, disegno compreso: là si
      punta col mouse e un'icona di 15px basta, qui si tocca con il pollice e
      quello che conta è quanto si vede, non solo l'area cliccabile invisibile
      di .tap-44. Le misure stanno strette in 375px — il telefono più piccolo
-     ancora in giro — con una decina di pixel di margine. */
-  .shell-capture-btn { width: 44px; height: 44px; }
-  .shell-capture-btn svg { width: 20px; height: 20px; }
+     ancora in giro — con una decina di pixel di margine.
 
-  /* Al centro il panino non può più essere l'icona spenta di un angolo:
-     senza un fondo sotto sembra caduta lì per sbaglio, invece è l'ancora
-     della barra. È anche il bottone più grande della fila. */
-  .shell-drawer-btn {
+     Al centro la cattura è il bottone più grande della fila: è l'ancora
+     della barra, e con un fondo sotto si distingue dalle icone spente dei
+     lati invece di sembrare caduta lì per sbaglio. */
+  .shell-capture-btn {
     width: 56px;
     height: 46px;
-    /* Sopra le aree cliccabili dei vicini: quella della prima azione — un
-       puntino di 6px allargato a 44 da .tap-44 — arriva a coprire l'ultima
-       striscia del panino, e senza questo un tocco sul suo bordo destro
-       aprirebbe il pannello di stato. */
+    /* Sopra le aree cliccabili dei vicini: quella dell'ultima azione — un
+       puntino di 6px allargato a 44 da .tap-44 — arriva a coprire la prima
+       striscia della cattura, e senza questo un tocco sul suo bordo sinistro
+       finirebbe all'icona a fianco. */
     z-index: 1;
+    border-radius: var(--r);
+  }
+  .shell-capture-btn svg { width: 22px; height: 22px; }
+
+  .shell-drawer-btn {
+    width: 44px;
+    height: 44px;
     background: rgba(255, 255, 255, .05);
     border: 1px solid var(--line);
     border-radius: var(--r);
     color: var(--text);
   }
-  .shell-drawer-btn svg { width: 22px; height: 22px; }
+  .shell-drawer-btn svg { width: 20px; height: 20px; }
 
   /* Sulla Mappa la barra porta anche il commutatore Taccuini/PARA, che da solo
      è largo quanto tre icone: lì i bottoni restano alle misure di prima,
      altrimenti la fila non ci sta in larghezza e l'ultima icona finisce fuori
-     dallo schermo. */
-  .shell-topbar:has(.map-view-toggle) .shell-capture-btn { width: 36px; height: 36px; }
+     dallo schermo. E la colonna di sinistra torna a poter crescere: col
+     commutatore il gruppo è più largo di metà schermo, e tenendola ferma a
+     metà il «+» ci finirebbe sopra. Un centro spostato è un difetto di
+     allineamento, due bottoni sovrapposti sono un tocco che va a quello
+     sbagliato. */
+  .shell-topbar:has(.map-view-toggle) { grid-template-columns: 1fr auto 1fr; }
+  .shell-topbar:has(.map-view-toggle) .shell-capture-btn { width: 46px; height: 40px; }
   .shell-topbar:has(.map-view-toggle) .shell-capture-btn svg { width: 17px; height: 17px; }
-  .shell-topbar:has(.map-view-toggle) .shell-drawer-btn { width: 46px; height: 40px; }
+  .shell-topbar:has(.map-view-toggle) .shell-drawer-btn { width: 36px; height: 36px; }
   .shell-topbar:has(.map-view-toggle) .shell-drawer-btn svg { width: 17px; height: 17px; }
 
   .shell.drawer-open .shell-drawer-btn {

@@ -73,6 +73,14 @@ export default function Istruzioni({ onChiudi }) {
                 cella per cella — perché lì ogni settimana è una decisione.
               </li>
               <li>
+                <b>Persone.</b> La stessa matrice girata: una riga per persona, e le ore sommate su
+                <b> tutte le commesse accese</b>. Serve a una domanda che dentro una commessa sola
+                non ha risposta — «a questa persona ho già dato quella settimana?» —, perché dieci
+                ore qui e trenta là stanno sotto la capacità in tutte e due le matrici e sopra nella
+                realtà. Si legge e basta: le ore si cambiano nella matrice della commessa, e un clic
+                sul suo nome ci porta.
+              </li>
+              <li>
                 <b>Attivare.</b> Quando una voce sta per cominciare, «Attiva…» crea l&apos;attività
                 vera, con persona e scadenza. Nessuna conferma prima: c&apos;è l&apos;annulla dopo,
                 per otto secondi.

@@ -135,6 +135,12 @@ export const EVENTI = [
   evento('e-4', 'Consegna elaborati A60', g(2), '09:00', '09:30'),
   evento('e-5', 'Riunione di coordinamento', g(3), '11:00', '12:00'),
   evento('e-6', 'Corsa', g(1), '07:00', '07:45', 'cal-mov'),
+  // Una scadenza ricorrente, scritta come si scrive davvero: fra venti giorni,
+  // con trenta giorni di anticipo, quindi **dovuta oggi**. Serve a poter
+  // vedere il meccanismo funzionare con `dev:finto` — è la cosa che, contro il
+  // OneDrive vero, si può provare solo aspettando il giorno giusto. Vedi
+  // src/deadlineReminders.js.
+  evento('e-7', '[Casa +30g] Revisione caldaia', g(20), '09:00', '09:30'),
 ];
 
 // ── I file dell'app su OneDrive ─────────────────────────────────────────────

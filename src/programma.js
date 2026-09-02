@@ -906,11 +906,10 @@ export function perMese(settimane) {
  * Come sta messa una persona in una settimana. Tre stati e non un numero: la
  * cella si colora, e un gradiente continuo su venticinque colonne non si legge.
  *
- * **La saturazione guarda il solo programma aperto.** Una persona è satura o no
- * nella sua settimana, non dentro una commessa — quindi il numero giusto
- * sarebbe la somma su tutti i programmi accesi. È l'approssimazione dichiarata
- * della prima versione, ed è scritta qui perché è la prima cosa da togliere: il
- * conto va fatto su un elenco di documenti, non su uno solo.
+ * Dentro una commessa il conto è per forza quello della commessa. La domanda
+ * vera — «questa persona è satura?» — non ha una risposta dentro un solo
+ * documento, e ha la sua vista: `caricoPersone()` somma tutti i programmi
+ * accesi, ed è lì che si vede se la stessa settimana è stata data due volte.
  *
  * @param {number} ore
  * @param {number} capacita
@@ -952,6 +951,146 @@ export function oreRisorsaSettimana(doc, risorsa, settimana) {
     if (r === risorsa && s === settimana) somma += ore;
   }
   return somma;
+}
+
+// ── Il carico di una persona su tutte le commesse ───────────────────────────
+//
+// La matrice di una commessa risponde a «come sta messa questa commessa». La
+// domanda che restava senza risposta è l'altra: **«a questa persona ho già
+// dato quella settimana?»** — e non ha una risposta dentro un documento solo,
+// perché la persona è la stessa in tutti. Finché il conto si faceva per
+// commessa, sei ore qui e trentadue là si vedevano solo aprendo due schermate
+// e sommando a mente: cioè non si vedevano.
+//
+// Sono gli stessi dati letti dall'altro verso — nessun campo nuovo, nessun
+// documento nuovo, nessuna copia da tenere in pari. Il prezzo è leggere tutti
+// i programmi accesi invece di uno, e per questo la vista li chiede solo
+// quando la si apre.
+
+/** Il tetto di colonne della vista per persona: oltre, non si legge più. */
+const MAX_SETTIMANE_PERSONE = 60;
+
+/**
+ * Le colonne della vista per persona: l'unione degli orizzonti dei programmi
+ * accesi, potata a quello che serve guardare.
+ *
+ * Si parte da quattro settimane fa e non dall'inizio della commessa più
+ * vecchia: la domanda è sul futuro — «sto per dare due cose insieme» — e il
+ * passato serve solo come riferimento di quanto si è già speso. In coda il
+ * tetto: due commesse da tre anni farebbero centocinquanta colonne, che è una
+ * tabella che non risponde a niente.
+ *
+ * @param {DocProgramma[]} docs
+ * @param {string} [settimanaOra]
+ * @returns {string[]}
+ */
+export function settimaneDellePersone(docs, settimanaOra) {
+  const ora = settimanaOra || settimanaIso();
+  if (!docs.length) return settimaneTra(spostaSettimane(ora, -4), spostaSettimane(ora, 12));
+
+  /** @type {string[]} */
+  const estremi = [];
+  for (const doc of docs) {
+    const sue = settimaneDellaMatrice(doc, ora);
+    if (sue.length) estremi.push(sue[0], sue[sue.length - 1]);
+    // Anche le celle scritte fuori dall'orizzonte dichiarato: sono ore date a
+    // qualcuno, e non vederle è esattamente il buco che questa vista chiude.
+    for (const chiave of Object.keys(doc.carico)) {
+      const settimana = chiave.split('|')[2];
+      if (settimana) estremi.push(settimana);
+    }
+  }
+  if (!estremi.length) return settimaneTra(spostaSettimane(ora, -4), spostaSettimane(ora, 12));
+
+  const inizio = spostaSettimane(ora, -4);
+  const da = estremi.reduce((m, w) => (w < m ? w : m), estremi[0]);
+  const a = estremi.reduce((m, w) => (w > m ? w : m), estremi[0]);
+  return settimaneTra(da > inizio ? da : inizio, a).slice(0, MAX_SETTIMANE_PERSONE);
+}
+
+/**
+ * @typedef {object} QuotaCommessa
+ * @property {string} programmaId
+ * @property {string} nome              il nome della commessa, come si legge nel rail
+ * @property {Record<string, number>} ore  settimana → ore su questa commessa
+ * @property {number} totale
+ */
+
+/**
+ * @typedef {object} RigaPersona
+ * @property {string} nome
+ * @property {number} capacita          ore/settimana dichiarate; 0 se nessun programma lo dice
+ * @property {Record<string, number>} ore  settimana → ore su tutte le commesse
+ * @property {number} totale
+ * @property {QuotaCommessa[]} commesse  solo quelle in cui ha davvero delle ore
+ * @property {string[]} sovrapposte     le settimane in cui è oltre la capacità
+ */
+
+/**
+ * Il carico di ogni persona, settimana per settimana, sommato su tutti i
+ * programmi passati.
+ *
+ * **La capacità è la più alta dichiarata.** La stessa persona può comparire in
+ * due commesse con due capacità diverse — succede perché la si scrive due
+ * volte, non perché lavori il doppio. Prendere la più alta è la scelta
+ * prudente: colora di rosso solo chi sfora *anche* rispetto al numero più
+ * generoso che qualcuno gli ha dato, e un falso allarme in questa tabella
+ * varrebbe quanto nessun allarme.
+ *
+ * @param {{ id: string, nome: string, doc: DocProgramma }[]} programmi
+ * @param {string[]} settimane
+ * @returns {RigaPersona[]}
+ */
+export function caricoPersone(programmi, settimane) {
+  const finestra = new Set(settimane);
+  /** @type {Map<string, RigaPersona>} */
+  const persone = new Map();
+
+  /** @param {string} nome @returns {RigaPersona} */
+  const riga = nome => {
+    let r = persone.get(nome);
+    if (!r) {
+      r = { nome, capacita: 0, ore: {}, totale: 0, commesse: [], sovrapposte: [] };
+      persone.set(nome, r);
+    }
+    return r;
+  };
+
+  // Prima le anagrafiche: una persona che c'è ma non ha ancora ore va vista
+  // comunque, altrimenti la riga in cui scriverla non esiste.
+  for (const { doc } of programmi) {
+    for (const r of doc.risorse) {
+      const p = riga(r.nome);
+      if (r.oreSettimana > p.capacita) p.capacita = r.oreSettimana;
+    }
+  }
+
+  for (const { id, nome, doc } of programmi) {
+    /** @type {Map<string, QuotaCommessa>} */
+    const quote = new Map();
+    for (const [chiave, ore] of Object.entries(doc.carico)) {
+      if (!ore) continue;
+      const [risorsa, , settimana] = chiave.split('|');
+      if (!finestra.has(settimana)) continue;
+      const p = riga(risorsa);
+      p.ore[settimana] = (p.ore[settimana] || 0) + ore;
+      p.totale += ore;
+      let q = quote.get(risorsa);
+      if (!q) { q = { programmaId: id, nome, ore: {}, totale: 0 }; quote.set(risorsa, q); }
+      q.ore[settimana] = (q.ore[settimana] || 0) + ore;
+      q.totale += ore;
+    }
+    for (const [risorsa, q] of quote) riga(risorsa).commesse.push(q);
+  }
+
+  for (const p of persone.values()) {
+    p.sovrapposte = settimane.filter(w => (p.ore[w] || 0) > (p.capacita || ORE_SETTIMANA_DEFAULT));
+    // Le commesse che pesano di più in cima: aprendo una riga si vuole sapere
+    // subito da dove viene il grosso.
+    p.commesse.sort((a, b) => b.totale - a.totale);
+  }
+
+  return [...persone.values()].sort((a, b) => a.nome.localeCompare(b.nome, 'it'));
 }
 
 /**

@@ -31,19 +31,21 @@
 // nemmeno di essere nate qui.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
+import { useQueries, useQuery } from '@tanstack/react-query';
 import { queryClient, qk, STALE } from './queryClient';
 import {
   leggiRegistro, leggiProgramma, cambiaProgramma, creaProgramma, aggiornaRegistrazione, salvaCelle,
 } from './programmaStore';
 import {
-  totali, settimaneDellaMatrice, oreVoci, statoVoce, conVoceAggiornata, conVoci,
+  totali, settimaneDellaMatrice, settimaneDellePersone, oreVoci, statoVoce,
+  conVoceAggiornata, conVoci,
   conVociDaRighe, conVoceAttivata, conPacchettoAggiornato, conCommessa, conCarico,
   senzaVoce, pacchettiCheSforano, daCollocarePerPacchetto, esportazione,
 } from './programma';
 import { creaTask, eliminaTask } from './taskStore';
 import { settimanaIso } from './tempo.js';
 import Matrice from './programma/Matrice.jsx';
+import MatricePersone from './programma/MatricePersone.jsx';
 import { oreBrevi } from './programma/formato.js';
 import ElencoVoci from './programma/ElencoVoci.jsx';
 import DettaglioVoce from './programma/DettaglioVoce.jsx';
@@ -106,7 +108,7 @@ export default function ProgrammaView({
 
   const [railChiuso, setRailChiuso] = useState(true);
   const [pacchettoScelto, setPacchettoScelto] = useState(/** @type {string|null} */ (null));
-  const [scheda, setScheda] = useState(/** @type {'matrice'|'voci'|'riepilogo'|'impostazioni'} */ ('matrice'));
+  const [scheda, setScheda] = useState(/** @type {'matrice'|'persone'|'voci'|'riepilogo'|'impostazioni'} */ ('matrice'));
   const [voceScelta, setVoceScelta] = useState(/** @type {string|null} */ (null));
   const [selezione, setSelezione] = useState(/** @type {string[]} */ ([]));
   const [attivaAperta, setAttivaAperta] = useState(false);
@@ -118,6 +120,28 @@ export default function ProgrammaView({
 
   const settimanaOra = settimanaIso();
   const settimane = useMemo(() => (doc ? settimaneDellaMatrice(doc, settimanaOra) : []), [doc, settimanaOra]);
+
+  // ── La vista per persona ──────────────────────────────────────────────────
+  // Vuole tutti i programmi accesi, non solo quello aperto: è tutto il punto —
+  // una sovrapposizione sta *fra* due commesse, e dentro una non si vede. I
+  // documenti si chiedono solo quando la scheda è aperta (`enabled`), e sono
+  // le stesse chiavi di cache del documento singolo: aperta la scheda dopo
+  // aver girato fra le commesse, quelle già lette non si rileggono.
+  const documentiAccesi = useQueries({
+    queries: accesi.map(p => ({
+      queryKey: qk.programma(p.id),
+      queryFn: () => leggiProgramma(p.id),
+      staleTime: STALE.programma,
+      enabled: scheda === 'persone',
+    })),
+  });
+  const programmiLetti = accesi
+    .map((p, i) => ({ id: p.id, nome: p.nome, doc: documentiAccesi[i]?.data }))
+    .filter(/** @returns {x is { id: string, nome: string, doc: DocProgramma }} */ x => !!x.doc);
+  const personeInCaricamento = documentiAccesi.some(q => q.isLoading);
+  const settimanePersone = programmiLetti.length
+    ? settimaneDellePersone(programmiLetti.map(p => p.doc), settimanaOra)
+    : [];
   const attivitaAperte = useMemo(() => new Set(tasks.map(t => t.id)), [tasks]);
 
   // ── Le scritture ───────────────────────────────────────────────────────────
@@ -578,6 +602,19 @@ export default function ProgrammaView({
                 Matrice
               </button>
             )}
+            {/* La stessa matrice letta per persona invece che per commessa:
+                accanto a Matrice perché è la sua altra metà, non una quinta
+                pagina. Vedi programma/MatricePersone.jsx. */}
+            {!stretto && (
+              <button
+                type="button"
+                className={`pg-scheda${scheda === 'persone' ? ' scelta' : ''}`}
+                onClick={() => setScheda('persone')}
+                title="Il carico di ogni persona su tutte le commesse accese"
+              >
+                Persone
+              </button>
+            )}
             <button
               type="button"
               className={`pg-scheda${scheda === 'voci' || (stretto && scheda === 'matrice') ? ' scelta' : ''}`}
@@ -669,6 +706,14 @@ export default function ProgrammaView({
             <p className="pg-empty pg-solo-portatile">La matrice si apre da portatile.</p>
             {elenco}
           </div>
+        ) : scheda === 'persone' ? (
+          <MatricePersone
+            programmi={programmiLetti}
+            settimane={settimanePersone}
+            settimanaOra={settimanaOra}
+            inCaricamento={personeInCaricamento}
+            onApriCommessa={id => { navigate(`/programma/${id}`); setScheda('matrice'); setPacchettoScelto(null); }}
+          />
         ) : scheda === 'matrice' ? (
           <Matrice
             doc={doc}
