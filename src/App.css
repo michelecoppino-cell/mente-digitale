@@ -136,6 +136,16 @@
     max-width: none;
   }
 
+  /* I bottoni della barra, ingranditi: da telefono si toccano col pollice, e
+     un'icona da 15px in un quadrato da 34 è disegnata per un mouse. Sulla
+     Mappa restano compatti — lì la barra porta anche il commutatore
+     Taccuini/PARA e la fila non ci starebbe (vedi AppShell.css). */
+  .shell-topbar .search-btn { width: 40px; height: 40px; }
+  .shell-topbar .search-btn svg { width: 18px; height: 18px; }
+  .shell-topbar .sync-dot { width: 8px; height: 8px; }
+  .shell-topbar-actions:has(.map-view-toggle) .search-btn { width: 34px; height: 34px; }
+  .shell-topbar-actions:has(.map-view-toggle) .search-btn svg { width: 15px; height: 15px; }
+
   /* Lo scostamento in cima teneva il titolo del pannello sotto la topbar. Qui
      la topbar è scesa in fondo: sopra resta solo la barra di stato del
      sistema, e in fondo va lasciata libera la barra dei comandi. */

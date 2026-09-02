@@ -249,11 +249,16 @@
        l'area cliccabile oltre il disegno. Con le colonne più strette le aree
        del panino e della prima azione si sovrapporrebbero. */
     gap: var(--sp-4);
-    min-height: 56px;
+    min-height: 60px;
     /* L'inset che la barra si prendeva in cima non serve più: la fascia da
-       schivare adesso è quella dell'indicatore Home, in fondo. */
-    padding: var(--sp-2) var(--sp-4);
-    padding-bottom: calc(var(--sp-2) + env(safe-area-inset-bottom, 0px));
+       schivare adesso è quella dell'indicatore Home, in fondo. E se ne
+       schivano 12px di meno di quanti ne dichiara iOS: l'indicatore è una
+       pastiglia alta 5px appoggiata al bordo, non una fascia piena alta 34, e
+       quei 12px sono spazio che i bottoni possono prendersi restandone
+       comunque fuori. La stessa misura sta in `--barra-bassa` (tokens.css):
+       se cambia qui va cambiata lì. */
+    padding: var(--sp-3) var(--sp-4) var(--sp-2);
+    padding-bottom: calc(var(--sp-2) + max(0px, env(safe-area-inset-bottom, 0px) - 12px));
     background: var(--bg-rail);
     border-bottom: none;
     border-top: 1px solid var(--line);
@@ -265,16 +270,31 @@
      finisce in mezzo. La riga va detta insieme alla colonna: senza, il
      posizionamento automatico manda in una riga nuova ogni elemento che
      chiede una colonna già scavalcata, e la barra diventa alta tre righe. */
+  /* 8px e non i 12 del desktop: lì le icone sono disegnate in 34px con l'area
+     cliccabile allargata a 44 da .tap-44, cinque per lato, e servivano 12px
+     perché due aree non si accavallassero. Qui il disegno è già 40px, l'area
+     sborda di due, e gli 8px risparmiati per volta li prende la colonna di
+     mezzo: il panino si avvicina al centro dello schermo. */
+  .shell-topbar-actions { gap: var(--sp-3); }
+
   .shell-capture-btn { grid-row: 1; grid-column: 1; justify-self: start; }
   .shell-drawer-btn { grid-row: 1; grid-column: 2; justify-self: center; }
   .shell-topbar-actions { grid-row: 1; grid-column: 3; justify-self: end; margin-left: 0; }
 
+  /* I bottoni sono più grandi che su schermo grande, disegno compreso: là si
+     punta col mouse e un'icona di 15px basta, qui si tocca con il pollice e
+     quello che conta è quanto si vede, non solo l'area cliccabile invisibile
+     di .tap-44. Le misure stanno strette in 375px — il telefono più piccolo
+     ancora in giro — con una decina di pixel di margine. */
+  .shell-capture-btn { width: 44px; height: 44px; }
+  .shell-capture-btn svg { width: 20px; height: 20px; }
+
   /* Al centro il panino non può più essere l'icona spenta di un angolo:
      senza un fondo sotto sembra caduta lì per sbaglio, invece è l'ancora
-     della barra. */
+     della barra. È anche il bottone più grande della fila. */
   .shell-drawer-btn {
-    width: 46px;
-    height: 40px;
+    width: 56px;
+    height: 46px;
     /* Sopra le aree cliccabili dei vicini: quella della prima azione — un
        puntino di 6px allargato a 44 da .tap-44 — arriva a coprire l'ultima
        striscia del panino, e senza questo un tocco sul suo bordo destro
@@ -285,6 +305,17 @@
     border-radius: var(--r);
     color: var(--text);
   }
+  .shell-drawer-btn svg { width: 22px; height: 22px; }
+
+  /* Sulla Mappa la barra porta anche il commutatore Taccuini/PARA, che da solo
+     è largo quanto tre icone: lì i bottoni restano alle misure di prima,
+     altrimenti la fila non ci sta in larghezza e l'ultima icona finisce fuori
+     dallo schermo. */
+  .shell-topbar:has(.map-view-toggle) .shell-capture-btn { width: 36px; height: 36px; }
+  .shell-topbar:has(.map-view-toggle) .shell-capture-btn svg { width: 17px; height: 17px; }
+  .shell-topbar:has(.map-view-toggle) .shell-drawer-btn { width: 46px; height: 40px; }
+  .shell-topbar:has(.map-view-toggle) .shell-drawer-btn svg { width: 17px; height: 17px; }
+
   .shell.drawer-open .shell-drawer-btn {
     background: var(--accent-tint);
     border-color: var(--accent-line);

@@ -6,7 +6,14 @@
 * { margin: 0; padding: 0; box-sizing: border-box; }
 
 body {
-  background: var(--bg);
+  /* Il colore del fondo pagina è quello della barra dei comandi e non quello
+     dell'app: l'unico posto dove si vede è la fascia che, su iOS, resta fuori
+     dal viewport in fondo allo schermo (vedi la nota sulla barra di stato in
+     index.html). Se quella fascia ricompare — un'altra versione di iOS, un
+     altro modo di installare l'app — legge come una continuazione della barra
+     invece che come una striscia nera dimenticata. Ovunque altro sopra c'è
+     `.shell`, che disegna il fondo vero. */
+  background: var(--bg-rail);
   font-family: var(--font-ui);
   color: var(--text);
   /* dvh e non vh: su iOS la barra degli indirizzi che si ritrae cambia

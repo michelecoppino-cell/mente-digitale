@@ -11,7 +11,17 @@
     <!-- iOS PWA support -->
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <!-- `black` e non `black-translucent`: con la barra di stato trasparente
+         iOS dà alla web app una finestra alta quanto lo schermo meno la barra
+         di stato ma ancorata in cima, e quei 47px in fondo restano fuori dal
+         viewport — una fascia morta sotto la barra dei comandi, che nessun
+         CSS può raggiungere perché è oltre il fondo del viewport (misurata su
+         iPhone: schermo 844, `100dvh` 797). Con la barra di stato opaca la
+         finestra parte sotto l'orologio e arriva fino in fondo allo schermo:
+         lo spazio torna all'app, che è dove serve. In cambio l'app non
+         disegna più dietro l'orologio — che qui vuol dire #0e1013 al posto
+         del nero, cioè niente. -->
+    <meta name="apple-mobile-web-app-status-bar-style" content="black" />
     <meta name="apple-mobile-web-app-title" content="Mente" />
     <link rel="apple-touch-icon" href="/icon-192.png" />
 
