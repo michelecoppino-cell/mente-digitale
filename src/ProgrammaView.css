@@ -727,4 +727,253 @@
 @media (max-width: 860px) {
   .pg-rail, .pg-rail-chiuso { display: none; }
   .pg-dettaglio { position: fixed; inset: 0; width: auto; z-index: 8; }
+
+  /* Le colonne fisse della riga voce sommano più di quanto sia largo un
+     telefono, e a schiacciarsi è il titolo — cioè l'unica che serve sempre.
+     Via il delta e la risorsa, che sono la lettura da scrivania. */
+  .pg-voce-delta, .pg-voce-risorsa { display: none; }
+  .pg-voce-ore { flex: 0 0 52px; }
+  .pg-voce-stato { flex: 0 0 96px; }
+}
+
+/* ── Il modale: commessa nuova, e la guida ───────────────────────────────────
+   Un modale e non una colonna in più: le due cose che apre — una commessa che
+   ancora non esiste, e come si usa il pannello — non convivono con la matrice,
+   e contendersi la larghezza con lei le farebbe stare male tutte e due. */
+
+.pg-velo {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--sp-5);
+  background: rgba(0, 0, 0, .5);
+}
+.pg-modale {
+  width: min(440px, 100%);
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, .5);
+}
+.pg-modale-largo { width: min(720px, 100%); }
+.pg-modale-corpo {
+  padding: var(--sp-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-5);
+  overflow-y: auto;
+}
+.pg-campo-doppio { display: flex; gap: var(--sp-4); }
+.pg-campo-doppio > * { flex: 1; }
+.pg-campo-sezione { display: flex; flex-direction: column; gap: var(--sp-1); }
+
+/* ── La guida ───────────────────────────────────────────────────────────── */
+
+.pg-guida {
+  padding: 0 0 10px var(--sp-4);
+  background: none;
+  border: none;
+  color: var(--muted);
+  font-family: var(--font-ui);
+  font-size: var(--fs-micro);
+  cursor: pointer;
+}
+@media (hover: hover) { .pg-guida:hover { color: var(--accent); } }
+
+.pg-istruzioni { gap: var(--sp-7); font-size: var(--fs-meta); color: var(--text-2); line-height: 1.6; }
+.pg-istruzioni h3 {
+  margin: 0 0 var(--sp-3);
+  font-family: var(--font-title);
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--text);
+}
+.pg-istruzioni p { margin: 0 0 var(--sp-3); }
+.pg-istruzioni b { color: var(--text); font-weight: 500; }
+.pg-istruzioni code {
+  padding: 1px 4px;
+  background: var(--surface);
+  border-radius: var(--r-sm);
+  font-family: ui-monospace, SFMono-Regular, monospace;
+  font-size: var(--fs-micro);
+}
+.pg-passi, .pg-elenco { margin: 0; padding-left: var(--sp-6); display: flex; flex-direction: column; gap: var(--sp-3); }
+
+/* I passaggi che mancano, in testata: spariscono da soli man mano che si
+   fanno, perché una lista che resta lì per sempre diventa arredamento. */
+.pg-passi-riga {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  flex-wrap: wrap;
+  padding: var(--sp-3) var(--sp-7);
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.pg-rail-nuova {
+  width: 100%;
+  margin-top: var(--sp-4);
+  padding: var(--sp-3) 10px;
+  background: none;
+  border: 1px dashed var(--line);
+  border-radius: var(--r-sm);
+  color: var(--muted);
+  font-family: var(--font-ui);
+  font-size: var(--fs-meta);
+  text-align: left;
+  cursor: pointer;
+}
+@media (hover: hover) { .pg-rail-nuova:hover { border-color: var(--accent-line); color: var(--accent); } }
+
+/* ── La scheda della commessa ───────────────────────────────────────────── */
+
+.pg-scheda-commessa { display: flex; flex-direction: column; gap: var(--sp-8); max-width: 720px; }
+.pg-blocco { display: flex; flex-direction: column; gap: var(--sp-4); }
+.pg-griglia-campi {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--sp-4) var(--sp-5);
+  /* Le righe si allineano in alto: le note sotto ai campi sono lunghe quanto
+     serve, e centrarle sposterebbe il campo accanto. */
+  align-items: start;
+}
+
+.pg-tabella { display: flex; flex-direction: column; }
+.pg-tabella-riga {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-2) 0;
+  border-bottom: 1px solid var(--line-soft);
+}
+.pg-tabella-nota { font-size: var(--fs-micro); color: var(--disabled); }
+.pg-tabella-riga .pg-scarta { align-self: center; }
+.pg-cresce { flex: 1; min-width: 0; font-size: var(--fs-meta); color: var(--text-2); }
+.pg-campo-stretto { flex: 0 0 68px; text-align: right; font-variant-numeric: tabular-nums; }
+.pg-campo-stretto-medio { flex: 0 0 auto; width: auto; }
+.pg-colore {
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  background: none;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  cursor: pointer;
+}
+.pg-aggiungi { display: flex; align-items: center; gap: var(--sp-3); }
+.pg-aggiungi .pg-campo { flex: 1; }
+.pg-aggiungi .pg-btn { flex: 0 0 auto; }
+.pg-conferma {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  flex-wrap: wrap;
+  padding: var(--sp-4);
+  background: var(--surface);
+  border: 1px solid var(--accent-line);
+  border-radius: var(--r);
+  font-size: var(--fs-meta);
+  color: var(--text-2);
+}
+.pg-conferma .pg-btn { flex: 0 0 auto; }
+.pg-conferma .pg-memo { flex: 1 0 100%; margin: 0; }
+
+/* ── Il riepilogo: tutta la commessa in una tabella ──────────────────────── */
+
+.pg-riepilogo { display: flex; flex-direction: column; max-width: 900px; }
+.pg-riep-riga {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-2);
+  border-bottom: 1px solid var(--line-soft);
+  font-size: var(--fs-meta);
+  color: var(--text-2);
+  cursor: pointer;
+}
+@media (hover: hover) { .pg-riep-riga:hover { background: var(--surface); } }
+.pg-riep-riga.scelta { background: var(--accent-tint); box-shadow: inset 2px 0 0 var(--accent); }
+.pg-riep-testa, .pg-riep-totale { cursor: default; }
+.pg-riep-testa {
+  font-size: var(--fs-micro);
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+@media (hover: hover) { .pg-riep-testa:hover, .pg-riep-totale:hover { background: none; } }
+.pg-riep-totale { border-top: 1px solid var(--line); border-bottom: none; color: var(--text); }
+.pg-riep-nome { flex: 1; min-width: 0; display: flex; align-items: center; gap: var(--sp-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pg-riep-num { flex: 0 0 86px; text-align: right; font-variant-numeric: tabular-nums; }
+.pg-riep-scoperto { color: var(--danger); }
+.pg-riep-azione { flex: 0 0 76px; text-align: right; }
+.pg-riep-link {
+  padding: 0;
+  background: none;
+  border: none;
+  color: var(--accent);
+  font-family: var(--font-ui);
+  font-size: var(--fs-micro);
+  cursor: pointer;
+}
+.pg-consuntivo {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  padding: var(--sp-5);
+  background: var(--surface);
+  border-left: 2px solid var(--accent);
+}
+.pg-consuntivo .pg-btn { align-self: flex-start; flex: 0 0 auto; }
+
+/* ── Le voci nuove: a campi, o incollate ─────────────────────────────────── */
+
+.pg-nuove {
+  margin-top: var(--sp-6);
+  padding: var(--sp-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  border: 1px dashed var(--line);
+  border-radius: var(--r);
+}
+.pg-nuove-testa { display: flex; align-items: center; gap: var(--sp-3); }
+/* Dentro la scomposizione il riquadro è già disegnato dal suo, e la colonna
+   del dettaglio è larga 306 px: il titolo va a capo da solo e le due schede
+   restano leggibili invece di spezzarsi in tre righe. */
+.pg-scomponi .pg-nuove { margin: 0; padding: 0; border: none; }
+.pg-dettaglio .pg-nuove-testa { flex-wrap: wrap; }
+.pg-dettaglio .pg-nuove-testa .eyebrow { flex: 1 0 100%; }
+.pg-righe { display: flex; flex-direction: column; gap: var(--sp-2); }
+.pg-riga-campi { display: flex; align-items: center; gap: var(--sp-3); }
+/* Le larghezze stanno su classi e non su `:first-child`: la scomposizione ha
+   due colonne invece di quattro, e con i selettori di posizione il titolo
+   prendeva la misura del pacchetto. */
+.pg-c-pacchetto { flex: 0 0 150px; }
+.pg-c-titolo { flex: 1; min-width: 0; }
+.pg-c-ore { flex: 0 0 68px; text-align: right; font-variant-numeric: tabular-nums; }
+.pg-c-risorsa { flex: 0 0 130px; }
+.pg-nuove .pg-btn, .pg-incolla-piede .pg-btn { flex: 0 0 auto; }
+
+.pg-scarta-riga { display: flex; align-items: center; gap: var(--sp-5); }
+
+/* Da telefono le tabelle a colonne fisse non ci stanno: le righe si spezzano
+   invece di scorrere in orizzontale, che su un elenco di numeri è peggio. */
+@media (max-width: 860px) {
+  .pg-griglia-campi { grid-template-columns: minmax(0, 1fr); }
+  /* Il titolo prende una riga tutta sua e sta in cima: è il campo che si
+     scrive sempre, e in fondo a quattro colonne strette sparirebbe. */
+  .pg-riga-campi { flex-wrap: wrap; }
+  .pg-c-titolo { flex: 1 0 100%; order: -1; }
+  .pg-c-pacchetto, .pg-c-risorsa { flex: 1 0 110px; }
+  .pg-riga-campi-testa { display: none; }
+  .pg-riep-num { flex: 0 0 58px; font-size: var(--fs-chip); }
+  .pg-riep-azione { flex: 0 0 auto; }
 }

@@ -274,6 +274,9 @@ export const PROGRAMMA = {
     commessa: {
       nome: '2573 · Sottopasso ferroviario', codice: '2573', oreVendute: 1200,
       inizio: g(-90), fine: g(120), settimaneDa: null, settimaneA: null,
+      // Collegata alla sua sezione: è da lì che le liste prendono il nome
+      // `2573.A60-…`, ed è il caso che si vuole vedere provando la vista.
+      sezione: '2573-ABS', sezioneId: 'sec-2573',
     },
     risorse: [
       { nome: 'Michele', oreSettimana: 20 },
@@ -306,8 +309,11 @@ export const PROGRAMMA = {
   },
   'pg-2601': {
     version: 1, id: 'pg-2601',
-    commessa: { nome: '2601 · Villa', codice: '2601', oreVendute: 300, inizio: null, fine: null,
-      settimaneDa: null, settimaneA: null },
+    // Spenta e vuota apposta: è il programma su cui si prova la scheda della
+    // commessa, che prima di questa versione non esisteva e lasciava una
+    // commessa così com'era nata.
+    commessa: { nome: '2601 · Villa', codice: '', oreVendute: 0, inizio: null, fine: null,
+      settimaneDa: null, settimaneA: null, sezione: null, sezioneId: null },
     risorse: [], pacchetti: [], voci: [], carico: {},
   },
 };

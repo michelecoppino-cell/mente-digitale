@@ -112,7 +112,7 @@ cose che non si ricostruiscono da una cronologia.
 | `src/use*.js` | i pezzi che stavano in `App.jsx` e non c'entravano con lui: la campanella, le scadenze ricorrenti, i colori, le sveglie |
 | `src/programma.js` | il Programma di commessa: i conti, le chiavi del carico, lo stato derivato di una voce. Niente rete, niente React: è il file su cui girano le prove |
 | `src/programmaStore.js` | gli stessi programmi su OneDrive: registro, un documento per commessa, `reapply` che unisce per chiave |
-| `src/programma/` | la vista: la matrice e la sua tastiera, l'elenco voci, il dettaglio, attiva, incolla in massa |
+| `src/programma/` | la vista: la matrice e la sua tastiera, l'elenco voci, il dettaglio, attiva, le voci nuove (a campi o incollate), il riepilogo, la scheda della commessa, la guida |
 | `src/planner/` | la griglia del Piano (misure, colori, conti) e i suoi componenti: settimana, mese, capacità, modale evento |
 | `src/tokens.css` | colori, tipografia, spazi, raggi — la sola fonte |
 | `src/tempo.js` | il giorno locale, l'ora, le durate — scritti una volta sola |

@@ -178,7 +178,7 @@ Sette destinazioni, ognuna con un indirizzo proprio. Il menù è il rail a sinis
 | `#/piano` | Il Piano: serbatoio, giornata a blocchi, capacità della giornata, pannello di dettaglio |
 | `#/attivita` | Le cinque colonne del flusso, con la lente Scadenza (`?vista=`, `?ctx=`) |
 | `#/sezioni/:id` | Plancia della sezione: OneNote, percorsi, attività, dettaglio, oggi |
-| `#/programma/:id?` | Il Programma di commessa: ore vendute, pacchetti, matrice risorsa × settimana, voci |
+| `#/programma/:id?` | Il Programma di commessa: ore vendute, pacchetti, matrice risorsa × settimana, voci, riepilogo |
 | `#/diario` | Diario |
 | `#/mappa` | La mappa mentale |
 
@@ -596,6 +596,22 @@ dell'attivazione una voce non esiste da nessuna parte tranne che qui: non nel
 pool, non nel Piano, non suona, non scade. Zero rumore per costruzione, non per
 un filtro che qualcuno si ricorda di applicare.
 
+Il pannello ha **quattro schede, ed è l'ordine in cui si lavora**: Matrice e
+Elenco voci sono il lavoro di tutti i giorni, Riepilogo è la domanda del
+coordinatore — come sta messa tutta la commessa, non un pacchetto alla volta —
+e Impostazioni è la mezz'ora in cui si mette in piedi il programma e poi quasi
+mai più: la commessa, le persone, i pacchetti, tutti correggibili. Dentro c'è
+anche un «come si usa», perché il pannello ha quattro oggetti che si somigliano
+(commessa, pacchetto, voce, cella) e due numeri che apposta non coincidono, e
+niente di tutto questo si indovina la prima volta.
+
+**Un programma si collega alla sua sezione**, scelta da una tendina. Non è un
+campo in più da compilare: è quello che decide come si chiamano le liste che
+nasceranno attivando. Una commessa collegata a `2573-ABS` genera
+`2573.A60-Fondazioni-270630`, e da lì la sezione se le ritrova da sola (vedi
+`listsForSection` in `paraConfig.js`). Senza il collegamento il gruppo se lo
+inventa lo slug del nome, e la lista nasce orfana.
+
 Tre cose che vale la pena sapere prima di aprirlo:
 
 - **Le voci e le celle sono due dati veri, e non si derivano l'uno dall'altro.**
@@ -608,7 +624,22 @@ Tre cose che vale la pena sapere prima di aprirlo:
   la matrice in due: a sinistra il passato, che si corregge con quanto è andato
   davvero quando ci si passa sopra; a destra la previsione. Un dato solo, nessun
   secondo inserimento — è la stessa approssimazione che si fa a mente guardando
-  un Excel, ed è abbastanza per decidere.
+  un Excel, ed è abbastanza per decidere. Il passato però non si compila cella
+  per cella all'indietro: di quello che è già andato non si sa la distribuzione,
+  si sa il totale — «su A30 Marco ha fatto novanta ore». Quindi dal Riepilogo si
+  scrive **un numero per pacchetto e persona**, spalmato sulle settimane
+  passate: il totale è vero, la distribuzione è dichiaratamente approssimata, ed
+  è la stessa promessa di sopra.
+- **Una voce si scrive in due modi, e portano allo stesso posto.** Quattro campi
+  separati (`pacchetto`, `titolo`, `ore`, `risorsa`) per scriverne una, e una
+  casella da incollare per scriverne duecento. Servono tutti e due: senza
+  l'incolla il caricamento iniziale si ferma alla seconda commessa, senza i
+  campi si ferma alla prima, perché alla prima voce nessuno ha voglia di
+  imparare dove vanno le barre verticali. Lo stesso vale per la scomposizione,
+  che è il medesimo modulo con due colonne in meno. Nel modello leggere il testo
+  (`leggiRigheVoci`) e creare le voci (`conVociDaRighe`) sono due funzioni
+  distinte apposta: due implementazioni col tempo racconterebbero due cose
+  diverse.
 - **Le liste nascono attivando.** Un pacchetto nasce senza lista: una commessa
   con dodici pacchetti non deve creare dodici liste vuote nella vista Attività.
   Alla prima attivazione la lista si crea col nome della convenzione PARA
@@ -631,6 +662,11 @@ Il rischio dichiarato è «costruisco la struttura e poi non me ne faccio niente
 e la mitigazione è strutturale: **nessun'altra vista dipende dal Programma**. Se
 venisse abbandonato resterebbero un file JSON e una voce di menù, e le attività
 già attivate vivono benissimo da sole — non sanno nemmeno di essere nate lì.
+
+Si può portar via una **fotografia**: il documento intero con il giorno nel nome
+(`2573-sottopasso-2026-09-02.json`). Non è un backup — quello è OneDrive, che
+tiene già le versioni — è il programma com'era il giorno in cui è stato mandato
+o discusso, e senza la data nel nome due fotografie si coprirebbero a vicenda.
 
 Fuori dalla prima versione, deciso adesso: niente timesheet, niente dipendenze o
 percorso critico, niente costi in euro, niente zoom mensile, e la saturazione si

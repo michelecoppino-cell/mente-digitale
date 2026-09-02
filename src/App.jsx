@@ -907,6 +907,24 @@ export default function App() {
     }
   }
 
+  // Tutte le sezioni conosciute, in ordine alfabetico: serve al Programma, che
+  // collega una commessa alla sua sezione e le deve poter proporre tutte in una
+  // tendina. Le sezioni si caricano un taccuino alla volta e solo quando si
+  // apre, quindi da sole non basterebbero — vedi `caricaTutteLeSezioni`.
+  const sezioniPiatte = useMemo(
+    () => Object.values(sectionsMap).flat()
+      .map((/** @type {any} */ s) => ({ id: s.id, displayName: s.displayName }))
+      .sort((a, b) => a.displayName.localeCompare(b.displayName, 'it')),
+    [sectionsMap]);
+
+  // Il Programma le chiede aprendo il campo della sezione: `handleExpandNotebook`
+  // esce subito per i taccuini già caricati, e per gli altri passa dalla cache
+  // di query, quindi chiamarla per tutti costa poco e solo la prima volta.
+  const caricaTutteLeSezioni = useCallback(async () => {
+    for (const nb of notebooks) await handleExpandNotebook(nb);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [notebooks]);
+
   // Le liste di una sezione: quella omonima di sempre, più le consegne
   // annidate sotto la commessa (`2573.A60-260831` sta in `2573-ABS`, vedi
   // paraConfig.js). Sono N, non una: una commessa con tre consegne ha tre
@@ -1354,6 +1372,8 @@ export default function App() {
                 todoLists={todoLists}
                 tasks={scheduledTasks || []}
                 poolPronto={scheduledTasks !== null}
+                sezioni={sezioniPiatte}
+                onCaricaSezioni={caricaTutteLeSezioni}
                 onCreateDeliverable={handleCreateDeliverable}
                 onTaskCreato={handleTaskRestored}
                 onTaskRimosso={handleTaskRemoved}
