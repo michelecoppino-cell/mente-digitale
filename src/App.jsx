@@ -10,21 +10,16 @@ import { extractEmailCandidates, extractOneNoteCandidates } from './dailyReview'
 import { parseReminderSubject, reminderMarker, hasReminderMarker } from './deadlineReminders';
 import { shadeColor, DEFAULT_CONFIG } from './plannerShared';
 import { listsForSection, sectionNameForList } from './paraConfig';
-import MindMap from './MindMap';
 import IdentityPanel from './IdentityPanel';
 import SearchOverlay from './SearchOverlay';
 import Panel from './Panel';
-import PlannerView from './PlannerView';
 import GtdClarifyModal from './GtdClarifyModal';
 import ColorSettingsModal from './ColorSettingsModal';
-import DiaryPanel from './DiaryPanel';
-import ActivityBoard from './ActivityBoard';
 import QuickCapture from './QuickCapture';
 import { captureContextFor } from './captureContext';
 import AppShell from './AppShell';
 import ShortcutsPanel from './ShortcutsPanel';
 import TodayView from './TodayView';
-import SectionsView from './SectionsView';
 import { personRoleFor, taskPerson, STATUS_LABELS } from './taskModel';
 import { pushUndo } from './undo';
 import { COLORS, BUILD_TIME, PREFERRED_LOGIN_HINT } from './config';
@@ -34,6 +29,32 @@ import { useSveglie } from './useSveglie';
 import './App.css';
 import { ymd } from './tempo.js';
 
+// ── Le viste, caricate quando ci si va ──────────────────────────────────────
+//
+// «Oggi» è la vista che si apre: dall'icona sulla schermata Home, da un
+// segnalibro, da `/`. Le altre cinque si raggiungono con un tocco sul menù, e
+// fino a quel tocco non c'è ragione che stiano nel primo scaricamento — che su
+// un telefono in giro, sulla rete misurata dalla prova di connessione, è
+// l'unica attesa che si vede davvero.
+//
+// Il peso non era piccolo: la Mappa si porta dietro D3 (115 kB), il Piano è il
+// file più grosso dell'app, e insieme a Diario, Sezioni e Attività facevano
+// più della metà del pacchetto iniziale. Adesso «Oggi» ne scarica la metà, e
+// ogni altra vista arriva quando la si apre — una volta sola, poi resta in
+// cache come ogni altro chunk.
+//
+// **Cosa NON cambia: quello che «Oggi» mostra di suo.** Il riquadro del Diario
+// e le azioni della giornata non vengono da questi file — vengono da
+// `diary.js` e `taskModel.js`, moduli piccoli che TodayView importa
+// direttamente e che restano nel primo scaricamento come prima. `DiaryPanel` è
+// la vista del Diario a schermo intero, `ActivityBoard` sono le cinque colonne
+// del flusso: due schermate intere che «Oggi» non apre. Il dato è lo stesso e
+// arriva dalla stessa cache di query, prima come dopo.
+const MindMap = lazy(() => import('./MindMap'));
+const PlannerView = lazy(() => import('./PlannerView'));
+const DiaryPanel = lazy(() => import('./DiaryPanel'));
+const SectionsView = lazy(() => import('./SectionsView'));
+const ActivityBoard = lazy(() => import('./ActivityBoard'));
 const FinanzeSection = lazy(() => import('./finanze/FinanzeSection'));
 
 const DEFAULT_COLOR_SETTINGS = { notebooks: {}, sections: {} };
@@ -1444,105 +1465,108 @@ export default function App() {
         topbar={topbar}
         onCapture={() => setCaptureOpen(true)}
         onOpenSettings={() => setColorSettingsOpen(true)}>
-        <Routes>
-          <Route path="/oggi" element={
-            <TodayView
-              plans={dailyPlans}
-              tasks={scheduledTasks || []}
-              todoLists={todoLists}
-              calendarEvents={sectionCalendarEvents}
-              onCompleteBlock={handleCompleteBlock}
-              onOpenIdentity={setIdentityOpen}
-            />
-          } />
+        {/* L'attesa mentre la vista arriva. Una riga sola e non uno scheletro:
+            il chunk di una vista pesa qualche decina di kB e su una rete
+            normale non fa in tempo a vedersi, mentre su una lenta uno
+            scheletro finto a tutta pagina somiglia troppo a un'app che si è
+            aperta vuota — che è esattamente l'equivoco da evitare. */}
+        <Suspense fallback={<div className="vista-attesa muted">Caricamento…</div>}>
+          <Routes>
+            <Route path="/oggi" element={
+              <TodayView
+                plans={dailyPlans}
+                tasks={scheduledTasks || []}
+                todoLists={todoLists}
+                calendarEvents={sectionCalendarEvents}
+                onCompleteBlock={handleCompleteBlock}
+                onOpenIdentity={setIdentityOpen}
+              />
+            } />
 
-          <Route path="/piano" element={
-            <PlannerView
-              open
-              onClose={() => navigate('/oggi')}
-              preloadedTasks={scheduledTasks || []}
-              notebooks={notebooks}
-              sectionsMap={sectionsMap}
-              todoLists={todoLists}
-              autoAddTask={pendingPlannerTask}
-              onAutoAdded={() => setPendingPlannerTask(null)}
-              onTaskCompleted={handleTaskRemoved}
-              onTaskDeleted={handleTaskRemoved}
-              onTaskRenamed={(listId, taskId, titolo) => handleTaskPatched(listId, taskId, { titolo })}
-              onTaskDueChanged={(listId, taskId, scadenza) => handleTaskPatched(listId, taskId, { scadenza })}
-              onTaskPatched={handleTaskPatched}
-              onTaskRestored={handleTaskRestored}
-              calendarDirtyToken={calendarDirtyToken}
-            />
-          } />
-
-          <Route path="/attivita" element={
-            <ActivityBoard
-              tasks={scheduledTasks || []}
-              todoLists={todoLists}
-              plans={dailyPlans}
-              config={plannerConfig}
-              loading={scheduledTasks === null}
-              notebooks={notebooks}
-              sectionsMap={sectionsMap}
-              onClarify={task => { setClarifyTask(task); setGtdSeedText(task.titolo || ''); setGtdOpen(true); }}
-              onChangeStatus={handleChangeTaskStatus}
-              onSchedule={handleScheduleTask}
-              onUnschedule={handleUnscheduleTask}
-              onTaskRemoved={handleTaskRemoved}
-              onTaskPatched={handleTaskPatched}
-              onTaskRestored={handleTaskRestored}
-            />
-          } />
-
-          <Route path="/sezioni/:sectionId?" element={
-            <SectionsView
-              notebooks={notebooks}
-              sectionsMap={sectionsMap}
-              todoLists={todoLists}
-              tasks={scheduledTasks || []}
-              pagesCache={pagesCache}
-              plans={dailyPlans}
-              onPlansChanged={handlePlansChanged}
-              onTaskRemoved={handleTaskRemoved}
-              onTaskPatched={handleTaskPatched}
-              onTaskRestored={handleTaskRestored}
-              onCreateDeliverable={handleCreateDeliverable}
-              onRenameDeliverable={handleRenameDeliverable}
-            />
-          } />
-
-          <Route path="/diario" element={<DiaryPanel />} />
-
-          {/* Finanze porta con sé recharts e sette pagine di tabelle: mezzo
-              megabyte che non deve pesare sull'avvio di «Oggi», visto che è la
-              sezione in cui si entra qualche volta al mese. Caricata alla prima
-              visita e poi in cache come ogni chunk. */}
-          <Route path="/finanze/:sezione?" element={
-            <Suspense fallback={<div className="finanze-attesa muted">Caricamento…</div>}>
-              <FinanzeSection />
-            </Suspense>
-          } />
-
-          <Route path="/mappa" element={
-            <div className="canvas-area">
-              <MindMap
+            <Route path="/piano" element={
+              <PlannerView
+                open
+                onClose={() => navigate('/oggi')}
+                preloadedTasks={scheduledTasks || []}
                 notebooks={notebooks}
                 sectionsMap={sectionsMap}
-                todoListsMap={todoListsMap}
-                todoCountMap={todoCountMap}
-                viewMode={mapViewMode}
-                onSelectSection={handleSelectSection}
-                onExpandNotebook={handleExpandNotebook}
-                externalZoom={zoom}
-                onZoomChange={setZoom}
-                onIdentityOpen={setIdentityOpen}
+                todoLists={todoLists}
+                autoAddTask={pendingPlannerTask}
+                onAutoAdded={() => setPendingPlannerTask(null)}
+                onTaskCompleted={handleTaskRemoved}
+                onTaskDeleted={handleTaskRemoved}
+                onTaskRenamed={(listId, taskId, titolo) => handleTaskPatched(listId, taskId, { titolo })}
+                onTaskDueChanged={(listId, taskId, scadenza) => handleTaskPatched(listId, taskId, { scadenza })}
+                onTaskPatched={handleTaskPatched}
+                onTaskRestored={handleTaskRestored}
+                calendarDirtyToken={calendarDirtyToken}
               />
-            </div>
-          } />
+            } />
 
-          <Route path="*" element={<Navigate to="/oggi" replace />} />
-        </Routes>
+            <Route path="/attivita" element={
+              <ActivityBoard
+                tasks={scheduledTasks || []}
+                todoLists={todoLists}
+                plans={dailyPlans}
+                config={plannerConfig}
+                loading={scheduledTasks === null}
+                notebooks={notebooks}
+                sectionsMap={sectionsMap}
+                onClarify={task => { setClarifyTask(task); setGtdSeedText(task.titolo || ''); setGtdOpen(true); }}
+                onChangeStatus={handleChangeTaskStatus}
+                onSchedule={handleScheduleTask}
+                onUnschedule={handleUnscheduleTask}
+                onTaskRemoved={handleTaskRemoved}
+                onTaskPatched={handleTaskPatched}
+                onTaskRestored={handleTaskRestored}
+              />
+            } />
+
+            <Route path="/sezioni/:sectionId?" element={
+              <SectionsView
+                notebooks={notebooks}
+                sectionsMap={sectionsMap}
+                todoLists={todoLists}
+                tasks={scheduledTasks || []}
+                pagesCache={pagesCache}
+                plans={dailyPlans}
+                onPlansChanged={handlePlansChanged}
+                onTaskRemoved={handleTaskRemoved}
+                onTaskPatched={handleTaskPatched}
+                onTaskRestored={handleTaskRestored}
+                onCreateDeliverable={handleCreateDeliverable}
+                onRenameDeliverable={handleRenameDeliverable}
+              />
+            } />
+
+            <Route path="/diario" element={<DiaryPanel />} />
+
+            {/* Finanze porta con sé recharts e sette pagine di tabelle: mezzo
+                megabyte che non deve pesare sull'avvio di «Oggi», visto che è la
+                sezione in cui si entra qualche volta al mese. L'attesa è quella
+                comune a tutte le viste, qui sopra. */}
+            <Route path="/finanze/:sezione?" element={<FinanzeSection />} />
+
+            <Route path="/mappa" element={
+              <div className="canvas-area">
+                <MindMap
+                  notebooks={notebooks}
+                  sectionsMap={sectionsMap}
+                  todoListsMap={todoListsMap}
+                  todoCountMap={todoCountMap}
+                  viewMode={mapViewMode}
+                  onSelectSection={handleSelectSection}
+                  onExpandNotebook={handleExpandNotebook}
+                  externalZoom={zoom}
+                  onZoomChange={setZoom}
+                  onIdentityOpen={setIdentityOpen}
+                />
+              </div>
+            } />
+
+            <Route path="*" element={<Navigate to="/oggi" replace />} />
+          </Routes>
+        </Suspense>
       </AppShell>
 
       {/* Bussola e Visione sono un modale a schermo intero, non un pezzo della
