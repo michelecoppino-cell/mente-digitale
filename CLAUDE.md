@@ -99,6 +99,7 @@ cose che non si ricostruiscono da una cronologia.
 | `src/auth.js` | MSAL, la coda dei token, il rinnovo programmato, la scatola nera |
 | `src/queryClient.js` | TanStack Query, le chiavi, la persistenza col suo tetto |
 | `src/poolAttivita.js` | il serbatoio delle attività: una lettura della cache, non uno stato |
+| `src/use*.js` | i pezzi che stavano in `App.jsx` e non c'entravano con lui: la campanella, le scadenze ricorrenti, i colori, le sveglie |
 | `src/tokens.css` | colori, tipografia, spazi, raggi — la sola fonte |
 | `src/tempo.js` | il giorno locale, l'ora, le durate — scritti una volta sola |
 | `src/finanze/` | isola TypeScript, dati in IndexedDB, backup su OneDrive |

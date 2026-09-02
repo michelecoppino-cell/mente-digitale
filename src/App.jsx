@@ -1,17 +1,15 @@
 // @ts-nocheck — non ancora controllato dai tipi. È un debito dichiarato, non
 // una scelta: vedi la nota in jsconfig.json. Si toglie questa riga, si
 // sistema quello che salta fuori, e il file entra col resto.
-import { useState, useEffect, useMemo, useRef, lazy, Suspense } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef, lazy, Suspense } from 'react';
 import { Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { initAuth, getAccount, login, trySsoSilent, getAuthDiagnostics, onInteractionRequired, isInteractionRequired, reconnect, startTokenKeepAlive, cambiaAccount } from './auth';
-import { getNotebooks, getSections, getPages, getRecentEmails, getPageContentHtml, markOneNoteTagDone, getReminders, getCalendarEvents, invalidateCalendarsCache, loadColorSettings, saveColorSettings, migrateLegacyDriveFiles, loadPlannerConfig, loadDailyPlans, saveDailyPlans, provaConnessione, mapLimit } from './api';
-import { elencoListe, leggiTask, leggiTaskAperti, creaTask, aggiornaTask, creaLista, rinominaLista } from './taskStore';
+import { getNotebooks, getSections, getPages, getCalendarEvents, invalidateCalendarsCache, loadColorSettings, migrateLegacyDriveFiles, loadPlannerConfig, loadDailyPlans, saveDailyPlans, provaConnessione, mapLimit } from './api';
+import { elencoListe, leggiTaskAperti, aggiornaTask, creaLista, rinominaLista } from './taskStore';
 import { migraSeServe } from './taskMigrazione';
-import { getMarker, setMarker, clearMarkers } from './markers';
+import { clearMarkers } from './markers';
 import { queryClient, qk, STALE } from './queryClient';
-import { extractEmailCandidates, extractOneNoteCandidates } from './dailyReview';
-import { parseReminderSubject, reminderMarker, hasReminderMarker } from './deadlineReminders';
-import { shadeColor, DEFAULT_CONFIG } from './plannerShared';
+import { DEFAULT_CONFIG } from './plannerShared';
 import { listsForSection, sectionNameForList } from './paraConfig';
 import IdentityPanel from './IdentityPanel';
 import SearchOverlay from './SearchOverlay';
@@ -26,7 +24,10 @@ import TodayView from './TodayView';
 import { personRoleFor, taskPerson, STATUS_LABELS } from './taskModel';
 import { pushUndo } from './undo';
 import { usePoolAttivita, cambiaAttivitaInPool, aggiungiAlPool } from './poolAttivita';
-import { COLORS, BUILD_TIME, PREFERRED_LOGIN_HINT } from './config';
+import { useDailyReview } from './useDailyReview';
+import { useScadenzeRicorrenti } from './useScadenzeRicorrenti';
+import { useColoriSezioni, coloraTaccuino, coloraSezioni, COLORI_VUOTI } from './useColoriSezioni';
+import { BUILD_TIME, PREFERRED_LOGIN_HINT } from './config';
 import UndoToast from './UndoToast';
 import SvegliaAlert from './SvegliaAlert';
 import { useSveglie } from './useSveglie';
@@ -60,33 +61,6 @@ const DiaryPanel = lazy(() => import('./DiaryPanel'));
 const SectionsView = lazy(() => import('./SectionsView'));
 const ActivityBoard = lazy(() => import('./ActivityBoard'));
 const FinanzeSection = lazy(() => import('./finanze/FinanzeSection'));
-
-const DEFAULT_COLOR_SETTINGS = { notebooks: {}, sections: {} };
-
-// Applica gli override di colore (persistiti, vedi initColorSettings /
-// applyColorSettings) a un taccuino o alle sue sezioni, mutandoli sul posto —
-// stessa convenzione già in uso per nb._color prima di questa feature, così
-// tutte le viste che leggono nb._color/sec._color vedono da subito il colore
-// scelto dall'utente invece di quello assegnato automaticamente per indice.
-function applyNotebookColor(nb, index, overrides) {
-  nb._color = overrides.notebooks[nb.id] || COLORS[index % COLORS.length];
-}
-
-function applySectionColors(nb, sections, overrides) {
-  (sections || []).forEach((s, i) => {
-    s._color = overrides.sections[s.id] || shadeColor(nb._color || '#888', i);
-  });
-}
-
-const REVIEW_SEEN_TTL = 7 * 24 * 60 * 60 * 1000;      // 7 giorni
-const NOTES_LOOKBACK_MS = 2 * 24 * 60 * 60 * 1000;    // fallback alla prima scansione: ultime 48h
-const REVIEW_LAST_CHECK_KEY = 'review_last_check';
-const REVIEW_LAST_CHECK_TTL = 30 * 24 * 60 * 60 * 1000; // 30 giorni
-const REVIEW_PAGES_CAP = 40; // tetto di sicurezza sulle pagine il cui contenuto viene scaricato per intero
-
-const DEADLINE_LAST_CHECK_KEY = 'deadline_reminders_last_check';
-const DEADLINE_LAST_CHECK_TTL = 30 * 24 * 60 * 60 * 1000; // 30 giorni
-const DEADLINE_LOOKBACK_MS = 7 * 24 * 60 * 60 * 1000;     // fallback alla prima scansione: ultimi 7 giorni
 
 // I file dell'app sono passati dalla root di OneDrive alla cartella
 // `mente-digitale/`, e i registri che crescono di un file al mese (diario e
@@ -130,28 +104,6 @@ function readMapViewMode() {
     const saved = localStorage.getItem(MAP_VIEW_MODE_KEY);
     return saved === 'para' || saved === 'workbook' ? saved : 'workbook';
   } catch { return 'workbook'; }
-}
-
-function suggestionSignature(a) {
-  return `${a.source || 'email'}::${a.title || ''}::${a.extractedAction || ''}`;
-}
-
-function markSuggestionSeen(sig) {
-  const seen = getMarker('review_seen') || [];
-  if (!seen.includes(sig)) {
-    setMarker('review_seen', [...seen, sig].slice(-300), REVIEW_SEEN_TTL);
-  }
-}
-
-// cutoffMs: timestamp assoluto, non una durata — così la Daily Review può
-// scansionare solo le pagine modificate dall'ultimo controllo riuscito in poi
-// (vedi refreshDailyReview), invece di rifare sempre l'intera finestra delle
-// ultime 48h. Copertura più ampia nel tempo, senza riscaricare da capo il
-// contenuto di pagine già viste.
-function filterRecentPages(pages, cutoffMs) {
-  return pages
-    .filter(p => p.lastModifiedDateTime && new Date(p.lastModifiedDateTime).getTime() >= cutoffMs)
-    .sort((a, b) => new Date(b.lastModifiedDateTime) - new Date(a.lastModifiedDateTime));
 }
 
 // L'endpoint "flat" /me/onenote/pages risponde 400 sugli account Microsoft
@@ -409,15 +361,37 @@ export default function App() {
   const [gtdOpen, setGtdOpen] = useState(false);
   const [captureOpen, setCaptureOpen] = useState(() => launchIntent() === 'gtd');
   const [pendingPlannerTask, setPendingPlannerTask] = useState(null);
-  const [reviewSuggestions, setReviewSuggestions] = useState([]);
-  const [reviewOpen, setReviewOpen] = useState(false);
-  const [reviewLoading, setReviewLoading] = useState(false);
+
   const [gtdSeedText, setGtdSeedText] = useState('');
-  const [colorSettings, setColorSettings] = useState(DEFAULT_COLOR_SETTINGS);
   const [colorSettingsOpen, setColorSettingsOpen] = useState(false);
-  const colorSettingsRef = useRef(DEFAULT_COLOR_SETTINGS);
-  const colorSettingsLoadedRef = useRef(false);
   const notebooksRef = useRef([]);
+
+  // ── I tre pezzi che stavano qui dentro e non c'entravano con niente ──────
+  // La campanella delle proposte, le scadenze ricorrenti e i colori: tre cose
+  // che non si parlano fra loro e non si parlano col resto del caricamento.
+  // Stavano tutte in questo file perché è dove capita di scriverle, non perché
+  // gli servisse essere qui.
+  const review = useDailyReview();
+
+  const controllaScadenze = useScadenzeRicorrenti(aggiungiAlPool);
+
+  // Un colore appena scelto va visto subito, quindi si ridipinge quello che è
+  // già in memoria invece di ricaricare: i colori si scrivono addosso ai
+  // taccuini e alle sezioni (`_color`), che è la convenzione che tutte le viste
+  // leggono.
+  const ridipingi = useCallback((/** @type {any} */ scelti) => {
+    const nbs = notebooksRef.current;
+    nbs.forEach((nb, i) => coloraTaccuino(nb, i, scelti));
+    setNotebooks([...nbs]);
+    setSectionsMap(prec => {
+      Object.entries(prec).forEach(([nbId, sezioni]) => {
+        const nb = nbs.find(n => n.id === nbId);
+        if (nb) coloraSezioni(nb, sezioni, scelti);
+      });
+      return { ...prec };
+    });
+  }, []);
+  const colori = useColoriSezioni(ridipingi);
   const pagesCache = useRef({});
   // Config del Piano: la vista Attività ne ha bisogno per i colori di
   // progetto, altrimenti mostrerebbe quelli segnaposto del default.
@@ -614,14 +588,12 @@ export default function App() {
   function dipingiUltimoCaricamento(forceRefresh) {
     let qualcosa = false;
 
-    const overrides = queryClient.getQueryData(qk.colorSettings()) || DEFAULT_COLOR_SETTINGS;
-    colorSettingsRef.current = overrides;
-    setColorSettings(overrides);
+    const overrides = colori.ricevi(queryClient.getQueryData(qk.colorSettings()) || null);
 
     const nbs = queryClient.getQueryData(qk.notebooks());
     if (nbs?.length) {
       qualcosa = true;
-      nbs.forEach((nb, i) => applyNotebookColor(nb, i, overrides));
+      nbs.forEach((nb, i) => coloraTaccuino(nb, i, overrides));
       notebooksRef.current = nbs;
       setNotebooks(nbs);
 
@@ -630,7 +602,7 @@ export default function App() {
         for (const nb of nbs) {
           const sects = queryClient.getQueryData(qk.sections(nb.id));
           if (sects) {
-            applySectionColors(nb, sects, overrides);
+            coloraSezioni(nb, sects, overrides);
             sectMap[nb.id] = sects;
           }
         }
@@ -708,10 +680,7 @@ export default function App() {
           registraProblema('Colori (file su OneDrive)', e);
           return queryClient.getQueryData(qk.colorSettings()) || null;
         });
-      const overrides = colorCfg || DEFAULT_COLOR_SETTINGS;
-      colorSettingsRef.current = overrides;
-      colorSettingsLoadedRef.current = true;
-      setColorSettings(overrides);
+      const overrides = colori.ricevi(colorCfg);
 
       // Config del Piano: serve alla vista Attività per i colori di progetto.
       // Non è bloccante — se non arriva si resta sul default e i task si
@@ -733,7 +702,7 @@ export default function App() {
         registraProblema('Taccuini OneNote', e);
         nbs = queryClient.getQueryData(qk.notebooks()) || [];
       }
-      nbs.forEach((nb, i) => applyNotebookColor(nb, i, overrides));
+      nbs.forEach((nb, i) => coloraTaccuino(nb, i, overrides));
       notebooksRef.current = nbs;
       setNotebooks(nbs);
 
@@ -774,7 +743,7 @@ export default function App() {
       for (const nb of nbs) {
         const cached = forceRefresh ? null : queryClient.getQueryData(qk.sections(nb.id));
         if (cached) {
-          applySectionColors(nb, cached, overrides);
+          coloraSezioni(nb, cached, overrides);
           sectMap[nb.id] = cached;
         }
       }
@@ -795,8 +764,8 @@ export default function App() {
         );
       }, 2000);
 
-      refreshDailyReview();
-      refreshDeadlineReminders(lists);
+      review.aggiorna(() => collectAllOneNotePages(pagesCache));
+      controllaScadenze(lists);
 
       // Precarica in coda (dopo task/pagine) tutti gli eventi Calendario dei
       // prossimi mesi in un'unica chiamata: il Pannello sezione li filtra poi
@@ -808,107 +777,6 @@ export default function App() {
       registraProblema('Caricamento', e);
       setProblemi(guai);
       setSync({ state: 'error', label: 'Errore caricamento' });
-    }
-  }
-
-  // Campanella Daily Review: proposte di task da email Outlook recenti + tag
-  // "Da fare" (Ctrl+1) nelle pagine OneNote modificate di recente. Richiamata
-  // all'avvio e su "↺ Aggiorna tutto". Interamente euristica/locale — nessuna
-  // chiamata AI, nessun costo. Ogni proposta viene mostrata una sola volta:
-  // accettata o ignorata, la sua "firma" viene ricordata (localStorage, 7
-  // giorni) così non ricompare più — nessuno sforzo manuale ripetuto.
-  async function refreshDailyReview() {
-    setReviewLoading(true);
-    try {
-      const [emails, pages] = await Promise.all([
-        getRecentEmails().catch(e => { console.error('recent emails', e); return []; }),
-        collectAllOneNotePages(pagesCache).catch(e => { console.error('recent pages', e); return []; }),
-      ]);
-
-      // Scansiona solo le pagine modificate dall'ultimo controllo riuscito in
-      // poi — non più sempre e solo le ultime 48h. Il primo avvio (o dopo una
-      // pausa lunga) ricade sul lookback di 48h con un tetto di sicurezza sul
-      // numero di pagine scaricate per intero; le volte successive, essendo
-      // l'intervallo corto, restano leggere.
-      const lastCheck = getMarker(REVIEW_LAST_CHECK_KEY);
-      const cutoffMs  = lastCheck || (Date.now() - NOTES_LOOKBACK_MS);
-      const recentPages = filterRecentPages(pages, cutoffMs).slice(0, REVIEW_PAGES_CAP);
-
-      const pagesWithHtml = [];
-      for (const p of recentPages) {
-        try {
-          const html = await getPageContentHtml(p.id);
-          pagesWithHtml.push({ ...p, html });
-          await new Promise(r => setTimeout(r, 120));
-        } catch (e) { console.error('page content', p.title, e); }
-      }
-
-      const seen = getMarker('review_seen') || [];
-      const candidates = [
-        ...extractEmailCandidates(emails, 6),
-        ...extractOneNoteCandidates(pagesWithHtml, 8),
-      ];
-      const fresh = candidates
-        .map(a => ({ ...a, id: Math.random().toString(36).slice(2) + Date.now().toString(36), _sig: suggestionSignature(a) }))
-        .filter(a => !seen.includes(a._sig));
-      setReviewSuggestions(fresh);
-      setMarker(REVIEW_LAST_CHECK_KEY, Date.now(), REVIEW_LAST_CHECK_TTL);
-    } catch (e) {
-      console.error('daily review', e);
-    }
-    setReviewLoading(false);
-  }
-
-  // Scadenze ricorrenti (assicurazioni, salute, tasse...): un evento Calendario
-  // ricorrente intitolato "[NOME-LISTA] Titolo", con reminder nativo impostato
-  // con l'anticipo desiderato, fa comparire un task nella lista di
-  // quell'Area nel momento in cui il reminder scatta — letto tramite
-  // reminderView sulla finestra dall'ultimo controllo riuscito a oggi.
-  // Nessuna proposta da accettare: il task compare direttamente e resta lì
-  // finché non lo si spunta.
-  async function refreshDeadlineReminders(todoLists) {
-    try {
-      const lastCheck = getMarker(DEADLINE_LAST_CHECK_KEY);
-      const startISO = new Date(lastCheck || (Date.now() - DEADLINE_LOOKBACK_MS)).toISOString();
-      const endISO = new Date().toISOString();
-
-      const reminders = await getReminders(startISO, endISO);
-      if (!reminders.length) { setMarker(DEADLINE_LAST_CHECK_KEY, Date.now(), DEADLINE_LAST_CHECK_TTL); return; }
-
-      const listByName = new Map((todoLists || []).map(l => [l.displayName.toLowerCase(), l]));
-      const tasksByListId = {};
-
-      for (const r of reminders) {
-        const parsed = parseReminderSubject(r.eventSubject);
-        if (!parsed) continue;
-        const list = listByName.get(parsed.listName.toLowerCase());
-        if (!list) continue;
-
-        const startIso = r.eventStartTime?.dateTime ? new Date(r.eventStartTime.dateTime).toISOString() : '';
-        const marker = reminderMarker(r.eventId, startIso);
-
-        if (!tasksByListId[list.id]) {
-          tasksByListId[list.id] = await leggiTask(list.id).catch(e => { console.error('deadline tasks', list.displayName, e); return []; });
-        }
-        if (tasksByListId[list.id].some(t => hasReminderMarker(t, marker))) continue;
-
-        try {
-          const task = await creaTask(list.id, {
-            titolo: parsed.title,
-            ...(startIso ? { scadenza: startIso.slice(0, 10) } : {}),
-            // Quale occorrenza di quale evento ha generato il task: è così che
-            // alla scansione dopo non lo si ricrea. Prima era un marker nelle
-            // note, adesso è un campo.
-            origineScadenza: marker,
-          });
-          tasksByListId[list.id].push(task);
-          aggiungiAlPool(list.id, task);
-        } catch (e) { console.error('create deadline task', parsed.title, e); }
-      }
-
-      setMarker(DEADLINE_LAST_CHECK_KEY, Date.now(), DEADLINE_LAST_CHECK_TTL);
-    } catch (e) {
-      console.error('deadline reminders', e);
     }
   }
 
@@ -944,32 +812,13 @@ export default function App() {
     } catch (e) { console.error('section calendar events preload', e); }
   }
 
-  // Se il candidato viene da OneNote, spunta subito la riga "Da fare" nella
-  // pagina di origine — sia che venga accettato sia che venga scartato, la
-  // Daily Review l'ha comunque "gestito" e non deve ripresentarlo.
-  function resolveOneNoteSuggestion(suggestion) {
-    if (suggestion.source !== 'onenote') return;
-    markOneNoteTagDone(suggestion.pageId, suggestion.elementId, suggestion.originalTagHtml)
-      .catch(e => console.error('mark onenote tag done', e));
-  }
-
-  // "Crea task" da un suggerimento non crea più un task al volo nella prima
-  // lista disponibile: apre il pannello GTD con il testo già pronto, così
-  // l'utente decide lui dove posizionarlo nel flusso (Farla, Progetto,
-  // Area/Ricorrenti, Risorse, Archivio...).
-  function handleAcceptSuggestion(suggestion, editedText) {
-    markSuggestionSeen(suggestion._sig);
-    resolveOneNoteSuggestion(suggestion);
-    setReviewSuggestions(prev => prev.filter(s => s.id !== suggestion.id));
-    setReviewOpen(false);
-    setGtdSeedText((editedText || suggestion.extractedAction || '').trim());
+  // Accettare una proposta non crea un'attività al volo nella prima lista che
+  // capita: apre il chiarimento col testo già dentro, così a decidere dove va è
+  // chi guarda.
+  /** @param {any} proposta @param {string} [testoCorretto] */
+  function accettaProposta(proposta, testoCorretto) {
+    setGtdSeedText(review.accetta(proposta, testoCorretto));
     setGtdOpen(true);
-  }
-
-  function handleDismissSuggestion(suggestion) {
-    markSuggestionSeen(suggestion._sig);
-    resolveOneNoteSuggestion(suggestion);
-    setReviewSuggestions(prev => prev.filter(s => s.id !== suggestion.id));
   }
 
   // Le liste si leggono a gruppi di quattro e non una per volta.
@@ -1038,61 +887,13 @@ export default function App() {
     if (sectionsMap[nb.id]) return;
     try {
       const sects = await fetchCached(qk.sections(nb.id), () => getSections(nb.id), STALE.sections);
-      applySectionColors(nb, sects, colorSettingsRef.current);
+      coloraSezioni(nb, sects, colori.adesso());
       setSectionsMap(prev => ({ ...prev, [nb.id]: sects }));
       setTimeout(() => sects.forEach(s => enqueuePagePreload(s.id)), 1500);
     } catch (e) {
       console.error('Errore sezioni', nb.displayName, e);
       setSectionsMap(prev => ({ ...prev, [nb.id]: [] }));
     }
-  }
-
-  // Salva i nuovi override colore (localStorage + OneDrive, come workbooks/
-  // planner config) e ricolora subito taccuini/sezioni già in memoria, così
-  // il cambiamento è visibile ovunque senza dover ricaricare la pagina.
-  function applyColorSettings(next) {
-    colorSettingsRef.current = next;
-    setColorSettings(next);
-    queryClient.setQueryData(qk.colorSettings(), next);
-    if (colorSettingsLoadedRef.current) {
-      saveColorSettings(next).catch(e => console.error('save color settings', e));
-    }
-
-    const nbs = notebooksRef.current;
-    nbs.forEach((nb, i) => applyNotebookColor(nb, i, next));
-    setNotebooks([...nbs]);
-
-    setSectionsMap(prev => {
-      Object.entries(prev).forEach(([nbId, sects]) => {
-        const nb = nbs.find(n => n.id === nbId);
-        if (nb) applySectionColors(nb, sects, next);
-      });
-      return { ...prev };
-    });
-  }
-
-  function setNotebookColor(nbId, color) {
-    const cur = colorSettingsRef.current;
-    applyColorSettings({ notebooks: { ...cur.notebooks, [nbId]: color }, sections: cur.sections });
-  }
-
-  function setSectionColor(sectionId, color) {
-    const cur = colorSettingsRef.current;
-    applyColorSettings({ notebooks: cur.notebooks, sections: { ...cur.sections, [sectionId]: color } });
-  }
-
-  function resetNotebookColor(nbId) {
-    const cur = colorSettingsRef.current;
-    const nextNotebooks = { ...cur.notebooks };
-    delete nextNotebooks[nbId];
-    applyColorSettings({ notebooks: nextNotebooks, sections: cur.sections });
-  }
-
-  function resetSectionColor(sectionId) {
-    const cur = colorSettingsRef.current;
-    const nextSections = { ...cur.sections };
-    delete nextSections[sectionId];
-    applyColorSettings({ notebooks: cur.notebooks, sections: nextSections });
   }
 
   // Le liste di una sezione: quella omonima di sempre, più le consegne
@@ -1395,31 +1196,31 @@ export default function App() {
       )}
       <div className="bell-wrap">
         <button
-          className={`search-btn tap-44${reviewOpen ? ' active' : ''}${reviewSuggestions.length ? ' has-badge' : ''}`}
-          onClick={() => setReviewOpen(o => !o)}
+          className={`search-btn tap-44${review.aperta ? ' active' : ''}${review.proposte.length ? ' has-badge' : ''}`}
+          onClick={() => review.apri(o => !o)}
           title="Proposte Daily Review">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
             <path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" />
             <path d="M13.73 21a2 2 0 0 1-3.46 0" />
           </svg>
-          {reviewSuggestions.length > 0 && <span className="header-badge">{reviewSuggestions.length}</span>}
+          {review.proposte.length > 0 && <span className="header-badge">{review.proposte.length}</span>}
         </button>
-        {reviewOpen && (
+        {review.aperta && (
           <div className="bell-dropdown">
             <div className="bell-dropdown-header">
               <span>Daily Review</span>
-              <button onClick={() => setReviewOpen(false)}>✕</button>
+              <button onClick={() => review.apri(false)}>✕</button>
             </div>
-            {reviewLoading && <div className="bell-empty">Analisi email e OneNote in corso…</div>}
-            {!reviewLoading && reviewSuggestions.length === 0 && (
+            {review.inCorso && <div className="bell-empty">Analisi email e OneNote in corso…</div>}
+            {!review.inCorso && review.proposte.length === 0 && (
               <div className="bell-empty">Nessuna proposta al momento.</div>
             )}
-            {!reviewLoading && reviewSuggestions.map(s => (
+            {!review.inCorso && review.proposte.map(s => (
               <BellSuggestionItem
                 key={s.id}
                 suggestion={s}
-                onAccept={handleAcceptSuggestion}
-                onDismiss={handleDismissSuggestion}
+                onAccept={accettaProposta}
+                onDismiss={review.scarta}
               />
             ))}
           </div>
@@ -1616,12 +1417,12 @@ export default function App() {
         onClose={() => setColorSettingsOpen(false)}
         notebooks={notebooks}
         sectionsMap={sectionsMap}
-        overrides={colorSettings}
+        overrides={colori.scelti}
         onExpandNotebook={handleExpandNotebook}
-        onSetNotebookColor={setNotebookColor}
-        onSetSectionColor={setSectionColor}
-        onResetNotebookColor={resetNotebookColor}
-        onResetSectionColor={resetSectionColor}
+        onSetNotebookColor={colori.coloraUnTaccuino}
+        onSetSectionColor={colori.coloraUnaSezione}
+        onResetNotebookColor={colori.riportaTaccuino}
+        onResetSectionColor={colori.riportaSezione}
       />
       <UndoToast />
 
