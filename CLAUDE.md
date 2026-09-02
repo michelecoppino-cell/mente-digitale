@@ -16,7 +16,7 @@ npm run dev         # server di sviluppo
 npm run typecheck   # tsc su jsconfig (JSDoc + checkJs)
 npm run lint        # eslint
 npm run build       # build di produzione in dist/
-npm run prova       # le cinque prove, contro un OneDrive finto in memoria
+npm run prova       # le prove, contro un OneDrive finto in memoria
 ```
 
 `npm run prova` non chiede né rete né account: gira sempre, ovunque, in pochi
@@ -30,12 +30,19 @@ secondi. La CI esegue tutti e quattro i comandi a ogni push e ogni PR.
    tutta la rete che c'è.
 2. Niente push diretto su `main`: branch, PR, merge.
 3. Se hai toccato uno degli strati provati (`graphCore.js`, `api.js`,
-   `taskStore.js`, `taskMigrazione.js`, `paraConfig.js`), aggiungi la verifica che avrebbe
+   `taskStore.js`, `taskMigrazione.js`, `paraConfig.js`, `poolAttivita.js`),
+   aggiungi la verifica che avrebbe
    intercettato quello che hai corretto. Le prove si sono rotte una volta e
    nessuno se n'è accorto per settimane: è successo perché nessuna misura
    diceva che erano rotte.
 
 ## Le cose che non si toccano
+
+**Il serbatoio delle attività si scrive in un posto solo.** Le attività aperte
+stanno nella cache di query, una voce per lista, e il pool è una lettura di
+quella (`poolAttivita.js`). Non tenerne una copia in uno stato React o in un
+`ref`: c'erano, e tenerle in pari a mano era la classe di difetti da cui
+nascevano le schermate che mostravano la versione di prima.
 
 **Un'attività ha uno e un solo stato.** Otto stati, la colonna in cui appare è
 *derivata* da lì e non è mai un'etichetta salvata a parte. Due non sono un
@@ -91,6 +98,7 @@ cose che non si ricostruiscono da una cronologia.
 | `src/paraConfig.js` | i nomi PARA e le consegne annidate (`2573.A60-260831`) |
 | `src/auth.js` | MSAL, la coda dei token, il rinnovo programmato, la scatola nera |
 | `src/queryClient.js` | TanStack Query, le chiavi, la persistenza col suo tetto |
+| `src/poolAttivita.js` | il serbatoio delle attività: una lettura della cache, non uno stato |
 | `src/tokens.css` | colori, tipografia, spazi, raggi — la sola fonte |
 | `src/tempo.js` | il giorno locale, l'ora, le durate — scritti una volta sola |
 | `src/finanze/` | isola TypeScript, dati in IndexedDB, backup su OneDrive |
@@ -134,11 +142,10 @@ Cose note, già decise, da non riscoprire:
 - **`PlannerView.jsx`, 3.000 righe.** `WeeklyTimeline`, `MonthlyCalendar` e
   `CalendarEventModal` sono già componenti a sé dentro lo stesso file: si
   separano un pezzo per PR, non tutti insieme.
-- **Il pool delle attività esiste in tre copie** in `App.jsx` — stato React, un
-  ref, e la cache di query — tenute in pari a mano da `updateTasksEverywhere`.
-  La strada è `useQuery`, come già fa `useDatoPersistito` per i documenti di
-  «Oggi».
-- **Il PIN delle Finanze non è cifratura** ed è dichiarato tale: SHA-256 senza
-  sale di sei cifre, e l'hash sta dentro il backup su OneDrive. Copre lo schermo
-  da chi passa in ufficio, e per quello basta — ma un export condiviso lo porta
-  con sé.
+- **Il PIN delle Finanze non è cifratura, ed è giusto così.** SHA-256 senza
+  sale di sei cifre, e l'hash viaggia dentro il backup su OneDrive. Non è una
+  svista da correggere: serve a coprire lo schermo da chi passa vicino alla
+  scrivania, e per quello basta. Irrobustirlo — sale, PBKDF2, l'hash fuori dal
+  documento sincronizzato — costerebbe il PIN da rimettere e la sincronizzazione
+  fra dispositivi, cioè peggiorerebbe l'unica cosa che deve fare. L'unica cosa
+  da sapere: chi riceve un export ha anche il PIN.

@@ -25,6 +25,7 @@ import ShortcutsPanel from './ShortcutsPanel';
 import TodayView from './TodayView';
 import { personRoleFor, taskPerson, STATUS_LABELS } from './taskModel';
 import { pushUndo } from './undo';
+import { usePoolAttivita, cambiaAttivitaInPool, aggiungiAlPool } from './poolAttivita';
 import { COLORS, BUILD_TIME, PREFERRED_LOGIN_HINT } from './config';
 import UndoToast from './UndoToast';
 import SvegliaAlert from './SvegliaAlert';
@@ -418,8 +419,6 @@ export default function App() {
   const colorSettingsLoadedRef = useRef(false);
   const notebooksRef = useRef([]);
   const pagesCache = useRef({});
-  const tasksCache = useRef({});
-  const [scheduledTasks, setScheduledTasks] = useState(null);
   // Config del Piano: la vista Attività ne ha bisogno per i colori di
   // progetto, altrimenti mostrerebbe quelli segnaposto del default.
   const [plannerConfig, setPlannerConfig] = useState(DEFAULT_CONFIG);
@@ -427,6 +426,12 @@ export default function App() {
   // chiarimento (per scegliere la sezione). todoListsRef non basta: è un ref,
   // non fa ri-renderizzare quando arriva.
   const [todoLists, setTodoLists] = useState([]);
+  // Il serbatoio delle attività non è uno stato: è una lettura della cache di
+  // query, lista per lista. Vedi poolAttivita.js — prima esisteva in tre copie
+  // tenute in pari a mano, e tenerle in pari era la classe di difetti da
+  // togliere. `null` finché non è arrivata nessuna lista: è quello che fa
+  // comparire lo scheletro invece di un «non c'è niente da fare».
+  const scheduledTasks = usePoolAttivita(todoLists);
   // I piani giornalieri decidono quali task sono `scheduled`: lo stato non è
   // sul task ma nell'esistenza di un blocco nel piano.
   const [dailyPlans, setDailyPlans] = useState({});
@@ -642,20 +647,8 @@ export default function App() {
       lists.forEach(l => { map[l.displayName.toLowerCase()] = { id: l.id, displayName: l.displayName }; });
       setTodoListsMap(map);
 
-      // Le attività dell'ultimo caricamento, lista per lista. Solo se almeno
-      // una c'è: `scheduledTasks` a `null` vuol dire «sto ancora caricando» e
-      // fa comparire lo scheletro, un elenco vuoto vuol dire «non c'è niente
-      // da fare oggi» — e le due cose non si possono scambiare.
-      const attivita = [];
-      let qualcheLista = false;
-      for (const l of lists) {
-        const tasks = queryClient.getQueryData(qk.tasks(l.id));
-        if (!tasks) continue;
-        qualcheLista = true;
-        tasksCache.current[l.id] = tasks;
-        tasks.forEach(t => attivita.push({ ...t, _listName: l.displayName, _listId: l.id }));
-      }
-      if (qualcheLista) setScheduledTasks(attivita);
+      // Le attività dell'ultimo caricamento non vanno dipinte: appena le liste
+      // sono in stato, il pool le legge da sé dalla cache (poolAttivita.js).
     }
 
     const plans = queryClient.getQueryData(qk.dailyPlans());
@@ -687,7 +680,6 @@ export default function App() {
       queryClient.invalidateQueries();
       invalidateCalendarsCache();
       pagesCache.current = {};
-      tasksCache.current = {};
     }
 
     // I guai di questo caricamento, uno per passo che non è riuscito. Servono
@@ -910,7 +902,7 @@ export default function App() {
             origineScadenza: marker,
           });
           tasksByListId[list.id].push(task);
-          setScheduledTasks(prev => [...(prev || []), { ...task, _listName: list.displayName, _listId: list.id }]);
+          aggiungiAlPool(list.id, task);
         } catch (e) { console.error('create deadline task', parsed.title, e); }
       }
 
@@ -996,29 +988,21 @@ export default function App() {
     /** @type {{dove: string, messaggio: string}[]} */
     const problemiTask = [];
 
-    const perLista = await mapLimit(lists, LISTE_INSIEME, async l => {
-      /** @param {any[]} tasks */
-      const decora = tasks => tasks.map(t => ({ ...t, _listName: l.displayName, _listId: l.id }));
+    // Le letture riempiono la cache, e basta: il pool si ricava da lì e si
+    // aggiorna da sé man mano che le liste rispondono. Prima veniva composto
+    // qui e scritto in uno stato a parte, che è la copia che poi bisognava
+    // ricordarsi di tenere in pari a ogni modifica.
+    await mapLimit(lists, LISTE_INSIEME, async l => {
       try {
-        const tasks = await fetchCached(qk.tasks(l.id), () => leggiTaskAperti(l.id), STALE.tasks, forceRefresh);
-        tasksCache.current[l.id] = tasks;
-        return decora(tasks);
+        await fetchCached(qk.tasks(l.id), () => leggiTaskAperti(l.id), STALE.tasks, forceRefresh);
       } catch (e) {
         console.error('preload tasks', l.displayName, e);
         problemiTask.push({ dove: `Attività · ${l.displayName}`, messaggio: descriviErrore(e) });
-        // Non lasciare la lista vuota per un errore transitorio (es. 401 dopo
-        // una pausa lunga): ripiega sull'ultima copia in cache così l'utente
-        // non vede la pianificazione sparire del tutto.
-        const stale = queryClient.getQueryData(qk.tasks(l.id));
-        if (!stale) return [];
-        tasksCache.current[l.id] = stale;
-        return decora(stale);
+        // La copia vecchia resta dov'è: un errore transitorio (un 401 dopo una
+        // pausa lunga) non deve far sparire la pianificazione dallo schermo.
       }
     });
 
-    // `mapLimit` restituisce nell'ordine delle liste, non in quello in cui
-    // hanno risposto: il pool resta ordinato come l'elenco, come prima.
-    setScheduledTasks(perLista.flat());
     const anyError = problemiTask.length > 0;
     if (anyError) {
       // In coda a quelli del caricamento, non al loro posto: il pannello di
@@ -1173,45 +1157,31 @@ export default function App() {
   async function handleRenameDeliverable(listId, displayName) {
     const renamed = await rinominaLista(listId, displayName);
     await refreshTodoLists();
-    // I task portano con sé il nome della lista (`_listName`): dopo una
-    // rinomina quello vecchio direbbe la scadenza sbagliata.
-    setScheduledTasks(prev => (prev || []).map(t => t._listId === listId ? { ...t, _listName: displayName } : t));
+    // Il nome della lista non si conserva dentro l'attività: il pool lo
+    // riattacca a ogni lettura da `todoLists`, quindi la rinomina si vede da
+    // sé — e una consegna appena rinominata non mostra più la scadenza vecchia.
     return renamed;
   }
 
-  // Aggiorna la lista globale dei task (e la cache del Panel di sezione) dopo
-  // un completamento/eliminazione/rinomina fatti dal pannello Piano, così
-  // Task Pool e Panel restano coerenti senza dover
-  // ricaricare tutto da Graph.
-  function updateTasksEverywhere(listId, updater) {
-    setScheduledTasks(prev => updater(prev || []));
-    if (tasksCache.current[listId]) {
-      tasksCache.current[listId] = updater(tasksCache.current[listId]);
-    }
-    // Anche la copia in cache della lista. È quella da cui la scheda di
-    // dettaglio si dipinge appena aperta (vedi TaskDetailPanel.daMemoria) e
-    // quella che si ritrova riaprendo l'app: lasciarla indietro voleva dire
-    // vedere per un istante la versione di prima di ogni cosa appena
-    // cambiata.
-    queryClient.setQueryData(qk.tasks(listId), (/** @type {any[]|undefined} */ prec) => (
-      prec ? updater(prec) : prec
-    ));
-  }
+  // Una modifica fatta da una scheda — completata, eliminata, rinominata,
+  // spostata di stato — si scrive nella cache della sua lista, e basta. Il
+  // pool, il pannello di sezione e la scheda di dettaglio leggono tutti di lì
+  // (vedi poolAttivita.js), quindi la vedono insieme.
 
-  // Completamento ed eliminazione hanno lo stesso effetto locale: il task
-  // sparisce da pool e cache di sezione.
+  // Completamento ed eliminazione hanno lo stesso effetto locale: l'attività
+  // sparisce dall'elenco della sua lista.
   function handleTaskRemoved(listId, taskId) {
-    updateTasksEverywhere(listId, tasks => tasks.filter(t => t.id !== taskId));
+    cambiaAttivitaInPool(listId, tasks => tasks.filter(t => t.id !== taskId));
   }
 
   function handleTaskPatched(listId, taskId, patch) {
-    updateTasksEverywhere(listId, tasks => tasks.map(t => t.id === taskId ? { ...t, ...patch } : t));
+    cambiaAttivitaInPool(listId, tasks => tasks.map(t => t.id === taskId ? { ...t, ...patch } : t));
   }
 
-  // Simmetrico a handleTaskRemoved: rimette un task (ricreato da un undo di
-  // eliminazione/completamento) nel pool globale.
+  // Simmetrico a handleTaskRemoved: rimette un'attività ricreata da un undo di
+  // eliminazione o di completamento.
   function handleTaskRestored(listId, task) {
-    updateTasksEverywhere(listId, tasks => [...tasks, task]);
+    aggiungiAlPool(listId, task);
   }
 
   // ── Vista Attività: le transizioni di stato ──────────────────────────────
@@ -1360,7 +1330,10 @@ export default function App() {
     setNotebooks([]);
     notebooksRef.current = [];
     setSectionsMap({});
-    setScheduledTasks(null);
+    // Le attività restano a schermo mentre si ricaricano. Prima si azzeravano,
+    // e per qualche secondo «Aggiorna tutto» dava un'app vuota: è il contrario
+    // di quello che fa il resto del caricamento, che dipinge l'ultima copia e
+    // la sostituisce quando la risposta arriva.
     await load(true);
   }
 
@@ -1596,7 +1569,6 @@ export default function App() {
       <Panel
         selected={selected}
         pagesCache={pagesCache}
-        tasksCache={tasksCache}
         calendarEvents={sectionCalendarEvents}
         onClose={() => setSelected(null)}
       />
@@ -1605,7 +1577,7 @@ export default function App() {
         todoLists={todoLists}
         context={captureContext}
         onClose={() => setCaptureOpen(false)}
-        onCaptured={task => setScheduledTasks(prev => [...(prev || []), task])}
+        onCaptured={task => aggiungiAlPool(task._listId, task)}
         onDecideNow={text => { setGtdSeedText(text); setGtdOpen(true); }}
       />
       <GtdClarifyModal
@@ -1617,7 +1589,7 @@ export default function App() {
         notebooks={notebooks}
         sectionsMap={sectionsMap}
         onTaskCreated={(task, { addToday }) => {
-          setScheduledTasks(prev => [...(prev || []), task]);
+          aggiungiAlPool(task._listId, task);
           if (addToday) { setPendingPlannerTask(task); navigate('/piano'); }
         }}
         onTaskRemoved={handleTaskRemoved}
