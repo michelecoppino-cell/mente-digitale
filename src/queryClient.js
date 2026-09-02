@@ -51,6 +51,10 @@ export const STALE = {
   // d'accordo: modificare la Bussola dal pannello deve cambiare il desiderio
   // del giorno subito, non al prossimo ricaricamento della pagina.
   identita:        30 * MIN,
+  // Il Programma di commessa: due documenti su OneDrive che si scrivono a
+  // mano, uno per commessa. Si guardano a lungo e cambiano poco.
+  programmi:       15 * MIN,
+  programma:       15 * MIN,
 };
 
 // gcTime lungo: un dato diventato "vecchio" resta comunque in cache (e
@@ -107,6 +111,10 @@ export const qk = {
   calEventiSezioni: () => /** @type {const} */ (['calEventiSezioni']),
   /** @param {'bussola'|'visione'} quale */
   identita:         (quale) => /** @type {const} */ (['identita', quale]),
+  // Programma di commessa
+  programmi:        () => /** @type {const} */ (['programmi']),
+  /** @param {string} id */
+  programma:        (id) => /** @type {const} */ (['programma', id]),
 };
 
 // ── Persistenza su localStorage ──────────────────────────────────────────────

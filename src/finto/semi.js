@@ -226,3 +226,88 @@ export const BUSSOLA = {
       content: '1. Rivedere il mare d\'inverno\n2. Finire la casa sull\'albero\n3. Imparare a fare il pane\n4. Portare il bambino in montagna\n5. Rileggere un libro che mi è piaciuto dieci anni fa' },
   ],
 };
+
+// ── Il programma di commessa ────────────────────────────────────────────────
+// Una commessa vera è larga sei mesi e ha una decina di pacchetti: senza dati
+// dentro, la matrice è una griglia vuota e non dice se il disegno regge.
+
+const settimana = (/** @type {number} */ quante) => {
+  const d = new Date();
+  d.setDate(d.getDate() + quante * 7);
+  const t = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  t.setDate(t.getDate() + 3 - ((t.getDay() + 6) % 7));
+  const primo = new Date(t.getFullYear(), 0, 4);
+  primo.setDate(primo.getDate() + 3 - ((primo.getDay() + 6) % 7));
+  const n = 1 + Math.round((t.getTime() - primo.getTime()) / 86400000) / 7;
+  return `${t.getFullYear()}-W${String(n).padStart(2, '0')}`;
+};
+
+const PACCHETTI = [
+  { id: 'pk-a20', nome: 'A20 Geotecnica', listId: null, colore: '#7fb488' },
+  { id: 'pk-a30', nome: 'A30 Fondazioni', listId: 'l-2573a', colore: '#d4a44a' },
+  { id: 'pk-a40', nome: 'A40 Strutture', listId: null, colore: '#a07bd0' },
+  { id: 'pk-a50', nome: 'A50 Impianti', listId: null, colore: '#5b9bd5' },
+];
+
+/** @type {Record<string, number>} */
+const CARICO = {};
+for (const [risorsa, pacchetto, da, ore] of /** @type {[string, string, number, number][]} */ ([
+  ['Michele', 'pk-a30', -6, 8], ['Michele', 'pk-a30', -3, 12], ['Michele', 'pk-a30', 0, 10],
+  ['Michele', 'pk-a40', 1, 14], ['Michele', 'pk-a40', 2, 16],
+  ['Marco', 'pk-a30', -4, 30], ['Marco', 'pk-a30', -1, 34], ['Marco', 'pk-a40', 0, 36],
+  ['Marco', 'pk-a40', 1, 28], ['Marco', 'pk-a40', 3, 20],
+  ['Sara', 'pk-a20', -5, 18], ['Sara', 'pk-a20', -2, 16], ['Sara', 'pk-a50', 2, 12],
+])) {
+  CARICO[`${risorsa}|${pacchetto}|${settimana(da)}`] = ore;
+}
+
+export const PROGRAMMI = [
+  { id: 'pg-2573', nome: '2573 · Sottopasso ferroviario', file: 'programmi/2573-sottopasso.json', attivo: true },
+  { id: 'pg-2601', nome: '2601 · Villa', file: 'programmi/2601-villa.json', attivo: false },
+];
+
+/** @type {Record<string, any>} */
+export const PROGRAMMA = {
+  'pg-2573': {
+    version: 1,
+    id: 'pg-2573',
+    commessa: {
+      nome: '2573 · Sottopasso ferroviario', codice: '2573', oreVendute: 1200,
+      inizio: g(-90), fine: g(120), settimaneDa: null, settimaneA: null,
+    },
+    risorse: [
+      { nome: 'Michele', oreSettimana: 20 },
+      { nome: 'Marco', oreSettimana: 35 },
+      { nome: 'Sara', oreSettimana: 28 },
+    ],
+    pacchetti: PACCHETTI,
+    voci: [
+      { id: 'vc-1', titolo: 'Relazione geotecnica', nota: 'Attesa prove dal laboratorio.', pacchettoId: 'pk-a20',
+        padreId: null, ore: 120, oreIniziali: 120, risorsa: 'Sara', finestra: { da: settimana(-5), a: settimana(-1) },
+        scartata: false, taskId: null, listId: null, creatoIl: istante(g(-60), '09:00'), attivataIl: null },
+      { id: 'vc-2', titolo: 'Fondazioni', nota: '', pacchettoId: 'pk-a30', padreId: null,
+        ore: 410, oreIniziali: 360, risorsa: null, finestra: null, scartata: false,
+        taskId: null, listId: null, creatoIl: istante(g(-60), '09:05'), attivataIl: null },
+      { id: 'vc-3', titolo: 'Calcolo plinti P1-P4', nota: '', pacchettoId: 'pk-a30', padreId: 'vc-2',
+        ore: 120, oreIniziali: 120, risorsa: 'Marco', finestra: { da: settimana(-2), a: settimana(1) },
+        scartata: false, taskId: 't-a1', listId: 'l-2573a', creatoIl: istante(g(-40), '09:00'),
+        attivataIl: istante(g(-10), '09:00') },
+      { id: 'vc-4', titolo: 'Platea e muri di sostegno', nota: '', pacchettoId: 'pk-a30', padreId: 'vc-2',
+        ore: 290, oreIniziali: 290, risorsa: null, finestra: { da: settimana(1), a: settimana(6) },
+        scartata: false, taskId: null, listId: null, creatoIl: istante(g(-40), '09:02'), attivataIl: null },
+      { id: 'vc-5', titolo: 'Impalcato — carpenteria', nota: '', pacchettoId: 'pk-a40', padreId: null,
+        ore: 260, oreIniziali: 260, risorsa: 'Marco', finestra: { da: settimana(0), a: settimana(4) },
+        scartata: false, taskId: null, listId: null, creatoIl: istante(g(-35), '10:00'), attivataIl: null },
+      { id: 'vc-6', titolo: 'Drenaggio e pompe', nota: '', pacchettoId: 'pk-a50', padreId: null,
+        ore: 96, oreIniziali: 96, risorsa: null, finestra: { da: settimana(3), a: settimana(8) },
+        scartata: false, taskId: null, listId: null, creatoIl: istante(g(-30), '11:00'), attivataIl: null },
+    ],
+    carico: CARICO,
+  },
+  'pg-2601': {
+    version: 1, id: 'pg-2601',
+    commessa: { nome: '2601 · Villa', codice: '2601', oreVendute: 300, inizio: null, fine: null,
+      settimaneDa: null, settimaneA: null },
+    risorse: [], pacchetti: [], voci: [], carico: {},
+  },
+};
