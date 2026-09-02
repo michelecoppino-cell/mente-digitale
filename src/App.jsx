@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useRef, lazy, Suspense } from 'react';
 import { Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { initAuth, getAccount, login, trySsoSilent, getAuthDiagnostics, onInteractionRequired, isInteractionRequired, reconnect, startTokenKeepAlive, cambiaAccount } from './auth';
-import { getNotebooks, getSections, getPages, getRecentEmails, getPageContentHtml, markOneNoteTagDone, getReminders, getCalendarEvents, invalidateCalendarsCache, loadColorSettings, saveColorSettings, migrateLegacyDriveFiles, loadPlannerConfig, loadDailyPlans, saveDailyPlans, provaConnessione } from './api';
+import { getNotebooks, getSections, getPages, getRecentEmails, getPageContentHtml, markOneNoteTagDone, getReminders, getCalendarEvents, invalidateCalendarsCache, loadColorSettings, saveColorSettings, migrateLegacyDriveFiles, loadPlannerConfig, loadDailyPlans, saveDailyPlans, provaConnessione, mapLimit } from './api';
 import { elencoListe, leggiTask, leggiTaskAperti, creaTask, aggiornaTask, creaLista, rinominaLista } from './taskStore';
 import { migraSeServe } from './taskMigrazione';
 import { getMarker, setMarker, clearMarkers } from './markers';
@@ -977,32 +977,46 @@ export default function App() {
     setReviewSuggestions(prev => prev.filter(s => s.id !== suggestion.id));
   }
 
+  // Le liste si leggono a gruppi di quattro e non una per volta.
+  //
+  // Erano in fila indiana con duecento millisecondi di pausa in mezzo: con
+  // venti liste sono venti risposte aspettate una dopo l'altra più quattro
+  // secondi di attese volute, ed è tutto tempo che passa fra «Caricamento…» e
+  // le attività sullo schermo — sul telefono, dove una risposta ne vale sei o
+  // sette di secondi, è l'attesa che si nota. Il freno serviva a non farsi
+  // rispondere 429 da Graph, e a quattro per volta il freno c'è ancora: è la
+  // stessa misura con cui `mapLimit` legge i calendari in api.js, e adesso è
+  // la stessa funzione.
+  const LISTE_INSIEME = 4;
+
   async function preloadAllTasks(lists, forceRefresh = false) {
-    const allTasks = [];
-    let anyError = false;
     /** @type {{dove: string, messaggio: string}[]} */
     const problemiTask = [];
-    for (const l of lists) {
+
+    const perLista = await mapLimit(lists, LISTE_INSIEME, async l => {
+      /** @param {any[]} tasks */
+      const decora = tasks => tasks.map(t => ({ ...t, _listName: l.displayName, _listId: l.id }));
       try {
         const tasks = await fetchCached(qk.tasks(l.id), () => leggiTaskAperti(l.id), STALE.tasks, forceRefresh);
         tasksCache.current[l.id] = tasks;
-        tasks.forEach(t => allTasks.push({ ...t, _listName: l.displayName, _listId: l.id }));
-        await new Promise(r => setTimeout(r, 200));
+        return decora(tasks);
       } catch (e) {
         console.error('preload tasks', l.displayName, e);
-        anyError = true;
         problemiTask.push({ dove: `Attività · ${l.displayName}`, messaggio: descriviErrore(e) });
         // Non lasciare la lista vuota per un errore transitorio (es. 401 dopo
         // una pausa lunga): ripiega sull'ultima copia in cache così l'utente
         // non vede la pianificazione sparire del tutto.
         const stale = queryClient.getQueryData(qk.tasks(l.id));
-        if (stale) {
-          tasksCache.current[l.id] = stale;
-          stale.forEach(t => allTasks.push({ ...t, _listName: l.displayName, _listId: l.id }));
-        }
+        if (!stale) return [];
+        tasksCache.current[l.id] = stale;
+        return decora(stale);
       }
-    }
-    setScheduledTasks(allTasks);
+    });
+
+    // `mapLimit` restituisce nell'ordine delle liste, non in quello in cui
+    // hanno risposto: il pool resta ordinato come l'elenco, come prima.
+    setScheduledTasks(perLista.flat());
+    const anyError = problemiTask.length > 0;
     if (anyError) {
       // In coda a quelli del caricamento, non al loro posto: il pannello di
       // stato deve mostrare tutto quello che non è riuscito, non solo l'ultima

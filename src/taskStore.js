@@ -279,21 +279,46 @@ export function fileLibero(nome, esistenti) {
 // resto.
 const REGISTRO_TTL = 30_000;
 
-/** @type {{ valore: { version: number, migrazioneTodo?: string, liste: ListaRegistrata[] }, scade: number }|null} */
+/** @typedef {{ version: number, migrazioneTodo?: string, liste: ListaRegistrata[] }} Registro */
+
+/** @type {{ valore: Registro, scade: number }|null} */
 let _registro = null;
 
+// La lettura in volo, non solo quella finita. La copia qui sopra si riempie
+// quando la risposta arriva: fino a quel momento non c'è niente da riusare, e
+// chi legge nel frattempo va a chiedere il file per conto suo. Con le letture
+// in fila indiana non si vedeva — la seconda partiva quando la prima aveva già
+// scritto la copia — ma appena si legge più di una lista insieme diventano
+// altrettante richieste dello stesso identico file, tutte all'avvio, che è il
+// momento in cui la rete serve per altro.
+/** @type {Promise<Registro>|null} */
+let _registroInVolo = null;
+
 /** Butta la copia del registro: dopo una scrittura, o cambiando trasporto. */
-export function dimenticaRegistro() { _registro = null; }
+export function dimenticaRegistro() { _registro = null; _registroInVolo = null; }
 
 /**
  * @param {{ fresco?: boolean }} [opts] `fresco` salta la copia e rilegge il file
- * @returns {Promise<{ version: number, migrazioneTodo?: string, liste: ListaRegistrata[] }>}
+ * @returns {Promise<Registro>}
  */
 export async function leggiRegistro(opts = {}) {
   if (!opts.fresco && _registro && _registro.scade > Date.now()) return _registro.valore;
-  const valore = normalizzaRegistro(await leggiDoc(FILE_REGISTRO, null));
-  _registro = { valore, scade: Date.now() + REGISTRO_TTL };
-  return valore;
+  // Una rilettura dichiarata `fresco` vuole il file, non l'attesa di qualcun
+  // altro: è quello che si chiede dopo aver creato una consegna.
+  if (!opts.fresco && _registroInVolo) return _registroInVolo;
+  const lettura = (async () => {
+    const valore = normalizzaRegistro(await leggiDoc(FILE_REGISTRO, null));
+    _registro = { valore, scade: Date.now() + REGISTRO_TTL };
+    return valore;
+  })();
+  _registroInVolo = lettura;
+  try {
+    return await lettura;
+  } finally {
+    // Anche se è andata male: una lettura fallita non deve restare appesa a
+    // far aspettare le prossime una risposta che non arriverà mai.
+    if (_registroInVolo === lettura) _registroInVolo = null;
+  }
 }
 
 /**
