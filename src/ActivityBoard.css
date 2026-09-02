@@ -168,6 +168,10 @@
    striscia si accende d'ocra, altrimenti una posta arrivata o un'idea
    rimandata resterebbero nascoste dietro un grigio identico a quello del
    vuoto. Il colore vale anche da colonna aperta, sulla testata. */
+/* Ocra quando c'è qualcosa dentro: vale per le colonne che si riducono —
+   Inbox e «Un giorno» — e per le due aree in fondo, «Da chiedere» e
+   «Delegati». Sono tutte cose ferme che nessuno guarderebbe di sua iniziativa:
+   il colore è quello che le fa notare da una schermata intera di grigio. */
 .ab-col.flagged.collapsed { background: var(--accent-tint); }
 .ab-col.flagged .ab-strip { color: var(--accent); }
 .ab-col.flagged .ab-strip-count,
@@ -311,6 +315,13 @@
 }
 
 .ab-area.drag-over { background: rgba(212, 164, 74, .05); }
+/* «Da chiedere» e «Delegati» si accendono quando hanno qualcosa dentro, come
+   le colonne ridotte: chiuse sono una riga sola in fondo alla colonna, e a
+   grigio su grigio una cosa ferma in mano a qualcun altro non si vede più. */
+.ab-area.flagged > .ab-area-head,
+.ab-area.flagged > .ab-area-head .eyebrow,
+.ab-area.flagged > .ab-area-head .ab-count { color: var(--accent); }
+.ab-area.flagged:not(.expanded) { background: var(--accent-tint); }
 
 /* Chiusa è una riga sola in fondo alla colonna: il chevron, il nome, quante
    sono. Aperta cresce verso l'alto fin dove le si concede, poi scorre per
@@ -450,7 +461,6 @@
 
 /* ── Meta ─────────────────────────────────────────────────────────────── */
 
-.ab-est { font-size: var(--fs-micro); color: var(--disabled); white-space: nowrap; }
 
 .ab-waiting {
   max-width: 90px;

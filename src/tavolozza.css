@@ -1,0 +1,113 @@
+/* La tavolozza dei colori: il popup che si apre dal pallino di un workbook,
+   di un taccuino, di una sezione o di un calendario.
+   Stava in PlannerView.css, dov'era nata insieme al pannello Workbook. Ma la
+   stessa tavolozza si apre dal pannello Colori (ingranaggio → Impostazioni),
+   che si raggiunge da qualunque vista: fuori dal Piano quel foglio non è
+   caricato, e senza `position: fixed` e senza larghezza il popup diventava un
+   blocco alto quanto la pagina — il riposizionamento non convergeva mai e la
+   scheda si spegneva. Le regole viaggiano col componente, non con la vista da
+   cui è partito. */
+
+/* Popup colore — renderizzato in un portale su document.body e posizionato
+   in position:fixed (vedi WorkbookPool.jsx) così non viene mai tagliato
+   dall'overflow-y del pannello Workbook né intrappolato in uno stacking
+   context locale come succedeva con l'assoluto dentro alla riga. */
+.workbook-color-picker-backdrop { position: fixed; inset: 0; z-index: 1499; }
+.workbook-color-picker-popup {
+  position: fixed;
+  z-index: 1500;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  background: var(--surface2);
+  border: 1px solid var(--border2);
+  border-radius: 10px;
+  padding: 12px;
+  box-shadow: 0 12px 34px rgba(0,0,0,0.5);
+  width: 224px;
+  font-family: var(--font-ui);
+}
+.workbook-color-picker-preview {
+  height: 34px;
+  border-radius: 7px;
+  border: 1px solid rgba(255,255,255,0.18);
+}
+.workbook-color-picker-swatches {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.workbook-color-swatch {
+  width: 18px; height: 18px;
+  border-radius: 50%;
+  border: 1px solid rgba(255,255,255,0.25);
+  cursor: pointer;
+  padding: 0;
+  flex-shrink: 0;
+}
+@media (hover: hover) {
+  .workbook-color-swatch:hover { transform: scale(1.15); }
+}
+.workbook-color-native {
+  width: 22px; height: 22px;
+  border: none;
+  background: none;
+  cursor: pointer;
+  padding: 0;
+  flex-shrink: 0;
+}
+.workbook-color-picker-sliders {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.workbook-color-slider-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.workbook-color-slider-label {
+  width: 12px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+}
+.workbook-color-slider-r input[type="range"] { accent-color: #e0685f; }
+.workbook-color-slider-g input[type="range"] { accent-color: #6cbf6c; }
+.workbook-color-slider-b input[type="range"] { accent-color: #5f9fe0; }
+.workbook-color-slider-row input[type="range"] {
+  flex: 1;
+  min-width: 0;
+}
+.workbook-color-slider-num {
+  width: 42px;
+  background: var(--surface);
+  border: 1px solid var(--border2);
+  border-radius: 5px;
+  color: var(--text);
+  font-size: 11px;
+  padding: 2px 4px;
+  text-align: right;
+}
+.workbook-color-picker-hex-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--muted);
+  border-top: 1px solid var(--border);
+  padding-top: 8px;
+}
+.workbook-color-hex-input {
+  flex: 1;
+  background: var(--surface);
+  border: 1px solid var(--border2);
+  border-radius: 5px;
+  color: var(--text);
+  font-size: 12px;
+  font-family: 'Menlo', 'Consolas', monospace;
+  padding: 4px 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}

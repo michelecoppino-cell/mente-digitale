@@ -496,7 +496,6 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.sv-task-est { flex: 0 0 auto; font-size: var(--fs-micro); color: var(--disabled); font-variant-numeric: tabular-nums; }
 
 /* Si trascina sulla colonna Oggi per programmarla: la mano lo dice. */
 .sv-task { cursor: grab; }
@@ -553,7 +552,6 @@
    resta da collocare, senza rimetterla a piano una seconda volta. */
 .sv-task.scheduled { color: var(--muted); }
 .sv-task.scheduled .sv-task-title { color: var(--muted); }
-.sv-task.scheduled .sv-task-est { color: var(--disabled); }
 .sv-task.scheduled .sv-task-dot { background: none !important; box-shadow: inset 0 0 0 1px var(--muted); }
 
 /* La selezione vince sul grigio: l'attività aperta nel dettaglio si vede
@@ -634,6 +632,13 @@
 /* Il numero acceso: zero è una notizia buona e resta spento, da uno in su è
    roba ferma in mano a qualcun altro e va guardata. */
 .sv-persone-count.acceso { color: var(--accent); font-weight: 600; }
+
+/* E con lui tutta la riga, chiusa — la stessa formattazione delle aree «Da
+   chiedere» e «Delegati» nella vista Attività: sono le stesse tre categorie,
+   e devono farsi notare allo stesso modo in tutte e due le schermate. */
+.sv-persone.acceso > .sv-persone-head,
+.sv-persone.acceso > .sv-persone-head .eyebrow { color: var(--accent); }
+.sv-persone.acceso:not(.expanded) { background: var(--accent-tint); }
 /* La riga a zero resta, ma non si apre: non c'è niente sotto. */
 .sv-persone-head:disabled { cursor: default; }
 .sv-persone-head:disabled .sv-persone-chevron { opacity: .25; }

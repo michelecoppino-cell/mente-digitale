@@ -1,0 +1,185 @@
+/* Il guscio dei modali del Piano, e il modulo dell'evento.
+   Stava in PlannerView.css, dove era nato: il modale si apriva solo da lì.
+   Adesso il modale dell'evento si apre anche da «Oggi», che è nel primo
+   scaricamento e non carica il foglio di stile del Piano — le sue regole
+   devono viaggiare con il componente, non con la vista da cui è partito.
+   I nomi restano `planner-*`: sono le stesse classi che gli altri modali del
+   Piano usano, e rinominarle qui vorrebbe dire toccarli tutti. */
+
+/* ── Il guscio: velo, riquadro, testata ── */
+.planner-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.65);
+  z-index: 300;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.planner-modal {
+  background: var(--surface);
+  border: 1px solid var(--border2);
+  border-radius: 12px;
+  width: min(480px, 90vw);
+  max-height: 80vh;
+  overflow-y: auto;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+}
+
+.planner-modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border);
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text);
+}
+.planner-modal-header button {
+  background: none; border: none; color: var(--muted); cursor: pointer;
+  font-size: 14px; transition: color 0.12s;
+}
+@media (hover: hover) {
+  .planner-modal-header button:hover { color: var(--text); }
+}
+
+.planner-modal-body { padding: 16px 20px; }
+
+.planner-modal-loading {
+  font-size: 12px;
+  color: var(--muted);
+  text-align: center;
+  padding: 16px 0;
+}
+
+.planner-modal-step {
+  display: flex;
+  gap: 8px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+  color: var(--text);
+  line-height: 1.4;
+}
+.planner-modal-step:last-of-type { border-bottom: none; margin-bottom: 14px; }
+.planner-modal-step span:first-child { color: var(--accent); flex-shrink: 0; }
+
+.planner-modal-hint {
+  font-size: 11px;
+  color: var(--muted);
+  margin-bottom: 8px;
+}
+.planner-modal-step.selectable {
+  cursor: pointer;
+  border-radius: 5px;
+  padding: 7px 8px;
+  margin: 0 -8px;
+  transition: background 0.12s;
+  align-items: center;
+}
+@media (hover: hover) {
+  .planner-modal-step.selectable:hover { background: rgba(255,255,255,0.05); }
+}
+.planner-modal-step.selectable.selected { background: rgba(212,164,74,0.08); }
+.planner-modal-step.selectable.done .planner-modal-step-text { text-decoration: line-through; color: var(--muted); }
+.planner-modal-check { font-size: 14px; flex-shrink: 0; color: var(--accent); }
+.planner-modal-step-text { flex: 1; }
+.planner-modal-done-badge {
+  font-size: 11px; color: var(--muted);
+  border: 1px solid var(--border2); border-radius: 3px; padding: 0 4px;
+}
+
+.planner-modal-apply-btn {
+  background: none;
+  border: 1px solid var(--accent);
+  color: var(--accent);
+  padding: 7px 18px;
+  border-radius: 7px;
+  font-size: 12px;
+  cursor: pointer;
+  font-family: var(--font-ui);
+  transition: background 0.15s;
+  width: 100%;
+}
+@media (hover: hover) {
+  .planner-modal-apply-btn:hover { background: rgba(212,164,74,0.1); }
+}
+.planner-modal-apply-btn:disabled { opacity: 0.4; cursor: default; }
+
+/* ── Add/edit calendar event form ── */
+.planner-event-form { display: flex; flex-direction: column; gap: 12px; }
+.planner-modal-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.planner-modal-select {
+  background: var(--surface2);
+  border: 1px solid var(--border2);
+  border-radius: 6px;
+  color: var(--text);
+  font-size: 12px;
+  font-family: var(--font-ui);
+  padding: 6px 8px;
+  width: 100%;
+  box-sizing: border-box;
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: normal;
+}
+.planner-modal-select:focus { outline: none; border-color: var(--accent); }
+input[type="date"].planner-modal-select,
+input[type="time"].planner-modal-select { cursor: pointer; }
+input[type="date"].planner-modal-select::-webkit-calendar-picker-indicator,
+input[type="time"].planner-modal-select::-webkit-calendar-picker-indicator {
+  filter: invert(0.7);
+  cursor: pointer;
+}
+.planner-modal-checkbox-field {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+  color: var(--text);
+  cursor: pointer;
+}
+.planner-event-time-row {
+  display: flex;
+  gap: 10px;
+}
+.planner-event-time-row .planner-modal-field { flex: 1; }
+.planner-modal-error {
+  font-size: 11px;
+  color: #c07a7a;
+  text-align: center;
+}
+.planner-event-form-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 4px;
+}
+.planner-event-form-actions .planner-modal-apply-btn { width: auto; flex: 1; }
+.planner-event-delete-btn {
+  background: none;
+  border: 1px solid rgba(192,122,122,0.5);
+  color: #c07a7a;
+  padding: 7px 14px;
+  border-radius: 7px;
+  font-size: 12px;
+  cursor: pointer;
+  font-family: var(--font-ui);
+  transition: background 0.15s;
+}
+@media (hover: hover) {
+  .planner-event-delete-btn:hover:not(:disabled) { background: rgba(192,122,122,0.12); }
+}
+.planner-event-delete-btn:disabled { opacity: 0.4; cursor: default; }
+

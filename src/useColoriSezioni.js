@@ -1,5 +1,5 @@
 // @ts-check
-// Il colore di ogni taccuino e di ogni sezione.
+// Il colore di ogni taccuino, di ogni sezione e di ogni calendario.
 //
 // Di partenza il colore viene dalla posizione: il primo taccuino prende il
 // primo della tavolozza, le sue sezioni una sfumatura di quel colore. Chi non
@@ -12,6 +12,12 @@
 // Piano, le Sezioni — di leggere `_color` senza sapere niente di come è stato
 // deciso. Per questo il hook tiene il *documento* delle scelte e chi lo usa
 // tiene i taccuini: la ridipintura è un aggancio solo, `onCambio`.
+//
+// I calendari fanno eccezione, e per forza: gli eventi non sono oggetti
+// nostri — arrivano da Graph a ogni lettura e si ridecorano da capo, quindi
+// non c'è niente su cui scrivere un `_color` che sopravviva. Lì la mappa
+// `calendars` (id del calendario -> hex) resta una mappa, e la legge chi
+// disegna l'evento (`coloreEvento` in planner/griglia.js).
 
 import { useCallback, useRef, useState } from 'react';
 import { saveColorSettings } from './api';
@@ -19,10 +25,24 @@ import { queryClient, qk } from './queryClient';
 import { shadeColor } from './plannerShared';
 import { COLORS } from './config';
 
-/** @typedef {{ notebooks: Record<string, string>, sections: Record<string, string> }} Colori */
+/** @typedef {{ notebooks: Record<string, string>, sections: Record<string, string>, calendars: Record<string, string> }} Colori */
 
 /** @type {Colori} */
-export const COLORI_VUOTI = { notebooks: {}, sections: {} };
+export const COLORI_VUOTI = { notebooks: {}, sections: {}, calendars: {} };
+
+/**
+ * Le scelte come arrivano da OneDrive: i file scritti prima che i calendari si
+ * potessero colorare non hanno quel campo, e senza questo ogni lettura di
+ * `scelti.calendars` sarebbe una lettura di `undefined`.
+ * @param {any} letti @returns {Colori}
+ */
+export function normalizzaColori(letti) {
+  return {
+    notebooks: letti?.notebooks || {},
+    sections:  letti?.sections  || {},
+    calendars: letti?.calendars || {},
+  };
+}
 
 /**
  * @param {any} nb
@@ -64,7 +84,7 @@ export function useColoriSezioni(onCambio) {
    * @param {Colori|null} letti
    */
   const ricevi = useCallback((/** @type {Colori|null} */ letti) => {
-    const nuovi = letti || COLORI_VUOTI;
+    const nuovi = normalizzaColori(letti);
     sceltiRef.current = nuovi;
     lettoRef.current = true;
     setScelti(nuovi);
@@ -91,13 +111,13 @@ export function useColoriSezioni(onCambio) {
   /** @param {string} nbId @param {string} colore */
   const coloraUnTaccuino = useCallback((/** @type {string} */ nbId, /** @type {string} */ colore) => {
     const c = sceltiRef.current;
-    applica({ notebooks: { ...c.notebooks, [nbId]: colore }, sections: c.sections });
+    applica({ ...c, notebooks: { ...c.notebooks, [nbId]: colore } });
   }, [applica]);
 
   /** @param {string} sectionId @param {string} colore */
   const coloraUnaSezione = useCallback((/** @type {string} */ sectionId, /** @type {string} */ colore) => {
     const c = sceltiRef.current;
-    applica({ notebooks: c.notebooks, sections: { ...c.sections, [sectionId]: colore } });
+    applica({ ...c, sections: { ...c.sections, [sectionId]: colore } });
   }, [applica]);
 
   /** @param {string} nbId */
@@ -105,7 +125,21 @@ export function useColoriSezioni(onCambio) {
     const c = sceltiRef.current;
     const notebooks = { ...c.notebooks };
     delete notebooks[nbId];
-    applica({ notebooks, sections: c.sections });
+    applica({ ...c, notebooks });
+  }, [applica]);
+
+  /** @param {string} calId @param {string} colore */
+  const coloraUnCalendario = useCallback((/** @type {string} */ calId, /** @type {string} */ colore) => {
+    const c = sceltiRef.current;
+    applica({ ...c, calendars: { ...c.calendars, [calId]: colore } });
+  }, [applica]);
+
+  /** @param {string} calId */
+  const riportaCalendario = useCallback((/** @type {string} */ calId) => {
+    const c = sceltiRef.current;
+    const calendars = { ...c.calendars };
+    delete calendars[calId];
+    applica({ ...c, calendars });
   }, [applica]);
 
   /** @param {string} sectionId */
@@ -113,7 +147,7 @@ export function useColoriSezioni(onCambio) {
     const c = sceltiRef.current;
     const sections = { ...c.sections };
     delete sections[sectionId];
-    applica({ notebooks: c.notebooks, sections });
+    applica({ ...c, sections });
   }, [applica]);
 
   return {
@@ -122,7 +156,9 @@ export function useColoriSezioni(onCambio) {
     ricevi,
     coloraUnTaccuino,
     coloraUnaSezione,
+    coloraUnCalendario,
     riportaTaccuino,
     riportaSezione,
+    riportaCalendario,
   };
 }

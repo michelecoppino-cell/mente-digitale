@@ -812,6 +812,16 @@ export default function App() {
     } catch (e) { console.error('section calendar events preload', e); }
   }
 
+  // Un evento creato, modificato o cancellato da «Oggi»: la finestra di eventi
+  // si rilegge dal server (la copia in cache è di un istante fa e non lo sa), e
+  // il gettone dice al Piano che anche la sua copia bulk è vecchia — altrimenti
+  // resterebbe quella fino allo scadere del TTL, e passando da Oggi al Piano si
+  // rivedrebbe l'evento com'era prima.
+  async function ricaricaEventiCalendario() {
+    await preloadSectionCalendarEvents(true);
+    setCalendarDirtyToken(t => t + 1);
+  }
+
   // Accettare una proposta non crea un'attività al volo nella prima lista che
   // capita: apre il chiarimento col testo già dentro, così a decidere dove va è
   // chi guarda.
@@ -1269,7 +1279,9 @@ export default function App() {
                 tasks={scheduledTasks || []}
                 todoLists={todoLists}
                 calendarEvents={sectionCalendarEvents}
+                coloriCalendari={colori.scelti.calendars}
                 onCompleteBlock={handleCompleteBlock}
+                onEventiCambiati={ricaricaEventiCalendario}
                 onOpenIdentity={setIdentityOpen}
               />
             } />
@@ -1291,6 +1303,9 @@ export default function App() {
                 onTaskPatched={handleTaskPatched}
                 onTaskRestored={handleTaskRestored}
                 calendarDirtyToken={calendarDirtyToken}
+                coloriCalendari={colori.scelti.calendars}
+                onColoraCalendario={colori.coloraUnCalendario}
+                onRiportaCalendario={colori.riportaCalendario}
               />
             } />
 
@@ -1421,8 +1436,10 @@ export default function App() {
         onExpandNotebook={handleExpandNotebook}
         onSetNotebookColor={colori.coloraUnTaccuino}
         onSetSectionColor={colori.coloraUnaSezione}
+        onSetCalendarColor={colori.coloraUnCalendario}
         onResetNotebookColor={colori.riportaTaccuino}
         onResetSectionColor={colori.riportaSezione}
+        onResetCalendarColor={colori.riportaCalendario}
       />
       <UndoToast />
 

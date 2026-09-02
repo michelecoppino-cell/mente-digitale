@@ -100,3 +100,13 @@
 @media (hover: hover) {
   .cset-reset-btn:hover { color: var(--accent); }
 }
+
+/* Il nome del gruppo — «Calendari» — sopra le sue righe: serve solo dove le
+   righe non si spiegano da sole, cioè dove non sono taccuini. */
+.cset-sezione {
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  padding-bottom: 4px;
+}

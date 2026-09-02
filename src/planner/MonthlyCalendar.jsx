@@ -8,12 +8,12 @@
 // quali giorni sono pieni, non cosa c'è dentro.
 
 import {
-  calendarSwatch, evDayStr, isAllDay, isoToHHMM, liveBlockColor, localDateStr, todayStr,
+  coloreEvento, evDayStr, isAllDay, isoToHHMM, liveBlockColor, localDateStr, todayStr,
 } from './griglia.js';
 
 // Vista "Mese" della modalità piano: calendario mensile con eventi Outlook e
 // blocchi pianificati. Cliccando un giorno si passa alla vista Giorno.
-export function MonthlyCalendar({ currentDate, plans, calEvents, calOutOfRange, config, listColorMap, onDayClick, onEventClick }) {
+export function MonthlyCalendar({ currentDate, plans, calEvents, calOutOfRange, config, listColorMap, coloriCalendari, onDayClick, onEventClick }) {
   const today = todayStr();
   const d = new Date(currentDate + 'T12:00:00');
   const first = new Date(d.getFullYear(), d.getMonth(), 1);
@@ -58,7 +58,7 @@ export function MonthlyCalendar({ currentDate, plans, calEvents, calOutOfRange, 
               kind: 'event',
               title: ev.subject,
               time: isAllDay(ev) ? null : isoToHHMM(ev.start?.dateTime),
-              color: calendarSwatch(ev._calColor),
+              color: coloreEvento(ev, coloriCalendari),
               ev,
             })),
             ...dayBlocks.map(b => ({

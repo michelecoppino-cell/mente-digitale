@@ -23,8 +23,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
-  taskStatus, inboxListId, indexScheduled, taskContext, taskEstimateMin,
-  taskPerson, personRoleFor, waitingDays, CONTEXTS, isSlipped, STATUS_LABELS, STATUS_HINTS,
+  taskStatus, inboxListId, indexScheduled, taskContext,
+  taskPerson, personRoleFor, CONTEXTS, isSlipped, STATUS_LABELS, STATUS_HINTS,
 } from './taskModel';
 import { ordinaAMano, riordinaGruppo, CON_MOUSE } from './taskOrder';
 import StatusIcon from './StatusIcon';
@@ -39,7 +39,7 @@ import Skeleton from './Skeleton';
 import TaskDetailPanel from './TaskDetailPanel';
 import TaskDetailDrawer from './TaskDetailDrawer';
 import './ActivityBoard.css';
-import { durataBreve, ymd } from './tempo.js';
+import { ymd } from './tempo.js';
 
 /** Le cinque colonne, nell'ordine del flusso. `done` non ha colonna: i task
  *  completati vivono nello storico del giorno, non nel serbatoio.
@@ -100,9 +100,6 @@ function toggleFilter(current, key) {
 /** 'YYYY-MM-DD' locale. */
 const todayStr = ymd;
 
-/** "1h", "45m", "1h30" — la stima, compatta. */
-const fmtEstimate = durataBreve;
-
 /** "oggi 14:30", "dom 9:00", "17/07 9:00" a seconda di quanto è lontano. */
 function fmtWhen(/** @type {{date: string, startTime: string}} */ placement) {
   const today = todayStr();
@@ -143,8 +140,8 @@ function CheckMark() {
 
 /**
  * Una riga di attività: spunta, titolo, e a destra il solo dato che conta in
- * quella colonna — la stima fra le prossime azioni, l'orario fra le
- * programmate, la persona fra le attese, le delegate e le cose da chiedere. Una riga sola: prima
+ * quella colonna — l'orario fra le programmate, la persona fra le attese, le
+ * delegate e le cose da chiedere, la scadenza dove c'è. Una riga sola: prima
  * ogni card ne occupava tre, e in una colonna ci stavano sei attività.
  *
  * @param {Object} props
@@ -176,7 +173,6 @@ function TaskRow({
   // persona: nella colonna «In attesa» sì, dentro le aree per persona no —
   // ripeterlo su ogni riga sarebbe scriverlo due volte.
   const person = showPerson && personRoleFor(status) ? taskPerson(task) : null;
-  const days = person ? waitingDays(person.since) : null;
   const due = formatDueDate(task.scadenza);
   const slipped = placement ? isSlipped(placement, todayStr()) : false;
 
@@ -213,21 +209,28 @@ function TaskRow({
       </button>
       <span className="ab-row-title">{task.titolo}</span>
 
+      {/* Nelle attese, a destra, il solo nome. Accanto c'era anche da quanto
+          si aspetta («3g»), e con la scadenza facevano tre testi in fila su una
+          riga alta trentadue pixel: il nome è quello che si cerca, il resto sta
+          nel dettaglio. */}
       <span className="ab-row-meta">
         {person && (
           <span className="ab-waiting" title={`${STATUS_LABELS[person.role]}: ${person.who}`}>
-            {person.who}{days !== null ? ` · ${days === 0 ? 'oggi' : `${days}g`}` : ''}
+            {person.who}
           </span>
         )}
         {due && status !== 'scheduled' && (
           <span className={`ab-due${isTaskOverdue(task.scadenza) ? ' overdue' : ''}`} title={`Scade il ${due}`}>{due}</span>
         )}
-        {status === 'scheduled' && placement ? (
+        {/* La stima di durata stava qui, in grigio, su ogni riga di ogni
+            colonna: un numero che c'era sempre — mezz'ora di default dove
+            nessuno l'aveva detta — e che non aiuta a decidere niente mentre si
+            guarda una colonna. Serve dove il tempo si spende, cioè nel Piano.
+            Qui resta il quando, che è l'unica cosa già decisa. */}
+        {status === 'scheduled' && placement && (
           <span className={`ab-when${slipped ? ' slipped' : ''}`} title={slipped ? 'Non finita nel blocco previsto' : 'Quando è in programma'}>
             {fmtWhen(placement)}
           </span>
-        ) : (
-          <span className="ab-est" title="Stima di durata">{fmtEstimate(taskEstimateMin(task))}</span>
         )}
       </span>
     </div>
@@ -808,7 +811,7 @@ export default function ActivityBoard({
                         la contiene. */}
                     {col.sub && (
                       <div
-                        className={`ab-area${expandedAreas[col.sub] ? ' expanded' : ''}${dragOver === col.sub ? ' drag-over' : ''}`}
+                        className={`ab-area${expandedAreas[col.sub] ? ' expanded' : ''}${byStatus[col.sub].length ? ' flagged' : ''}${dragOver === col.sub ? ' drag-over' : ''}`}
                         onDragOver={e => { e.preventDefault(); e.stopPropagation(); setDragOver(col.sub); }}
                         onDragLeave={e => {
                           if (e.currentTarget.contains(/** @type {any} */ (e.relatedTarget))) return;

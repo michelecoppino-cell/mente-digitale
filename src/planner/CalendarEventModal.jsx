@@ -9,6 +9,7 @@
 
 import { useState } from 'react';
 import { isAllDay, isoToHHMM, todayStr } from './griglia.js';
+import './modale.css';
 
 // Crea o modifica un evento su uno qualsiasi dei calendari collegati (non solo
 // quello di default) — usato dal pulsante "+ Evento" e dal click su un evento

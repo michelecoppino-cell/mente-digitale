@@ -6,6 +6,7 @@ import { createPortal } from 'react-dom';
 import { COLORS } from './config';
 import { shadeColor, hexToRgb, rgbToHex } from './plannerShared';
 import { durataInOre } from './tempo.js';
+import './tavolozza.css';
 
 function genId() {
   return Math.random().toString(36).slice(2) + Date.now().toString(36);
@@ -328,6 +329,13 @@ export function ColorPickerPopup({ color, anchor, onPick, onClose }) {
   const [hexDraft, setHexDraft] = useState(color);
   const [pos, setPos]         = useState(null);
   const popupRef = useRef(null);
+  // La correzione della posizione si fa una volta sola per ancora. Misurare e
+  // rimisurare all'infinito è quello che succedeva quando il popup, per un
+  // foglio di stile non caricato, era largo quanto la pagina: la spinta in su
+  // e il fermo al margine si rincorrevano a ogni render finché React non
+  // spegneva la scheda. Anche con lo stile giusto, un popup più alto della
+  // finestra farebbe lo stesso.
+  const sistematoRef = useRef(false);
 
   // Misura la posizione dell'ancora (il pallino cliccato) e, in un secondo
   // passaggio, le dimensioni reali del popup una volta montato per tenerlo
@@ -335,12 +343,14 @@ export function ColorPickerPopup({ color, anchor, onPick, onClose }) {
   // dal render, quindi legittimo farlo in un effetto nonostante il lint.
   useLayoutEffect(() => {
     if (!anchor) return;
+    sistematoRef.current = false;
     const rect = anchor.getBoundingClientRect();
     setPos({ top: rect.bottom + 6, left: rect.left }); // eslint-disable-line react-hooks/set-state-in-effect
   }, [anchor]);
 
   useLayoutEffect(() => {
-    if (!pos || !popupRef.current) return;
+    if (!pos || !popupRef.current || sistematoRef.current) return;
+    sistematoRef.current = true;
     const rect = popupRef.current.getBoundingClientRect();
     const margin = 8;
     let { top, left } = pos;

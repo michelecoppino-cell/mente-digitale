@@ -14,7 +14,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import {
   DAY_START_MIN, DAY_END_MIN, SLOT_HEIGHT,
   VERTICAL_DURATION_RESERVE_PX, VERTICAL_LAYOUT_MIN_DURATION,
-  calendarSwatch, defaultScrollOffset, evDayStr, eventSpan, fmtBlockDuration,
+  coloreEvento, defaultScrollOffset, evDayStr, eventSpan, fmtBlockDuration,
   isAllDay, isoToHHMM, liveBlockColor, liveWorkbookColor, m2t, overlapColumns,
   t2m, todayStr, verticalTitleLayout,
 } from './griglia.js';
@@ -25,7 +25,7 @@ import { listLabel } from '../paraConfig';
 
 export function WeeklyTimeline({
   weekDays, plans, calEvents, workbookPlans, workbooks, workbookCalHidden, workdayStartMin, timeSlots, suppressClickRef,
-  config, listColorMap,
+  config, listColorMap, coloriCalendari,
   onDayClick, onMoveBlock, onCopyBlock, onBlockClick, onEventClick, onCopyEvent, onAddTask, onCreateEvent,
   onAddWorkbookBlock, onMoveWorkbookBlock, onCopyWorkbookBlock, onRemoveWorkbookBlock, onResizeWorkbookBlockStart, onResizeBlockStart,
   onAddWorkbookNote, onEditWorkbookNote, onMoveWorkbookNote, onRemoveWorkbookNote,
@@ -258,7 +258,7 @@ export function WeeklyTimeline({
                 if (!evStart || !evEnd) return null;
                 const top    = Math.max(0, (t2m(evStart) - DAY_START_MIN) / 30 * SLOT_HEIGHT);
                 const height = Math.max(SLOT_HEIGHT / 2, (t2m(evEnd) - t2m(evStart)) / 30 * SLOT_HEIGHT);
-                const evColor = calendarSwatch(ev._calColor);
+                const evColor = coloreEvento(ev, coloriCalendari);
                 const isVertical  = (t2m(evEnd) - t2m(evStart)) > VERTICAL_LAYOUT_MIN_DURATION;
                 const titleLayout = isVertical ? verticalTitleLayout(ev.subject, height - 12 - VERTICAL_DURATION_RESERVE_PX, 10) : null;
                 const geo = dayEventsLayout[i] || { col: 0, cols: 1 };
