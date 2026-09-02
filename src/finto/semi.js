@@ -143,6 +143,30 @@ export const EVENTI = [
   evento('e-7', '[Casa +30g] Revisione caldaia', g(20), '09:00', '09:30'),
 ];
 
+// Lo specchio del calendario di lavoro: quello che la GitHub Action scrive
+// leggendo l'ultima mail mandata dal PC di lavoro (vedi
+// scripts/sync-calendario-lavoro.mjs). Qui c'è già dentro, con una lettura di
+// **sette ore fa**: sopra la soglia, quindi `dev:finto` mostra anche l'avviso
+// «specchio fermo» — che è la cosa che, contro il OneDrive vero, si vedrebbe
+// solo il giorno in cui il PC di lavoro resta spento.
+const oreFa = (/** @type {number} */ quante) =>
+  new Date(Date.now() - quante * 3_600_000).toISOString();
+
+export const CALENDARIO_LAVORO = {
+  version: 1,
+  aggiornatoIl: oreFa(0),
+  finestra: { da: g(-30), a: g(300) },
+  fonti: [{ nome: 'Studio', tipo: 'mail', eventi: 3, letturaIl: oreFa(7), errore: null }],
+  eventi: [
+    { id: 'Studio|w1', fonte: 'Studio', subject: 'Riunione di produzione', isAllDay: false,
+      start: `${oggi}T07:00:00`, end: `${oggi}T08:00:00` },
+    { id: 'Studio|w2', fonte: 'Studio', subject: 'Verifica strutturale con il collaudatore', isAllDay: false,
+      start: `${g(1)}T13:00:00`, end: `${g(1)}T15:00:00` },
+    { id: 'Studio|w3', fonte: 'Studio', subject: 'Corso sicurezza', isAllDay: true,
+      start: g(4), end: g(5) },
+  ],
+};
+
 // ── I file dell'app su OneDrive ─────────────────────────────────────────────
 
 export const PIANI = {

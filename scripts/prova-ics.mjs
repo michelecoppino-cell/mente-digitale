@@ -12,8 +12,8 @@ import { creaTabellone } from './finto-onedrive.mjs';
 import {
   srotolaRighe, leggiData, leggiIcs, occorrenzeDi, occorrenzeIcs, fusoIana, daOrologioAUtc,
 } from './ics.mjs';
-import { leggiFonti } from './sync-calendario-lavoro.mjs';
-import { eventiDiLavoro, normalizzaDocumento } from '../src/calendarioLavoro.js';
+import { leggiFonti, ultimaMailBuona, allegatoCalendario } from './sync-calendario-lavoro.mjs';
+import { eventiDiLavoro, normalizzaDocumento, etaSpecchio, avvisoSpecchioFermo } from '../src/calendarioLavoro.js';
 
 const { verifica, fine } = creaTabellone();
 
@@ -161,13 +161,63 @@ const brevi = occorrenzeIcs(infinita, { da: new Date('2026-03-01'), a: new Date(
 verifica(brevi.length === 7 && brevi[0].start.startsWith('2026-03-01'),
   'una serie senza fine si ferma ai bordi della finestra');
 
-console.log('\nGli indirizzi dei feed\n');
+console.log('\nLe fonti dichiarate\n');
 
-verifica(leggiFonti('https://x/y.ics')[0].nome === 'Lavoro', 'un indirizzo nudo prende il nome di default');
-verifica(leggiFonti('Studio|https://x/y.ics')[0].nome === 'Studio', 'e col nome davanti prende quello');
-verifica(leggiFonti('webcal://x/y.ics')[0].url === 'https://x/y.ics', 'webcal:// diventa https://');
-verifica(leggiFonti('a\nhttps://x/y.ics').length === 1, 'quello che non è un indirizzo si scarta');
-verifica(leggiFonti(undefined).length === 0, 'e senza variabile non c\'è nessuna fonte');
+verifica(leggiFonti({ ics: 'https://x/y.ics' })[0].nome === 'Lavoro', 'un indirizzo nudo prende il nome di default');
+verifica(leggiFonti({ ics: 'Studio|https://x/y.ics' })[0].nome === 'Studio', 'e col nome davanti prende quello');
+verifica(leggiFonti({ ics: 'webcal://x/y.ics' })[0].valore === 'https://x/y.ics', 'webcal:// diventa https://');
+verifica(leggiFonti({ ics: 'a\nhttps://x/y.ics' }).length === 1, 'quello che non è un indirizzo si scarta');
+verifica(leggiFonti({}).length === 0, 'e senza variabili non c\'è nessuna fonte');
+
+verifica(leggiFonti({ mail: 'CALENDARIO-LAVORO' })[0].tipo === 'mail', 'la posta è una fonte come il feed');
+verifica(leggiFonti({ mail: 'CALENDARIO-LAVORO', mittente: 'IO@Lavoro.IT' })[0].mittente === 'io@lavoro.it',
+  'il mittente si confronta senza maiuscole: nessuno lo riscrive uguale due volte');
+const dueFonti = leggiFonti({ mail: 'CAL', ics: 'https://x/y.ics' });
+verifica(dueFonti.length === 2 && dueFonti[0].tipo === 'mail' && dueFonti[1].tipo === 'ics',
+  'le due strade convivono: la posta oggi, il feed il giorno che l\'azienda lo aprisse');
+verifica(dueFonti[1].nome !== dueFonti[0].nome, 'e non si chiamano uguale, o sarebbero una riga sola nel filtro');
+
+console.log('\nQuale mail, e quale allegato\n');
+
+const mail = (id, subject, quando, extra = {}) => ({
+  id, subject, receivedDateTime: quando, hasAttachments: true,
+  from: { emailAddress: { address: 'io@lavoro.it' } }, ...extra,
+});
+const casella = [
+  mail('m1', 'CALENDARIO-LAVORO 2026-09-01 07:00', '2026-09-01T05:00:00Z'),
+  mail('m2', 'CALENDARIO-LAVORO 2026-09-02 07:00', '2026-09-02T05:00:00Z'),
+  mail('m3', 'Riunione di lunedì', '2026-09-02T09:00:00Z'),
+  mail('m4', 'CALENDARIO-LAVORO 2026-09-02 09:00', '2026-09-02T07:00:00Z', { hasAttachments: false }),
+];
+
+// È tutto il punto dello specchio: conta **l'ultima**, non la prima non letta.
+// Aprire la mail dal telefono non consuma niente, e una mail persa non lascia
+// un buco perché quella dopo riporta tutta la finestra.
+verifica(ultimaMailBuona(casella, { oggetto: 'CALENDARIO-LAVORO' })?.id === 'm2',
+  'si prende la più recente col marcatore, non la prima');
+verifica(ultimaMailBuona(casella, { oggetto: 'calendario-lavoro' })?.id === 'm2',
+  'il marcatore si confronta senza maiuscole');
+verifica(!ultimaMailBuona(casella, { oggetto: 'CALENDARIO-LAVORO' })?.subject.includes('09:00'),
+  'una mail senza allegato non è buona, per quanto recente');
+verifica(ultimaMailBuona(casella, { oggetto: 'CALENDARIO-LAVORO', mittente: 'altro@x.it' }) === null,
+  'col mittente dichiarato, chiunque altro non conta');
+verifica(ultimaMailBuona(casella, { oggetto: 'CALENDARIO-LAVORO', mittente: 'io@lavoro.it' })?.id === 'm2',
+  'e col mittente giusto si trova lo stesso');
+verifica(ultimaMailBuona(casella, { oggetto: 'ALTRA-COSA' }) === null, 'un marcatore che non c\'è non pesca niente');
+verifica(ultimaMailBuona(casella, { oggetto: '' }) === null, 'e senza marcatore non si pesca a caso');
+
+// Outlook attacca anche la firma: l'immagine del logo è un allegato a tutti
+// gli effetti, e «il primo» sarebbe quello.
+const allegati = [
+  { id: 'a1', name: 'image001.png', contentType: 'image/png' },
+  { id: 'a2', name: 'calendario-lavoro.ics', contentType: 'text/calendar; method=PUBLISH' },
+];
+verifica(allegatoCalendario(allegati)?.id === 'a2', 'fra gli allegati si prende il calendario, non il logo della firma');
+verifica(allegatoCalendario([{ id: 'a3', name: 'agenda.ICS', contentType: 'application/octet-stream' }])?.id === 'a3',
+  'e se il tipo non lo dice, lo dice l\'estensione');
+verifica(allegatoCalendario([{ id: 'a1', name: 'foto.png', contentType: 'image/png' }]) === null,
+  'senza calendario non si ripiega su qualcos\'altro');
+verifica(allegatoCalendario([]) === null, 'e senza allegati non c\'è niente da scegliere');
 
 console.log('\nLo specchio letto dall\'app\n');
 
@@ -184,5 +234,36 @@ verifica(dentro[0].start.dateTime === '2026-09-03T07:00:00' && dentro[0].start.t
   'e l\'evento esce nella forma di Graph, come lo aspetta il Piano');
 verifica(dentro[0]._soloLettura === true, 'con il segno che ne vieta la modifica');
 verifica(normalizzaDocumento(null).eventi.length === 0, 'un file che non c\'è è uno specchio vuoto, non un errore');
+
+console.log('\nQuanto è vecchio lo specchio\n');
+
+// Il difetto che questo disegno può avere davvero: il PC di lavoro spento, e
+// l'agenda a schermo che resta quella di ieri **senza dirlo**. Un calendario
+// vuoto si nota, uno vecchio no.
+const adesso = new Date('2026-09-02T12:00:00Z');
+const conFonti = (...letture) => normalizzaDocumento({
+  version: 1, aggiornatoIl: adesso.toISOString(), eventi: [],
+  fonti: letture.map((letturaIl, i) => ({ nome: `F${i}`, eventi: 1, letturaIl, errore: null })),
+});
+
+verifica(etaSpecchio(conFonti('2026-09-02T10:00:00Z'), adesso)?.ore === 2, 'l\'età si conta da quando il dato è stato prodotto');
+verifica(avvisoSpecchioFermo(conFonti('2026-09-02T10:00:00Z'), adesso) === '',
+  'due ore non sono niente da dire: un giro saltato è normale');
+verifica(avvisoSpecchioFermo(conFonti('2026-09-01T10:00:00Z'), adesso).startsWith('fermo da 26 ore'),
+  'un giorno intero invece si dice');
+verifica(avvisoSpecchioFermo(conFonti('2026-08-20T12:00:00Z'), adesso).includes('13 giorni'),
+  'e oltre le quarantott\'ore si conta in giorni, che è come si pensa');
+
+// Con due fonti, una ferma e una viva, il calendario a schermo è vivo: dire il
+// contrario sarebbe un falso allarme, e un avviso che grida sempre si smette
+// di leggerlo.
+verifica(avvisoSpecchioFermo(conFonti('2026-08-01T12:00:00Z', '2026-09-02T11:00:00Z'), adesso) === '',
+  'conta la fonte più fresca, non la più vecchia');
+
+// I file scritti prima che `letturaIl` esistesse hanno solo `aggiornatoIl`.
+verifica(etaSpecchio({ version: 1, aggiornatoIl: '2026-09-02T09:00:00Z', fonti: [], eventi: [] }, adesso)?.ore === 3,
+  'uno specchio vecchio di formato ripiega sulla data di scrittura');
+verifica(etaSpecchio(null, adesso) === null, 'e senza specchio non si inventa un\'età');
+verifica(avvisoSpecchioFermo(null, adesso) === '', 'né un avviso');
 
 fine();

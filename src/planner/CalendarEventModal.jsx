@@ -9,12 +9,24 @@
 
 import { useState } from 'react';
 import { isAllDay, isoToHHMM, todayStr } from './griglia.js';
+import { avvisoSpecchioFermo } from '../calendarioLavoro.js';
 import './modale.css';
+
+// `2026-09-03` → `giovedì 3 settembre`. Solo per la scheda in sola lettura: nel
+// modulo la data sta in un `<input type="date">`, che vuole l'ISO.
+function giornoDisteso(iso) {
+  const [a, m, g] = String(iso || '').split('-').map(Number);
+  if (!a || !m || !g) return iso;
+  return new Date(a, m - 1, g).toLocaleDateString('it-IT', {
+    weekday: 'long', day: 'numeric', month: 'long',
+  });
+}
 
 // Crea o modifica un evento su uno qualsiasi dei calendari collegati (non solo
 // quello di default) — usato dal pulsante "+ Evento" e dal click su un evento
 // nella Timeline, in Settimana o in Mese.
-export function CalendarEventModal({ mode, event, defaultDate, defaultStartTime, defaultEndTime, calendars, onClose, onSave, onDelete }) {
+export function CalendarEventModal({ mode, event, defaultDate, defaultStartTime, defaultEndTime, calendars, onClose, onSave, onDelete,
+  docLavoro = /** @type {import('../calendarioLavoro.js').DocCalendarioLavoro|null} */ (null) }) {
   const defaultCalId = calendars.find(c => c.isDefaultCalendar)?.id || calendars[0]?.id || '';
   const eventIsAllDay = event ? isAllDay(event) : false;
 
@@ -81,6 +93,7 @@ export function CalendarEventModal({ mode, event, defaultDate, defaultStartTime,
   if (event?._soloLettura) {
     const inizio = isAllDay(event) ? null : isoToHHMM(event.start?.dateTime);
     const fine   = isAllDay(event) ? null : isoToHHMM(event.end?.dateTime);
+    const fermo  = avvisoSpecchioFermo(docLavoro);
     return (
       <div className="planner-modal-overlay" onClick={onClose}>
         <div className="planner-modal" onClick={e => e.stopPropagation()}>
@@ -96,7 +109,7 @@ export function CalendarEventModal({ mode, event, defaultDate, defaultStartTime,
             <div className="planner-modal-field">
               <span>Quando</span>
               <div className="planner-evento-letto">
-                {date}{inizio ? ` · ${inizio}–${fine}` : ' · tutto il giorno'}
+                {giornoDisteso(date)}{inizio ? ` · ${inizio}–${fine}` : ' · tutto il giorno'}
               </div>
             </div>
             <div className="planner-modal-field">
@@ -107,6 +120,10 @@ export function CalendarEventModal({ mode, event, defaultDate, defaultStartTime,
               Arriva dal calendario di lavoro, che qui si legge soltanto: si modifica
               là, e torna in pari al giro successivo.
             </p>
+            {/* Se lo specchio è fermo, dirlo **sull'evento** e non solo nel
+                filtro dei calendari: è qui che si guarda quando un
+                appuntamento non torna, ed è l'unica spiegazione possibile. */}
+            {fermo && <p className="planner-modal-nota attenzione">⚠️ Specchio {fermo}.</p>}
             <div className="planner-event-form-actions">
               <button className="planner-modal-apply-btn" onClick={onClose}>Chiudi</button>
             </div>

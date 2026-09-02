@@ -12,7 +12,7 @@
 import {
   TACCUINI, SEZIONI, PAGINE, CALENDARI, EVENTI,
   LISTE, TASK, PIANI, OBIETTIVI, CODA, DIARIO_MESE, MOVIMENTO_MESE, MOVIMENTO_INDICE, BUSSOLA,
-  PROGRAMMI, PROGRAMMA,
+  PROGRAMMI, PROGRAMMA, CALENDARIO_LAVORO,
 } from './semi.js';
 import { ymd } from '../tempo.js';
 
@@ -35,6 +35,8 @@ export function montaFintoGraph(finto) {
 
   scrivi('programmi/_registro.json', { version: 1, programmi: PROGRAMMI });
   for (const p of PROGRAMMI) scrivi(p.file, PROGRAMMA[p.id]);
+
+  scrivi('calendario-lavoro.json', CALENDARIO_LAVORO);
 
   scrivi('mente-digitale-daily-plans.json', PIANI);
   scrivi('mente-digitale-obiettivi.json', OBIETTIVI);

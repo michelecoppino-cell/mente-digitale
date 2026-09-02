@@ -71,7 +71,7 @@ import { caricaRiepilogoOggi } from './finanze/riepilogoOggi';
 import { durataDistesa, minutiDaOra, ymd } from './tempo.js';
 import { coloreEvento } from './planner/griglia.js';
 import { salvaEvento, eliminaEvento } from './eventiCalendario';
-import { getCalendars } from './api';
+import { getCalendars, calendarioLavoroInCache } from './api';
 import './TodayView.css';
 
 // Il modale dell'evento è quello del Piano — è lo stesso evento, e due modali
@@ -583,6 +583,7 @@ export default function TodayView({
             defaultStartTime={null}
             defaultEndTime={null}
             calendars={calendari}
+            docLavoro={calendarioLavoroInCache()}
             onClose={() => setEventoAperto(null)}
             onSave={async (/** @type {any} */ form) => {
               await salvaEvento({

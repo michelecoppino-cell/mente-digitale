@@ -1,15 +1,22 @@
 # Lo specchio del calendario di lavoro dentro OneDrive.
 #
-# Non crea niente sul calendario personale: scrive un solo file JSON, che l'app
-# legge in sola lettura. Ogni giro riscrive tutta la finestra da capo, quindi un
-# giro saltato non lascia buchi — quello dopo rimette in pari. Il perché per
-# esteso sta in scripts/sync-calendario-lavoro.mjs, le istruzioni per metterlo
-# in piedi in docs/calendario-lavoro.md.
+# Legge l'ultima mail che il PC di lavoro manda con l'agenda intera allegata in
+# .ics (o, se un giorno l'azienda lo consentisse, un feed ICS pubblicato) e ne
+# scrive un solo file JSON, che l'app legge in sola lettura.
+#
+# Non crea niente sul calendario personale e non tocca la casella: la posta si
+# legge soltanto. Ogni giro riscrive tutta la finestra da capo, quindi un giro
+# saltato non lascia buchi — quello dopo rimette in pari. Il perché per esteso
+# sta in scripts/sync-calendario-lavoro.mjs, le istruzioni per metterlo in piedi
+# in docs/calendario-lavoro.md.
 name: Calendario di lavoro
 
 on:
   schedule:
-    - cron: '17 5-19/2 * * 1-5'   # ogni due ore nei giorni e nelle ore di lavoro
+    # Sfasata di mezz'ora rispetto al compito pianificato sul PC di lavoro
+    # (che parte alle ore tonde): così legge una mail già arrivata invece di
+    # rincorrerla, e la finestra a schermo non è mai indietro di un giro intero.
+    - cron: '35 5-19/2 * * 1-5'   # ogni due ore nei giorni e nelle ore di lavoro
   workflow_dispatch:
 
 concurrency:
@@ -26,8 +33,10 @@ jobs:
         with:
           node-version: '22'
 
-      - name: Leggi il feed e scrivi lo specchio
+      - name: Leggi l'ultima agenda e scrivi lo specchio
         env:
+          CALENDARIO_LAVORO_MAIL: ${{ secrets.CALENDARIO_LAVORO_MAIL }}
+          CALENDARIO_LAVORO_MITTENTE: ${{ secrets.CALENDARIO_LAVORO_MITTENTE }}
           CALENDARIO_LAVORO_ICS: ${{ secrets.CALENDARIO_LAVORO_ICS }}
           MENTE_REFRESH_TOKEN: ${{ secrets.MENTE_REFRESH_TOKEN }}
         run: node scripts/sync-calendario-lavoro.mjs

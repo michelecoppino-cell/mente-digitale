@@ -22,7 +22,7 @@ npm run prova       # le prove, contro un OneDrive finto in memoria
 
 C'è anche `node scripts/sync-calendario-lavoro.mjs`, che non fa parte del ciclo:
 è quello che la GitHub Action esegue per riscrivere lo specchio del calendario
-di lavoro su OneDrive. Vuole `CALENDARIO_LAVORO_ICS` e un refresh token —
+di lavoro su OneDrive. Vuole `CALENDARIO_LAVORO_MAIL` e un refresh token —
 `docs/calendario-lavoro.md`.
 
 `npm run prova` non chiede né rete né account: gira sempre, ovunque, in pochi
@@ -107,7 +107,17 @@ cose che non si ricostruiscono da una cronologia.
 OneDrive lo riscrive intero una GitHub Action ogni paio d'ore: qualunque cosa si
 scrivesse da qui sopravviverebbe fino al giro dopo e poi sparirebbe in silenzio.
 Per questo i suoi eventi portano `_soloLettura` e il modale dell'evento apre una
-scheda che lo dice, invece di lasciar provare.
+scheda che lo dice, invece di lasciar provare. La sorgente è la posta — l'unico
+canale che il tenant di lavoro lascia aperto — ma la mail porta **tutta la
+finestra**, non un evento: conta solo l'ultima arrivata, e la casella non si
+tocca (`Mail.Read` e basta).
+
+**Un dato che arriva da fuori dichiara quanti anni ha.** Lo specchio del
+calendario di lavoro dipende da un PC che può essere spento, e un'agenda vecchia
+di tre giorni non si distingue da una giusta: un calendario vuoto si nota, uno
+fermo no. Per questo `etaSpecchio` è nel modulo e non nella vista, e l'avviso
+compare sia nel filtro «Calendari ▾» sia sulla scheda dell'evento. Vale come
+regola: dove il dato può invecchiare in silenzio, la sua età fa parte del dato.
 
 **Quello che entra da solo nel pool si guarda a stato, non a eventi.** Le
 scadenze ricorrenti nascevano da `reminderView`, cioè dalla finestra di
@@ -143,7 +153,8 @@ che ha già smesso di funzionare.
 | `src/finanze/` | isola TypeScript, dati in IndexedDB, backup su OneDrive |
 | `scripts/mente-graph.mjs` | lo stesso nucleo fuori dal browser, con un refresh token invece di MSAL |
 | `scripts/ics.mjs` | il lettore di un calendario ICS: righe, fusi, ricorrenze espanse. Puro — da stringa a occorrenze — ed è per questo che si prova |
-| `scripts/sync-calendario-lavoro.mjs` | lo specchio: legge il feed di lavoro e riscrive tutta la finestra su OneDrive. Lo esegue una GitHub Action |
+| `scripts/sync-calendario-lavoro.mjs` | lo specchio: legge l'ultima mail col `.ics` allegato (o un feed pubblicato) e riscrive tutta la finestra su OneDrive. Lo esegue una GitHub Action |
+| `scripts/calendario-lavoro/` | l'altra metà, e gira sul PC di lavoro: il PowerShell che ogni due ore si manda l'agenda per posta |
 | `src/finto/` | il OneDrive finto: quello su cui girano le prove, e quello che `dev:finto` monta nel browser |
 
 Le rotte stanno nell'**hash** (`#/oggi`, `#/piano`, …) e non nel path: il sito è

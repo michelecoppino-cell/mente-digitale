@@ -565,45 +565,68 @@ l'account personale, e senza condivisione l'app — che parla con Graph come
 *quell'account* — non lo vedrà mai. Non è un difetto da correggere: è un limite
 dell'account, e la strada è un'altra.
 
-La strada è uno **specchio**. Una GitHub Action legge il feed **ICS** pubblicato
-dal calendario di lavoro e ne scrive tutta la finestra (un mese indietro, dodici
-avanti) in un solo file su OneDrive, `mente-digitale/calendario-lavoro.json`.
-L'app lo legge dentro `getCalendarEvents`, cioè nella sola strozzatura da cui
-passano il Piano, «Oggi» e la settimana in arrivo, e lo mostra come un
-calendario in più — spegnibile dal filtro «Calendari ▾», e **in sola lettura**.
+Nemmeno la pubblicazione del calendario (il feed ICS anonimo) è consentita: è
+una condivisione con un altro nome, e lo stesso criterio che blocca la prima
+blocca quella. Quindi la domanda non è «come lo leggo», ma **«quale canale
+l'azienda lascia aperto?»**. Ce n'è uno solo, ed è quello che si usava già: la
+posta.
 
-Prima c'era una regola di posta che mandava una mail per ogni evento creato o
+La strada è uno **specchio**. Sul PC di lavoro un compito pianificato preme ogni
+due ore il tasto «Invia calendario tramite e-mail» che Outlook ha già
+(`scripts/calendario-lavoro/Invia-Calendario.ps1`, una trentina di righe di
+PowerShell che chiamano la stessa API del menù) e manda alla casella personale
+una mail con allegata **l'agenda intera** in `.ics`. Una GitHub Action legge
+**l'ultima** di quelle mail, ne prende l'allegato e scrive tutta la finestra (un
+mese indietro, dodici avanti) in `mente-digitale/calendario-lavoro.json`. L'app
+lo legge dentro `getCalendarEvents`, cioè nella sola strozzatura da cui passano
+il Piano, «Oggi» e la settimana in arrivo, e lo mostra come un calendario in più
+— spegnibile dal filtro «Calendari ▾», e **in sola lettura**.
+
+Prima c'era una regola di posta che mandava una mail **per ogni evento** creato o
 modificato, e una Action che leggeva le mail non lette con oggetto «calendario»,
 ne interpretava il corpo e creava l'evento sul calendario personale. Si rompeva
-di continuo, e di nuovo per la forma e non per un difetto — **una
-sincronizzazione a eventi su un canale che perde**:
+di continuo — ma **il difetto non era la posta: era la sincronizzazione a
+eventi**:
 
-- una mail che non parte, arriva in ritardo, finisce nello spam o viene letta a
-  mano non genera niente, e la differenza non si recupera più;
-- il corpo era testo libero letto con espressioni regolari: basta che Outlook
-  cambi il modello e il titolo diventa una data;
-- una modifica era «cancella e ricrea», con l'originale cercato per id o, in
-  mancanza, per titolo e orario. Su un fallimento restavano due copie o zero;
-- gli eventi finivano **dentro** il calendario personale, e ogni
-  disallineamento andava ripulito a mano.
+| Prima | Adesso |
+|---|---|
+| una mail per ogni evento cambiato | una mail ogni due ore con l'agenda intera |
+| una mail persa è un buco che nessun giro recupera | una mail persa non è niente: conta solo l'ultima |
+| il **corpo** letto con espressioni regolari | un **allegato `.ics`**, letto da un parser provato |
+| modifica = «cancella e ricrea»: su un errore due copie o zero | non esiste la modifica: si riscrive tutta la finestra |
+| scriveva **dentro** il calendario personale | scrive **un file**, e si spegne cancellandolo |
+| segnava le mail come lette e le spostava | non tocca la casella: sulla posta ha solo `Mail.Read` |
 
-Lo specchio è a stato: ogni giro riscrive tutta la finestra da capo. Un giro
-saltato non lascia buchi, cancellazioni e spostamenti arrivano gratis (non ci
-sono, quindi non compaiono), non esistono doppioni possibili, e nel calendario
-personale non si scrive niente — se domani la cosa si spegne, sparisce un file
-e non resta nulla da ripulire. Se il feed è irraggiungibile il file resta com'è:
-si vede l'ultima lettura riuscita, che è meglio di un'agenda vuota, e il filtro
-«Calendari ▾» dice quale fonte non si è letta e perché.
+Ogni giro riscrive tutto da capo, quindi cancellazioni e spostamenti arrivano
+gratis: non sono nell'ultimo `.ics`, quindi non compaiono. Se non si legge
+niente il file resta com'è — si vede l'ultima lettura riuscita, che è meglio di
+un'agenda vuota.
+
+Il punto debole c'è, ed è dichiarato: **se il PC di lavoro resta spento,
+l'agenda a schermo è quella di ieri**. Un calendario vuoto si nota, uno vecchio
+no — quindi l'app ne dichiara l'età. Dopo cinque ore senza una mail nuova, il
+filtro «Calendari ▾» scrive «fermo da N ore» e la stessa riga compare sulla
+scheda di ogni evento di lavoro (`etaSpecchio` in `src/calendarioLavoro.js`,
+provata). Il riferimento è quando il PC di lavoro ha esportato, non quando
+l'Action ha riscritto il file: sono due cose diverse proprio nel caso che conta,
+perché l'Action gira puntuale anche quando la mail che legge è di tre giorni fa.
 
 Il lettore ICS (`scripts/ics.mjs`) è puro — da stringa a occorrenze — ed è
 provato (`npm run prova-ics`): righe ricucite, fusi Windows tradotti, ora legale,
 serie giornaliere/settimanali/mensili/annuali con `INTERVAL`, `COUNT`, `UNTIL`,
 `BYDAY` (anche «il terzo martedì»), `EXDATE`, occorrenze spostate una per una e
-appuntamenti annullati. Era esattamente quello che alla sincronizzazione via
-mail mancava: per provarla serviva una casella con dentro le mail giuste.
+appuntamenti annullati. Con lui sono provate anche le due scelte che la posta
+aggiunge: quale mail è quella buona (l'ultima col marcatore e un allegato, non
+la prima non letta) e quale allegato è il calendario (non il logo della firma).
+Era esattamente quello che alla sincronizzazione via mail mancava: per provarla
+serviva una casella con dentro le mail giuste.
 
-**Per metterlo in piedi** vedi `docs/calendario-lavoro.md`: due segreti su
-GitHub e un indirizzo da copiare da Outlook.
+Resta supportato anche il **feed ICS pubblicato**, per il giorno in cui l'azienda
+lo aprisse: è più semplice di tutto il resto, le due fonti convivono, e chi ce
+l'ha non ha bisogno del PC di lavoro acceso.
+
+**Per metterlo in piedi** vedi `docs/calendario-lavoro.md`: uno script da
+copiare sul PC di lavoro, un compito pianificato e due segreti su GitHub.
 
 ### Quanto dev'essere grande una cosa
 
@@ -844,7 +867,7 @@ com'era.
 | Autenticazione | MSAL Browser (account Microsoft personale, scope Graph in sola lettura + Files in scrittura; di To-Do resta solo `Tasks.Read`, per la migrazione una tantum). Il CLI e il server MCP hanno un token proprio, con in più OneNote e Calendario in scrittura |
 | Dati | Microsoft Graph (OneNote, Calendar, OneDrive, Mail) con cache localStorage a TTL. I file JSON dell'app — attività comprese — stanno nella cartella `mente-digitale/` di OneDrive: i fissi in cima, i registri che crescono (`diario/`, `movimento/`) e le attività (`task/`) in una sottocartella loro. Quelli rimasti dove stavano prima vengono spostati automaticamente al primo avvio |
 | Backend | Nessuno: sito statico servito da Cloudflare Pages |
-| Automazioni | GitHub Actions (`sync-calendario-lavoro`: lo specchio del calendario di lavoro su OneDrive) |
+| Automazioni | GitHub Actions (`sync-calendario-lavoro`: lo specchio del calendario di lavoro su OneDrive) + un compito pianificato sul PC di lavoro (PowerShell, `scripts/calendario-lavoro/`) |
 
 I dati utente non transitano da alcun backend: il browser parla direttamente con Microsoft
 Graph. Non ci sono chiamate a nessuna API AI a pagamento: dove serve un aiuto dell'AI (Diario,
