@@ -16,7 +16,7 @@ npm run dev         # server di sviluppo
 npm run typecheck   # tsc su jsconfig (JSDoc + checkJs)
 npm run lint        # eslint
 npm run build       # build di produzione in dist/
-npm run prova       # le quattro prove, contro un OneDrive finto in memoria
+npm run prova       # le cinque prove, contro un OneDrive finto in memoria
 ```
 
 `npm run prova` non chiede né rete né account: gira sempre, ovunque, in pochi
@@ -29,8 +29,8 @@ secondi. La CI esegue tutti e quattro i comandi a ogni push e ogni PR.
    API Graph rispondono solo sull'URL di produzione. Questi quattro comandi sono
    tutta la rete che c'è.
 2. Niente push diretto su `main`: branch, PR, merge.
-3. Se hai toccato uno degli strati provati (`api.js`, `taskStore.js`,
-   `taskMigrazione.js`, `paraConfig.js`), aggiungi la verifica che avrebbe
+3. Se hai toccato uno degli strati provati (`graphCore.js`, `api.js`,
+   `taskStore.js`, `taskMigrazione.js`, `paraConfig.js`), aggiungi la verifica che avrebbe
    intercettato quello che hai corretto. Le prove si sono rotte una volta e
    nessuno se n'è accorto per settimane: è successo perché nessuna misura
    diceva che erano rotte.
@@ -84,7 +84,8 @@ cose che non si ricostruiscono da una cronologia.
 
 | | |
 |---|---|
-| `src/api.js` | Microsoft Graph, la cartella `mente-digitale/` su OneDrive, ETag e migrazioni |
+| `src/graphCore.js` | i file su OneDrive: cartella, percorsi, ETag, 412, migrazioni. Il trasporto si inietta |
+| `src/api.js` | Microsoft Graph dal browser: MSAL, tentativi, e tutte le letture che non sono file |
 | `src/taskStore.js` | le attività su file nostri: registro delle liste, un file per lista |
 | `src/taskModel.js` | il flusso GTD: stati, persone, granularità |
 | `src/paraConfig.js` | i nomi PARA e le consegne annidate (`2573.A60-260831`) |
@@ -93,7 +94,7 @@ cose che non si ricostruiscono da una cronologia.
 | `src/tokens.css` | colori, tipografia, spazi, raggi — la sola fonte |
 | `src/tempo.js` | il giorno locale, l'ora, le durate — scritti una volta sola |
 | `src/finanze/` | isola TypeScript, dati in IndexedDB, backup su OneDrive |
-| `scripts/mente-graph.mjs` | lo stesso strato Graph fuori dal browser (refresh token, niente MSAL) |
+| `scripts/mente-graph.mjs` | lo stesso nucleo fuori dal browser, con un refresh token invece di MSAL |
 | `scripts/finto-onedrive.mjs` | il OneDrive finto su cui girano le prove |
 
 Le rotte stanno nell'**hash** (`#/oggi`, `#/piano`, …) e non nel path: il sito è
@@ -137,10 +138,6 @@ Cose note, già decise, da non riscoprire:
   ref, e la cache di query — tenute in pari a mano da `updateTasksEverywhere`.
   La strada è `useQuery`, come già fa `useDatoPersistito` per i documenti di
   «Oggi».
-- **Lo strato Graph è scritto due volte**, in `src/api.js` e in
-  `scripts/mente-graph.mjs`: percorsi, cartelle, ETag e migrazioni. Le due copie
-  possono divergere e una volta è già successo. La strada è un nucleo comune col
-  trasporto iniettato, come fa già `taskStore.usaDrive()`.
 - **Il PIN delle Finanze non è cifratura** ed è dichiarato tale: SHA-256 senza
   sale di sei cifre, e l'hash sta dentro il backup su OneDrive. Copre lo schermo
   da chi passa in ufficio, e per quello basta — ma un export condiviso lo porta

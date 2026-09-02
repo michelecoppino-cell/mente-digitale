@@ -80,7 +80,7 @@ const store = await importaModulo('taskStore.js');
 
 function pulisci() {
   finto.pulisci();
-  api._driveVersions.clear(); api._migrationTried.clear(); api._cartellePronte.clear();
+  api._dimenticaDrive();
 }
 
 console.log('\nLa passata\n');

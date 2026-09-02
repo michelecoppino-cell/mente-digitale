@@ -608,7 +608,7 @@ Tre file, uno sopra l'altro:
 
 | File | Cosa fa |
 |---|---|
-| `scripts/mente-graph.mjs` | parla con Microsoft Graph: token, retry, la cartella `mente-digitale/` su OneDrive. È il gemello di `src/api.js` senza MSAL |
+| `scripts/mente-graph.mjs` | parla con Microsoft Graph: token e retry. I file su OneDrive — cartella, percorsi, ETag, migrazioni — vengono da `src/graphCore.js`, lo stesso nucleo dell'app |
 | `scripts/mente-comandi.mjs` | le operazioni, una funzione ciascuna, con le regole su cosa si può scrivere |
 | `scripts/mente.mjs` · `scripts/mente-mcp.mjs` | i due modi di chiamarle: un terminale, o una chat |
 

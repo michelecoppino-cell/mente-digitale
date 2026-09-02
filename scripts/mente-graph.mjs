@@ -11,6 +11,7 @@
  */
 
 import { readFileSync, writeFileSync, existsSync } from 'fs';
+import { creaDrive } from '../src/graphCore.js';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 
@@ -220,168 +221,37 @@ export async function graphPaged(path, maxPages = 10) {
 }
 
 // ── File dell'app su OneDrive ────────────────────────────────────────────────
-// Stessa cartella e stessi nomi dell'app: il CLI legge e scrive gli stessi
-// file, non una copia parallela.
-
-const OD_FOLDER = 'mente-digitale';
-
-// Come nell'app: i percorsi sono relativi alla cartella e possono contenere una
-// sottocartella ('diario/diario-2026-08.json'). Devono restare identici a quelli
-// di src/api.js, o CLI e app finirebbero a scrivere due file diversi.
-/** @param {string} relPath @returns {string} */
-function drivePath(relPath) {
-  return `/me/drive/root:/${OD_FOLDER}/${relPath}`;
-}
-
-/** @type {Map<string, Promise<any>>} */
-const _cartellePronte = new Map();
-
-/** @param {string} [sub] @returns {Promise<any>} */
-function ensureFolder(sub) {
-  const chiave = sub || '';
-  let pronta = _cartellePronte.get(chiave);
-  if (!pronta) {
-    const genitore = sub ? `/me/drive/root:/${OD_FOLDER}:/children` : '/me/drive/root/children';
-    pronta = (sub ? ensureFolder() : Promise.resolve())
-      .then(() => graph(genitore, {
-        method: 'POST',
-        body: JSON.stringify({ name: sub || OD_FOLDER, folder: {}, '@microsoft.graph.conflictBehavior': 'fail' }),
-      }))
-      .catch(e => {
-        if (e?.status === 409) return null;   // esiste già: l'esito normale
-        _cartellePronte.delete(chiave);
-        throw e;
-      });
-    _cartellePronte.set(chiave, pronta);
-  }
-  return pronta;
-}
-
-/** @param {string} relPath */
-function ensureFolderFor(relPath) {
-  const i = relPath.indexOf('/');
-  return ensureFolder(i < 0 ? undefined : relPath.slice(0, i));
-}
-
-// Concorrenza, come nell'app (src/api.js, che spiega per esteso il perché e i
-// casi limite): si tiene l'ETag della versione letta insieme al suo contenuto,
-// lo si manda come `If-Match` in scrittura, e sul 412 si rilegge, si riapplica
-// la modifica sul contenuto fresco e si riscrive. Un solo giro, poi l'errore
-// sale. Qui conta doppio: il CLI scrive gli stessi file dell'app, e l'app può
-// essere aperta sul telefono mentre si lancia un comando dal portatile.
+// Stessa cartella, stessi nomi e **stesse regole** dell'app: il CLI legge e
+// scrive gli stessi file, non una copia parallela.
 //
-// Il codice è gemello di quello dell'app e non condiviso, perché i due hanno
-// due `graph()` diversi — token da refresh qui, MSAL di là.
-
-/** @type {Map<string, { etag: string|null, body: string|null, absent: boolean }>} */
-const _versioni = new Map();
-
-/** @param {any} data */
-const perConfronto = data => JSON.stringify(data ?? null);
-
-/** @param {string} filename @param {string|null} etag @param {any} data @param {boolean} [absent] */
-function ricordaVersione(filename, etag, data, absent = false) {
-  _versioni.set(filename, { etag: etag || null, body: absent ? null : perConfronto(data), absent });
-}
-
-/** @param {Response} r */
-const etagDiRisposta = r => (r.headers.get('etag') || '').replace(/^W\//, '') || null;
-
-/** @param {string} filename @returns {Promise<string|null>} */
-async function etagDiItem(filename) {
-  try {
-    const item = await graph(`${drivePath(filename)}?$select=id,eTag,cTag`);
-    return item?.eTag || item?.cTag || null;
-  } catch (e) {
-    if (e?.status === 404) return null;
-    throw e;
-  }
-}
-
-/**
- * @param {string} filename
- * @param {{ conEtagDiItem?: boolean }} [opts]
- * @returns {Promise<{ data: any, etag: string|null, absent: boolean }>}
- */
-async function readDriveFile(filename, opts = {}) {
-  try {
-    const r = await graph(`${drivePath(filename)}:/content`, { risposta: true });
-    const data = r.status === 204 ? null : await r.json();
-    let etag = etagDiRisposta(r);
-    if (!etag && opts.conEtagDiItem) etag = await etagDiItem(filename);
-    ricordaVersione(filename, etag, data);
-    return { data, etag, absent: false };
-  } catch (e) {
-    if (e?.status !== 404) throw e;
-    ricordaVersione(filename, null, null, true);
-    return { data: null, etag: null, absent: true };
-  }
-}
-
-/**
- * @template T
- * @param {string} filename
- * @param {T} notFoundValue
- * @returns {Promise<T|any>}
- */
-export async function getDriveJson(filename, notFoundValue) {
-  const { data, absent } = await readDriveFile(filename);
-  return absent ? notFoundValue : data;
-}
-
-/** @param {string} filename @param {any} data @param {string|null} etag */
-async function putUnaVolta(filename, data, etag) {
-  const r = await graph(`${drivePath(filename)}:/content`, {
-    method: 'PUT',
-    risposta: true,
-    headers: etag ? { 'If-Match': etag } : {},
-    body: JSON.stringify(data, null, 2),
-  });
-  const item = r.status === 204 ? null : await r.json();
-  ricordaVersione(filename, item?.eTag || item?.cTag || null, data);
-  return item;
-}
-
-/**
- * @param {string} filename
- * @param {any} data
- * @param {{ reapply?: (fresco: any) => any }} [opts]
- * @returns {Promise<any>}
- */
-export async function putDriveJson(filename, data, opts = {}) {
-  await ensureFolderFor(filename);
-  const nota = _versioni.get(filename);
-  if (!nota || nota.absent) return putUnaVolta(filename, data, null);
-
-  if (nota.etag) {
-    try {
-      return await putUnaVolta(filename, data, nota.etag);
-    } catch (e) {
-      if (e?.status !== 412) throw e;
+// Fin qui «stesse regole» voleva dire un codice gemello ricopiato qui sotto —
+// percorsi, sottocartelle, ETag, il 412 risolto rileggendo — e due copie che
+// potevano divergere senza che niente lo dicesse. È già successo: l'app ha
+// cambiato il modo di ottenere l'URL di download di un file e questa copia è
+// rimasta indietro. Adesso le regole stanno in `src/graphCore.js` e qui si
+// inietta solo il trasporto, che è la sola cosa davvero diversa: un refresh
+// token invece di MSAL.
+const drive = creaDrive({
+  richiesta: (percorso, opzioni) => graph(percorso, { ...opzioni, risposta: true }),
+  // L'URL di download è già autorizzato e sta su un'altra origine: si scarica
+  // in chiaro, senza i nostri header. Qui non c'è il CORS a imporlo come nel
+  // browser, ma la strada è la stessa e tanto vale che sia una sola.
+  scarica: async url => {
+    const r = await fetch(url);
+    if (!r.ok) {
+      const err = new Error(`Download del file: ${r.status}`);
+      err.status = r.status;
+      throw err;
     }
-  }
+    const testo = await r.text();
+    return testo ? JSON.parse(testo) : null;
+  },
+});
 
-  const fresco = await readDriveFile(filename, { conEtagDiItem: true });
-  const corpoFresco = fresco.absent ? null : perConfronto(fresco.data);
+export const { getDriveJson, putDriveJson } = drive;
 
-  if (corpoFresco === nota.body) {
-    // Nessuno ha toccato niente: l'ETag era vecchio o inservibile.
-    try {
-      return await putUnaVolta(filename, data, fresco.etag);
-    } catch (e) {
-      if (e?.status !== 412) throw e;
-      return putUnaVolta(filename, data, null);
-    }
-  }
-
-  if (!opts.reapply) {
-    _versioni.delete(filename);
-    const err = new Error(`${filename} è stato modificato altrove: rileggi prima di salvare`);
-    err.status = 412;
-    throw err;
-  }
-  return putUnaVolta(filename, opts.reapply(fresco.absent ? null : fresco.data), fresco.etag);
-}
+/** Solo per le prove: il drive dimentica quello che ha letto in questa sessione. */
+export const _dimenticaDrive = () => drive.dimentica();
 
 // ── Diario ───────────────────────────────────────────────────────────────────
 

@@ -1,5 +1,6 @@
 // @ts-check
 import { getToken } from './auth';
+import { CARTELLA_APP, creaDrive } from './graphCore.js';
 import { ymd } from './tempo.js';
 
 const GRAPH = 'https://graph.microsoft.com/v1.0';
@@ -194,21 +195,19 @@ async function callPagedValues(path, maxPages = 10) {
   return out;
 }
 
-// ── Cartella dei file dell'app su OneDrive ──────────────────────────────────
-// Tutti i JSON dell'app stanno in una sola cartella invece che sparsi nella
-// root del OneDrive personale.
+// ── I file dell'app su OneDrive ─────────────────────────────────────────────
+// Cartella, percorsi, ETag, migrazione dei file rimasti dove stavano prima:
+// tutto in `graphCore.js`, che le stesse regole le dà anche al CLI e al server
+// MCP (`scripts/mente-graph.mjs`). Qui resta solo il trasporto — MSAL, i
+// tentativi, il guinzaglio sulle richieste — che è la sola cosa che le due
+// strade hanno davvero di diverso.
 //
-// Dentro quella cartella, i registri che crescono di un file al mese hanno una
-// sottocartella loro. La pressione è tutta lì: i file fissi sono una quindicina
-// e non crescono, mentre diario e movimento aggiungono due file ogni mese, e
-// dopo qualche anno la cartella non si guarda più. I fissi quindi restano in
-// cima, dove si vedono.
-//
-// Dentro la sottocartella il prefisso `mente-digitale-` non serve più — la
-// cartella dice già di che si tratta — quindi lo spostamento è anche una
-// rinomina: `mente-digitale-diario-2026-08.json` diventa
-// `diario/diario-2026-08.json`.
-const OD_FOLDER = 'mente-digitale';
+// Dentro la cartella dell'app, i registri che crescono di un file al mese hanno
+// una sottocartella loro. La pressione è tutta lì: i file fissi sono una
+// quindicina e non crescono, mentre diario e movimento aggiungono due file ogni
+// mese, e dopo qualche anno la cartella non si guarda più. I fissi quindi
+// restano in cima, dove si vedono.
+const OD_FOLDER = CARTELLA_APP;
 
 /** Sottocartelle dei registri che crescono nel tempo. Le attività ne hanno una
  *  loro, `task/`, ma il nome sta in taskStore.js, che è chi la usa. */
@@ -216,105 +215,18 @@ const SUB_DIARIO = 'diario';
 const SUB_MOVIMENTO = 'movimento';
 const SUB_DIARY_PHOTO = 'diario-foto';
 
-// I percorsi dei file sono relativi alla cartella dell'app e possono contenere
-// una sottocartella: 'mente-digitale-bussola.json', 'diario/diario-2026-08.json'.
-/** @param {string} relPath @returns {string} */
-function drivePath(relPath) {
-  return `/me/drive/root:/${OD_FOLDER}/${relPath}`;
-}
+const drive = creaDrive({ richiesta: callRaw, scarica: scaricaJson });
 
-// Creazione delle cartelle al primo bisogno, una volta per sessione e per
-// cartella: il 409 (esiste già) è l'esito normale dopo la prima volta in
-// assoluto.
-/** @type {Map<string, Promise<any>>} */
-const _cartellePronte = new Map();
-
-/**
- * @param {string} [sub] sottocartella dentro quella dell'app; assente = l'app
- * @returns {Promise<any>}
- */
-function ensureFolder(sub) {
-  const chiave = sub || '';
-  let pronta = _cartellePronte.get(chiave);
-  if (!pronta) {
-    const genitore = sub ? `/me/drive/root:/${OD_FOLDER}:/children` : '/me/drive/root/children';
-    const nome = sub || OD_FOLDER;
-    pronta = (sub ? ensureFolder() : Promise.resolve())
-      .then(() => call(genitore, {
-        method: 'POST',
-        body: JSON.stringify({ name: nome, folder: {}, '@microsoft.graph.conflictBehavior': 'fail' }),
-      }))
-      .catch(e => {
-        if (e?.status === 409) return null;
-        _cartellePronte.delete(chiave);   // errore vero (rete, permessi): si riproverà
-        throw e;
-      });
-    _cartellePronte.set(chiave, pronta);
-  }
-  return pronta;
-}
+const { drivePath, ensureFolder, itemDiFile, getDriveJson, putDriveJson } = drive;
 
 // Lo strato delle attività (taskStore.js) tiene i suoi file nella stessa
 // cartella — `task/` — e passa da questi stessi due primitivi: stessa
 // concorrenza, stessa migrazione, stesse cartelle create al bisogno.
 export { getDriveJson, putDriveJson };
 
-/** La cartella che serve per scrivere un certo file. @param {string} relPath */
-function ensureFolderFor(relPath) {
-  const i = relPath.indexOf('/');
-  return ensureFolder(i < 0 ? undefined : relPath.slice(0, i));
-}
-
-// Dove poteva stare un file prima di finire dov'è adesso, dal più recente al
-// più vecchio: la cartella dell'app senza sottocartella (e con il prefisso nel
-// nome), e prima ancora la root del OneDrive.
-/** @param {string} relPath @returns {string[]} percorsi rispetto alla root del drive */
-function percorsiPrecedenti(relPath) {
-  const i = relPath.indexOf('/');
-  if (i < 0) return [relPath];   // file fisso: prima della cartella stava in root
-  const nomeVecchio = `mente-digitale-${relPath.slice(i + 1)}`;
-  return [`${OD_FOLDER}/${nomeVecchio}`, nomeVecchio];
-}
-
-// Migrazione pigra: al primo 404 sul percorso nuovo si prova a spostare il file
-// dalla posizione che aveva prima, con un PATCH (spostamento vero lato Graph,
-// niente copia + cancella, quindi nessuna finestra in cui il dato esiste in due
-// posti o in nessuno; e nella stessa chiamata anche la rinomina).
-// Un tentativo solo per file: quelli mai esistiti — es. il mese di diario di un
-// mese in cui non si è scritto — non devono costare una richiesta a ogni lettura.
-/** @type {Set<string>} */
-const _migrationTried = new Set();
-
-/** @param {string} relPath @returns {Promise<boolean>} true se il file è stato spostato */
-async function migrateLegacyFile(relPath) {
-  if (_migrationTried.has(relPath)) return false;
-  _migrationTried.add(relPath);
-  const i = relPath.indexOf('/');
-  const sub = i < 0 ? null : relPath.slice(0, i);
-  const nome = i < 0 ? relPath : relPath.slice(i + 1);
-  try {
-    await ensureFolderFor(relPath);
-  } catch {
-    return false;
-  }
-  for (const vecchio of percorsiPrecedenti(relPath)) {
-    try {
-      await call(`/me/drive/root:/${vecchio}`, {
-        method: 'PATCH',
-        body: JSON.stringify({
-          parentReference: { path: `/drive/root:/${OD_FOLDER}${sub ? '/' + sub : ''}` },
-          name: nome,
-        }),
-      });
-      return true;
-    } catch {
-      // Non era lì (404) o lo spostamento è fallito: si prova il posto prima.
-    }
-  }
-  // Nessun file da migrare: si prosegue con il percorso nuovo, che è comunque
-  // la sola fonte di verità da qui in poi.
-  return false;
-}
+// Le prove mettono in scena più OneDrive uno dopo l'altro sullo stesso modulo:
+// fra uno e l'altro il drive deve dimenticare quello che ha letto.
+export const _dimenticaDrive = () => drive.dimentica();
 
 // Migrazione in blocco, in due passate: prima i file `mente-digitale-*.json`
 // rimasti nella root finiscono nella cartella dell'app, poi quelli di diario e
@@ -369,63 +281,13 @@ export async function migrateLegacyDriveFiles() {
     try {
       await ensureFolder(m[2]);
       await sposta(item.id, `/${OD_FOLDER}/${m[2]}`, m[1]);
-      _migrationTried.add(`${m[2]}/${m[1]}`);
+      drive.segnaMigrato(`${m[2]}/${m[1]}`);
     } catch (e) {
       console.error('migrazione file OneDrive', item.name, e);
     }
   }
 
   return moved;
-}
-
-// ── Concorrenza sui file di OneDrive ────────────────────────────────────────
-// Fino a ieri qui c'era un PUT nudo: nessun ETag, nessun If-Match, l'ultimo che
-// scrive vince e nessuno se ne accorge. Con Microsoft To-Do non aveva mai fatto
-// danni — Graph fondeva campo per campo lato server — ma i file su OneDrive li
-// scriviamo interi, e telefono e portatile che salvano lo stesso documento a
-// pochi secondi di distanza si cancellavano a vicenda in silenzio.
-//
-// Il meccanismo e' quello classico: si tiene l'ETag della versione letta, lo si
-// manda come `If-Match` in scrittura, e sul 412 Precondition Failed si rilegge,
-// si riapplica la modifica sul contenuto fresco e si riscrive. Un solo giro,
-// poi l'errore sale.
-//
-// Una cautela in piu' rispetto al classico: insieme all'ETag si tiene anche il
-// **corpo** della versione su cui si sta lavorando. Serve a distinguere, su un
-// 412, il conflitto vero (qualcuno ha scritto davvero) da un ETag semplicemente
-// inutilizzabile: se il contenuto fresco e' identico a quello che avevamo, non
-// c'e' niente da fondere e si riscrive. E a poter controllare la concorrenza
-// anche quando l'ETag non c'e' affatto: in quel caso, prima di scrivere, si
-// confronta il contenuto remoto con la nostra base. Meglio un confronto sul
-// contenuto che niente.
-
-/**
- * @typedef {object} DriveVersion
- * @property {string|null} etag   ETag della versione letta o scritta, se noto
- * @property {string|null} body   il JSON di quella versione, per il confronto
- * @property {boolean} absent     true se il file non esiste ancora
- */
-
-/** Versione nota di ogni file toccato in questa sessione. @type {Map<string, DriveVersion>} */
-const _driveVersions = new Map();
-
-/** @param {any} data @returns {string} */
-function serializzaPerConfronto(data) {
-  return JSON.stringify(data ?? null);
-}
-
-/**
- * @param {string} filename
- * @param {string|null} etag
- * @param {any} data
- * @param {boolean} [absent]
- */
-function ricordaVersione(filename, etag, data, absent = false) {
-  _driveVersions.set(filename, {
-    etag: etag || null,
-    body: absent ? null : serializzaPerConfronto(data),
-    absent,
-  });
 }
 
 /**
@@ -474,164 +336,6 @@ async function scaricaJson(url, retries = 3) {
       clearTimeout(scadenza);
     }
   }
-}
-
-/**
- * I metadati dell'item, con dentro l'URL di download e l'ETag.
- *
- * Senza `$select`, e non e' una svista. Chiedendo esplicitamente
- * `@microsoft.graph.downloadUrl` fra i campi, su questo OneDrive personale
- * l'annotazione non torna affatto — la prova di connessione dal telefono lo ha
- * mostrato in chiaro: «nessun URL di download» sulla richiesta con `$select`,
- * e l'URL puntualmente presente in quella senza. Costava una seconda richiesta
- * di ripiego per ogni file letto, che su una rete da quasi sette secondi a
- * richiesta e' un'attesa raddoppiata per niente. I metadati interi sono
- * qualche riga di JSON in piu' e una richiesta in meno.
- * @param {string} filename
- * @returns {Promise<any|null>} null se il file non c'e'
- */
-async function itemDiFile(filename) {
-  try {
-    return await call(drivePath(filename));
-  } catch (e) {
-    if (/** @type {any} */ (e)?.status === 404) return null;
-    throw e;
-  }
-}
-
-/**
- * Legge un file della cartella dell'app insieme al suo ETag e registra la
- * versione letta. Sul 404 prova la migrazione dalla vecchia posizione in root
- * (vedi migrateLegacyFile) prima di dichiarare il file inesistente.
- *
- * Due richieste invece di una — prima i metadati, poi il contenuto — e non e'
- * un costo aggiunto per niente: la prima e' una normale risposta di Graph
- * (nessun redirect da seguire con i nostri header al seguito, vedi
- * scaricaJson) e porta l'ETag autorevole dell'item, quello che prima costava
- * comunque una richiesta in piu' ogni volta che il GET del contenuto non
- * esponeva l'header. La seconda non ha bisogno di token.
- * @param {string} filename
- * @returns {Promise<{ data: any, etag: string|null, absent: boolean }>}
- */
-async function readDriveFile(filename) {
-  let item = await itemDiFile(filename);
-  if (!item && await migrateLegacyFile(filename)) item = await itemDiFile(filename);
-  if (!item) {
-    ricordaVersione(filename, null, null, true);
-    return { data: null, etag: null, absent: true };
-  }
-  const etag = item.eTag || item.cTag || null;
-  const url = item['@microsoft.graph.downloadUrl'];
-  // Senza URL non si legge, e «non si legge» non deve mai diventare «il file e'
-  // vuoto»: un documento letto vuoto verrebbe poi riscritto vuoto, e li' si
-  // perde roba.
-  if (!url) throw new Error(`${filename}: OneDrive non da' un URL di download`);
-  const data = await scaricaJson(url);
-  ricordaVersione(filename, etag, data);
-  return { data, etag, absent: false };
-}
-
-/**
- * Una sola PUT, con If-Match se abbiamo un ETag. Aggiorna la versione nota con
- * l'ETag che Graph restituisce nell'item scritto.
- * @param {string} filename
- * @param {any} data
- * @param {string|null} etag
- * @returns {Promise<any>}
- */
-async function putDriveJsonOnce(filename, data, etag) {
-  const r = await callRaw(`${drivePath(filename)}:/content`, {
-    method: 'PUT',
-    headers: etag ? { 'If-Match': etag } : {},
-    body: JSON.stringify(data, null, 2),
-  });
-  const item = r.status === 204 ? null : await r.json();
-  ricordaVersione(filename, item?.eTag || item?.cTag || null, data);
-  return item;
-}
-
-/** @param {string} filename @returns {Error & { status?: number, conflict?: boolean }} */
-function erroreDiConflitto(filename) {
-  const err = /** @type {Error & { status?: number, conflict?: boolean }} */ (
-    new Error(`${filename} e' stato modificato altrove: ricarica prima di salvare`)
-  );
-  err.status = 412;
-  err.conflict = true;
-  return err;
-}
-
-/**
- * PUT di un file JSON nella cartella dell'app su OneDrive, con controllo di
- * concorrenza.
- *
- * `reapply` e' il modo che il chiamante ha di dire come si rimette la propria
- * modifica sopra un contenuto piu' fresco: riceve il documento appena riletto e
- * restituisce quello da scrivere. Chi non lo passa — perche' scrive il
- * documento intero e non saprebbe fondere niente — su un conflitto vero riceve
- * un errore con `status: 412`, invece di cancellare il lavoro dell'altro
- * dispositivo in silenzio.
- *
- * @param {string} filename
- * @param {any} data
- * @param {{ reapply?: (fresco: any) => any }} [opts]
- * @returns {Promise<any>}
- */
-async function putDriveJson(filename, data, opts = {}) {
-  await ensureFolderFor(filename);
-  const nota = _driveVersions.get(filename);
-
-  // Mai letto in questa sessione, o file che sappiamo non esistere: non c'e'
-  // una base su cui fondare un confronto, si scrive come si e' sempre fatto.
-  if (!nota || nota.absent) return putDriveJsonOnce(filename, data, null);
-
-  if (nota.etag) {
-    try {
-      return await putDriveJsonOnce(filename, data, nota.etag);
-    } catch (e) {
-      if (/** @type {any} */ (e)?.status !== 412) throw e;
-    }
-  }
-  return risolviConflitto(filename, data, nota, opts);
-}
-
-/**
- * Il file remoto non e' piu' quello su cui ci eravamo basati (o non lo sappiamo,
- * perche' l'ETag mancava): si rilegge e si decide.
- * @param {string} filename
- * @param {any} data
- * @param {DriveVersion} nota
- * @param {{ reapply?: (fresco: any) => any }} opts
- * @returns {Promise<any>}
- */
-async function risolviConflitto(filename, data, nota, opts) {
-  const fresco = await readDriveFile(filename);
-  const corpoFresco = fresco.absent ? null : serializzaPerConfronto(fresco.data);
-
-  if (corpoFresco === nota.body) {
-    // Nessuno ha toccato niente: l'ETag era vecchio o inservibile, non c'e'
-    // nessun conflitto da risolvere. Si riscrive sulla versione appena letta.
-    try {
-      return await putDriveJsonOnce(filename, data, fresco.etag);
-    } catch (e) {
-      if (/** @type {any} */ (e)?.status !== 412) throw e;
-      // Un 412 anche qui vuol dire che l'If-Match su questo file non e'
-      // utilizzabile. Il contenuto remoto lo abbiamo appena letto ed era il
-      // nostro: scrivere non fa perdere niente a nessuno.
-      console.warn(`If-Match non utilizzabile su ${filename}: scrittura senza precondizione`);
-      return putDriveJsonOnce(filename, data, null);
-    }
-  }
-
-  if (!opts.reapply) {
-    _driveVersions.delete(filename);   // la prossima lettura riparte pulita
-    throw erroreDiConflitto(filename);
-  }
-
-  // Conflitto vero e sanabile: si rimette la modifica sul contenuto fresco e si
-  // riscrive. Un solo giro: se anche questa PUT trova il file cambiato sotto,
-  // l'errore sale.
-  const unito = opts.reapply(fresco.absent ? null : fresco.data);
-  return putDriveJsonOnce(filename, unito, fresco.etag);
 }
 
 /** @returns {Promise<import('./types').Notebook[]>} */
@@ -1134,30 +838,6 @@ export async function moveCalendarEvent(calendarId, eventId, destinationCalendar
     method: 'POST',
     body: JSON.stringify({ destinationId: destinationCalendarId }),
   });
-}
-
-// GET di un file JSON dalla cartella dell'app su OneDrive. Distingue "file non
-// ancora creato" (404 → notFoundValue) dagli errori transitori (rete, 401…),
-// che vengono propagati: senza questa distinzione un errore momentaneo faceva
-// ripartire i chiamanti da un contenuto vuoto che, al salvataggio successivo,
-// sovrascriveva il file remoto cancellando tutto lo storico.
-//
-// Sul 404 si prova prima la migrazione dalla vecchia posizione in root (vedi
-// migrateLegacyFile): un file già esistente non deve mai apparire "non ancora
-// creato" solo perché è stata introdotta la cartella.
-//
-// La lettura vera è readDriveFile, che registra anche l'ETag della versione
-// letta: è quello che permette a putDriveJson di accorgersi se nel frattempo
-// qualcun altro ha scritto.
-/**
- * @template T
- * @param {string} filename
- * @param {T} notFoundValue   ritornato su 404 (file non ancora creato)
- * @returns {Promise<any>}
- */
-async function getDriveJson(filename, notFoundValue) {
-  const { data, absent } = await readDriveFile(filename);
-  return absent ? notFoundValue : data;
 }
 
 // ── OneDrive Identity Docs ────────────────────────────────────────────────────

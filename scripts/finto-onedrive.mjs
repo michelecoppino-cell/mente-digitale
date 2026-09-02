@@ -34,7 +34,8 @@ function urlDi(nome) {
     url = (async () => {
       let testo = await readFile(join(src, nome), 'utf8');
       testo = testo.replace("import { getToken } from './auth';", STUB_AUTH);
-      if (nome === 'api.js') testo += '\nexport { _driveVersions, _migrationTried, _cartellePronte };\n';
+      // Il drive del nucleo espone già `_dimenticaDrive`: non c'è più niente di
+      // privato da tirare fuori a forza.
       // Gli import fra moduli dell'app si rilegano ai moduli già costruiti: sia
       // quelli statici in testa al file, sia quelli a richiesta con l'estensione
       // (`import('./api.js')`, con cui taskStore carica il suo trasporto).
@@ -129,8 +130,16 @@ export function montaFintoOnedrive() {
   const HOST_CONTENUTO = 'https://prova-storage.onedrive/scarica/';
   const urlContenuto = percorso => HOST_CONTENUTO + encodeURIComponent(percorso);
 
+  // Le richieste arrivate, in ordine. Servono a provare quello che non si vede
+  // dal contenuto dell'archivio: che una lettura non ne ha fatta una seconda,
+  // che un file mai esistito non si ritenta a ogni giro, che quattro letture
+  // insieme chiedono lo stesso file una volta sola.
+  /** @type {{ metodo: string, percorso: string }[]} */
+  const richieste = [];
+
   globalThis.fetch = async (url, opt = {}) => {
     const metodo = opt.method || 'GET';
+    richieste.push({ metodo, percorso: String(url).replace('https://graph.microsoft.com/v1.0', '') });
     const indirizzo = String(url);
 
     if (indirizzo.startsWith(HOST_CONTENUTO)) {
@@ -204,12 +213,18 @@ export function montaFintoOnedrive() {
 
   return {
     get archivio() { return archivio; },
+    /** Le richieste arrivate finora, in ordine. */
+    get richieste() { return richieste; },
+    /** Quante richieste hanno toccato un percorso (sottostringa). */
+    quante: (pezzo, metodo) => richieste.filter(
+      r => r.percorso.includes(pezzo) && (!metodo || r.metodo === metodo)).length,
     stato,
     scriviFile,
     /** Aggiunge una rotta consultata prima di quelle del drive. */
     aggiungiRotta: fn => rotte.push(fn),
     pulisci() {
       archivio = new Map();
+      richieste.length = 0;
       archivio.set('mente-digitale', { cartella: true, id: 'radice' });
       stato.esponeEtag = true;
       stato.ifMatchInservibile = false;
