@@ -14,12 +14,12 @@ const { verifica, fine } = creaTabellone();
 const {
   putDriveJson, getDriveJson, migrateLegacyDriveFiles,
   loadDiaryMonth, saveDiaryEntry,
-  _driveVersions, _migrationTried, _cartellePronte,
+  _dimenticaDrive,
 } = await importaModulo('api.js');
 
 function pulisci() {
   finto.pulisci();
-  _driveVersions.clear(); _migrationTried.clear(); _cartellePronte.clear();
+  _dimenticaDrive();
 }
 
 console.log('\nConcorrenza\n');
@@ -107,13 +107,18 @@ verifica((await getDriveJson('movimento/movimento-2026-07.json', [])).length ===
   'migrazione pigra: risale anche alla root');
 verifica(esiste('mente-digitale/movimento/movimento-2026-07.json'), 'migrazione pigra: dalla root alla sottocartella');
 
-// Un file mai esistito non deve costare una richiesta a ogni lettura.
+// Un file mai esistito non deve costare una richiesta a ogni lettura: la
+// migrazione dalla posizione vecchia si tenta una volta e poi non più.
 pulisci();
 await loadDiaryMonth('2019-01');
-const primaDelSecondoGiro = finto.archivio.size;
+const dopoIlPrimoGiro = finto.richieste.length;
+const patchDelPrimoGiro = finto.quante('diario-2019-01', 'PATCH');
 await loadDiaryMonth('2019-01');
-verifica(_migrationTried.has('diario/diario-2019-01.json') && finto.archivio.size === primaDelSecondoGiro,
-  'un mese mai scritto si tenta di migrare una volta sola');
+verifica(patchDelPrimoGiro > 0, 'la prima lettura di un mese assente prova a migrarlo');
+verifica(finto.quante('diario-2019-01', 'PATCH') === patchDelPrimoGiro,
+  'la seconda non ci riprova');
+verifica(finto.richieste.length - dopoIlPrimoGiro < dopoIlPrimoGiro,
+  'e costa meno richieste della prima');
 
 // La scrittura crea la sottocartella se non c'è.
 pulisci();

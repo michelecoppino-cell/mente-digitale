@@ -14,7 +14,7 @@ const ordine = await importaModulo('taskOrder.js');
 
 function pulisci() {
   finto.pulisci();
-  api._driveVersions.clear(); api._migrationTried.clear(); api._cartellePronte.clear();
+  api._dimenticaDrive();
   // Il registro delle liste ha una copia in memoria che dura mezzo minuto: qui
   // i file spariscono da sotto, e senza buttarla la prova successiva
   // ragionerebbe sulle liste della prova precedente.
