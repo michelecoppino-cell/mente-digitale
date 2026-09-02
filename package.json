@@ -15,7 +15,8 @@
     "prova-migrazione": "node scripts/prova-migrazione.mjs",
     "prova-flusso": "node scripts/prova-flusso.mjs",
     "prova-nucleo": "node scripts/prova-nucleo.mjs",
-    "prova": "npm run prova-onedrive && npm run prova-nucleo && npm run prova-task && npm run prova-migrazione && npm run prova-flusso",
+    "prova-pool": "node scripts/prova-pool.mjs",
+    "prova": "npm run prova-onedrive && npm run prova-nucleo && npm run prova-task && npm run prova-migrazione && npm run prova-flusso && npm run prova-pool",
     "test": "npm run prova",
     "preview": "vite preview"
   },

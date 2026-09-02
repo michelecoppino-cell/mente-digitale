@@ -4,6 +4,8 @@
 import { useState, useEffect } from 'react';
 import { getPages } from './api';
 import { leggiTaskAperti, creaTask, aggiornaTask } from './taskStore';
+import { cambiaAttivitaInPool, aggiungiAlPool } from './poolAttivita';
+import { queryClient, qk } from './queryClient';
 import { filterEventsBySectionPrefix, parseReminderSubject } from './deadlineReminders';
 import Skeleton from './Skeleton';
 import OneDriveBox from './OneDriveBox';
@@ -22,7 +24,7 @@ import { useEscape } from './useEscape';
 // tutte; `selected.listId` resta la principale, ed è lì che nasce un'attività
 // creata da qui — una consegna la si sceglie dalla plancia Sezioni, non da una
 // striscia laterale.
-export default function Panel({ selected, pagesCache, tasksCache, calendarEvents, onClose }) {
+export default function Panel({ selected, pagesCache, calendarEvents, onClose }) {
   const [pages, setPages] = useState([]);
   const [tasks, setTasks] = useState([]);
   const [noDeadlineTasks, setNoDeadlineTasks] = useState([]);
@@ -64,13 +66,18 @@ export default function Panel({ selected, pagesCache, tasksCache, calendarEvents
   // Le attività di tutte le liste della sezione in un elenco solo: ogni task si
   // porta dietro la lista da cui viene, perché la riga possa dire di quale
   // consegna è.
+  //
+  // La copia è quella della cache di query, la stessa che legge il pool (vedi
+  // poolAttivita.js). Prima il pannello ne teneva una sua in un `ref` passato
+  // da App: una terza copia da tenere in pari, che è esattamente quello che si
+  // è tolto di mezzo.
   async function loadTasks(lists) {
-    if (lists.some(l => !tasksCache?.current?.[l.id])) setLoadingTasks(true);
+    const inCache = (/** @type {string} */ id) => queryClient.getQueryData(qk.tasks(id));
+    if (lists.some(l => !inCache(l.id))) setLoadingTasks(true);
     try {
       const perList = await Promise.all(lists.map(async l => {
-        const cached = tasksCache?.current?.[l.id];
-        const all = cached || await leggiTaskAperti(l.id);
-        if (!cached && tasksCache?.current) tasksCache.current[l.id] = all;
+        const all = inCache(l.id)
+          || await queryClient.fetchQuery({ queryKey: qk.tasks(l.id), queryFn: () => leggiTaskAperti(l.id) });
         return all.map(t => ({ ...t, _listId: l.id, _listName: l.displayName }));
       }));
       splitTasks(perList.flat());
@@ -94,8 +101,7 @@ export default function Panel({ selected, pagesCache, tasksCache, calendarEvents
       const created = await creaTask(selected.listId, { titolo: newTask.trim() });
       const task = { ...created, _listId: selected.listId, _listName: selected.listName };
       setNoDeadlineTasks(prev => [task, ...prev]);
-      if (tasksCache?.current?.[selected.listId])
-        tasksCache.current[selected.listId] = [task, ...tasksCache.current[selected.listId]];
+      aggiungiAlPool(selected.listId, created);
       setNewTask('');
     } catch(e) { console.error(e); }
     setAdding(false);
@@ -108,8 +114,7 @@ export default function Panel({ selected, pagesCache, tasksCache, calendarEvents
       await aggiornaTask(listId, task.id, { stato: 'done' });
       setTasks(prev => prev.filter(t => t.id !== task.id));
       setNoDeadlineTasks(prev => prev.filter(t => t.id !== task.id));
-      if (tasksCache?.current?.[listId])
-        tasksCache.current[listId] = tasksCache.current[listId].filter(t => t.id !== task.id);
+      cambiaAttivitaInPool(listId, attivita => attivita.filter(t => t.id !== task.id));
     } catch(e) { console.error(e); }
   }
 
