@@ -6,7 +6,26 @@
     "lib": ["ES2020", "DOM", "DOM.Iterable"],
     "jsx": "react-jsx",
     "allowJs": true,
-    "checkJs": false,
+    // I file .js e .jsx si controllano tutti, senza doverci mettere
+    // `// @ts-check` in testa uno per uno.
+    //
+    // Con il pragma per file il criterio con cui un file restava fuori
+    // finiva per essere la difficoltà: dentro c'erano gli strati dei dati e
+    // le viste piccole, fuori PlannerView, App, il Diario, la Mappa e
+    // auth.js — cioè novemila righe fra le più intricate e tutto quello che
+    // tiene in piedi l'accesso su iPhone. Ed era un'assenza invisibile:
+    // niente, in nessun controllo, diceva che quei file non erano guardati.
+    //
+    // Ora il verso è rovesciato. Chi resta fuori porta `// @ts-nocheck` in
+    // prima riga, quindi è un elenco che si legge con un `grep`, si accorcia
+    // togliendo una riga per volta, e non si allunga per distrazione: un file
+    // nuovo nasce controllato.
+    "checkJs": true,
+    // I .js dentro node_modules restano fuori: d3 non ha tipi propri e
+    // spedisce il sorgente, che con `checkJs` verrebbe controllato come se
+    // fosse nostro. Le librerie si controllano dai loro `.d.ts`, o non si
+    // controllano.
+    "maxNodeModuleJsDepth": 0,
     "noEmit": true,
     "strict": true,
     "skipLibCheck": true,

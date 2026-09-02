@@ -1,3 +1,6 @@
+// @ts-nocheck — non ancora controllato dai tipi. È un debito dichiarato, non
+// una scelta: vedi la nota in jsconfig.json. Si toglie questa riga, si
+// sistema quello che salta fuori, e il file entra col resto.
 // Vista «Task»: il serbatoio del Piano e il pannello Attività, un solo file.
 //
 // I task sono raggruppati per lista To-Do, e una lista può essere una sezione

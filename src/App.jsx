@@ -1,3 +1,6 @@
+// @ts-nocheck — non ancora controllato dai tipi. È un debito dichiarato, non
+// una scelta: vedi la nota in jsconfig.json. Si toglie questa riga, si
+// sistema quello che salta fuori, e il file entra col resto.
 import { useState, useEffect, useMemo, useRef, lazy, Suspense } from 'react';
 import { Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { initAuth, getAccount, login, trySsoSilent, getAuthDiagnostics, onInteractionRequired, isInteractionRequired, reconnect, startTokenKeepAlive, cambiaAccount } from './auth';

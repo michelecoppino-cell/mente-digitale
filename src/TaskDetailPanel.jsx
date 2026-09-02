@@ -62,6 +62,7 @@ const SVEGLIA_RAPIDE = [15, 60];
  *  `inbox` non è fra le scelte: non è uno stato ma la lista in cui il task sta,
  *  e ci si esce chiarendolo. Compare come pastiglia spenta quando è lo stato
  *  corrente, così la scheda non mente su dove si trova l'attività. */
+/** @type {{ key: import('./taskModel').TaskStatus, label: string }[]} */
 const STATUS_CHOICES = [
   { key: 'next',      label: 'Prossima azione' },
   { key: 'scheduled', label: 'Programmata' },
@@ -118,7 +119,7 @@ function daMemoria(task) {
  * @param {(listId: string, task: import('./taskStore').Task) => void} [props.onRestored]
  * @param {(min: number) => void} [props.onEstimateChanged]
  * @param {(patch: Object) => void} [props.onPatched]  stato/note cambiati: il pool va allineato
- * @param {string} [props.status]        stato del flusso già derivato da chi apre il pannello
+ * @param {import('./taskModel').TaskStatus} [props.status]  stato del flusso già derivato da chi apre il pannello
  *                                       (include `scheduled` e `inbox`, che nel task non sono
  *                                       scritti). Senza, si legge il campo `stato`.
  * @param {(t: import('./taskStore').Task) => void} [props.onSchedule]    porta al Piano
@@ -140,20 +141,26 @@ export default function TaskDetailPanel({ task, sectionsMap = {}, onClose, onCom
     return sezioni.find(s => (s.displayName || '').toLowerCase() === target) || null;
   }, [task?._listName, sectionsMap]);
   const sectionId = section?.id || null;
+  // La lista da cui l'attività viene. Nel tipo di `Task` è facoltativa perché
+  // è una decorazione del pool e non un campo del file, ma il pannello si apre
+  // sempre da lì — dal Piano, dalla vista Attività, dalla plancia di Sezioni —
+  // e non c'è modo di aprirlo su un'attività che non sappia da dove viene.
+  // Fissarla qui evita di ripetere il controllo a ogni scrittura.
+  const listId = /** @type {string} */ (task._listId);
   const [loading, setLoading]         = useState(true);
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft]   = useState(task.titolo);
   const [working, setWorking]         = useState(false);
   const [notes, setNotes]             = useState('');
-  const [items, setItems]             = useState([]);
+  const [items, setItems]             = useState(/** @type {import('./taskStore').Sottoattivita[]} */ ([]));
   const [newItemText, setNewItemText] = useState('');
   const [savingNotes, setSavingNotes] = useState(false);
-  const [editingItemId, setEditingItemId] = useState(null);
+  const [editingItemId, setEditingItemId] = useState(/** @type {string|null} */ (null));
   const [itemDraft, setItemDraft]     = useState('');
   const [reordering, setReordering]   = useState(false);
-  const dragIndexRef                  = useRef(null);
-  const [dragOverIndex, setDragOverIndex] = useState(null);
-  const notesTimerRef                 = useRef(null);
+  const dragIndexRef                  = useRef(/** @type {number|null} */ (null));
+  const [dragOverIndex, setDragOverIndex] = useState(/** @type {number|null} */ (null));
+  const notesTimerRef                 = useRef(/** @type {ReturnType<typeof setTimeout>|undefined} */ (undefined));
   const [dueDraft, setDueDraft]       = useState('');
   const [savingDue, setSavingDue]     = useState(false);
   const [itemError, setItemError]     = useState('');
@@ -165,7 +172,8 @@ export default function TaskDetailPanel({ task, sectionsMap = {}, onClose, onCom
   // Stato del flusso e persona attesa: si conoscono solo dopo il caricamento
   // completo del task, perché chi apre il pannello da un blocco del Piano ha in
   // mano solo id, titolo e lista.
-  const [flowStatus, setFlowStatus] = useState(() => status || flowStatusOf(task));
+  const [flowStatus, setFlowStatus] = useState(
+    /** @type {import('./taskModel').TaskStatus} */ (status || flowStatusOf(task)));
   const [who, setWho] = useState('');
   const [waitingSince, setWaitingSince] = useState(/** @type {string|null} */ (null));
   const [savingStatus, setSavingStatus] = useState(false);
@@ -224,7 +232,7 @@ export default function TaskDetailPanel({ task, sectionsMap = {}, onClose, onCom
     const memoria = daMemoria(task);
     if (memoria) { applica(memoria); setLoading(false); } else { setLoading(true); }
     try {
-      const full = await leggiUnTask(task._listId, task.id);
+      const full = await leggiUnTask(listId, task.id);
       if (giro !== caricamentoRef.current) return;
       if (full) applica(full, !!memoria);
       else if (!memoria) applica(task);
@@ -241,10 +249,11 @@ export default function TaskDetailPanel({ task, sectionsMap = {}, onClose, onCom
 
   /** Una modifica al task, e l'allineamento del pool che lo tiene in mano. */
   async function scrivi(/** @type {Object} */ patch) {
-    await aggiornaTask(task._listId, task.id, patch);
+    await aggiornaTask(listId, task.id, patch);
     onPatched?.(patch);
   }
 
+  /** @param {{ target: { value: string } }} e */
   async function handleDueChange(e) {
     tocca('scadenza');
     const val = e.target.value;
@@ -255,13 +264,13 @@ export default function TaskDetailPanel({ task, sectionsMap = {}, onClose, onCom
     if (val && !/^\d{4}-\d{2}-\d{2}$/.test(val)) return;
     setSavingDue(true);
     try {
-      await aggiornaTask(task._listId, task.id, { scadenza: val || null });
+      await aggiornaTask(listId, task.id, { scadenza: val || null });
       onDueChanged?.(val || null);
       if (prevVal !== val) {
         pushUndo({
           label: 'Scadenza task modificata',
           undo: async () => {
-            await aggiornaTask(task._listId, task.id, { scadenza: prevVal || null });
+            await aggiornaTask(listId, task.id, { scadenza: prevVal || null });
             onDueChanged?.(prevVal || null);
             setDueDraft(prevVal);
           },
@@ -271,6 +280,7 @@ export default function TaskDetailPanel({ task, sectionsMap = {}, onClose, onCom
     setSavingDue(false);
   }
 
+  /** @param {number} min */
   async function handleEstimateChange(min) {
     if (min === estimate || savingEstimate) return;
     tocca('stimaMin');
@@ -349,7 +359,7 @@ export default function TaskDetailPanel({ task, sectionsMap = {}, onClose, onCom
   // a». Due scritture, e un task che restava a metà se la seconda falliva.
   // Adesso sono due campi dello stesso task, e si scrivono insieme.
   /**
-   * @param {string} next        stato del flusso da applicare
+   * @param {import('./taskModel').TaskStatus} next  stato del flusso da applicare
    * @param {string} [whoValue]  la persona, se `next` ne prevede una
    */
   async function applyStatus(next, whoValue = who) {
@@ -407,6 +417,7 @@ export default function TaskDetailPanel({ task, sectionsMap = {}, onClose, onCom
 
   // Le note sono solo le note: nessun marker da preservare, nessuna riga della
   // persona da non calpestare. Il debounce resta, perché si scrive a mano.
+  /** @param {{ target: { value: string } }} e */
   function handleNotesChange(e) {
     tocca('nota');
     const val = e.target.value;
@@ -419,6 +430,7 @@ export default function TaskDetailPanel({ task, sectionsMap = {}, onClose, onCom
     }, 1200);
   }
 
+  /** @param {string} action @param {any} e */
   function flashItemError(action, e) {
     console.error(action, e);
     setItemError(`Errore: ${action} non riuscito${e?.message ? ` (${e.message})` : ''}. Riprova.`);
@@ -461,6 +473,7 @@ export default function TaskDetailPanel({ task, sectionsMap = {}, onClose, onCom
     }
   }
 
+  /** @param {import('./taskStore').Sottoattivita} item */
   function handleToggle(item) {
     const fatta = !item.fatta;
     return salvaSottoattivita(
@@ -470,6 +483,7 @@ export default function TaskDetailPanel({ task, sectionsMap = {}, onClose, onCom
     );
   }
 
+  /** @param {string} itemId */
   function handleDelete(itemId) {
     const tolta = items.find(i => i.id === itemId);
     return salvaSottoattivita(
@@ -479,6 +493,7 @@ export default function TaskDetailPanel({ task, sectionsMap = {}, onClose, onCom
     );
   }
 
+  /** @param {import('react').FormEvent} formEvent */
   function handleAdd(formEvent) {
     formEvent.preventDefault();
     const testo = newItemText.trim();
@@ -491,6 +506,7 @@ export default function TaskDetailPanel({ task, sectionsMap = {}, onClose, onCom
     );
   }
 
+  /** @param {import('./taskStore').Sottoattivita} item */
   function startItemRename(item) {
     setEditingItemId(item.id);
     setItemDraft(item.titolo);
@@ -508,12 +524,14 @@ export default function TaskDetailPanel({ task, sectionsMap = {}, onClose, onCom
     );
   }
 
+  /** @param {import('./taskStore').Sottoattivita[]} reordered */
   async function persistReorder(reordered) {
     setReordering(true);
     await salvaSottoattivita(reordered, '', 'riordino sottoattività');
     setReordering(false);
   }
 
+  /** @param {number} index @param {-1|1} dir */
   function moveItem(index, dir) {
     const next = index + dir;
     if (next < 0 || next >= items.length || reordering) return;
@@ -522,6 +540,7 @@ export default function TaskDetailPanel({ task, sectionsMap = {}, onClose, onCom
     persistReorder(reordered);
   }
 
+  /** @param {number} index */
   function handleItemDrop(index) {
     const from = dragIndexRef.current;
     dragIndexRef.current = null;
@@ -558,14 +577,14 @@ export default function TaskDetailPanel({ task, sectionsMap = {}, onClose, onCom
     setWorking(true);
     try {
       const prima = flowStatus === 'scheduled' ? 'next' : flowStatus;
-      await aggiornaTask(task._listId, task.id, { stato: 'done' });
+      await aggiornaTask(listId, task.id, { stato: 'done' });
       const snapshot = { ...task, stato: prima };
       onCompleted?.();
       pushUndo({
         label: `Task "${task.titolo}" completato`,
         undo: async () => {
-          await aggiornaTask(task._listId, task.id, { stato: prima });
-          onRestored?.(task._listId, snapshot);
+          await aggiornaTask(listId, task.id, { stato: prima });
+          onRestored?.(listId, snapshot);
         },
       });
     } catch (e) { console.error('complete task', e); }
@@ -591,13 +610,13 @@ export default function TaskDetailPanel({ task, sectionsMap = {}, onClose, onCom
       sottoattivita: items,
     };
     try {
-      await eliminaTask(task._listId, task.id);
+      await eliminaTask(listId, task.id);
       onDeleted?.();
       pushUndo({
         label: `Task "${snapshot.titolo}" eliminato`,
         undo: async () => {
-          const ricreato = await creaTask(task._listId, snapshot);
-          onRestored?.(task._listId, ricreato);
+          const ricreato = await creaTask(listId, snapshot);
+          onRestored?.(listId, ricreato);
         },
       });
     } catch (e) { console.error('delete task', e); }

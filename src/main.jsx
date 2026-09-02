@@ -11,7 +11,12 @@ import App from './App.jsx'
 // chiederebbe al server un file che non esiste. Con l'hash la rotta non lascia
 // mai il client, e le due pagine-scorciatoia (/gtd.html, /diario.html)
 // restano file veri.
-createRoot(document.getElementById('root')).render(
+// `#root` sta in index.html: se manca non c'è app, e un errore chiaro qui è
+// meglio di un `null` che si propaga dentro React.
+const radice = document.getElementById('root');
+if (!radice) throw new Error('Manca #root in index.html');
+
+createRoot(radice).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
       <HashRouter>

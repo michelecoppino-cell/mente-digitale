@@ -1,3 +1,4 @@
+// @ts-check
 import { useState, useEffect } from 'react';
 import { loadODLinksFromCloud } from './api';
 import { loadLocalLinks, persistSectionLinks, saveLocalLinks } from './odLinks';
@@ -5,6 +6,9 @@ import { loadLocalLinks, persistSectionLinks, saveLocalLinks } from './odLinks';
 // Riquadro OneDrive di una sezione (elenco link + form aggiungi/modifica).
 // Usato sia nel Panel di sezione (ToDo/OneNote/OneDrive) sia nel pannello
 // Dettagli task del Piano — stesso componente, stessi dati su OneDrive.
+/**
+ * @param {{ sectionId: string, color?: string }} props
+ */
 export default function OneDriveBox({ sectionId, color = 'var(--accent)' }) {
   const [odLinks, setOdLinks]     = useState(loadLocalLinks);
   const [odSyncing, setOdSyncing] = useState(false);
@@ -12,7 +16,7 @@ export default function OneDriveBox({ sectionId, color = 'var(--accent)' }) {
   const [newODName, setNewODName] = useState('');
   const [newODUrl, setNewODUrl]   = useState('');
   const [newODUrlPc, setNewODUrlPc] = useState('');
-  const [editingIdx, setEditingIdx] = useState(null);
+  const [editingIdx, setEditingIdx] = useState(/** @type {number|null} */ (null));
 
   useEffect(() => {
     loadODLinksFromCloud()
@@ -24,6 +28,7 @@ export default function OneDriveBox({ sectionId, color = 'var(--accent)' }) {
   // riletto dal cloud: ogni istanza (Panel, Dettagli task, altre schede o
   // dispositivi) riscrive l'intero file, e partire dalla propria copia in
   // stato avrebbe sovrascritto le modifiche fatte altrove nel frattempo.
+  /** @param {any[]} sectionLinks  i record del file, vedi persistSectionLinks */
   async function persist(sectionLinks) {
     setOdLinks(o => ({ ...o, [sectionId]: sectionLinks }));
     setOdSyncing(true);
@@ -49,6 +54,7 @@ export default function OneDriveBox({ sectionId, color = 'var(--accent)' }) {
     await persist(updated);
   }
 
+  /** @param {number} idx */
   function handleStartEdit(idx) {
     const link = odLinks[sectionId]?.[idx];
     if (!link) return;
@@ -73,6 +79,7 @@ export default function OneDriveBox({ sectionId, color = 'var(--accent)' }) {
     await persist(updated);
   }
 
+  /** @param {number} idx */
   async function handleRemove(idx) {
     const existing = odLinks[sectionId] || [];
     await persist(existing.filter((_, i) => i !== idx));
@@ -108,7 +115,7 @@ export default function OneDriveBox({ sectionId, color = 'var(--accent)' }) {
             <span className="od-link-name">☁ {link.name}</span>
             <div className="od-link-btns">
               {link.url && (
-                <button className="od-open-btn" onClick={() => window.open(link.url, '_blank')} title="Apri su mobile/web">📱</button>
+                <button className="od-open-btn" onClick={() => window.open(link.url || '', '_blank')} title="Apri su mobile/web">📱</button>
               )}
               {link.urlPc && <CopyBtn text={link.urlPc} />}
               <button className="od-edit-btn" onClick={() => handleStartEdit(i)} title="Modifica">✎</button>
@@ -124,6 +131,7 @@ export default function OneDriveBox({ sectionId, color = 'var(--accent)' }) {
   );
 }
 
+/** @param {{ text: string }} props */
 function CopyBtn({ text }) {
   const [copied, setCopied] = useState(false);
   async function handleCopy() {

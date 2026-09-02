@@ -24,7 +24,7 @@ import './TaskDetailDrawer.css';
  * @param {(scadenza: string|null) => void} [props.onDueChanged]
  * @param {(patch: Object) => void} [props.onPatched]
  * @param {(listId: string, task: import('./taskStore').Task) => void} [props.onRestored]
- * @param {string} [props.status]
+ * @param {import('./taskModel').TaskStatus} [props.status]
  * @param {(t: import('./taskStore').Task) => void} [props.onSchedule]
  * @param {(t: import('./taskStore').Task) => Promise<void>|void} [props.onUnschedule]
  */

@@ -1,3 +1,5 @@
+// @ts-check
+/// <reference types="vite/client" />
 // Data della build (iniettata da Vite): la schermata di login la mostra, così
 // da iPhone si vede subito se il telefono sta girando l'ultimo deploy.
 export const BUILD_TIME = import.meta.env.VITE_BUILD_TIME || null;

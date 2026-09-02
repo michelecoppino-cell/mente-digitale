@@ -120,10 +120,15 @@ export function categoriesOf(links) {
  * cloud prima di scrivere e ci innesta dentro la sola sezione toccata: ogni
  * istanza riscrive il file intero, e partire dalla propria copia in memoria
  * sovrascriverebbe quello che è cambiato altrove nel frattempo.
+ * I record sono quelli **del file**, non i `PathLink` in memoria: chi scrive
+ * dalla colonna Percorsi ci passa l'uscita di `serializeLink`, e il riquadro
+ * OneDrive la forma più vecchia con `url`/`urlPc` e basta. Le due si rileggono
+ * uguali perché `normalizeLink` le riporta entrambe alla stessa forma; quello
+ * che qui dentro non si può fare è trattarle come se fossero già normalizzate.
  * @param {string} sectionId
- * @param {PathLink[]} sectionLinks
- * @param {Record<string, PathLink[]>} known  l'archivio come lo conosce chi chiama
- * @returns {Promise<Record<string, PathLink[]>>} l'archivio da tenere in stato
+ * @param {any[]} sectionLinks
+ * @param {Record<string, any[]>} known  l'archivio come lo conosce chi chiama
+ * @returns {Promise<Record<string, any[]>>} l'archivio da tenere in stato
  */
 export async function persistSectionLinks(sectionId, sectionLinks, known) {
   const local = { ...known, [sectionId]: sectionLinks };
