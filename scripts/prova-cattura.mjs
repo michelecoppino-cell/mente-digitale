@@ -26,6 +26,26 @@ verifica(tempo.spostaGiorni('2026-03-29', 1) === '2026-03-30', 'e quello dell\'o
 verifica(tempo.spostaGiorni('2026-01-01', -1) === '2025-12-31', 'indietro si scavalca l\'anno');
 verifica(tempo.spostaGiorni('2026-09-03', 30) === '2026-10-03', 'e trenta giorni sono trenta giorni');
 
+console.log('\nLe ore, quando le sceglie un bottone\n');
+
+// I token si scrivono comodi da tastiera e scomodi col pollice, quindi ogni
+// token ha anche una pastiglia da toccare. Queste due regole valgono per tutti
+// e due i modi, e stanno in tempo.js perché sono regole sull'ora, non sulla
+// finestra di cattura.
+verifica(tempo.sommaOra('09:30', 90) === '11:00', 'un\'ora più novanta minuti');
+verifica(tempo.sommaOra('9:30', 30) === '10:00', 'e l\'ora senza lo zero davanti si legge lo stesso');
+// Un evento che finisce il giorno dopo, senza che nessuno l'abbia detto, è
+// peggio di un evento accorciato.
+verifica(tempo.sommaOra('23:30', 120) === '23:59', 'la fine non scavalca la mezzanotte');
+
+const meriggio = new Date(2026, 8, 2, 14, 3);
+verifica(tempo.oraProposta('2026-09-02', meriggio) === '14:30', 'oggi si propone la prossima mezz\'ora');
+verifica(tempo.oraProposta('2026-09-02', new Date(2026, 8, 2, 14, 30)) === '15:00',
+  'e alle 14:30 in punto è la mezz\'ora dopo, non quella in cui si sta');
+verifica(tempo.oraProposta('2026-09-05', meriggio) === '09:00', 'un altro giorno si propongono le nove');
+verifica(tempo.oraProposta('2026-09-02', new Date(2026, 8, 2, 23, 40)) === '09:00',
+  'e a tarda sera pure: la «prossima mezz\'ora» sarebbe domani');
+
 console.log('\nLa riga di cattura\n');
 
 const liste = [

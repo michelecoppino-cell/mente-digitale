@@ -170,12 +170,106 @@
 .qc-cal-select option { background: var(--surface); color: var(--text); }
 
 .qc-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
   padding: var(--sp-2) var(--sp-3);
   border: 1px solid var(--line);
   border-radius: var(--r-sm);
+  background: none;
   color: var(--text-3);
+  font-family: var(--font-ui);
   font-size: var(--fs-chip);
   white-space: nowrap;
+}
+
+/* La pastiglia che è anche un bottone. I token si scrivono comodi da tastiera
+   e scomodi col pollice — `@` e `~` stanno nella seconda schermata dei simboli
+   — quindi ognuno ha anche un comando che si tocca. */
+.qc-chip-tocca {
+  position: relative;
+  cursor: pointer;
+  transition: border-color var(--t), color var(--t), background var(--t);
+}
+@media (hover: hover) {
+  .qc-chip-tocca:hover { border-color: var(--accent-line); color: var(--text); }
+}
+/* Acceso quando dice un valore vero e non un invito: a colpo d'occhio si legge
+   cosa è stato deciso e cosa è ancora vuoto. */
+.qc-chip-tocca.scelta {
+  border-color: var(--accent-line);
+  background: var(--accent-tint);
+  color: var(--accent);
+}
+
+/* Il campo data disteso su tutta la pastiglia, invisibile: così il tocco cade
+   su di lui ovunque si tocchi, e da telefono si apre la rotella di sistema —
+   che è il modo migliore che esista di scegliere una data col pollice, e non
+   c'è niente da disegnare. */
+.qc-campo-sopra {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: none;
+  background: none;
+  color: transparent;
+  opacity: 0;
+  cursor: pointer;
+}
+
+/* Il pannello di una pastiglia: ora, oppure durata. Sta sotto la riga e non
+   sopra, come l'elenco delle destinazioni — su un telefono un menù che si apre
+   verso l'alto finisce sotto il dito che l'ha aperto. */
+.qc-pannello {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  padding: var(--sp-4);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  background: var(--bg-rail);
+}
+
+.qc-ora-riga { display: flex; gap: var(--sp-4); }
+.qc-ora-campo { flex: 1; display: flex; flex-direction: column; gap: var(--sp-2); }
+.qc-ora-campo input {
+  height: var(--tap);
+  padding: 0 var(--sp-3);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: var(--fs-card);
+}
+
+.qc-preset-riga { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
+
+.qc-preset {
+  min-height: var(--tap);
+  padding: 0 var(--sp-4);
+  background: none;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  color: var(--text-3);
+  font-family: var(--font-ui);
+  font-size: var(--fs-chip);
+  cursor: pointer;
+  transition: border-color var(--t), color var(--t), background var(--t);
+}
+@media (hover: hover) {
+  .qc-preset:hover { border-color: var(--accent-line); color: var(--text); }
+}
+.qc-preset.scelto { border-color: var(--accent-line); background: var(--accent-tint); color: var(--accent); }
+
+/* Col dito le pastiglie diventano bersagli veri. Su schermo grande restano
+   piccole: lì si punta col mouse, e 44px per una data sarebbero un bottone
+   grosso come il testo che ha sopra. */
+@media (pointer: coarse) {
+  .qc-chip-tocca { min-height: var(--tap); padding-inline: var(--sp-4); }
+  .qc-target { min-height: var(--tap); }
 }
 
 .qc-hint code {

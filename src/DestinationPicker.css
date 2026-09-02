@@ -48,6 +48,15 @@
 
 /* Intestazione di gruppo: separa le liste della sezione aperta da tutte le
    altre. Non è cliccabile, è un'etichetta. */
+/* Col dito le righe diventano bersagli veri, e l'elenco più alto: da telefono
+   la finestra di cattura ha tutta la larghezza dello schermo e questo è
+   l'unico posto in cui si sceglie qualcosa. Con le righe da 34px si toccava la
+   sezione sbagliata. */
+@media (pointer: coarse) {
+  .dp { max-height: 45dvh; }
+  .dp-item { min-height: var(--tap); font-size: var(--fs-card); }
+}
+
 .dp-head {
   position: sticky;
   top: 0;

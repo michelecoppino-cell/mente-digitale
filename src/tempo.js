@@ -73,6 +73,37 @@ export function oraDaMinuti(min) {
 }
 
 /**
+ * L'ora che viene `minuti` dopo un'altra: `09:30` + 90 → `11:00`.
+ *
+ * Si ferma alle 23:59 e non scavalca la mezzanotte: chi la usa sta calcolando
+ * la fine di un appuntamento cominciato in giornata, e farlo finire il giorno
+ * dopo **senza averlo detto** sarebbe peggio che accorciarlo.
+ * @param {string} ora  `HH:MM`
+ * @param {number} minuti
+ * @returns {string}
+ */
+export function sommaOra(ora, minuti) {
+  return oraDaMinuti(Math.min(minutiDaOra(ora) + minuti, 23 * 60 + 59));
+}
+
+/**
+ * La prima ora plausibile per un appuntamento fissato di getto: **oggi la
+ * prossima mezz'ora, un altro giorno le nove**.
+ *
+ * Un appuntamento che si scrive al volo è quasi sempre «fra poco» se cade
+ * oggi, e «di mattina» se cade un altro giorno — e a tarda sera la «prossima
+ * mezz'ora» sarebbe domani, quindi anche lì valgono le nove.
+ * @param {string} giorno  `YYYY-MM-DD`
+ * @param {Date} [adesso]
+ * @returns {string} `HH:MM`
+ */
+export function oraProposta(giorno, adesso = new Date()) {
+  if (giorno !== ymd(adesso)) return '09:00';
+  const arrotondata = Math.ceil((adesso.getHours() * 60 + adesso.getMinutes() + 1) / 30) * 30;
+  return arrotondata >= 23 * 60 ? '09:00' : oraDaMinuti(arrotondata);
+}
+
+/**
  * Una durata come la scrivono le righe fitte — stima di un'attività, colonna
  * di una board: "45m", "1h30", "2h".
  * @param {number} min
