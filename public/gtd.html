@@ -12,7 +12,12 @@
          due scorciatoie sarebbero indistinguibili. -->
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <!-- `black` come l'app: è lo stile con cui iOS apre la finestra lanciata
+         da questa icona, e da lì si salta dentro l'app. Con `black-translucent`
+         la finestra resta alta quanto lo schermo meno la barra di stato ma
+         ancorata in cima, e in fondo avanza una fascia fuori dal viewport
+         (vedi la nota in index.html). -->
+    <meta name="apple-mobile-web-app-status-bar-style" content="black" />
     <meta name="apple-mobile-web-app-title" content="GTD" />
     <link rel="apple-touch-icon" href="/icon-gtd-180.png" />
     <link rel="icon" type="image/png" href="/icon-gtd-180.png" />

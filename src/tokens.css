@@ -102,10 +102,13 @@
   --border-radius-xl: var(--r-lg);
 }
 
-/* La misura della barra bassa: 56px di riga più l'indicatore Home. La soglia è
-   la stessa che in AppShell.css fa scendere la barra in fondo. */
+/* La misura della barra bassa: 60px di riga più la fascia dell'indicatore Home,
+   meno i 12px che la barra si riprende (l'indicatore è una pastiglia alta 5px
+   appoggiata al bordo, non una fascia piena). Le due misure sono scritte anche
+   in AppShell.css, sul padding della barra: vanno cambiate insieme. La soglia è
+   la stessa che lì fa scendere la barra in fondo. */
 @media (max-width: 860px) {
-  :root { --barra-bassa: calc(56px + env(safe-area-inset-bottom, 0px)); }
+  :root { --barra-bassa: calc(60px + max(0px, env(safe-area-inset-bottom, 0px) - 12px)); }
 }
 
 /* Etichetta di sezione: maiuscoletto spaziato. Tenuta a 11px e non ai 10px

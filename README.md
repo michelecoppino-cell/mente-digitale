@@ -196,7 +196,24 @@ icone si aprono verso l'alto e a tutta larghezza: 300 px appesi a un'icona di 34
 in mezzo al gruppo uscivano dal bordo dello schermo. Chi resta fisso in fondo —
 la striscia della sessione scaduta, i toast, il foglietto (i) di Finanze — si
 appoggia sopra la barra leggendo `--barra-bassa`, che su schermo grande vale
-zero. Vedi `AppShell.css` e `tokens.css`.
+zero. I bottoni sono più grandi che su desktop, disegno compreso (40 px con
+l'icona a 18, il panino 56×46 con l'icona a 22): là si punta col mouse, qui si
+tocca col pollice, e quello che conta è quanto si vede, non solo l'area
+cliccabile invisibile di `.tap-44`. Vedi `AppShell.css` e `tokens.css`.
+
+**La barra di stato è opaca (`black`) e non trasparente**, e non è una scelta di
+gusto. Con `black-translucent` iOS dà alla web app installata una finestra
+ancorata in cima allo schermo ma alta quanto lo schermo *meno* la barra di
+stato: su un iPhone da 844 punti, `100dvh` ne misura 797, e gli ultimi 47
+restano oltre il fondo del viewport — una fascia morta sotto la barra dei
+comandi che nessun CSS può raggiungere. Con la barra di stato opaca la finestra
+parte sotto l'orologio e arriva fino in fondo: lo spazio torna all'app. In
+cambio l'app non disegna più dietro l'orologio, che qui vuol dire `#0e1013` al
+posto del nero. Il fondo del `body` è il colore della barra e non quello
+dell'app, così se quella fascia ricomparisse — un'altra versione di iOS, un
+altro modo di installare — leggerebbe come una continuazione della barra invece
+che come una striscia nera dimenticata. Le due pagine-scorciatoia portano lo
+stesso meta: è da lì che parte la finestra quando si apre la loro icona.
 
 **Bussola**, **Finanze** e **Diario**, in Oggi, sono i tre riquadri *riservati*:
 stanno in una colonna sola e **partono visibili**. Il gesto è al contrario di
