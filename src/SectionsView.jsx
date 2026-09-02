@@ -50,7 +50,7 @@ import { PageTree } from './Panel';
 import { pushUndo } from './undo';
 import { openProtocol } from './protocolLink';
 import './SectionsView.css';
-import { durataBreve, ymd } from './tempo.js';
+import { ymd } from './tempo.js';
 
 /** I tre elenchi per persona in fondo alla colonna Attività, nell'ordine in
  *  cui si leggono: prima quello che tocca a te far partire, poi quello che hai
@@ -92,15 +92,6 @@ const DUE_SOON_DAYS = 7;
 // Una data completa: `type="date"` propone valori parziali mentre si scrive
 // l'anno (0002, 0020, 0202…) e nessuno di quelli è una scadenza.
 const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
-
-/** La stima, come la si legge in fondo alla riga dell'attività. Solo quella
- *  davvero detta: mostrare la mezz'ora di partenza su tutte le righe sarebbe
- *  un numero inventato. */
-function estimateLabel(/** @type {import('./taskStore').Task} */ t) {
-  const min = t?.stimaMin;
-  if (!min) return null;
-  return durataBreve(min);
-}
 
 /** Quando un'attività è già a piano, detto in una riga: «oggi 09:00»,
  *  «domani 14:30», oppure la data per bocca sua. Serve al titolo della riga
@@ -344,7 +335,6 @@ export default function SectionsView({
     const riordinabile = !!gruppo && conMouse && !!dragTask && dragTask.id !== t.id
       && (dragTask._listId || '') === (t._listId || '')
       && gruppo.some(x => x.id === dragTask.id);
-    const est = estimateLabel(t);
     const placement = scheduledPlacements.get(t.id) || null;
     return (
       <button
@@ -382,8 +372,10 @@ export default function SectionsView({
           className="sv-task-dot"
           style={/** @type {import('react').CSSProperties} */ ({ background: contextColor(taskContext(t)) })}
         />
+        {/* Il titolo e basta. A destra c'era la stima di durata, in grigio:
+            un numero che non decide niente mentre si guarda una consegna, e
+            che nel Piano — dove il tempo si spende davvero — c'è già. */}
         <span className="sv-task-title">{t.titolo}</span>
-        {est && <span className="sv-task-est">{est}</span>}
       </button>
     );
   }
@@ -717,7 +709,11 @@ export default function SectionsView({
             {PERSON_LISTS.map(status => {
               const quante = perPersona[status].reduce((n, g) => n + g.tasks.length, 0);
               return (
-              <div className={`sv-persone${openPersone[status] && quante > 0 ? ' expanded' : ''}`} key={status}>
+              // Ocra quando c'è qualcosa dentro, come le stesse tre categorie
+              // nella vista Attività: sono le cose ferme in mano a qualcun
+              // altro, e a grigio su grigio in fondo a una colonna nessuno le
+              // guarda di sua iniziativa.
+              <div className={`sv-persone${openPersone[status] && quante > 0 ? ' expanded' : ''}${quante > 0 ? ' acceso' : ''}`} key={status}>
                 <button
                   className="sv-persone-head"
                   aria-expanded={!!openPersone[status] && quante > 0}

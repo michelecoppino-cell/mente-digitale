@@ -20,7 +20,11 @@ su OneDrive, nostri.
   gesto diverso — la proposta sta in `docs/proposta-piano-da-telefono.md`, non è costruita.
 - **Oggi** — la home, divisa in due metà. A sinistra la **giornata operativa**: «Oggi · agenda e
   azioni», cioè appuntamenti del calendario e azioni programmate in un elenco solo ordinato per
-  ora, e sotto «In arrivo» con i giorni che vengono. A destra la **vita**: gli obiettivi del mese,
+  ora, e sotto «In arrivo»: i sei giorni che vengono, uno per colonna (oggi no — sta già nel
+  riquadro sopra, e insieme fanno la settimana). Nelle colonne solo il titolo e il colore del
+  calendario: a quella larghezza l'ora non ci starebbe senza troncare il titolo, e la forma dice
+  già quali giornate sono piene. Un tassello si clicca e si apre il modale dell'evento, lo stesso
+  del Piano. A destra la **vita**: gli obiettivi del mese,
   il movimento, quello che c'è da leggere e vedere; e in una colonna sua i tre riquadri riservati
   — Bussola, Finanze e Diario. Da desktop la scheda sta in una schermata sola: quello che non ci
   sta scorre dentro il suo elenco, la pagina non si allunga. Non ha una lista propria: è tutto
@@ -580,6 +584,26 @@ Colori, tipografia, spazi, raggi e target di tocco stanno una volta sola in
 `src/tokens.css`. I CSS per componente li leggono da lì: cambiare l'accento è
 una riga, non una ricerca-e-sostituzione in dieci file.
 
+### I colori scelti a mano
+
+Taccuini, sezioni e calendari hanno un colore assegnato in automatico — la
+posizione nella tavolozza per i taccuini, una sfumatura del taccuino per le
+sezioni, l'enum di Outlook per i calendari. Chi non vuole quello lo cambia
+dall'ingranaggio (Impostazioni → Colori) o, per i calendari, dal pallino nel
+filtro «Calendari» del Piano; la scelta finisce in un file su OneDrive
+(`mente-digitale-color-settings.json`), perché un colore scelto sul portatile
+deve valere anche sul telefono.
+
+Taccuini e sezioni si portano il colore addosso (`nb._color`, `sec._color`) e
+ogni vista lo legge da lì. I calendari no, e non è una dimenticanza: gli eventi
+arrivano da Graph a ogni lettura e si ridecorano da capo, quindi non c'è niente
+su cui scrivere un colore che sopravviva. Lì la mappa
+`calendars` (id del calendario → hex) resta una mappa, e la legge chi disegna
+l'evento — `coloreEvento` in `src/planner/griglia.js`. Il colore del calendario
+in Outlook non si tocca: era così prima, e su un calendario condiviso da altri
+Graph rifiutava la scrittura — il colore si sceglieva e un istante dopo tornava
+com'era.
+
 ## Architettura
 
 | Componente | Tecnologia |
@@ -788,7 +812,7 @@ npm run prova     # le prove: OneDrive finto in memoria, senza rete né account
 
 ### Le prove
 
-Quattro suite, tutte contro un OneDrive finto (`scripts/finto-onedrive.mjs`):
+Le suite, tutte contro un OneDrive finto (`scripts/finto-onedrive.mjs`):
 non chiedono connessione né account Microsoft, e importano i moduli veri di
 `src/` sostituendo solo l'autenticazione — così provano il codice che gira
 davvero, non una copia che può divergere.
@@ -799,6 +823,9 @@ davvero, non una copia che può divergere.
 | `prova-task` | `taskStore`: liste, campi, riordino a mano, spostamenti, il rifiuto di una scrittura che svuota un file |
 | `prova-migrazione` | la passata una tantum da Microsoft To-Do ai file nostri |
 | `prova-flusso` | gli otto stati del flusso GTD e le loro precedenze |
+| `prova-nucleo` | lo stesso nucleo dei file visto dalla parte del CLI |
+| `prova-pool` | il serbatoio delle attività come lettura della cache di query |
+| `prova-colori` | il colore di un calendario: la scelta fatta nell'app, l'enum di Outlook sotto |
 
 Girano in CI insieme a tipi, lint e build. Prima non ci giravano, e tre suite
 su quattro si erano rotte in silenzio quando `api.js` ha cambiato il modo di

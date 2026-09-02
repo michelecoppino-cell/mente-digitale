@@ -17,7 +17,8 @@
     "prova-flusso": "node scripts/prova-flusso.mjs",
     "prova-nucleo": "node scripts/prova-nucleo.mjs",
     "prova-pool": "node scripts/prova-pool.mjs",
-    "prova": "npm run prova-onedrive && npm run prova-nucleo && npm run prova-task && npm run prova-migrazione && npm run prova-flusso && npm run prova-pool",
+    "prova-colori": "node scripts/prova-colori.mjs",
+    "prova": "npm run prova-onedrive && npm run prova-nucleo && npm run prova-task && npm run prova-migrazione && npm run prova-flusso && npm run prova-pool && npm run prova-colori",
     "test": "npm run prova",
     "preview": "vite preview"
   },

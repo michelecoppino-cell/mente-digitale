@@ -4,22 +4,45 @@
 import { useEffect, useState } from 'react';
 import { ColorPickerPopup } from './WorkbookPool';
 import { useEscape } from './useEscape';
+import { getCalendars, WORKBOOK_CALENDAR_NAME } from './api';
+import { calendarColor } from './planner/griglia.js';
 import './ColorSettingsModal.css';
 
 // Impostazioni colori — apribile dall'ingranaggio nell'header. Permette di
-// scegliere un colore fisso per ogni taccuino OneNote e ogni sua sezione,
-// al posto di quello assegnato automaticamente per indice (config.js
-// COLORS[i % COLORS.length]). L'override è persistito (App.jsx) e da lì
-// riapplicato a nb._color / sec._color, quindi si propaga da solo a tutte le
-// viste che già leggono quei campi (mappa, planner, ricerca, pool task...).
+// scegliere un colore fisso per ogni calendario, ogni taccuino OneNote e ogni
+// sua sezione, al posto di quello assegnato automaticamente (config.js
+// COLORS[i % COLORS.length] per i taccuini, l'enum di Graph per i calendari).
+// L'override è persistito (App.jsx) e da lì riapplicato a nb._color /
+// sec._color, quindi si propaga da solo a tutte le viste che già leggono quei
+// campi (mappa, planner, ricerca, pool task...); per i calendari, che non sono
+// oggetti nostri, lo legge coloreEvento (planner/griglia.js).
 export default function ColorSettingsModal({
   open, onClose, notebooks = [], sectionsMap = {},
-  overrides = { notebooks: {}, sections: {} },
-  onSetNotebookColor, onSetSectionColor,
-  onResetNotebookColor, onResetSectionColor,
+  overrides = { notebooks: {}, sections: {}, calendars: {} },
+  onSetNotebookColor, onSetSectionColor, onSetCalendarColor,
+  onResetNotebookColor, onResetSectionColor, onResetCalendarColor,
   onExpandNotebook,
 }) {
-  const [pickerFor, setPickerFor] = useState(null); // { type: 'notebook'|'section', id, anchor }
+  const [pickerFor, setPickerFor] = useState(null); // { type: 'notebook'|'section'|'calendar', id, anchor }
+  // I calendari li chiede questo pannello, e non l'App: sono l'unica cosa qui
+  // dentro che nessun'altra vista tiene in mano, e getCalendars ha già il suo
+  // memo in api.js — aprire due volte le impostazioni non è una richiesta in
+  // più.
+  const [calendari, setCalendari] = useState([]);
+
+  useEffect(() => {
+    if (!open) return;
+    let vivo = true;
+    getCalendars()
+      // Il calendario dei blocchi Workbook non è un calendario da guardare: i
+      // suoi blocchi prendono il colore dal workbook, non da qui.
+      .then(cals => {
+        if (!vivo) return;
+        setCalendari(cals.filter(c => (c.name || '').trim().toLowerCase() !== WORKBOOK_CALENDAR_NAME.toLowerCase()));
+      })
+      .catch(e => console.error('calendari impostazioni colori', e));
+    return () => { vivo = false; };
+  }, [open]);
 
   // Le sezioni dei taccuini non ancora espansi altrove potrebbero mancare da
   // sectionsMap: le richiede alla prima apertura, così ogni taccuino mostra
@@ -45,14 +68,52 @@ export default function ColorSettingsModal({
     <div className="cset-overlay" onClick={onClose}>
       <div className="cset-modal" onClick={e => e.stopPropagation()}>
         <div className="cset-header">
-          <span>Colori taccuini e sezioni</span>
+          <span>Colori</span>
           <button className="cset-close" onClick={onClose} title="Chiudi">✕</button>
         </div>
         <div className="cset-body">
           <p className="cset-hint">
-            Scegli un colore fisso per un taccuino o una sezione: verrà usato
-            al posto di quello automatico ovunque nell'app.
+            Scegli un colore fisso per un calendario, un taccuino o una
+            sezione: verrà usato al posto di quello automatico ovunque
+            nell'app.
           </p>
+          {/* I calendari per primi: sono pochi, e sono quelli che si
+              ricolorano davvero — il colore di un calendario è quello che
+              distingue un compleanno da una riunione nel Piano e in Oggi. */}
+          {calendari.length > 0 && (
+            <div className="cset-group">
+              <div className="cset-sezione">Calendari</div>
+              {calendari.map(cal => {
+                const scelto = !!overrides.calendars?.[cal.id];
+                return (
+                  <div key={cal.id} className="cset-row">
+                    <span
+                      className="cset-dot"
+                      style={{ background: calendarColor(cal.id, cal.color, overrides.calendars) }}
+                      onClick={e => openPicker('calendar', cal.id, e)}
+                      title="Cambia colore" />
+                    <span className="cset-name">{cal.name}</span>
+                    {scelto && (
+                      <button
+                        className="cset-reset-btn"
+                        onClick={() => onResetCalendarColor(cal.id)}
+                        title="Ripristina colore automatico">
+                        ↺
+                      </button>
+                    )}
+                    {pickerFor?.type === 'calendar' && pickerFor.id === cal.id && (
+                      <ColorPickerPopup
+                        color={calendarColor(cal.id, cal.color, overrides.calendars)}
+                        anchor={pickerFor.anchor}
+                        onPick={c => onSetCalendarColor(cal.id, c)}
+                        onClose={() => setPickerFor(null)}
+                      />
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
           {notebooks.length === 0 && (
             <div className="cset-empty">Nessun taccuino caricato.</div>
           )}

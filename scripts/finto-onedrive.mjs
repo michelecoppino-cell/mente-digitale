@@ -52,13 +52,18 @@ function urlDi(nome) {
       // perché a Vite non serve. Qui vanno rilegati entrambi, e prima
       // l'espressione ne vedeva una forma sola: un `from './tempo.js'` restava
       // com'era e da un modulo `data:` non si risolve niente di relativo.
-      const statici = [...testo.matchAll(/^import\b[^;]*?from '\.\/([\w-]+)(\.js)?'/gm)];
-      const dinamici = [...testo.matchAll(/import\('\.\/([\w-]+)\.js'\)/g)].map(m => m[1]);
-      for (const rif of [...new Set([...statici.map(m => m[1]), ...dinamici])]) {
-        const url = await urlDi(`${rif}.js`);
-        testo = testo.replaceAll(`from './${rif}'`, `from '${url}'`)
-                     .replaceAll(`from './${rif}.js'`, `from '${url}'`)
-                     .replaceAll(`import('./${rif}.js')`, `import('${url}')`);
+      // Anche gli import che risalgono di una cartella (`planner/griglia.js`
+      // che importa `../tempo.js`): i moduli di `src/` non stanno tutti sullo
+      // stesso piano, e un `..` lasciato com'era è un modulo che da un URL
+      // `data:` non si risolve — la prova moriva prima della prima verifica.
+      const statici = [...testo.matchAll(/^import\b[^;]*?from '(\.\.?\/[\w-]+(?:\/[\w-]+)*)(\.js)?'/gm)].map(m => m[1]);
+      const dinamici = [...testo.matchAll(/import\('(\.\.?\/[\w-]+(?:\/[\w-]+)*)\.js'\)/g)].map(m => m[1]);
+      for (const rif of new Set([...statici, ...dinamici])) {
+        // Il riferimento è relativo al modulo che lo scrive, non a `src/`.
+        const url = await urlDi(join(dirname(nome), rif) + (rif.endsWith('.js') ? '' : '.js'));
+        testo = testo.replaceAll(`from '${rif}'`, `from '${url}'`)
+                     .replaceAll(`from '${rif}.js'`, `from '${url}'`)
+                     .replaceAll(`import('${rif}.js')`, `import('${url}')`);
       }
       return comeModulo(testo);
     })();

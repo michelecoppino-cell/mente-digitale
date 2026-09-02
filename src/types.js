@@ -185,6 +185,7 @@ export {};
  * @typedef {Object} ColorSettings
  * @property {Record<string, string>} notebooks   notebookId -> hex
  * @property {Record<string, string>} sections    sectionId  -> hex
+ * @property {Record<string, string>} [calendars]  calendarId -> hex
  */
 
 /**

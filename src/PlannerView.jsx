@@ -5,8 +5,8 @@ import { useState, useEffect, useRef, useMemo, Fragment } from 'react';
 import {
   loadDailyPlans, saveDailyPlans,
   loadPlannerConfig, savePlannerConfig,
-  getCalendarEvents, getCalendars, getCalendarFetchReport, updateCalendarColor,
-  createCalendarEvent, updateCalendarEvent, deleteCalendarEvent, moveCalendarEvent,
+  getCalendarEvents, getCalendars, getCalendarFetchReport,
+  createCalendarEvent, deleteCalendarEvent,
   patchCalendarEvent, graphDateTime,
   loadWorkbooks, saveWorkbooks, getWorkbookCalendarId, getWorkbookEvents, WORKBOOK_CALENDAR_NAME,
   loadIdealWeek, saveIdealWeek,
@@ -22,6 +22,8 @@ import { DEFAULT_CONFIG, findProject, hexToRgba, buildListColorMap, listColor } 
 import { listLabel } from './paraConfig';
 import { ESTIMATE_CHOICES, DEFAULT_ESTIMATE_MIN } from './taskModel';
 import { pushUndo } from './undo';
+import { salvaEvento, eliminaEvento } from './eventiCalendario';
+import { COLORS as COLORI_CALENDARIO } from './config';
 import './PlannerView.css';
 
 // Le misure, i colori e i conti della griglia stanno in un file loro: erano
@@ -32,11 +34,11 @@ import {
   SLOT_HEIGHT, SAVE_DEBOUNCE, DEFAULT_DURATION, SNAP_MIN,
   t2m, m2t, blockMinutesFor,
   VERTICAL_LAYOUT_MIN_DURATION, VERTICAL_DURATION_RESERVE_PX, verticalTitleLayout,
-  GRAPH_CAL_COLORS, calendarSwatch, GRAPH_CAL_COLOR_OPTIONS,
+  calendarColor, coloreEvento,
   WORKBOOK_CAL_ID, liveWorkbookColor, liveBlockColor,
   DAY_START_MIN, DAY_END_MIN, FULL_DAY_SLOTS, defaultScrollOffset,
   localDateStr, todayStr, genId, isoToHHMM, isoToLocalDateStr,
-  isAllDay, graphDayStr, evDayStr, overlapColumns, eventSpan,
+  isAllDay, evDayStr, overlapColumns, eventSpan,
   fmtBlockDuration, getWeekDays,
 } from './planner/griglia.js';
 import { VerticalTitle } from './planner/VerticalTitle.jsx';
@@ -53,6 +55,7 @@ export default function PlannerView({
   open, onClose, preloadedTasks = [], notebooks = [], sectionsMap = {}, todoLists = [], autoAddTask = null, onAutoAdded,
   onTaskCompleted, onTaskDeleted, onTaskRenamed, onTaskDueChanged, onTaskPatched, onTaskRestored,
   calendarDirtyToken = 0,
+  coloriCalendari = {}, onColoraCalendario, onRiportaCalendario,
 }) {
   const [currentDate, setCurrentDate]       = useState(todayStr);
   const [plans, setPlans]                   = useState({});
@@ -483,18 +486,6 @@ export default function PlannerView({
 
   // Cambia il colore di un calendario (proprio o condiviso) — aggiornamento
   // ottimistico della lista locale, con rollback se la PATCH su Graph fallisce.
-  async function changeCalendarColor(calId, color) {
-    const prevList = calendarsList;
-    setCalendarsList(list => list.map(c => c.id === calId ? { ...c, color } : c));
-    setCalColorPickerFor(null);
-    try {
-      await updateCalendarColor(calId, color);
-    } catch (e) {
-      console.error('update calendar color', e);
-      setCalendarsList(prevList);
-    }
-  }
-
   // Riapplica il filtro (senza rifetchare) quando cambiano le preferenze di
   // visibilità o arriva/aggiorna la lista calendari.
   useEffect(() => {
@@ -610,79 +601,20 @@ export default function PlannerView({
   }
 
   async function handleSaveCalEvent(form) {
-    const { calendarId, subject, startDate, endDate, startTime, endTime } = form;
-    if (calModal?.mode === 'edit') {
-      const ev = calModal.event;
-      const defaultCalId = calendarsList.find(c => c.isDefaultCalendar)?.id || calendarsList[0]?.id || null;
-      const originCalId  = ev._calId || defaultCalId;
-      const targetCalId  = calendarId || defaultCalId;
-      // Snapshot dei valori precedenti, per poter tornare indietro con l'undo.
-      const prevAllDay    = ev.isAllDay;
-      const prevStartDate = graphDayStr(ev.start, prevAllDay);
-      const prevEndDate   = graphDayStr(ev.end, prevAllDay);
-      const prevStartTime = prevAllDay ? null : isoToHHMM(ev.start?.dateTime);
-      const prevEndTime   = prevAllDay ? null : isoToHHMM(ev.end?.dateTime);
-      const prevSubject   = ev.subject;
-      let targetEventId  = ev.id;
-      if (originCalId !== targetCalId) {
-        const moved = await moveCalendarEvent(ev._calId || null, ev.id, targetCalId);
-        targetEventId = moved?.id || ev.id;
-      }
-      await updateCalendarEvent(targetCalId, targetEventId, { subject, startDate, endDate, startTime, endTime });
-      pushUndo({
-        label: `Modifica a "${subject}" annullabile`,
-        undo: async () => {
-          let backEventId = targetEventId;
-          if (originCalId !== targetCalId) {
-            const movedBack = await moveCalendarEvent(targetCalId, targetEventId, originCalId);
-            backEventId = movedBack?.id || targetEventId;
-          }
-          await updateCalendarEvent(originCalId, backEventId, {
-            subject: prevSubject, startDate: prevStartDate, endDate: prevEndDate,
-            startTime: prevStartTime, endTime: prevEndTime,
-          });
-          await refreshCalEvents();
-        },
-      });
-    } else {
-      const created = await createCalendarEvent({ calendarId, subject, startDate, endDate, startTime, endTime });
-      const createdCalId = calendarId || null;
-      pushUndo({
-        label: `Evento "${subject}" creato`,
-        undo: async () => {
-          await deleteCalendarEvent(createdCalId, created.id);
-          await refreshCalEvents();
-        },
-      });
-    }
+    await salvaEvento({
+      mode: calModal?.mode === 'edit' ? 'edit' : 'create',
+      event: calModal?.event,
+      form,
+      calendars: calendarsList,
+      dopo: refreshCalEvents,
+    });
     setCalModal(null);
-    await refreshCalEvents();
   }
 
   async function handleDeleteCalEvent() {
     if (calModal?.mode !== 'edit') return;
-    const ev = calModal.event;
-    const calId = ev._calId;
-    await deleteCalendarEvent(calId, ev.id);
-    pushUndo({
-      label: `Evento "${ev.subject}" eliminato`,
-      undo: async () => {
-        // Graph non offre un "ripristina": ricreiamo un evento nuovo con gli
-        // stessi dati (nuovo ID). Se l'evento aveva partecipanti, l'eventuale
-        // notifica di cancellazione già inviata non viene richiamata indietro.
-        await createCalendarEvent({
-          calendarId: calId,
-          subject: ev.subject,
-          startDate: graphDayStr(ev.start, isAllDay(ev)),
-          endDate: graphDayStr(ev.end, isAllDay(ev)),
-          startTime: ev.isAllDay ? null : isoToHHMM(ev.start?.dateTime),
-          endTime: ev.isAllDay ? null : isoToHHMM(ev.end?.dateTime),
-        });
-        await refreshCalEvents();
-      },
-    });
+    await eliminaEvento({ event: calModal.event, dopo: refreshCalEvents });
     setCalModal(null);
-    await refreshCalEvents();
   }
 
   // Ctrl/Cmd+trascina un evento sulla Timeline (Giorno o Settimana): crea un
@@ -1625,7 +1557,7 @@ export default function PlannerView({
                           <button
                             type="button"
                             className="planner-cal-filter-dot planner-cal-filter-dot-btn"
-                            style={{ background: calendarSwatch(cal.color) }}
+                            style={{ background: calendarColor(cal.id, cal.color, coloriCalendari) }}
                             onClick={e => { e.preventDefault(); e.stopPropagation(); setCalColorPickerFor(v => v === cal.id ? null : cal.id); }}
                             title="Cambia colore calendario" />
                           <span className="planner-cal-filter-name">{cal.name}</span>
@@ -1645,14 +1577,26 @@ export default function PlannerView({
                         )}
                         {calColorPickerFor === cal.id && (
                           <div className="planner-cal-color-swatches">
-                            {GRAPH_CAL_COLOR_OPTIONS.map(opt => (
+                            {/* La tavolozza dell'app, la stessa dei taccuini: il
+                                colore è una scelta nostra, salvata con gli altri
+                                su OneDrive, e non l'enum che Graph accetta sulla
+                                voce di calendario. Quello vale solo dentro
+                                Outlook, e sui calendari condivisi da altri la
+                                PATCH veniva rifiutata — il colore si sceglieva e
+                                un istante dopo tornava com'era. */}
+                            <button
+                              type="button"
+                              className={`planner-cal-color-swatch auto${coloriCalendari[cal.id] ? '' : ' active'}`}
+                              title="Colore predefinito"
+                              onClick={() => { onRiportaCalendario?.(cal.id); setCalColorPickerFor(null); }} />
+                            {COLORI_CALENDARIO.map(hex => (
                               <button
-                                key={opt}
+                                key={hex}
                                 type="button"
-                                className={`planner-cal-color-swatch${cal.color === opt ? ' active' : ''}${opt === 'auto' ? ' auto' : ''}`}
-                                style={opt === 'auto' ? undefined : { background: GRAPH_CAL_COLORS[opt] }}
-                                title={opt === 'auto' ? 'Colore predefinito' : opt}
-                                onClick={() => changeCalendarColor(cal.id, opt)} />
+                                className={`planner-cal-color-swatch${coloriCalendari[cal.id] === hex ? ' active' : ''}`}
+                                style={{ background: hex }}
+                                title={hex}
+                                onClick={() => { onColoraCalendario?.(cal.id, hex); setCalColorPickerFor(null); }} />
                             ))}
                           </div>
                         )}
@@ -1697,6 +1641,7 @@ export default function PlannerView({
           calOutOfRange={calOutOfRange}
           config={config}
           listColorMap={listColorMap}
+          coloriCalendari={coloriCalendari}
           onDayClick={day => { setCurrentDate(day); setViewMode('day'); }}
           onEventClick={openEditEventModal}
         />
@@ -1742,6 +1687,7 @@ export default function PlannerView({
           suppressClickRef={suppressClickRef}
           config={config}
           listColorMap={listColorMap}
+          coloriCalendari={coloriCalendari}
           onDayClick={day => { setCurrentDate(day); setViewMode('day'); }}
           onMoveBlock={moveBlockBetweenDays}
           onCopyBlock={copyBlockBetweenDays}
@@ -1920,7 +1866,7 @@ export default function PlannerView({
               const evEndMin   = t2m(evEnd);
               const top    = Math.max(0, (evStartMin - DAY_START_MIN) / 30 * SLOT_HEIGHT);
               const height = Math.max(SLOT_HEIGHT / 2, (Math.min(evEndMin, DAY_END_MIN) - Math.max(evStartMin, DAY_START_MIN)) / 30 * SLOT_HEIGHT);
-              const evColor = calendarSwatch(ev._calColor);
+              const evColor = coloreEvento(ev, coloriCalendari);
               const isVertical  = (evEndMin - evStartMin) > VERTICAL_LAYOUT_MIN_DURATION;
               const titleLayout = isVertical ? verticalTitleLayout(ev.subject, height - 12 - VERTICAL_DURATION_RESERVE_PX, 10) : null;
               const geo = timedEventsLayout[i] || { col: 0, cols: 1 };

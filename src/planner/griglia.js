@@ -84,13 +84,34 @@ export const GRAPH_CAL_COLORS = {
   lightPink: '#d98fb3', lightBrown: '#a9825a', lightRed: '#d97a7a',
   maxColor: '#c084a0',
 };
-/** @param {string|null|undefined} colorEnum l'enum di Graph @returns {string|null} */
+/** @param {string|null|undefined} colorEnum l'enum di Graph @returns {string} */
 export function calendarSwatch(colorEnum) {
   return (colorEnum && GRAPH_CAL_COLORS[colorEnum]) || '#888888';
 }
-// Ordine di presentazione degli enum colore Graph nei color-picker dei
-// calendari — 'auto' per primo per rappresentare "nessun colore personalizzato".
-export const GRAPH_CAL_COLOR_OPTIONS = ['auto', ...Object.keys(GRAPH_CAL_COLORS)];
+
+// Il colore con cui si disegna un calendario, e quindi ogni suo evento.
+//
+// Prima era solo l'enum di Graph, e su un account dove nessun calendario ha un
+// colore scelto rispondeva grigio per tutti: il mese era una parete di
+// rettangoli identici, in cui non si distingueva un compleanno da una riunione.
+// La scelta fatta nell'app (ingranaggio → Colori, o il pallino nel filtro
+// «Calendari») vince, perché è l'unica che l'utente ha davvero espresso; sotto
+// resta l'enum di Graph, che almeno distingue i calendari colorati in Outlook.
+/**
+ * @param {string|null|undefined} calId
+ * @param {string|null|undefined} colorEnum
+ * @param {Record<string, string>} [scelti]  calendarId -> hex, dalle impostazioni
+ * @returns {string}
+ */
+export function calendarColor(calId, colorEnum, scelti) {
+  return (calId && scelti?.[calId]) || calendarSwatch(colorEnum);
+}
+
+/** Lo stesso, partendo dall'evento già decorato da api.js.
+ *  @param {any} ev @param {Record<string, string>} [scelti] @returns {string} */
+export function coloreEvento(ev, scelti) {
+  return calendarColor(ev?._calId, ev?._calColor, scelti);
+}
 
 // Voce sintetica aggiunta alla lista "Calendari ▾" per poter spegnere/accendere
 // tutti i blocchi Workbook come se fossero un calendario in più — non

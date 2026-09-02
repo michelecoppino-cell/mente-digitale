@@ -44,7 +44,7 @@
 // L'unico pannello che si apre da solo: la prima volta che si entra qui in una
 // giornata, chiede se movimento, meditazione e yoga sono stati fatti. Il perché
 // del momento e delle caselle già despuntate sta in rituale.js.
-import { useEffect, useMemo, useState } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   loadCoda, loadDiaryIndex, loadDiaryMonth, loadIdentityDoc, loadObiettivi, loadRituale,
@@ -69,7 +69,18 @@ import { qk, STALE } from './queryClient';
 import { useDatoPersistito } from './useDatoPersistito';
 import { caricaRiepilogoOggi } from './finanze/riepilogoOggi';
 import { durataDistesa, minutiDaOra, ymd } from './tempo.js';
+import { coloreEvento } from './planner/griglia.js';
+import { salvaEvento, eliminaEvento } from './eventiCalendario';
+import { getCalendars } from './api';
 import './TodayView.css';
+
+// Il modale dell'evento è quello del Piano — è lo stesso evento, e due modali
+// che scrivono lo stesso appuntamento sarebbero due modi diversi di sbagliarlo.
+// Arriva con lazy() perché «Oggi» sta nel primo scaricamento e questo si apre
+// solo se si clicca un tassello: chi non tocca la settimana in arrivo non paga
+// il modale né il foglio di stile del Piano che si porta dietro.
+const CalendarEventModal = lazy(() =>
+  import('./planner/CalendarEventModal.jsx').then(m => ({ default: m.CalendarEventModal })));
 
 const todayStr = ymd;
 const t2m = minutiDaOra;
@@ -152,14 +163,19 @@ function daysBetween(/** @type {string} */ from, /** @type {string} */ to) {
   return Math.round((new Date(to + 'T00:00:00').getTime() - new Date(from + 'T00:00:00').getTime()) / 86_400_000);
 }
 
-// Quanto lontano guarda la parte «in arrivo» dell'agenda. Le due finestre sono
-// diverse di proposito: un appuntamento fra tre settimane non è cosa di oggi e
-// sta nel Piano, mentre un compleanno fra tre settimane è esattamente il tipo
-// di cosa che si vuole vedere in anticipo, perché richiede di preparare
-// qualcosa.
-const AHEAD_APPOINTMENTS = 7;
+// «In arrivo» è la settimana che viene: i sei giorni dopo oggi, uno per
+// colonna. Oggi non c'è, perché sta già nel riquadro sopra — insieme fanno la
+// settimana intera, e nessuna giornata è scritta due volte.
+//
+// Era un elenco a righe lungo cinque, che mescolava «domani» e «fra tre
+// settimane» e diceva soltanto le prime cinque cose: da un elenco così non si
+// capisce mai se giovedì è pieno o vuoto, che è l'unica domanda che si fa
+// guardando avanti. Sei colonne lo dicono con la forma, senza leggerle.
+const GIORNI_IN_ARRIVO = 6;
+// Le ricorrenze più in là restano un conto in testata: un compleanno fra tre
+// settimane non entra in nessuna colonna, ma è esattamente il tipo di cosa che
+// si vuole sapere in anticipo, perché va preparata.
 const AHEAD_RECURRENCES = 30;
-const AHEAD_MAX_ROWS = 5;
 
 /**
  * Giorni consecutivi di diario che finiscono oggi (o ieri: la giornata non è
@@ -246,10 +262,15 @@ function useRituale() {
  * @param {import('./taskStore').Task[]} props.tasks
  * @param {import('./types').TodoList[]} [props.todoLists]
  * @param {import('./types').CalendarEvent[]} props.calendarEvents
+ * @param {Record<string, string>} [props.coloriCalendari]  calendarId -> hex scelto
  * @param {(block: any) => void} props.onCompleteBlock
+ * @param {() => Promise<void>} [props.onEventiCambiati]  rileggi il calendario
  * @param {(which: 'bussola'|'visione'|'desideri') => void} props.onOpenIdentity
  */
-export default function TodayView({ plans, tasks, todoLists, calendarEvents, onCompleteBlock, onOpenIdentity }) {
+export default function TodayView({
+  plans, tasks, todoLists, calendarEvents, coloriCalendari = {},
+  onCompleteBlock, onEventiCambiati, onOpenIdentity,
+}) {
   // Un tick al minuto: basta a far passare la giornata sotto le righe — quali
   // sono già passate, e il cambio di data a mezzanotte — senza ricaricare.
   const [now, setNow] = useState(() => new Date());
@@ -257,6 +278,20 @@ export default function TodayView({ plans, tasks, todoLists, calendarEvents, onC
     const id = setInterval(() => setNow(new Date()), 60_000);
     return () => clearInterval(id);
   }, []);
+
+  // L'evento aperto per modifica, e i calendari su cui il modale può spostarlo.
+  // La lista si chiede solo quando serve davvero — cioè quando si apre un
+  // evento — perché è una richiesta a Graph che «Oggi» non farebbe altrimenti.
+  const [eventoAperto, setEventoAperto] = useState(/** @type {any} */ (null));
+  const [calendari, setCalendari] = useState(/** @type {any[]} */ ([]));
+  useEffect(() => {
+    if (!eventoAperto || calendari.length) return;
+    let vivo = true;
+    getCalendars()
+      .then(cals => { if (vivo) setCalendari(cals); })
+      .catch(e => console.error('calendari di Oggi', e));
+    return () => { vivo = false; };
+  }, [eventoAperto, calendari.length]);
 
   const today = todayStr(now);
   const ym = meseDi(today);
@@ -333,29 +368,31 @@ export default function TodayView({ plans, tasks, todoLists, calendarEvents, onC
   // nella colonna di destra, in mezzo a quelli fra tre settimane, invece che in
   // agenda accanto agli altri impegni della giornata. Qui c'è una sola
   // cronologia: prima oggi, poi quello che arriva.
-  const { events, ahead, aheadTotale } = useMemo(() => {
+  const { events, settimana, ricorrenzeLontane } = useMemo(() => {
     const all = (calendarEvents || [])
       .map(e => ({ e, date: evDayStr(e), rec: isRecurrence(e) }))
       .filter(x => x.date >= today)
       .sort((a, b) => (a.e.start?.dateTime || '').localeCompare(b.e.start?.dateTime || ''));
-    const futuri = all.filter(x => {
+    /** @type {{ giorno: string, voci: {e: any, rec: boolean}[] }[]} */
+    const giorni = [];
+    for (let i = 1; i <= GIORNI_IN_ARRIVO; i++) {
+      const d = new Date(today + 'T00:00:00');
+      d.setDate(d.getDate() + i);
+      giorni.push({ giorno: todayStr(d), voci: [] });
+    }
+    const perGiorno = new Map(giorni.map(g => [g.giorno, g]));
+    let lontane = 0;
+    for (const x of all) {
       const gap = daysBetween(today, x.date);
-      if (gap <= 0) return false;
-      return gap <= (x.rec ? AHEAD_RECURRENCES : AHEAD_APPOINTMENTS);
-    });
-    // Il tetto di righe non deve mai mostrare una giornata a metà: se cade in
-    // mezzo agli eventi di uno stesso giorno si tiene tutto il giorno. Vedere
-    // «un appuntamento» in una giornata che ne ha tre non è una lista più
-    // corta, è una lista che dice il falso.
-    let taglio = Math.min(AHEAD_MAX_ROWS, futuri.length);
-    if (taglio > 0) {
-      const ultimoGiorno = futuri[taglio - 1].date;
-      while (taglio < futuri.length && futuri[taglio].date === ultimoGiorno) taglio++;
+      if (gap <= 0) continue;
+      const g = perGiorno.get(x.date);
+      if (g) g.voci.push({ e: x.e, rec: x.rec });
+      else if (x.rec && gap <= AHEAD_RECURRENCES) lontane++;
     }
     return {
       events: all.filter(x => x.date === today),
-      ahead: futuri.slice(0, taglio),
-      aheadTotale: futuri.length,
+      settimana: giorni,
+      ricorrenzeLontane: lontane,
     };
   }, [calendarEvents, today]);
 
@@ -460,24 +497,43 @@ export default function TodayView({ plans, tasks, todoLists, calendarEvents, onC
             </div>
           </section>
 
-          {/* ── In arrivo ──────────────────────────────────────────────── */}
+          {/* ── In arrivo: i sei giorni che vengono ──────────────────── */}
           <section className="today-block today-arrivo">
             <div className="today-block-head">
               <span className="eyebrow">In arrivo</span>
-              {aheadTotale > ahead.length && (
-                <span className="today-block-conta">{aheadTotale} entro trenta giorni</span>
+              {ricorrenzeLontane > 0 && (
+                <span className="today-block-conta">
+                  {ricorrenzeLontane} {ricorrenzeLontane === 1 ? 'ricorrenza' : 'ricorrenze'} entro trenta giorni
+                </span>
               )}
             </div>
-            <div className="today-lista">
-              {ahead.length === 0 && <p className="today-empty">Niente nei prossimi giorni.</p>}
-              {ahead.map(({ e, date, rec }) => (
-                <EventRow
-                  key={`${e.id}-${date}`}
-                  event={e}
-                  recurrence={rec}
-                  day={fmtDayLabel(date)}
-                  soon={daysBetween(today, date) <= 1}
-                />
+            {/* Titolo e colore del calendario, e basta: in una colonna larga un
+                sesto di riquadro l'ora e la durata non ci stanno, e mettercele
+                vorrebbe dire troncare il titolo — cioè togliere l'unica cosa
+                che dice di cosa si tratta. L'ora sta nel titolo del tassello,
+                e nel modale che si apre cliccandolo. */}
+            <div className="today-settimana">
+              {settimana.map(({ giorno, voci }) => (
+                <div className={`today-giorno${voci.length ? '' : ' vuoto'}`} key={giorno}>
+                  <div className="today-giorno-testa">{fmtDayLabel(giorno)}</div>
+                  <div className="today-giorno-voci">
+                    {voci.map(({ e, rec }) => (
+                      <button
+                        key={e.id}
+                        type="button"
+                        className={`today-tassello${rec ? ' recurrence' : ''}`}
+                        style={/** @type {import('react').CSSProperties} */ ({ '--cal': coloreEvento(e, coloriCalendari) })}
+                        title={`${e.isAllDay ? 'tutto il giorno' : evTime(e.start?.dateTime)} · ${e.subject || '(senza titolo)'}${e._calName ? ` · ${e._calName}` : ''}`}
+                        onClick={() => setEventoAperto(e)}>
+                        {/* Il titolo dentro uno span suo: il ritaglio a due
+                            righe (-webkit-line-clamp) vuole un `-webkit-box`, e
+                            un <button> quel display non lo prende — la terza
+                            riga finiva tagliata a metà invece che coi puntini. */}
+                        <span className="today-tassello-titolo">{e.subject || '(senza titolo)'}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
               ))}
             </div>
           </section>
@@ -514,6 +570,38 @@ export default function TodayView({ plans, tasks, todoLists, calendarEvents, onC
         </div>
       </div>
 
+      {/* Modificare un appuntamento della settimana in arrivo: lo stesso
+          modale del Piano, le stesse scritture (eventiCalendario.js), lo stesso
+          annulla. Finito, l'App rilegge il calendario — la copia in cache è di
+          un istante fa e non sa cosa è appena cambiato. */}
+      {eventoAperto && (
+        <Suspense fallback={null}>
+          <CalendarEventModal
+            mode="edit"
+            event={eventoAperto}
+            defaultDate={null}
+            defaultStartTime={null}
+            defaultEndTime={null}
+            calendars={calendari}
+            onClose={() => setEventoAperto(null)}
+            onSave={async (/** @type {any} */ form) => {
+              await salvaEvento({
+                mode: 'edit', event: eventoAperto, form, calendars: calendari,
+                dopo: async () => { await onEventiCambiati?.(); },
+              });
+              setEventoAperto(null);
+            }}
+            onDelete={async () => {
+              await eliminaEvento({
+                event: eventoAperto,
+                dopo: async () => { await onEventiCambiati?.(); },
+              });
+              setEventoAperto(null);
+            }}
+          />
+        </Suspense>
+      )}
+
       {modale === 'obiettivi' && (
         <ObiettiviModal
           oggi={today}
@@ -548,22 +636,19 @@ export default function TodayView({ plans, tasks, todoLists, calendarEvents, onC
 }
 
 /**
- * Una riga di agenda. È la stessa forma per un appuntamento di oggi, per un
- * compleanno di oggi e per uno fra tre settimane: cambia solo cosa sta nella
- * colonna di sinistra (l'ora, oppure il giorno) e il cerchietto con le
- * iniziali, che è il segno che distingue una ricorrenza da un impegno.
+ * Una riga dell'agenda di oggi. È la stessa forma per un appuntamento e per un
+ * compleanno: a distinguerli è il cerchietto con le iniziali. I giorni che
+ * vengono non passano più di qui — sono tasselli in sei colonne, sotto.
  * @param {Object} props
  * @param {any} props.event
  * @param {boolean} props.recurrence
- * @param {string} [props.day]  etichetta del giorno, per le righe «in arrivo»
- * @param {boolean} [props.soon]
- * @param {boolean} [props.passato]  già passato: nell'elenco di oggi si spegne
+ * @param {boolean} [props.passato]  già passato: si spegne
  */
-function EventRow({ event, recurrence, day, soon, passato }) {
-  const when = day || (event.isAllDay ? 'tutto il giorno' : evTime(event.start?.dateTime));
+function EventRow({ event, recurrence, passato }) {
+  const when = event.isAllDay ? 'tutto il giorno' : evTime(event.start?.dateTime);
   return (
-    <div className={`today-event${recurrence ? ' recurrence' : ''}${day ? ' ahead' : ''}${passato ? ' passato' : ''}`}>
-      <span className={`today-event-time${soon ? ' soon' : ''}`}>{when}</span>
+    <div className={`today-event${recurrence ? ' recurrence' : ''}${passato ? ' passato' : ''}`}>
+      <span className="today-event-time">{when}</span>
       {recurrence && <span className="today-rec-badge">{initials(event.subject || '')}</span>}
       <span className="today-event-title">{event.subject || '(senza titolo)'}</span>
       <span className="today-event-cal">{event._calName}</span>
