@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:finto": "MD_FINTO=1 vite",
     "build": "vite build",
     "lint": "eslint .",
     "typecheck": "tsc -p jsconfig.json",

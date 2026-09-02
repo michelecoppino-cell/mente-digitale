@@ -12,7 +12,8 @@ e come si lavora — e sta in una pagina apposta.
 ## Comandi
 
 ```bash
-npm run dev         # server di sviluppo
+npm run dev         # server di sviluppo, contro il OneDrive vero
+npm run dev:finto   # l'app in locale, senza rete e senza account
 npm run typecheck   # tsc su jsconfig (JSDoc + checkJs)
 npm run lint        # eslint
 npm run build       # build di produzione in dist/
@@ -25,11 +26,13 @@ secondi. La CI esegue tutti e quattro i comandi a ogni push e ogni PR.
 ## Prima di aprire una PR
 
 1. `npm run typecheck && npm run lint && npm run build && npm run prova` — tutti
-   verdi. Non è una formalità: **l'app non si può provare in locale**, perché le
-   API Graph rispondono solo sull'URL di produzione. Questi quattro comandi sono
-   tutta la rete che c'è.
-2. Niente push diretto su `main`: branch, PR, merge.
-3. Se hai toccato uno degli strati provati (`graphCore.js`, `api.js`,
+   verdi. Non è una formalità: contro il OneDrive vero l'app si prova solo in
+   produzione, perché le API Graph rispondono solo su quell'URL.
+2. Se hai toccato l'interfaccia, aprila: `npm run dev:finto` monta l'app sopra
+   un OneDrive finto in memoria, con dentro una giornata plausibile. Nessuna
+   rete, nessun account, e i dati veri restano dove sono.
+3. Niente push diretto su `main`: branch, PR, merge.
+4. Se hai toccato uno degli strati provati (`graphCore.js`, `api.js`,
    `taskStore.js`, `taskMigrazione.js`, `paraConfig.js`, `poolAttivita.js`),
    aggiungi la verifica che avrebbe
    intercettato quello che hai corretto. Le prove si sono rotte una volta e
@@ -111,7 +114,7 @@ cose che non si ricostruiscono da una cronologia.
 | `src/tempo.js` | il giorno locale, l'ora, le durate — scritti una volta sola |
 | `src/finanze/` | isola TypeScript, dati in IndexedDB, backup su OneDrive |
 | `scripts/mente-graph.mjs` | lo stesso nucleo fuori dal browser, con un refresh token invece di MSAL |
-| `scripts/finto-onedrive.mjs` | il OneDrive finto su cui girano le prove |
+| `src/finto/` | il OneDrive finto: quello su cui girano le prove, e quello che `dev:finto` monta nel browser |
 
 Le rotte stanno nell'**hash** (`#/oggi`, `#/piano`, …) e non nel path: il sito è
 statico, e senza `_redirects` un ricaricamento su `/piano` chiederebbe al server
