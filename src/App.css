@@ -1497,3 +1497,16 @@ body {
   overflow-y: auto;
   padding: var(--sp-6) var(--sp-7);
 }
+
+/* L'attesa mentre il file di una vista arriva (vedi il Suspense attorno alle
+   rotte in App.jsx). Occupa lo spazio della vista invece di far saltare in
+   alto quello che c'è intorno, e non ha animazione: un chunk da qualche decina
+   di kB non merita uno spinner che gira per un decimo di secondo. */
+.vista-attesa {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--sp-8);
+  font-size: var(--fs-meta);
+}

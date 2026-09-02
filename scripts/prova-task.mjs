@@ -224,4 +224,53 @@ verifica(memoria.has('task/_liste.json'), 'il registro finisce nel trasporto ini
 verifica((await store.leggiTask('cli-1'))[0].id === dalCli.id, 'e i task si rileggono da lì');
 verifica((await store.leggiTask('cli-1'))[0].stimaMin === 20, 'con i loro campi');
 
+console.log('\nIl registro, letto da piu\' parti insieme\n');
+
+// Il registro e' il primo file di ogni operazione. Leggendo piu' liste insieme
+// — come fa l'app all'avvio — partono altrettante letture prima che la copia
+// in memoria si sia riempita: senza la memoria della lettura *in volo*
+// sarebbero N richieste dello stesso identico file, tutte nello stesso istante.
+const letture = new Map();
+const archivio = new Map();
+store.usaDrive({
+  leggi: async (percorso, seAssente) => {
+    letture.set(percorso, (letture.get(percorso) || 0) + 1);
+    await new Promise(r => setTimeout(r, 5));   // la rete non risponde subito
+    return archivio.has(percorso) ? JSON.parse(archivio.get(percorso)) : seAssente;
+  },
+  scrivi: async (percorso, dati) => { archivio.set(percorso, JSON.stringify(dati)); return { id: percorso }; },
+});
+for (const n of ['A', 'B', 'C', 'D']) await store.creaLista(n, { id: `p-${n}` });
+
+store.dimenticaRegistro();
+letture.clear();
+await Promise.all(['A', 'B', 'C', 'D'].map(n => store.leggiTask(`p-${n}`)));
+verifica(letture.get('task/_liste.json') === 1, 'quattro letture insieme chiedono il registro una volta sola');
+verifica(letture.get('task/a.json') === 1, 'e il file di ogni lista una volta ciascuno');
+
+// Chi vuole il file fresco lo vuole davvero: dopo aver creato una consegna,
+// aspettare la lettura di qualcun altro vorrebbe dire non vederla.
+store.dimenticaRegistro();
+letture.clear();
+const [, fresco] = await Promise.all([
+  store.leggiRegistro(),
+  store.leggiRegistro({ fresco: true }),
+]);
+verifica(letture.get('task/_liste.json') === 2, 'una rilettura dichiarata fresca non si accoda a quella in volo');
+verifica(fresco.liste.length === 4, 'e riporta le liste che ci sono');
+
+// Una lettura fallita non deve restare appesa a far aspettare le prossime.
+store.dimenticaRegistro();
+let rompi = true;
+store.usaDrive({
+  leggi: async (percorso, seAssente) => {
+    if (rompi) throw new Error('rete assente');
+    return archivio.has(percorso) ? JSON.parse(archivio.get(percorso)) : seAssente;
+  },
+  scrivi: async () => ({}),
+});
+await store.leggiRegistro().catch(() => {});
+rompi = false;
+verifica((await store.leggiRegistro()).liste.length === 4, 'dopo una lettura fallita la successiva riprova');
+
 fine();

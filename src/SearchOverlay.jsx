@@ -1,6 +1,33 @@
+// @ts-check
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { openProtocol } from './protocolLink';
 
+/** @typedef {'section'|'page'|'task'} TipoRisultato */
+
+/**
+ * @typedef {object} Risultato
+ * @property {TipoRisultato} type
+ * @property {string} label
+ * @property {string} [sub]
+ * @property {string} [color]
+ * @property {number} sc          quanto corrisponde: 2 se comincia con, 1 se contiene
+ * @property {any} [section]
+ * @property {any} [nb]
+ * @property {any} [page]
+ * @property {any} [task]
+ */
+
+/**
+ * @typedef {object} PropsRicerca
+ * @property {() => void} onClose
+ * @property {any[]} notebooks
+ * @property {Record<string, any[]>} sectionsMap
+ * @property {{ current: Record<string, any[]> }} pagesCache
+ * @property {any[]} tasks
+ * @property {(sec: any, nb: any, app: string) => void} onSelectSection
+ */
+
+/** @type {Record<TipoRisultato, { icon: string, label: string }>} */
 const TYPE_META = {
   section: { icon: '▦', label: 'Sezione' },
   page:    { icon: '❐', label: 'Pagina' },
@@ -9,24 +36,28 @@ const TYPE_META = {
 
 // Cerca tra i dati già in cache (sezioni, pagine OneNote, task) — nessuna chiamata API.
 // Il contenuto è montato solo quando open: lo stato riparte pulito a ogni apertura.
+/** @param {PropsRicerca & { open: boolean }} props */
 export default function SearchOverlay(props) {
   if (!props.open) return null;
   return <SearchBox {...props} />;
 }
 
+/** @param {PropsRicerca} props */
 function SearchBox({ onClose, notebooks, sectionsMap, pagesCache, tasks, onSelectSection }) {
   const [query, setQuery] = useState('');
   const [active, setActive] = useState(0);
-  const listRef = useRef(null);
+  const listRef = useRef(/** @type {HTMLDivElement|null} */ (null));
 
   const results = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (q.length < 2) return [];
     // startsWith vale più di includes
+    /** @param {string|null|undefined} s */
     const score = s => {
       const t = (s || '').toLowerCase();
       return t.startsWith(q) ? 2 : t.includes(q) ? 1 : 0;
     };
+    /** @type {Risultato[]} */
     const out = [];
 
     for (const nb of notebooks) {
@@ -46,6 +77,7 @@ function SearchBox({ onClose, notebooks, sectionsMap, pagesCache, tasks, onSelec
       if (sc) out.push({ type: 'task', label: t.titolo, sub: t._listName, sc, task: t });
     }
 
+    /** @type {Record<TipoRisultato, number>} */
     const order = { section: 0, page: 1, task: 2 };
     out.sort((a, b) => b.sc - a.sc || order[a.type] - order[b.type] || a.label.localeCompare(b.label));
     return out.slice(0, 24);
@@ -54,6 +86,7 @@ function SearchBox({ onClose, notebooks, sectionsMap, pagesCache, tasks, onSelec
   // Se i risultati si accorciano, la selezione resta comunque valida
   const activeIdx = Math.max(0, Math.min(active, results.length - 1));
 
+  /** @param {Risultato} r */
   function handleOpen(r) {
     if (r.type === 'section') {
       onSelectSection(r.section, r.nb, 'onenote');
@@ -64,7 +97,7 @@ function SearchBox({ onClose, notebooks, sectionsMap, pagesCache, tasks, onSelec
       // scheda delle attività. Se non c'è, non c'è nient'altro da aprire:
       // prima si ripiegava sull'app To-Do, che adesso non tiene più niente.
       const lower = (r.task._listName || '').toLowerCase();
-      let found = null;
+      let found = /** @type {{ sec: any, nb: any }|null} */ (null);
       for (const nb of notebooks) {
         const sec = (sectionsMap[nb.id] || []).find(s => s.displayName.toLowerCase() === lower);
         if (sec) { found = { sec, nb }; break; }
@@ -74,6 +107,7 @@ function SearchBox({ onClose, notebooks, sectionsMap, pagesCache, tasks, onSelec
     onClose();
   }
 
+  /** @param {import('react').KeyboardEvent<HTMLInputElement>} e */
   function handleKeyDown(e) {
     if (e.key === 'Escape') { onClose(); return; }
     if (!results.length) return;

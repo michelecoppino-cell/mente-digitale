@@ -905,6 +905,11 @@ async function fetchOneCalendar(cal, isOwn, params, startIso, endIso, top) {
 // Esegue le fetch a gruppi invece che tutte insieme: prima erano in parallelo
 // ma limitate ai primi 8 calendari, ed era un altro modo di sparire in
 // silenzio (il nono calendario compariva nel filtro senza mai un evento).
+//
+// Esportata perché il freno è lo stesso ovunque si legga una collezione di
+// file o di calendari: tutti insieme Graph risponde 429, uno per volta si
+// aspetta la somma di tutte le risposte. A gruppi è la sola misura giusta, e
+// va scritta una volta.
 /**
  * @template T, R
  * @param {T[]} items
@@ -912,7 +917,7 @@ async function fetchOneCalendar(cal, isOwn, params, startIso, endIso, top) {
  * @param {(item: T) => Promise<R>} fn
  * @returns {Promise<R[]>}
  */
-async function mapLimit(items, limit, fn) {
+export async function mapLimit(items, limit, fn) {
   /** @type {R[]} */
   const out = [];
   for (let i = 0; i < items.length; i += limit) {

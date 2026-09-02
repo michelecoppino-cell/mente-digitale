@@ -1,3 +1,6 @@
+// @ts-nocheck — non ancora controllato dai tipi. È un debito dichiarato, non
+// una scelta: vedi la nota in jsconfig.json. Si toglie questa riga, si
+// sistema quello che salta fuori, e il file entra col resto.
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { COLORS } from './config';
