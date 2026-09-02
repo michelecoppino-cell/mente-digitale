@@ -38,6 +38,12 @@ secondi. La CI esegue tutti e quattro i comandi a ogni push e ogni PR.
 
 ## Le cose che non si toccano
 
+**Un componente si importa.** `no-undef` non prende i nomi dentro il JSX — per
+quello c'è `react/jsx-no-undef`, ed è acceso apposta: un componente spostato in
+un altro file e non importato passerebbe tipi, lint e build senza una parola, e
+si scoprirebbe a schermo bianco dopo il merge, perché l'app si prova solo in
+produzione.
+
 **Il serbatoio delle attività si scrive in un posto solo.** Le attività aperte
 stanno nella cache di query, una voce per lista, e il pool è una lettura di
 quella (`poolAttivita.js`). Non tenerne una copia in uno stato React o in un
@@ -100,6 +106,7 @@ cose che non si ricostruiscono da una cronologia.
 | `src/queryClient.js` | TanStack Query, le chiavi, la persistenza col suo tetto |
 | `src/poolAttivita.js` | il serbatoio delle attività: una lettura della cache, non uno stato |
 | `src/use*.js` | i pezzi che stavano in `App.jsx` e non c'entravano con lui: la campanella, le scadenze ricorrenti, i colori, le sveglie |
+| `src/planner/` | la griglia del Piano (misure, colori, conti) e i suoi componenti: settimana, mese, capacità, modale evento |
 | `src/tokens.css` | colori, tipografia, spazi, raggi — la sola fonte |
 | `src/tempo.js` | il giorno locale, l'ora, le durate — scritti una volta sola |
 | `src/finanze/` | isola TypeScript, dati in IndexedDB, backup su OneDrive |
@@ -137,12 +144,13 @@ usa l'app, e sotto il perché.
 
 Cose note, già decise, da non riscoprire:
 
-- **`// @ts-nocheck` in dodici file** (`grep -rl "@ts-nocheck" src`). È un elenco
-  che si accorcia una riga per volta, non un permesso: un file nuovo nasce
+- **`// @ts-nocheck`** (`grep -rl "@ts-nocheck" src`). È un elenco che si
+  accorcia una riga per volta, non un permesso: un file nuovo nasce
   controllato. Vedi la nota in `jsconfig.json`.
-- **`PlannerView.jsx`, 3.000 righe.** `WeeklyTimeline`, `MonthlyCalendar` e
-  `CalendarEventModal` sono già componenti a sé dentro lo stesso file: si
-  separano un pezzo per PR, non tutti insieme.
+- **`PlannerView.jsx`, 2.200 righe.** Quello che restava dopo aver separato la
+  griglia e i quattro componenti in `src/planner/`: la vista Giorno, il
+  trascinamento, il ridimensionamento, i filtri e i salvataggi. Il prossimo
+  pezzo è lo stato del trascinamento in un hook suo.
 - **Il PIN delle Finanze non è cifratura, ed è giusto così.** SHA-256 senza
   sale di sei cifre, e l'hash viaggia dentro il backup su OneDrive. Non è una
   svista da correggere: serve a coprire lo schermo da chi passa vicino alla
