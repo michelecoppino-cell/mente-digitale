@@ -5,7 +5,7 @@ import { useState, useEffect, useRef, useMemo, Fragment } from 'react';
 import {
   loadDailyPlans, saveDailyPlans,
   loadPlannerConfig, savePlannerConfig,
-  getCalendarEvents, getCalendars, getCalendarFetchReport,
+  getCalendarEvents, getCalendars, getCalendarFetchReport, calendarioLavoroInCache,
   createCalendarEvent, deleteCalendarEvent,
   patchCalendarEvent, graphDateTime,
   loadWorkbooks, saveWorkbooks, getWorkbookCalendarId, getWorkbookEvents, WORKBOOK_CALENDAR_NAME,
@@ -1548,20 +1548,30 @@ export default function PlannerView({
                     <span className="planner-cal-filter-name">Workbook</span>
                   </label>
                   {lavoroReport && (
-                    <label className="planner-cal-filter-item">
-                      <input
-                        type="checkbox"
-                        checked={!lavoroCalHidden}
-                        onChange={() => toggleCalendarVisibility(CAL_LAVORO_ID)}
-                      />
-                      <span className="planner-cal-filter-dot" style={{ background: calendarColor(CAL_LAVORO_ID, null, coloriCalendari) }} />
-                      <span className="planner-cal-filter-name">{CAL_LAVORO_NOME}</span>
-                      <span
-                        className={`planner-cal-filter-count${lavoroReport.count === 0 ? ' zero' : ''}`}
-                        title={lavoroReport.message || 'Specchio del calendario di lavoro, in sola lettura'}>
-                        {lavoroReport.count}
-                      </span>
-                    </label>
+                    <>
+                      <label className="planner-cal-filter-item">
+                        <input
+                          type="checkbox"
+                          checked={!lavoroCalHidden}
+                          onChange={() => toggleCalendarVisibility(CAL_LAVORO_ID)}
+                        />
+                        <span className="planner-cal-filter-dot" style={{ background: calendarColor(CAL_LAVORO_ID, null, coloriCalendari) }} />
+                        <span className="planner-cal-filter-name">{CAL_LAVORO_NOME}</span>
+                        <span
+                          className={`planner-cal-filter-count${lavoroReport.count === 0 ? ' zero' : ''}`}
+                          title="Specchio del calendario di lavoro, in sola lettura">
+                          {lavoroReport.count}
+                        </span>
+                      </label>
+                      {/* Scritto qui e non solo nel `title`: uno specchio fermo
+                          è il difetto che questo disegno può avere davvero — il
+                          PC di lavoro spento, e l'agenda a schermo che resta
+                          quella di ieri — e da telefono un tooltip non lo legge
+                          nessuno. */}
+                      {lavoroReport.level !== 'ok' && (
+                        <div className="planner-cal-filter-issue fallback">ℹ️ {lavoroReport.message}</div>
+                      )}
+                    </>
                   )}
                   <div className="planner-cal-filter-divider" />
                   {calendarsList.length === 0 ? (
@@ -2132,6 +2142,7 @@ export default function PlannerView({
           onClose={() => setCalModal(null)}
           onSave={handleSaveCalEvent}
           onDelete={handleDeleteCalEvent}
+          docLavoro={calendarioLavoroInCache()}
         />
       )}
 

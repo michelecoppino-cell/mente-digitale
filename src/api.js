@@ -4,7 +4,7 @@ import { CARTELLA_APP, creaDrive } from './graphCore.js';
 import { ymd } from './tempo.js';
 import {
   FILE_CALENDARIO_LAVORO, CAL_LAVORO_ID, CAL_LAVORO_NOME,
-  normalizzaDocumento, eventiDiLavoro,
+  normalizzaDocumento, eventiDiLavoro, avvisoSpecchioFermo,
 } from './calendarioLavoro.js';
 
 const GRAPH = 'https://graph.microsoft.com/v1.0';
@@ -625,6 +625,16 @@ let _lavoroCacheExp = 0;
 export function invalidateCalendarioLavoroCache() { _lavoroCache = null; _lavoroCacheExp = 0; }
 
 /**
+ * Lo specchio già letto, senza chiederlo di nuovo. Serve al modale
+ * dell'evento, che deve poter dire «lo specchio è fermo da tre giorni» mentre
+ * disegna: quando si può cliccare un evento di lavoro, `getCalendarEvents` è
+ * già passata di qui, quindi la copia c'è. Se non c'è si tace, che è la cosa
+ * giusta — un avviso che appare mezzo secondo dopo è peggio di nessun avviso.
+ * @returns {import('./calendarioLavoro.js').DocCalendarioLavoro|null}
+ */
+export function calendarioLavoroInCache() { return _lavoroCache; }
+
+/**
  * @returns {Promise<import('./calendarioLavoro.js').DocCalendarioLavoro|null>}
  *   null quando lo specchio non c'è: non è un errore, è un'app in cui il
  *   calendario di lavoro non è stato messo in piedi.
@@ -704,16 +714,21 @@ export async function getCalendarEvents(startDate, endDate, top = 50) {
   if (docLavoro) {
     // Anche lo specchio finisce nella diagnostica del filtro «Calendari ▾»: è
     // il posto in cui ci si accorge che un calendario è elencato e non mostra
-    // niente, e uno specchio fermo da giorni è esattamente quel caso. Le fonti
-    // che l'Action non è riuscita a leggere lo dicono qui.
+    // niente. Due cose da dire, e la seconda è quella che questo disegno
+    // rischia davvero: le fonti che l'Action non è riuscita a leggere, e uno
+    // **specchio fermo** — il PC di lavoro spento, e l'agenda a schermo che
+    // resta quella di ieri senza dichiararlo.
     const rotte = docLavoro.fonti.filter(f => f.errore);
+    const fermo = avvisoSpecchioFermo(docLavoro);
+    const guai = [
+      fermo,
+      ...rotte.map(f => `${f.nome}: ${f.errore}`),
+    ].filter(Boolean);
     _calFetchReport.push({
       calId: CAL_LAVORO_ID,
       name: CAL_LAVORO_NOME,
-      level: rotte.length ? 'fallback' : 'ok',
-      message: rotte.length
-        ? `feed non letti: ${rotte.map(f => `${f.nome} (${f.errore})`).join(', ')}`
-        : '',
+      level: guai.length ? 'fallback' : 'ok',
+      message: guai.join(' · '),
       count: eventiLavoro.length,
       shared: true,
     });
