@@ -335,12 +335,35 @@ il task nasce direttamente in sezione, saltando il chiarimento:
 Rivedere relazione fondazioni @2573 !domani ~45
 ```
 
-| Token | Cosa dice | Esempi |
-|---|---|---|
-| `@nome` | la lista di destinazione | `@2573`, `@ris-auto`, `@casa` |
-| `!data` | la scadenza | `!oggi`, `!domani`, `!ven`, `!31/12`, `!2026-09-01` |
-| `~n` | la stima, in minuti | `~45`, `~90m`, `~2h` |
-| `9:30` | l'ora — **solo scrivendo un evento** | `9:30`, `15.00`, `9:30-11` |
+| Token | Cosa dice | Esempi | Pastiglia |
+|---|---|---|---|
+| `@nome` | la lista di destinazione | `@2573`, `@ris-auto`, `@casa` | `→ Inbox ⌄` |
+| `!data` | la scadenza | `!oggi`, `!domani`, `!ven`, `!31/12`, `!2026-09-01` | `📅 quando` |
+| `~n` | la stima, in minuti | `~45`, `~90m`, `~2h` | `⏱ quanto` |
+| `9:30` | l'ora — **solo scrivendo un evento** | `9:30`, `15.00`, `9:30-11` | `🕘 tutto il giorno` |
+
+**Ogni token ha anche un bottone**, e i due modi scrivono lo stesso valore. I
+token sono comodi su una tastiera vera e scomodi su un telefono — `@` e `~`
+stanno nella seconda schermata dei simboli, e per «9:30» bisogna passare ai
+numeri e tornare indietro — quindi la riga di pastiglie sotto il testo dice
+sempre dove si finisce, quando e per quanto, e ognuna si tocca: la sezione apre
+l'elenco, il giorno apre il calendario di sistema, l'ora due campi con «tutto il
+giorno» accanto, la stima i tagli che si usano davvero (15m, 30m, 45m, 1h,
+1h30, 2h, 3h). Da telefono la riga della sintassi non compare nemmeno: leggere
+una scorciatoia che non si userà mai è rumore.
+
+La regola fra i due modi è la stessa che vale per la destinazione: **una scelta
+fatta col dito vale finché la riga non dice un'altra cosa**. Si ricorda cosa
+diceva il testo quando la si è fatta, e appena quel valore cambia la scelta
+decade — altrimenti resterebbe appiccicata a un testo che nel frattempo dice il
+contrario, e si batterebbe Invio su una data leggendone un'altra.
+
+Due dettagli che sono decisioni e non dettagli: aprire il pannello dell'ora *è*
+dire «a un'ora», quindi se non ce n'è una ancora la propone (oggi la prossima
+mezz'ora, un altro giorno le nove) — prima si leggeva «tutto il giorno» sopra
+due campi che dicevano 9:00–10:00, e si creava davvero un evento di tutto il
+giorno. E da telefono, scegliendo, **il fuoco non torna sulla riga di testo**:
+farebbe risalire la tastiera, che copre proprio l'elenco appena aperto.
 
 Scrivere `@` apre l'elenco delle sezioni, che si stringe man mano — frecce per
 scegliere, `Invio` per scegliere e catturare in un gesto solo. L'ordine a elenco

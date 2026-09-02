@@ -103,6 +103,17 @@ dentro, non in due posti.
 soltanto.** È una regola del CLI e del server MCP, non un'omissione: sono le
 cose che non si ricostruiscono da una cronologia.
 
+**Quello che si scrive con un token si deve poter fare anche con un dito.** La
+riga di cattura legge `@sezione`, `!domani`, `~45`, `9:30-11`: comodi su una
+tastiera, scomodi su un telefono, dove `@` e `~` stanno nella seconda schermata
+dei simboli. Ogni token ha quindi anche una pastiglia da toccare, e i due modi
+scrivono lo stesso valore — con la regola che una scelta fatta col dito vale
+finché la riga non dice un'altra cosa (si ricorda cosa diceva il testo quando è
+stata fatta). Vale anche il contrario: da telefono, dopo una scelta, il fuoco
+**non** torna sulla riga di testo — la tastiera risalirebbe a coprire l'elenco
+appena aperto. È `useMediaQuery('(pointer: coarse)')` in `QuickCapture.jsx`, e
+sta in JS e non nel CSS perché è un comportamento, non un aspetto.
+
 **Il calendario di lavoro è uno specchio, e si legge soltanto.** Il file su
 OneDrive lo riscrive intero una GitHub Action ogni paio d'ore: qualunque cosa si
 scrivesse da qui sopravviverebbe fino al giro dopo e poi sparirebbe in silenzio.

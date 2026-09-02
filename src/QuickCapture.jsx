@@ -45,6 +45,22 @@
 // dentro un pensiero, o fisso un appuntamento. Quello che non si sa ancora
 // come catalogare finisce in Inbox — cioè il comportamento di default, senza
 // scegliere niente.
+//
+// ── I token si scrivono, ma non si è obbligati a scriverli ──────────────────
+//
+// `@sezione`, `!domani`, `~45`, `9:30-11` sono comodi su una tastiera vera e
+// scomodi su un telefono: `@` e `~` stanno nella seconda schermata dei simboli,
+// e per scrivere «9:30» bisogna passare ai numeri e tornare indietro. Quindi
+// **ogni token ha anche un bottone**, e i due modi scrivono lo stesso valore:
+// la riga di pastiglie sotto il testo dice sempre dove si finisce, quando e per
+// quanto, e ognuna si tocca.
+//
+// La regola fra i due modi è quella che vale già per la destinazione: **una
+// scelta fatta col dito vale finché la riga non dice un'altra cosa**. Si
+// ricorda cosa diceva il testo quando la si è fatta, e appena quel valore
+// cambia la scelta decade — altrimenti resterebbe appiccicata a un testo che
+// nel frattempo dice il contrario, e si batterebbe Invio su una data leggendone
+// un'altra.
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { creaTask } from './taskStore';
 import { inboxListId } from './taskModel';
@@ -54,8 +70,9 @@ import { getCalendars } from './api';
 import { salvaEvento } from './eventiCalendario';
 import DestinationPicker from './DestinationPicker';
 import { byRecentUse, pushDestMru } from './destinationMru';
+import { useMediaQuery } from './useMediaQuery';
 import './QuickCapture.css';
-import { durataBreve, ymd } from './tempo.js';
+import { durataBreve, oraProposta, sommaOra, ymd } from './tempo.js';
 
 /**
  * @param {Object} props
@@ -75,6 +92,14 @@ export default function QuickCapture({ open, todoLists, onClose, onCaptured, onE
   const [modo, setModo] = useState(/** @type {'attivita'|'evento'} */ ('attivita'));
   const [calendari, setCalendari] = useState(/** @type {any[]} */ ([]));
   const [calendarioId, setCalendarioId] = useState('');
+  // Le scelte fatte col dito, ognuna insieme a cosa diceva la riga quando è
+  // stata fatta: fuori da quel testo non vuol dire più niente (vedi in testa).
+  const [sceltaGiorno, setSceltaGiorno] = useState(/** @type {{ valore: string|null, controTesto: string|null }|null} */ (null));
+  const [sceltaOra, setSceltaOra] = useState(/** @type {{ inizio: string|null, fine: string|null, controTesto: string|null }|null} */ (null));
+  const [sceltaStima, setSceltaStima] = useState(/** @type {{ valore: number|null, controTesto: number|null }|null} */ (null));
+  // Quale pannello a dito è aperto. Uno solo per volta: due elenchi aperti
+  // insieme, su uno schermo da telefono, sono uno che copre l'altro.
+  const [pannello, setPannello] = useState(/** @type {'ora'|'stima'|null} */ (null));
   // La destinazione scelta a mano (clic o frecce), insieme a com'era scritto
   // il token `@` quando è stata scelta: appena si riprende a scrivere il token
   // la scelta decade, altrimenti resterebbe appiccicata a un testo che nel
@@ -85,6 +110,9 @@ export default function QuickCapture({ open, todoLists, onClose, onCaptured, onE
   // quella ricerca non vuol dire più niente (vedi `activeIndex` più sotto).
   const [cursor, setCursor] = useState(/** @type {{ key: string, index: number }} */ ({ key: '', index: -1 }));
   const inputRef = useRef(/** @type {HTMLTextAreaElement|null} */ (null));
+  // Il dito e il mouse vogliono due cose diverse dal fuoco (vedi `focusInput`),
+  // ed è una differenza di comportamento, non di aspetto: sta qui e non nel CSS.
+  const dito = useMediaQuery('(pointer: coarse)');
   // Il componente resta montato anche a finestra chiusa (`open` falso ⇒ render
   // nullo), quindi lo stato sopravvive fra un'apertura e l'altra: senza questo
   // azzeramento la seconda cattura partiva con `busy` o l'errore della prima.
@@ -95,6 +123,7 @@ export default function QuickCapture({ open, todoLists, onClose, onCaptured, onE
       setText(''); setBusy(false); setError('');
       setPick(null); setPickerOpen(false); setCursor({ key: '', index: -1 });
       setModo('attivita');
+      setSceltaGiorno(null); setSceltaOra(null); setSceltaStima(null); setPannello(null);
     }
   }
 
@@ -186,24 +215,63 @@ export default function QuickCapture({ open, todoLists, onClose, onCaptured, onE
   const fromContext = !decided && !!proposed;
   const canSubmit = !!parsed.title && !busy;
 
-  // ── L'evento, letto dalla riga ────────────────────────────────────────────
+  // ── I tre valori, che vengano dalla riga o dal dito ───────────────────────
+  // La scelta col dito vince finché la riga dice ancora quello che diceva
+  // quando è stata fatta. Scritto una volta per tutti e tre, perché è la stessa
+  // regola: non è il testo a comandare e non è il bottone, è l'ultimo dei due
+  // che ha parlato.
+  const giorno = sceltaGiorno && sceltaGiorno.controTesto === parsed.dueDate
+    ? sceltaGiorno.valore : parsed.dueDate;
+  const stimaMin = sceltaStima && sceltaStima.controTesto === parsed.estimateMin
+    ? sceltaStima.valore : parsed.estimateMin;
+  const oraVale = !!sceltaOra && sceltaOra.controTesto === parsed.oraInizio;
+  const oraInizio = oraVale ? sceltaOra.inizio : parsed.oraInizio;
+
+  // ── L'evento ──────────────────────────────────────────────────────────────
   // Senza giorno è oggi: è la cosa che si scrive più spesso di getto, e
   // chiedere «!oggi» per dire oggi sarebbe una domanda per niente. Senza ora è
   // un evento di tutto il giorno, che è il modo giusto di dire «quel giorno,
-  // non so quando»; con l'ora ma senza fine dura quanto dice `~`, e in
+  // non so quando»; con l'ora ma senza fine dura quanto dice la stima, e in
   // mancanza un'ora tonda.
-  const giornoEvento = parsed.dueDate || ymd();
-  const oraInizio = parsed.oraInizio;
+  const giornoEvento = giorno || ymd();
   const oraFine = oraInizio
-    ? (parsed.oraFine || sommaMinuti(oraInizio, parsed.estimateMin || 60))
+    ? ((oraVale ? sceltaOra.fine : parsed.oraFine) || sommaOra(oraInizio, stimaMin || 60))
     : null;
   const calendarioDefault = calendari.find(c => c.isDefaultCalendar)?.id || calendari[0]?.id || '';
   const calendarioScelto = calendarioId || calendarioDefault;
+
+  /** @param {string|null} valore */
+  function scegliGiorno(valore) {
+    setSceltaGiorno({ valore, controTesto: parsed.dueDate });
+  }
+  /** @param {string|null} inizio @param {string|null} fine */
+  function scegliOra(inizio, fine) {
+    setSceltaOra({ inizio, fine, controTesto: parsed.oraInizio });
+  }
+  /** @param {number|null} valore */
+  function scegliStima(valore) {
+    setSceltaStima({ valore, controTesto: parsed.estimateMin });
+    setPannello(null);
+  }
+
+  // Aprire il pannello dell'ora *è* dire «a un'ora»: se non ce n'è ancora una
+  // si propone la prima plausibile, così la pastiglia e i due campi dicono la
+  // stessa cosa. Senza, si leggeva «tutto il giorno» sopra due campi che
+  // mostravano 9:00–10:00, e si creava davvero un evento di tutto il giorno —
+  // cioè la sorpresa a cose fatte che questa riga di pastiglie esiste per
+  // evitare. Chi voleva davvero tutto il giorno ha il bottone lì sotto.
+  function apriPannelloOra() {
+    const apri = pannello !== 'ora';
+    setPannello(apri ? 'ora' : null);
+    setPickerOpen(false);
+    if (apri && !oraInizio) scegliOra(oraProposta(giornoEvento), null);
+  }
 
   /** @param {import('./captureParse').Destination|null} dest */
   function choose(dest) {
     setPick({ value: dest, forQuery: probe.destQuery });
     setPickerOpen(false);
+    setPannello(null);
     // Scegliere non è finire: quasi sempre si è a metà del titolo. Il fuoco
     // torna dove si stava scrivendo, altrimenti dopo un clic sulla
     // destinazione bisogna riprendere la riga di testo col mouse per poter
@@ -211,7 +279,22 @@ export default function QuickCapture({ open, todoLists, onClose, onCaptured, onE
     focusInput();
   }
 
+  // Cliccando un campo data o ora il browser lo mette a fuoco ma non apre
+  // sempre il selettore: `showPicker()` lo apre davvero. Non è supportato
+  // ovunque e in qualche contesto solleva, quindi si prova e basta — dove non
+  // c'è, resta il comportamento normale del campo.
+  /** @param {React.MouseEvent<HTMLInputElement>} e */
+  function apriSelettore(e) {
+    try { /** @type {any} */ (e.currentTarget).showPicker?.(); } catch { /* il browser dice di no */ }
+  }
+
   function focusInput() {
+    // **Da telefono no.** Rimettere il fuoco sulla riga fa risalire la
+    // tastiera, che copre proprio l'elenco appena aperto: si toccava «Sezione»
+    // e si vedeva comparire e sparire una lista dietro la tastiera. Col mouse
+    // invece il fuoco deve tornare dove si stava scrivendo, perché scegliere
+    // non è finire — quasi sempre si è a metà del titolo.
+    if (dito) return;
     // Dopo il render, o il fuoco lo riprende il bottone appena premuto.
     requestAnimationFrame(() => inputRef.current?.focus());
   }
@@ -226,6 +309,7 @@ export default function QuickCapture({ open, todoLists, onClose, onCaptured, onE
     if (e.key === 'Escape') {
       // La prima fuga chiude il pannello, la seconda la cattura: chi ha aperto
       // le destinazioni per sbaglio non perde anche quello che ha scritto.
+      if (pannello) { setPannello(null); return; }
       if (showPicker) { choose(target); return; }
       onClose();
       return;
@@ -312,10 +396,13 @@ export default function QuickCapture({ open, todoLists, onClose, onCaptured, onE
     try {
       const task = await creaTask(listId, {
         titolo: next.title,
+        // Scadenza e stima si leggono da `giorno` e `stimaMin`, non da `next`:
+        // quelli tengono conto anche di cosa è stato scelto col dito, e `next`
+        // sa solo cosa c'è scritto nella riga.
         // La stima detta al volo («30m») è un campo: prima diventava un marker
         // [MIN:30] in testa alle note del task appena nato.
-        ...(next.estimateMin ? { stimaMin: next.estimateMin } : {}),
-        ...(next.dueDate ? { scadenza: next.dueDate.slice(0, 10) } : {}),
+        ...(stimaMin ? { stimaMin } : {}),
+        ...(giorno ? { scadenza: giorno.slice(0, 10) } : {}),
       });
       if (dest) pushDestMru(listId);
       onCaptured(task);
@@ -370,7 +457,12 @@ export default function QuickCapture({ open, todoLists, onClose, onCaptured, onE
 
         {/* Dove finisce, scritto prima di premere Invio: la destinazione non
             deve mai essere una sorpresa a cose fatte. Per un evento la
-            destinazione è il calendario, e la riga dice giorno e ora. */}
+            destinazione è il calendario, e la riga dice giorno e ora.
+
+            **Ogni pastiglia è anche un bottone.** I token si scrivono comodi da
+            tastiera e scomodi col pollice, quindi qui c'è l'altra metà: si
+            tocca e si sceglie, e il valore è lo stesso che scriverebbe il
+            token. */}
         <div className="qc-target-row">
           {modo === 'attivita' ? (
             <button
@@ -379,6 +471,7 @@ export default function QuickCapture({ open, todoLists, onClose, onCaptured, onE
               aria-expanded={showPicker}
               onClick={() => {
                 setPickerOpen(o => !o);
+                setPannello(null);
                 setActiveIndex(target ? items.findIndex(i => i.id === target.id) : -1);
                 focusInput();
               }}>
@@ -399,16 +492,102 @@ export default function QuickCapture({ open, todoLists, onClose, onCaptured, onE
               </select>
             </label>
           )}
-          {modo === 'evento'
-            ? (<>
-              <span className="qc-chip">📅 {formatDay(giornoEvento)}</span>
-              <span className="qc-chip">{oraInizio ? `🕘 ${oraInizio}–${oraFine}` : '🕘 tutto il giorno'}</span>
-            </>)
-            : (<>
-              {parsed.dueDate && <span className="qc-chip">📅 {formatDay(parsed.dueDate)}</span>}
-              {parsed.estimateMin && <span className="qc-chip">⏱ {formatMin(parsed.estimateMin)}</span>}
-            </>)}
+          {/* Il giorno passa dal calendario del sistema: da telefono è la
+              rotella nativa, che è il modo migliore che esista di scegliere una
+              data col pollice, e non c'è niente da disegnare. L'input copre
+              tutta la pastiglia, così il tocco cade su di lui ovunque. */}
+          <label className={`qc-chip qc-chip-tocca${giorno ? ' scelta' : ''}`}>
+            <span aria-hidden="true">📅</span>
+            <span>{giorno ? formatDay(giorno) : (modo === 'evento' ? formatDay(giornoEvento) : 'quando')}</span>
+            <input
+              type="date"
+              className="qc-campo-sopra"
+              aria-label={modo === 'evento' ? 'Giorno dell’evento' : 'Scadenza'}
+              value={modo === 'evento' ? giornoEvento : (giorno || '')}
+              onClick={apriSelettore}
+              onChange={e => scegliGiorno(e.target.value || null)}
+            />
+          </label>
+          {giorno && modo === 'attivita' && (
+            <button type="button" className="qc-chip qc-chip-tocca" onClick={() => scegliGiorno(null)} title="Togli la scadenza">✕</button>
+          )}
+
+          {modo === 'evento' ? (
+            <button
+              type="button"
+              className={`qc-chip qc-chip-tocca${oraInizio ? ' scelta' : ''}`}
+              aria-expanded={pannello === 'ora'}
+              onClick={apriPannelloOra}>
+              <span aria-hidden="true">🕘</span>
+              <span>{oraInizio ? `${oraInizio}–${oraFine}` : 'tutto il giorno'}</span>
+              <span className="qc-target-caret" aria-hidden="true">⌄</span>
+            </button>
+          ) : (
+            <button
+              type="button"
+              className={`qc-chip qc-chip-tocca${stimaMin ? ' scelta' : ''}`}
+              aria-expanded={pannello === 'stima'}
+              onClick={() => { setPannello(p => (p === 'stima' ? null : 'stima')); setPickerOpen(false); }}>
+              <span aria-hidden="true">⏱</span>
+              <span>{stimaMin ? formatMin(stimaMin) : 'quanto'}</span>
+              <span className="qc-target-caret" aria-hidden="true">⌄</span>
+            </button>
+          )}
         </div>
+
+        {/* L'ora di un evento: due campi e una via d'uscita. «Tutto il giorno»
+            è un bottone e non una casella da spuntare perché è quello che si
+            sceglie *invece* di un orario, non in aggiunta. */}
+        {pannello === 'ora' && (
+          <div className="qc-pannello">
+            <div className="qc-ora-riga">
+              <label className="qc-ora-campo">
+                <span className="eyebrow">dalle</span>
+                <input
+                  type="time"
+                  value={oraInizio || '09:00'}
+                  onClick={apriSelettore}
+                  onChange={e => scegliOra(e.target.value || null, oraVale ? sceltaOra.fine : parsed.oraFine)}
+                />
+              </label>
+              <label className="qc-ora-campo">
+                <span className="eyebrow">alle</span>
+                <input
+                  type="time"
+                  value={oraFine || sommaOra(oraInizio || '09:00', 60)}
+                  onClick={apriSelettore}
+                  onChange={e => scegliOra(oraInizio || '09:00', e.target.value || null)}
+                />
+              </label>
+            </div>
+            <div className="qc-preset-riga">
+              <button type="button" className="qc-preset" onClick={() => { scegliOra(null, null); setPannello(null); }}>
+                Tutto il giorno
+              </button>
+              <button type="button" className="qc-preset" onClick={() => setPannello(null)}>Fatto</button>
+            </div>
+          </div>
+        )}
+
+        {/* La stima: non esiste un campo di sistema per una durata, quindi si
+            danno i tagli che si usano davvero. Sono gli stessi che il Piano
+            propone quando si ridimensiona un blocco. */}
+        {pannello === 'stima' && (
+          <div className="qc-pannello">
+            <div className="qc-preset-riga">
+              {[15, 30, 45, 60, 90, 120, 180].map(min => (
+                <button
+                  type="button"
+                  key={min}
+                  className={`qc-preset${stimaMin === min ? ' scelto' : ''}`}
+                  onClick={() => scegliStima(min)}>
+                  {formatMin(min)}
+                </button>
+              ))}
+              <button type="button" className="qc-preset" onClick={() => scegliStima(null)}>—</button>
+            </div>
+          </div>
+        )}
 
         {showPicker && (
           <DestinationPicker
@@ -423,15 +602,19 @@ export default function QuickCapture({ open, todoLists, onClose, onCaptured, onE
 
         <p className="qc-hint">
           {modo === 'evento'
-            ? (<>Finisce in calendario. Scrivi <code>!</code> per il giorno e <code>9:30-11</code> per l’ora; senza ora è tutto il giorno.</>)
-            : (<>
-              {fromContext
-                ? 'Proposta dalla sezione che stai guardando. Cambiala se non è lì che va.'
-                : target
-                  ? 'Va dritta in sezione: niente giro dall’Inbox.'
-                  : 'Finisce in Inbox. La chiarisci dopo, da Attività.'}
-              {' '}Scrivi <code>@</code> per la sezione, <code>!</code> per la scadenza, <code>~</code> per i minuti.
-            </>)}
+            ? 'Finisce in calendario. Tocca le pastiglie per giorno e ora.'
+            : (fromContext
+              ? 'Proposta dalla sezione che stai guardando. Cambiala se non è lì che va.'
+              : target
+                ? 'Va dritta in sezione: niente giro dall’Inbox.'
+                : 'Finisce in Inbox. La chiarisci dopo, da Attività.')}
+          {/* La sintassi dei token si dice solo dove serve: su un telefono
+              `@` e `~` stanno nella seconda schermata dei simboli, e leggere
+              una scorciatoia che non si userà mai è rumore. Le pastiglie
+              accanto fanno le stesse tre cose, e si vedono. */}
+          {!dito && (modo === 'evento'
+            ? (<> Oppure scrivi <code>!</code> per il giorno e <code>9:30-11</code> per l’ora.</>)
+            : (<> Oppure scrivi <code>@</code> per la sezione, <code>!</code> per la scadenza, <code>~</code> per i minuti.</>))}
         </p>
 
         {error && <div className="qc-error">{error}</div>}
@@ -476,16 +659,4 @@ function formatMin(min) {
   return durataBreve(min);
 }
 
-/**
- * `09:30` + 90 → `11:00`. Si ferma alle 23:59: un evento che scavalca la
- * mezzanotte da qui non si scrive, e farlo finire il giorno dopo senza averlo
- * detto sarebbe peggio che accorciarlo.
- * @param {string} ora  `HH:MM`
- * @param {number} minuti
- * @returns {string}
- */
-function sommaMinuti(ora, minuti) {
-  const [h, m] = ora.split(':').map(Number);
-  const tot = Math.min(h * 60 + m + minuti, 23 * 60 + 59);
-  return `${String(Math.floor(tot / 60)).padStart(2, '0')}:${String(tot % 60).padStart(2, '0')}`;
-}
+
