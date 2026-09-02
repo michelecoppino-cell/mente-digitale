@@ -32,8 +32,7 @@ import './TodayModals.css';
 /** Il mese spostato di `delta` mesi da 'YYYY-MM'. */
 function spostaMese(/** @type {string} */ ym, /** @type {number} */ delta) {
   const [y, m] = ym.split('-').map(Number);
-  const d = new Date(y, m - 1 + delta, 1);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+  return meseDi(new Date(y, m - 1 + delta, 1));
 }
 
 /** Il mese precedente a 'YYYY-MM'. */
