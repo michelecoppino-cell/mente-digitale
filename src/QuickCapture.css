@@ -23,6 +23,37 @@
   box-shadow: 0 24px 70px rgba(0, 0, 0, .6);
 }
 
+/* L'interruttore attività/evento, in testa: la stessa riga letta in due modi,
+   e si sceglie prima di scriverla. Ha la forma dei commutatori del Piano —
+   due mezze pastiglie dentro un bordo solo — perché fa la stessa cosa. */
+.qc-testa {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+}
+
+.qc-modo {
+  margin-left: auto;
+  display: flex;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  overflow: hidden;
+}
+.qc-modo button {
+  padding: var(--sp-2) var(--sp-4);
+  background: none;
+  border: none;
+  color: var(--muted);
+  font-family: var(--font-ui);
+  font-size: var(--fs-chip);
+  cursor: pointer;
+  transition: background var(--t), color var(--t);
+}
+.qc-modo button.attivo { background: var(--accent-tint); color: var(--accent); }
+@media (hover: hover) {
+  .qc-modo button:not(.attivo):hover { color: var(--text-3); }
+}
+
 .qc-input {
   padding: var(--sp-3) 0;
   background: none;
@@ -123,6 +154,20 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* Il calendario è una tendina dentro la chip, non un secondo pannello: le
+   voci sono tre o quattro e non c'è niente da cercare. */
+.qc-target-cal { padding-right: var(--sp-2); }
+.qc-cal-select {
+  max-width: 220px;
+  background: none;
+  border: none;
+  color: inherit;
+  font-family: var(--font-ui);
+  font-size: var(--fs-chip);
+  cursor: pointer;
+}
+.qc-cal-select option { background: var(--surface); color: var(--text); }
 
 .qc-chip {
   padding: var(--sp-2) var(--sp-3);

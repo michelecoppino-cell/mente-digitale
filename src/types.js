@@ -152,14 +152,6 @@ export {};
  */
 
 /**
- * Voce di reminderView: un preavviso di evento che scatta in una finestra.
- * @typedef {Object} Reminder
- * @property {string} eventId
- * @property {string} [eventSubject]
- * @property {GraphDateTime} [eventStartTime]
- */
-
-/**
  * Indirizzo email (mittente di un messaggio Outlook).
  * @typedef {Object} EmailAddress
  * @property {string} [address]
@@ -206,6 +198,7 @@ export {};
  * @typedef {Object} ParsedReminder
  * @property {string} listName
  * @property {string} title
+ * @property {number} anticipoGiorni  quanti giorni prima l'attività deve comparire
  */
 
 /**

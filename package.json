@@ -19,7 +19,9 @@
     "prova-pool": "node scripts/prova-pool.mjs",
     "prova-colori": "node scripts/prova-colori.mjs",
     "prova-programma": "node scripts/prova-programma.mjs",
-    "prova": "npm run prova-onedrive && npm run prova-nucleo && npm run prova-task && npm run prova-migrazione && npm run prova-flusso && npm run prova-pool && npm run prova-colori && npm run prova-programma",
+    "prova-cattura": "node scripts/prova-cattura.mjs",
+    "prova-ics": "node scripts/prova-ics.mjs",
+    "prova": "npm run prova-onedrive && npm run prova-nucleo && npm run prova-task && npm run prova-migrazione && npm run prova-flusso && npm run prova-pool && npm run prova-colori && npm run prova-programma && npm run prova-cattura && npm run prova-ics",
     "test": "npm run prova",
     "preview": "vite preview"
   },

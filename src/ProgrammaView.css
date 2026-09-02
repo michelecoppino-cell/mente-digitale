@@ -386,6 +386,14 @@
   color: var(--disabled);
 }
 .pg-legenda-sp { flex: 1; }
+/* L'avviso della vista per persona: è l'unica cosa per cui quella schermata
+   esiste, quindi non ha il colore spento del resto della legenda. */
+.pg-persone-avviso {
+  color: var(--danger);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .pg-legenda-voce { display: flex; align-items: center; gap: var(--sp-2); }
 .pg-campione { width: 16px; height: 10px; display: inline-block; }
 

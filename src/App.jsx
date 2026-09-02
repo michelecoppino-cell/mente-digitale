@@ -766,7 +766,6 @@ export default function App() {
       }, 2000);
 
       review.aggiorna(() => collectAllOneNotePages(pagesCache));
-      controllaScadenze(lists);
 
       // Precarica in coda (dopo task/pagine) tutti gli eventi Calendario dei
       // prossimi mesi in un'unica chiamata: il Pannello sezione li filtra poi
@@ -810,6 +809,10 @@ export default function App() {
         qk.calEventiSezioni(), () => getCalendarEvents(start, end, 250),
         STALE.calEventiSezioni, forceRefresh);
       setSectionCalendarEvents(events);
+      // Le scadenze ricorrenti nascono da questi stessi eventi, e quindi si
+      // controllano qui e non nel caricamento: prima partivano prima che gli
+      // eventi arrivassero, e per averli si facevano una chiamata loro.
+      controllaScadenze(todoListsRef.current, events);
     } catch (e) { console.error('section calendar events preload', e); }
   }
 
@@ -1264,7 +1267,10 @@ export default function App() {
           <line x1="21" y1="21" x2="16.5" y2="16.5" />
         </svg>
       </button>
-      <button className="search-btn tap-44" onClick={handleRefresh} title="Aggiorna tutto">
+      {/* Da telefono non c'è: «↺ Aggiorna tutto» è già dentro il pannello di
+          stato, a un tocco, e nella barra bassa quel posto serve al «+» per
+          stare al centro dello schermo. Vedi `.solo-schermo-largo`. */}
+      <button className="search-btn tap-44 solo-schermo-largo" onClick={handleRefresh} title="Aggiorna tutto">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
           <path d="M20.5 12a8.5 8.5 0 1 1-2.6-6.1" />
           <polyline points="20.5 4 20.5 9 15.5 9" />
@@ -1429,7 +1435,7 @@ export default function App() {
         context={captureContext}
         onClose={() => setCaptureOpen(false)}
         onCaptured={task => aggiungiAlPool(task._listId, task)}
-        onDecideNow={text => { setGtdSeedText(text); setGtdOpen(true); }}
+        onEventoCreato={ricaricaEventiCalendario}
       />
       <GtdClarifyModal
         open={gtdOpen}

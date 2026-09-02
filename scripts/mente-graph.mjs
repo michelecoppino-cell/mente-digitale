@@ -5,7 +5,7 @@
  * È il gemello da riga di comando di `src/api.js`: stessi endpoint, stessi
  * nomi di file su OneDrive, stessa cartella `mente-digitale/`. La differenza è
  * solo l'autenticazione — qui non c'è MSAL, c'è un refresh token, come già fa
- * `sync-calendar.mjs` da GitHub Actions.
+ * `sync-calendario-lavoro.mjs` da GitHub Actions.
  *
  * Nessuna dipendenza, Node 18+.
  */
@@ -33,10 +33,12 @@ export const TIMEZONE = 'Europe/Rome';
 //   Notes.ReadWrite   pagine OneNote (crearne una, aggiungere in fondo)
 //   Calendars.ReadWrite  eventi del calendario
 //
-// `sync-calendar.mjs` ne usa altri e più stretti: i due token restano separati.
-// Cambiando questo elenco il refresh token va rifatto — gli scope sono cuciti
-// dentro al token, non chiesti a ogni chiamata:
-//   node scripts/get-refresh-token.mjs --mente
+// Sono gli stessi anche per la GitHub Action del calendario di lavoro: la
+// vecchia sincronizzazione via mail aveva un token suo, più stretto, e non
+// esiste più (vedi sync-calendario-lavoro.mjs). Cambiando questo elenco il
+// refresh token va rifatto — gli scope sono cuciti dentro al token, non
+// chiesti a ogni chiamata:
+//   node scripts/get-refresh-token.mjs
 // Di Microsoft To-Do non c'è più niente: le attività sono file su OneDrive, e
 // ci arrivano da Files.ReadWrite come tutto il resto.
 export const MENTE_SCOPE = [
@@ -70,8 +72,9 @@ function loadDotEnv() {
 
 /**
  * Da dove arriva il refresh token, in ordine: variabile dedicata, file locale,
- * variabile di `sync-calendar` come ultima spiaggia (funziona solo se quel
- * token è stato preso con gli scope del CLI).
+ * e per ultima la variabile della vecchia sincronizzazione via mail — che non
+ * esiste più, ma il segreto può essere ancora in giro e funziona se è stato
+ * preso con gli scope del CLI.
  * @returns {{ token: string, source: 'env'|'file' }}
  */
 function resolveRefreshToken() {
@@ -84,7 +87,7 @@ function resolveRefreshToken() {
   if (process.env.MS_REFRESH_TOKEN) return { token: process.env.MS_REFRESH_TOKEN, source: 'env' };
   throw new Error(
     'Nessun refresh token. Prendine uno con:\n' +
-    '  node scripts/get-refresh-token.mjs --mente\n' +
+    '  node scripts/get-refresh-token.mjs\n' +
     'e salvalo in scripts/.mente-refresh-token (o in MENTE_REFRESH_TOKEN).'
   );
 }
@@ -114,7 +117,7 @@ export async function getAccessToken() {
     throw new Error(
       `Token rifiutato — ${String(detail).split('\n')[0]}\n` +
       'Se parla di consenso o di scope mancanti, rifai:\n' +
-      '  node scripts/get-refresh-token.mjs --mente'
+      '  node scripts/get-refresh-token.mjs'
     );
   }
 

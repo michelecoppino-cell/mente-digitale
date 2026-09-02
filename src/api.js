@@ -2,6 +2,10 @@
 import { getToken } from './auth';
 import { CARTELLA_APP, creaDrive } from './graphCore.js';
 import { ymd } from './tempo.js';
+import {
+  FILE_CALENDARIO_LAVORO, CAL_LAVORO_ID, CAL_LAVORO_NOME,
+  normalizzaDocumento, eventiDiLavoro,
+} from './calendarioLavoro.js';
 
 const GRAPH = 'https://graph.microsoft.com/v1.0';
 
@@ -611,11 +615,44 @@ export async function mapLimit(items, limit, fn) {
   return out;
 }
 
+// Lo specchio del calendario di lavoro, tenuto in memoria come la lista dei
+// calendari e per lo stesso motivo: lo chiede ogni getCalendarEvents, e cambia
+// due volte al giorno (lo riscrive una GitHub Action, vedi calendarioLavoro.js).
+/** @type {import('./calendarioLavoro.js').DocCalendarioLavoro|null} */
+let _lavoroCache = null;
+let _lavoroCacheExp = 0;
+
+export function invalidateCalendarioLavoroCache() { _lavoroCache = null; _lavoroCacheExp = 0; }
+
+/**
+ * @returns {Promise<import('./calendarioLavoro.js').DocCalendarioLavoro|null>}
+ *   null quando lo specchio non c'è: non è un errore, è un'app in cui il
+ *   calendario di lavoro non è stato messo in piedi.
+ */
+export async function getCalendarioLavoro() {
+  if (_lavoroCache && Date.now() < _lavoroCacheExp) return _lavoroCache;
+  try {
+    const raw = await getDriveJson(FILE_CALENDARIO_LAVORO, null);
+    _lavoroCache = raw ? normalizzaDocumento(raw) : null;
+    _lavoroCacheExp = Date.now() + 10 * 60 * 1000;
+    return _lavoroCache;
+  } catch (e) {
+    console.error('calendario di lavoro', e);
+    return null;
+  }
+}
+
 /**
  * Eventi Calendario mergiati da tutti i calendari, escluso il calendario
- * Workbook dedicato. Ogni evento è decorato con
- * _calId/_calName/_calColor/_isShared/_calMode; l'esito per calendario resta
- * leggibile con getCalendarFetchReport().
+ * Workbook dedicato, più lo specchio del calendario di lavoro. Ogni evento è
+ * decorato con _calId/_calName/_calColor/_isShared/_calMode; l'esito per
+ * calendario resta leggibile con getCalendarFetchReport().
+ *
+ * Il calendario di lavoro entra **qui** e non nelle singole viste: è la sola
+ * strozzatura da cui passano il Piano, «Oggi» e la settimana in arrivo, e
+ * aggiungerlo in tre punti vorrebbe dire tre occasioni di dimenticarsene. Gli
+ * eventi che ne escono portano `_soloLettura`.
+ *
  * @param {Date} startDate
  * @param {Date} endDate
  * @param {number} [top]
@@ -636,10 +673,16 @@ export async function getCalendarEvents(startDate, endDate, top = 50) {
   // blocco come evento "normale" nella timeline.
   calendars = calendars.filter(c => (c.name || '').trim().toLowerCase() !== WORKBOOK_CALENDAR_NAME.toLowerCase());
 
+  // Lo specchio si legge insieme ai calendari veri e non dopo: è un file su
+  // OneDrive, e aspettare la fine delle chiamate al calendario per cominciarlo
+  // aggiungerebbe il suo tempo a quello di tutti gli altri.
+  const lavoro = getCalendarioLavoro();
+
   if (!calendars.length) {
     // Fallback: solo calendario default
     _calFetchReport = [];
-    return callPagedValues(`/me/calendarView?${params}`);
+    const soloDefault = await callPagedValues(`/me/calendarView?${params}`);
+    return [...soloDefault, ...eventiDiLavoro(await lavoro, startDate, endDate)];
   }
 
   const defaultCal = calendars.find(c => c.isDefaultCalendar) || calendars[0];
@@ -655,10 +698,31 @@ export async function getCalendarEvents(startDate, endDate, top = 50) {
   });
 
   _calFetchReport = results.map(r => r.report);
+
+  const docLavoro = await lavoro;
+  const eventiLavoro = eventiDiLavoro(docLavoro, startDate, endDate);
+  if (docLavoro) {
+    // Anche lo specchio finisce nella diagnostica del filtro «Calendari ▾»: è
+    // il posto in cui ci si accorge che un calendario è elencato e non mostra
+    // niente, e uno specchio fermo da giorni è esattamente quel caso. Le fonti
+    // che l'Action non è riuscita a leggere lo dicono qui.
+    const rotte = docLavoro.fonti.filter(f => f.errore);
+    _calFetchReport.push({
+      calId: CAL_LAVORO_ID,
+      name: CAL_LAVORO_NOME,
+      level: rotte.length ? 'fallback' : 'ok',
+      message: rotte.length
+        ? `feed non letti: ${rotte.map(f => `${f.nome} (${f.errore})`).join(', ')}`
+        : '',
+      count: eventiLavoro.length,
+      shared: true,
+    });
+  }
+
   const problemi = _calFetchReport.filter(r => r.level !== 'ok');
   if (problemi.length) console.warn('calendari con eventi non caricati:', problemi);
 
-  const allEvents = results.flatMap(r => r.events);
+  const allEvents = [...results.flatMap(r => r.events), ...eventiLavoro];
   return allEvents.sort((a, b) => {
     const at = a.start?.dateTime || a.start?.date || '';
     const bt = b.start?.dateTime || b.start?.date || '';
@@ -1344,20 +1408,11 @@ export async function deleteDiaryPhoto(name) {
   }
 }
 
-// Elenco dei reminder (di eventi Calendario) che scattano nella finestra di
-// tempo indicata — usato per far comparire un task To-Do nell'Area giusta nel
-// momento esatto in cui il preavviso di una scadenza (assicurazione, salute,
-// tasse...) si attiva, senza dover ricalcolare noi il lead time impostato su
-// ogni evento (vedi deadlineReminders.js).
-/**
- * @param {string} startISO
- * @param {string} endISO
- * @returns {Promise<import('./types').Reminder[]>}
- */
-export async function getReminders(startISO, endISO) {
-  const d = await call(`/me/reminderView(startDateTime='${startISO}',endDateTime='${endISO}')`);
-  return d?.value || [];
-}
+// `reminderView` non si legge più. Le scadenze ricorrenti nascono dagli eventi
+// che l'app scarica comunque, guardando quali cadono dentro il loro anticipo:
+// un meccanismo a stato invece che a eventi, e senza una richiesta in più. Il
+// perché per esteso — e come si è rotto quello di prima — sta in
+// `deadlineReminders.js`.
 
 /** @returns {Promise<import('./types').EmailMessage[]>} */
 export async function getRecentEmails() {

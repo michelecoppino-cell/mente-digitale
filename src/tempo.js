@@ -27,6 +27,22 @@ export function ymd(d = new Date()) {
 }
 
 /**
+ * Il giorno che viene `quanti` giorni dopo (o prima, con un numero negativo).
+ *
+ * Si passa da `new Date(y, m, d)` e non dai millisecondi: il giorno dell'ora
+ * legale dura 23 ore, e sommare 86 400 000 millisecondi a un lunedì di fine
+ * marzo restituisce lo stesso lunedì alle 23. Le date qui sono giorni di
+ * calendario, non istanti.
+ * @param {string} giorno  'YYYY-MM-DD'
+ * @param {number} quanti
+ * @returns {string}
+ */
+export function spostaGiorni(giorno, quanti) {
+  const [a, m, g] = giorno.split('-').map(Number);
+  return ymd(new Date(a, m - 1, g + quanti));
+}
+
+/**
  * Il mese 'YYYY-MM' di una data 'YYYY-MM-DD' (o di un istante).
  * @param {string|Date} [data]
  * @returns {string}

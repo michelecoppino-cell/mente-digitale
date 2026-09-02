@@ -193,18 +193,26 @@ il posto peggiore che avesse: il telefono si tiene in una mano, il pollice arriv
 al bordo basso, e lassù finivano proprio i tre comandi presenti su ogni
 schermata. Non è una barra nuova — è la stessa `<header>` del desktop, che la
 colonna dispone in coda invece che in testa: resta nel flusso, il contenuto si
-accorcia da solo e non c'è nessuna barra fissa da compensare. Il **panino sta in
-mezzo** — è il comando che si tocca più spesso, e al centro ci arriva il pollice
-di tutt'e due le mani — con la **cattura a sinistra** e le **azioni a destra**
-(stato, campanella, scorciatoie, ricerca, aggiorna). I pannelli appesi a quelle
-icone si aprono verso l'alto e a tutta larghezza: 300 px appesi a un'icona di 34
-in mezzo al gruppo uscivano dal bordo dello schermo. Chi resta fisso in fondo —
+accorcia da solo e non c'è nessuna barra fissa da compensare. Al **centro la
+cattura** — fra i due comandi sempre a schermo è quello che *fa* qualcosa,
+mentre il panino apre solo un menù, e non deve mai costare un aggiustamento
+della presa —, il **panino a destra**, dal lato da cui entra il drawer e in cui
+sta il pollice della mano che tiene il telefono, e le **azioni a sinistra**
+(stato, campanella, scorciatoie, ricerca, aggiorna): quattro icone piccole che
+si toccano di rado, cioè le uniche che possono permettersi il lato scomodo.
+Anche **il drawer ha le voci in fondo**: aperto, si continua a tenere il
+telefono con una mano, e in cima finivano proprio le otto destinazioni, che sono
+l'unica cosa per cui lo si apre. Il «Menù» che lo richiude scende per ultimo,
+dov'è il panino della barra. I pannelli appesi alle icone di sinistra si aprono
+verso l'alto e a tutta larghezza: 300 px appesi a un'icona di 34 in mezzo al
+gruppo uscivano dal bordo dello schermo. Chi resta fisso in fondo —
 la striscia della sessione scaduta, i toast, il foglietto (i) di Finanze — si
 appoggia sopra la barra leggendo `--barra-bassa`, che su schermo grande vale
 zero. I bottoni sono più grandi che su desktop, disegno compreso (40 px con
 l'icona a 18, il panino 56×46 con l'icona a 22): là si punta col mouse, qui si
 tocca col pollice, e quello che conta è quanto si vede, non solo l'area
-cliccabile invisibile di `.tap-44`. Vedi `AppShell.css` e `tokens.css`.
+cliccabile invisibile di `.tap-44` (la cattura è 56×46 con l'icona a 22, il
+panino 44×44 con l'icona a 20). Vedi `AppShell.css` e `tokens.css`.
 
 **La barra di stato è opaca (`black`) e non trasparente**, e non è una scelta di
 gusto. Con `black-translucent` iOS dà alla web app installata una finestra
@@ -332,6 +340,7 @@ Rivedere relazione fondazioni @2573 !domani ~45
 | `@nome` | la lista di destinazione | `@2573`, `@ris-auto`, `@casa` |
 | `!data` | la scadenza | `!oggi`, `!domani`, `!ven`, `!31/12`, `!2026-09-01` |
 | `~n` | la stima, in minuti | `~45`, `~90m`, `~2h` |
+| `9:30` | l'ora — **solo scrivendo un evento** | `9:30`, `15.00`, `9:30-11` |
 
 Scrivere `@` apre l'elenco delle sezioni, che si stringe man mano — frecce per
 scegliere, `Invio` per scegliere e catturare in un gesto solo. L'ordine a elenco
@@ -355,9 +364,29 @@ resta testo e il task va in Inbox — perché un parser che si mangia pezzi di
 titolo è peggio di un parser che non fa niente. La sintassi sta in
 `src/captureParse.js`, l'elenco in `src/DestinationPicker.jsx`.
 
-**Decidi ora**, nella finestra di cattura, resta per il caso opposto: non che si
-sappia dove va, ma che non si sappia. Apre il diagramma di chiarimento col testo
-già dentro.
+#### Attività o evento
+
+In testa alla finestra c'è un interruttore, **Attività / Evento**: la riga è la
+stessa, cambia cosa se ne ricava. Con «Evento» si legge anche l'ora e quello che
+si scrive finisce in calendario invece che in una lista —
+
+```
+Riunione cantiere !giovedi 9:30-11
+```
+
+— sul calendario scelto nella chip, con lo stesso salvataggio e lo stesso
+annulla del «+ Evento» del Piano (`src/eventiCalendario.js`). Senza giorno è
+oggi; senza ora è un evento di tutto il giorno, che è il modo giusto di dire
+«quel giorno, non so quando».
+
+Al suo posto c'era **Decidi ora**, che apriva il diagramma di chiarimento GTD.
+Era il passo 2 messo dentro il passo 1: sei domande proprio nel momento in cui
+non si vuole essere interrotti, cioè l'ostacolo che la cattura serve a togliere.
+Il chiarimento non è sparito — sta sulla colonna Inbox della vista Attività,
+dove ci si siede a smaltirla, e si apre col testo già dentro come prima. Quello
+che mancava davvero era l'appuntamento: metà di quel che si cattura al volo non
+è un'attività, e per metterlo in agenda bisognava uscire dalla cattura, aprire
+il Piano e andare al giorno giusto.
 
 Tutto il resto di un'attività è un campo suo: il **contesto** (Lavoro /
 Personale / Famiglia) è `contesto`, la **sezione** è la lista in cui il file sta,
@@ -482,6 +511,100 @@ non è più un avviso, è un rimprovero. Di aver già suonato ci si ricorda su
 quella sul fisso. Vedi `sveglie.js` (la logica), `useSveglie.js` (il ciclo) e
 `SvegliaAlert.jsx` (il pannello).
 
+### Le scadenze che tornano ogni anno
+
+Bollo, assicurazione, revisione, tasse, visite: cose che non si vogliono
+ricordare e che non si vogliono nemmeno riscrivere ogni anno. Si scrive **una
+volta sola** un evento ricorrente sul calendario, intitolato col nome della
+lista fra parentesi quadre, e quando la data si avvicina l'attività compare da
+sé in quella lista, con la scadenza già dentro.
+
+```
+[AREA-AUTO +30g] Bollo auto          trenta giorni prima
+[AREA-CASA +6s]  Revisione caldaia    sei settimane prima
+[AREA-SALUTE +2m] Visita              due mesi prima
+[AREA-CASA] Cambio gomme              l'anticipo di default, due settimane
+```
+
+Prima l'anticipo era il **promemoria nativo** di Outlook, letto con
+`reminderView`: la finestra dei promemoria scattati fra l'ultimo controllo
+riuscito e adesso. Ha smesso di funzionare senza dire niente, e non per un
+difetto ma per la sua forma — era **un meccanismo a eventi**:
+
+- il segnalibro dell'ultimo controllo scadeva dopo trenta giorni. Passato un
+  mese senza aprire l'app la finestra ripartiva dagli ultimi sette giorni, e
+  quello che era scattato in mezzo era perso **per sempre**: un promemoria
+  scatta in un istante, e quell'istante non torna;
+- «↺ Aggiorna tutto» cancella i segnalibri, con lo stesso effetto;
+- il promemoria di Outlook non va oltre le **due settimane**, quindi per il
+  bollo l'anticipo giusto non era nemmeno esprimibile.
+
+Adesso è **un meccanismo a stato**: non si guarda «cos'è scattato da quando ti
+ho visto l'ultima volta», si guarda «quali occorrenze cadono dentro il loro
+anticipo, oggi». Non c'è nessuna finestra da non perdere e nessun segnalibro da
+tenere in pari — aprendo l'app in un giorno qualsiasi fra l'anticipo e la
+scadenza, l'attività c'è — e l'anticipo lo dice il titolo, quindi può essere
+lungo quanto serve. Gli eventi sono quelli che l'app **scarica comunque** per i
+pannelli delle sezioni (un mese indietro, diciotto avanti, tutti i calendari,
+ricorrenze già espanse): nessuna chiamata in più, una in meno.
+
+Un'occorrenza si crea fino a una settimana **dopo** la data — un bollo scaduto
+tre giorni fa è esattamente la cosa che si vuole ancora vedere — e non oltre,
+perché oltre vorrebbe dire far tornare a galla quello che era stato cancellato
+apposta. Che una scadenza c'è già si sa dal campo `origineScadenza`
+dell'attività, e in seconda battuta da titolo e data uguali nella stessa lista:
+quest'ultima riconosce anche le attività nate dal meccanismo di prima, che il
+marker ce l'hanno in un altro formato. I conti stanno in
+`src/deadlineReminders.js`, provati (`npm run prova-cattura`); il giro attorno
+in `src/useScadenzeRicorrenti.js`.
+
+### Il calendario di lavoro
+
+Il calendario aziendale sta su un tenant Microsoft 365 che non lo condivide con
+l'account personale, e senza condivisione l'app — che parla con Graph come
+*quell'account* — non lo vedrà mai. Non è un difetto da correggere: è un limite
+dell'account, e la strada è un'altra.
+
+La strada è uno **specchio**. Una GitHub Action legge il feed **ICS** pubblicato
+dal calendario di lavoro e ne scrive tutta la finestra (un mese indietro, dodici
+avanti) in un solo file su OneDrive, `mente-digitale/calendario-lavoro.json`.
+L'app lo legge dentro `getCalendarEvents`, cioè nella sola strozzatura da cui
+passano il Piano, «Oggi» e la settimana in arrivo, e lo mostra come un
+calendario in più — spegnibile dal filtro «Calendari ▾», e **in sola lettura**.
+
+Prima c'era una regola di posta che mandava una mail per ogni evento creato o
+modificato, e una Action che leggeva le mail non lette con oggetto «calendario»,
+ne interpretava il corpo e creava l'evento sul calendario personale. Si rompeva
+di continuo, e di nuovo per la forma e non per un difetto — **una
+sincronizzazione a eventi su un canale che perde**:
+
+- una mail che non parte, arriva in ritardo, finisce nello spam o viene letta a
+  mano non genera niente, e la differenza non si recupera più;
+- il corpo era testo libero letto con espressioni regolari: basta che Outlook
+  cambi il modello e il titolo diventa una data;
+- una modifica era «cancella e ricrea», con l'originale cercato per id o, in
+  mancanza, per titolo e orario. Su un fallimento restavano due copie o zero;
+- gli eventi finivano **dentro** il calendario personale, e ogni
+  disallineamento andava ripulito a mano.
+
+Lo specchio è a stato: ogni giro riscrive tutta la finestra da capo. Un giro
+saltato non lascia buchi, cancellazioni e spostamenti arrivano gratis (non ci
+sono, quindi non compaiono), non esistono doppioni possibili, e nel calendario
+personale non si scrive niente — se domani la cosa si spegne, sparisce un file
+e non resta nulla da ripulire. Se il feed è irraggiungibile il file resta com'è:
+si vede l'ultima lettura riuscita, che è meglio di un'agenda vuota, e il filtro
+«Calendari ▾» dice quale fonte non si è letta e perché.
+
+Il lettore ICS (`scripts/ics.mjs`) è puro — da stringa a occorrenze — ed è
+provato (`npm run prova-ics`): righe ricucite, fusi Windows tradotti, ora legale,
+serie giornaliere/settimanali/mensili/annuali con `INTERVAL`, `COUNT`, `UNTIL`,
+`BYDAY` (anche «il terzo martedì»), `EXDATE`, occorrenze spostate una per una e
+appuntamenti annullati. Era esattamente quello che alla sincronizzazione via
+mail mancava: per provarla serviva una casella con dentro le mail giuste.
+
+**Per metterlo in piedi** vedi `docs/calendario-lavoro.md`: due segreti su
+GitHub e un indirizzo da copiare da Outlook.
+
 ### Quanto dev'essere grande una cosa
 
 Un promemoria, non un controllo: nessun avviso, nessun blocco. È il metro con
@@ -596,14 +719,29 @@ dell'attivazione una voce non esiste da nessuna parte tranne che qui: non nel
 pool, non nel Piano, non suona, non scade. Zero rumore per costruzione, non per
 un filtro che qualcuno si ricorda di applicare.
 
-Il pannello ha **quattro schede, ed è l'ordine in cui si lavora**: Matrice e
-Elenco voci sono il lavoro di tutti i giorni, Riepilogo è la domanda del
-coordinatore — come sta messa tutta la commessa, non un pacchetto alla volta —
-e Impostazioni è la mezz'ora in cui si mette in piedi il programma e poi quasi
+Il pannello ha **cinque schede, ed è l'ordine in cui si lavora**: Matrice,
+Persone ed Elenco voci sono il lavoro di tutti i giorni, Riepilogo è la domanda
+del coordinatore — come sta messa tutta la commessa, non un pacchetto alla volta
+— e Impostazioni è la mezz'ora in cui si mette in piedi il programma e poi quasi
 mai più: la commessa, le persone, i pacchetti, tutti correggibili. Dentro c'è
 anche un «come si usa», perché il pannello ha quattro oggetti che si somigliano
 (commessa, pacchetto, voce, cella) e due numeri che apposta non coincidono, e
 niente di tutto questo si indovina la prima volta.
+
+**Persone** è la stessa matrice girata: una riga per persona, e le ore sommate
+su **tutti i programmi accesi**. Serve a una domanda sola, e non ha una risposta
+dentro un documento solo — la commessa è una, la persona è la stessa in tutte.
+Finché il conto si faceva per commessa, dieci ore qui e trenta là comparivano
+sotto la capacità in tutte e due le schermate, e la settimana data due volte si
+scopriva il lunedì in cui quella persona non ce la faceva. Qui la sua riga è una,
+la settimana in cui sfora è rossa, e sotto la tabella c'è l'elenco in chiaro di
+chi sfora e quando — un contatore («tre sovrapposizioni») obbligherebbe a
+cercarle. Aprendo una riga si vede da quali commesse arriva il carico, e un clic
+sul nome della commessa porta nella sua matrice, dove quelle ore si cambiano.
+Perché qui **si legge e basta**: una cella è la somma di celle che stanno in
+documenti diversi, e scriverci vorrebbe dire decidere al posto di chi scrive da
+quale commessa togliere le ore. I conti stanno in `caricoPersone()`
+(`src/programma.js`), provati; la vista in `src/programma/MatricePersone.jsx`.
 
 **Un programma si collega alla sua sezione**, scelta da una tendina. Non è un
 campo in più da compilare: è quello che decide come si chiamano le liste che
@@ -706,7 +844,7 @@ com'era.
 | Autenticazione | MSAL Browser (account Microsoft personale, scope Graph in sola lettura + Files in scrittura; di To-Do resta solo `Tasks.Read`, per la migrazione una tantum). Il CLI e il server MCP hanno un token proprio, con in più OneNote e Calendario in scrittura |
 | Dati | Microsoft Graph (OneNote, Calendar, OneDrive, Mail) con cache localStorage a TTL. I file JSON dell'app — attività comprese — stanno nella cartella `mente-digitale/` di OneDrive: i fissi in cima, i registri che crescono (`diario/`, `movimento/`) e le attività (`task/`) in una sottocartella loro. Quelli rimasti dove stavano prima vengono spostati automaticamente al primo avvio |
 | Backend | Nessuno: sito statico servito da Cloudflare Pages |
-| Automazioni | GitHub Actions (`sync-calendar`) |
+| Automazioni | GitHub Actions (`sync-calendario-lavoro`: lo specchio del calendario di lavoro su OneDrive) |
 
 I dati utente non transitano da alcun backend: il browser parla direttamente con Microsoft
 Graph. Non ci sono chiamate a nessuna API AI a pagamento: dove serve un aiuto dell'AI (Diario,
@@ -860,13 +998,13 @@ o simile — l'entrata è la stessa in forma JSON:
 
 ### Il token
 
-Vale per entrambe le strade. Non c'è MSAL: si usa un refresh token, come
-`sync-calendar.mjs`. Se ne prende uno con gli scope giusti — tutto in lettura,
-scrittura su attività e liste To-Do, sui file dell'app, su OneNote e sul
-calendario — e lo si tiene sulla propria macchina:
+Vale per entrambe le strade, e per la GitHub Action del calendario di lavoro.
+Non c'è MSAL: si usa un refresh token. Se ne prende uno con gli scope giusti —
+tutto in lettura, scrittura su attività e liste To-Do, sui file dell'app, su
+OneNote e sul calendario — e lo si tiene sulla propria macchina:
 
 ```bash
-node scripts/get-refresh-token.mjs --mente
+node scripts/get-refresh-token.mjs
 ```
 
 > **Gli scope stanno dentro al token, non si chiedono a ogni chiamata.** Un token
@@ -878,10 +1016,12 @@ node scripts/get-refresh-token.mjs --mente
 Il token va in `scripts/.mente-refresh-token` (ignorato da git) oppure nella
 variabile `MENTE_REFRESH_TOKEN`, anche da un `.env` nella radice del progetto.
 Ruota a ogni uso e il file viene riscritto, quindi non scade da solo.
-Resta separato dal segreto `MS_REFRESH_TOKEN` di GitHub Actions, che continua a
-poter fare pochissimo: solo mail e calendario, per la sincronizzazione. Quel file
-è la chiave del OneDrive personale — vale quanto la password, e non va copiato in
-posti in cui non metteresti la password.
+Lo stesso token va come segreto GitHub `MENTE_REFRESH_TOKEN` per la Action del
+calendario di lavoro, che lo riscrive a ogni giro per lo stesso motivo. Ce n'era
+un secondo, più stretto (`MS_REFRESH_TOKEN`), per la vecchia sincronizzazione via
+mail: quella non c'è più. Il file è la chiave del OneDrive personale — vale
+quanto la password, e non va copiato in posti in cui non metteresti la
+password.
 
 **Su un secondo computer** si rifà il giro — Node, clone, token, `claude mcp add`
 — e si genera un token **nuovo** invece di copiare il file: il refresh token ruota

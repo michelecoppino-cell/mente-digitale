@@ -14,6 +14,8 @@
 //   !data   la scadenza — oggi/domani/dopodomani, un giorno della settimana,
 //           o una data scritta (31/8, 31-8-2026, 2026-08-31)
 //   ~n      la stima in minuti (`~45`, `~2h`, `~90m`)
+//   9:30    l'ora, **solo quando si sta scrivendo un evento** (`9:30-11:00`
+//           per l'intervallo). Vedi `modo` in parseCapture.
 //
 // Invariante di sicurezza: un token viene tolto dal titolo **solo se ha
 // risolto**. `@casa` in un titolo dove nessuna lista si chiama così resta
@@ -26,6 +28,13 @@ import { ymd } from './tempo.js';
 const DEST_RE = /(^|\s)@([^\s@]+)/;
 const DUE_RE = /(^|\s)!([^\s!]+)/;
 const EST_RE = /(^|\s)~(\d{1,4})\s*([hm])?\b/i;
+// L'ora, e solo in modalità evento: `9:30`, `09.30`, `9:30-11`, `9:30–11:00`.
+// Non ha un segno davanti come gli altri token perché non gli serve — un
+// orario si riconosce dalla forma — ma proprio per questo **non si legge mai
+// nel titolo di un'attività**: «chiamare il fabbro 8:30» come promemoria è una
+// riga in cui quell'orario è testo, e mangiarlo sarebbe la cosa peggiore che
+// un parser possa fare. Vedi `modo` in parseCapture.
+const ORA_RE = /(^|\s)([01]?\d|2[0-3])[:.]([0-5]\d)(?:\s*[-–]\s*([01]?\d|2[0-3])(?:[:.]([0-5]\d))?)?(?=\s|$)/;
 
 /**
  * Confronto «come lo si scrive a mente»: senza accenti, senza maiuscole e
@@ -168,6 +177,8 @@ function validDate(year, month, day) {
  * @property {boolean} hasDestToken    c'è un token `@` nella riga
  * @property {string|null} dueDate     `YYYY-MM-DD`
  * @property {number|null} estimateMin
+ * @property {string|null} oraInizio   `HH:MM`, solo in modalità evento
+ * @property {string|null} oraFine     `HH:MM`, solo se l'intervallo era scritto
  */
 
 /**
@@ -183,17 +194,28 @@ function validDate(year, month, day) {
  * In entrambi i casi espliciti il token sparisce comunque dal titolo: è stato
  * lui ad aprire la scelta, ha fatto da selettore e non è testo.
  *
+ * `modo` dice cosa si sta scrivendo. In `'evento'` si legge anche l'ora — è
+ * l'unica differenza, e sta qui e non in due funzioni perché tutto il resto
+ * della riga (destinazione, giorno, durata) si legge allo stesso modo: un
+ * evento del calendario vuole un giorno e un'ora, un'attività un giorno e una
+ * stima, e sono la stessa riga letta con una domanda in più.
+ *
  * @param {string} raw
  * @param {Destination[]} destinations
- * @param {{ today?: Date, overrideDestination?: Destination|null }} [opts]
+ * @param {{ today?: Date, overrideDestination?: Destination|null, modo?: 'attivita'|'evento' }} [opts]
  * @returns {ParsedCapture}
  */
 export function parseCapture(raw, destinations = [], opts = {}) {
   const today = opts.today || new Date();
   let title = raw || '';
 
-  const chosen = 'overrideDestination' in opts;
-  const destMatch = DEST_RE.exec(title);
+  // Un evento non ha una lista di destinazione: il suo bersaglio è il
+  // calendario, e sta in un menù. Quindi il token `@` qui non si legge affatto
+  // — leggerlo vorrebbe dire togliere «@2573» dal titolo di un appuntamento per
+  // mandarlo in una lista in cui non finirà mai.
+  const evento = opts.modo === 'evento';
+  const chosen = !evento && 'overrideDestination' in opts;
+  const destMatch = evento ? null : DEST_RE.exec(title);
   const destQuery = destMatch ? destMatch[2] : '';
   const candidates = destMatch && !chosen ? matchDestinations(destQuery, destinations) : [];
   const destination = chosen ? (opts.overrideDestination || null) : (candidates[0] || null);
@@ -209,6 +231,14 @@ export function parseCapture(raw, destinations = [], opts = {}) {
   const estimateMin = estMatch ? estimateFrom(estMatch) : null;
   if (estMatch && estimateMin) title = title.replace(EST_RE, '$1');
 
+  const oraMatch = opts.modo === 'evento' ? ORA_RE.exec(title) : null;
+  const oraInizio = oraMatch ? `${oraMatch[2].padStart(2, '0')}:${oraMatch[3]}` : null;
+  // `9:30-11` senza i minuti della fine vuol dire le 11 in punto.
+  const oraFine = oraMatch && oraMatch[4]
+    ? `${oraMatch[4].padStart(2, '0')}:${oraMatch[5] || '00'}`
+    : null;
+  if (oraMatch) title = title.replace(ORA_RE, '$1');
+
   return {
     title: title.replace(/\s{2,}/g, ' ').trim(),
     destination,
@@ -216,6 +246,8 @@ export function parseCapture(raw, destinations = [], opts = {}) {
     hasDestToken: !!destMatch,
     dueDate,
     estimateMin,
+    oraInizio,
+    oraFine,
   };
 }
 

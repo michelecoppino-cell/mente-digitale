@@ -71,7 +71,7 @@ export default function ShortcutsPanel() {
   }, [aperto]);
 
   return (
-    <div className="bell-wrap">
+    <div className="bell-wrap solo-schermo-largo">
       <button
         className={`search-btn tap-44${aperto ? ' active' : ''}`}
         onClick={() => setAperto(o => !o)}

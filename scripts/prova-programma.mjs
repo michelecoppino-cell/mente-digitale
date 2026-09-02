@@ -321,4 +321,51 @@ verifica(pg.normalizzaProgramma(foto.dati).voci.length === d2.voci.length,
   'ed è rileggibile: è lo stesso schema del documento');
 
 
+console.log('\nIl carico di una persona su tutte le commesse\n');
+
+// La domanda che la matrice di commessa non poteva porre: «a questa persona ho
+// già dato quella settimana?». Dentro un documento solo la risposta non c'è,
+// perché le due commesse sono due documenti.
+const altra = await store.creaProgramma('2601 Muro', { oreVendute: 200, inizio: '2026-03-01', fine: '2026-05-31' });
+const docAltra = await store.cambiaProgramma(altra.id, d => {
+  let x = pg.conRisorsa(d, 'Marco', 35);
+  x = pg.conRisorsa(x, 'Sara', 20);
+  x = pg.conPacchetto(x, { nome: 'Verifiche' });
+  const pacchetto = x.pacchetti[0];
+  x = pg.conCarico(x, pg.chiaveCarico('Marco', pacchetto.id, '2026-W10'), 30);
+  return pg.conCarico(x, pg.chiaveCarico('Marco', pacchetto.id, '2026-W11'), 4);
+});
+
+const settimanePersone = pg.settimaneDellePersone([corretto, docAltra], '2026-W10');
+verifica(settimanePersone.includes('2026-W10') && settimanePersone.includes('2026-W11'),
+  'le colonne sono l\'unione degli orizzonti dei programmi accesi');
+verifica(settimanePersone[0] >= '2026-W06',
+  'e non si torna indietro oltre le quattro settimane che servono da riferimento');
+
+const righe = pg.caricoPersone(
+  [{ id: 'a', nome: '2600 Ponte', doc: corretto }, { id: 'b', nome: '2601 Muro', doc: docAltra }],
+  settimanePersone);
+const marco = righe.find(r => r.nome === 'Marco');
+verifica(!!marco, 'la persona compare una volta sola, non una per commessa');
+verifica(marco.ore['2026-W10'] === pg.oreRisorsaSettimana(corretto, 'Marco', '2026-W10') + 30,
+  'e le sue ore della settimana sono la somma delle due commesse');
+// Dieci ore e mezza di qua, trenta di là: nessuna delle due matrici lo dice
+// sovraccarico, e insieme sono quaranta ore e mezza su trentacinque.
+verifica(pg.oreRisorsaSettimana(corretto, 'Marco', '2026-W10') < marco.capacita
+  && marco.ore['2026-W10'] > marco.capacita,
+  'la sovrapposizione si vede solo qui: dentro ogni singola commessa è sotto la capacità');
+verifica(marco.commesse.length === 2 && marco.commesse[0].totale >= marco.commesse[1].totale,
+  'aprendo la riga si vede da dove viene il carico, dalla commessa che pesa di più');
+verifica(marco.capacita === 35, 'la capacità è la più alta fra quelle dichiarate');
+verifica(marco.sovrapposte.includes('2026-W10'),
+  'e la settimana in cui sfora è marcata: è tutto il motivo per cui questa vista esiste');
+verifica(!marco.sovrapposte.includes('2026-W11'), 'quella in cui non sfora no');
+
+// Una persona che sta in anagrafica ma non ha ancora ore ha comunque la sua
+// riga: senza, non esisterebbe il posto in cui guardare prima di darle lavoro.
+const sara = righe.find(r => r.nome === 'Sara');
+verifica(!!sara && sara.totale === 0,
+  'chi è in anagrafica ma non ha ore ha comunque la sua riga: è il posto in cui si guarda prima di dargliene');
+verifica(pg.caricoPersone([], []).length === 0, 'e senza programmi non c\'è nessuna riga');
+
 fine();

@@ -20,6 +20,11 @@ npm run build       # build di produzione in dist/
 npm run prova       # le prove, contro un OneDrive finto in memoria
 ```
 
+C'è anche `node scripts/sync-calendario-lavoro.mjs`, che non fa parte del ciclo:
+è quello che la GitHub Action esegue per riscrivere lo specchio del calendario
+di lavoro su OneDrive. Vuole `CALENDARIO_LAVORO_ICS` e un refresh token —
+`docs/calendario-lavoro.md`.
+
 `npm run prova` non chiede né rete né account: gira sempre, ovunque, in pochi
 secondi. La CI esegue tutti e quattro i comandi a ogni push e ogni PR.
 
@@ -34,7 +39,8 @@ secondi. La CI esegue tutti e quattro i comandi a ogni push e ogni PR.
 3. Niente push diretto su `main`: branch, PR, merge.
 4. Se hai toccato uno degli strati provati (`graphCore.js`, `api.js`,
    `taskStore.js`, `taskMigrazione.js`, `paraConfig.js`, `poolAttivita.js`, `programma.js`,
-   `programmaStore.js`),
+   `programmaStore.js`, `captureParse.js`, `deadlineReminders.js`,
+   `calendarioLavoro.js`, `scripts/ics.mjs`),
    aggiungi la verifica che avrebbe
    intercettato quello che hai corretto. Le prove si sono rotte una volta e
    nessuno se n'è accorto per settimane: è successo perché nessuna misura
@@ -97,6 +103,22 @@ dentro, non in due posti.
 soltanto.** È una regola del CLI e del server MCP, non un'omissione: sono le
 cose che non si ricostruiscono da una cronologia.
 
+**Il calendario di lavoro è uno specchio, e si legge soltanto.** Il file su
+OneDrive lo riscrive intero una GitHub Action ogni paio d'ore: qualunque cosa si
+scrivesse da qui sopravviverebbe fino al giro dopo e poi sparirebbe in silenzio.
+Per questo i suoi eventi portano `_soloLettura` e il modale dell'evento apre una
+scheda che lo dice, invece di lasciar provare.
+
+**Quello che entra da solo nel pool si guarda a stato, non a eventi.** Le
+scadenze ricorrenti nascevano da `reminderView`, cioè dalla finestra di
+promemoria scattati dall'ultimo controllo: bastava non aprire l'app abbastanza a
+lungo perché una scadenza fosse persa per sempre, e niente lo diceva. Adesso si
+chiede «quali occorrenze cadono dentro il loro anticipo, oggi», e la stessa
+domanda dà la stessa risposta ogni giorno finché la cosa non è fatta. Vale come
+regola generale, non solo per le scadenze: un meccanismo che dipende da essere
+svegli nell'istante giusto, in un'app che sta su un telefono, è un meccanismo
+che ha già smesso di funzionare.
+
 ## Dove sta cosa
 
 | | |
@@ -110,14 +132,18 @@ cose che non si ricostruiscono da una cronologia.
 | `src/queryClient.js` | TanStack Query, le chiavi, la persistenza col suo tetto |
 | `src/poolAttivita.js` | il serbatoio delle attività: una lettura della cache, non uno stato |
 | `src/use*.js` | i pezzi che stavano in `App.jsx` e non c'entravano con lui: la campanella, le scadenze ricorrenti, i colori, le sveglie |
-| `src/programma.js` | il Programma di commessa: i conti, le chiavi del carico, lo stato derivato di una voce. Niente rete, niente React: è il file su cui girano le prove |
+| `src/deadlineReminders.js` | le scadenze che tornano ogni anno: come si scrive un evento `[LISTA +30g] Titolo`, quali occorrenze sono dovute oggi, e come si sa che ci sono già |
+| `src/calendarioLavoro.js` | lo specchio del calendario aziendale: cosa c'è nel file su OneDrive e come diventa un evento nella forma di Graph |
+| `src/programma.js` | il Programma di commessa: i conti, le chiavi del carico, lo stato derivato di una voce, e il carico di una persona su tutte le commesse. Niente rete, niente React: è il file su cui girano le prove |
 | `src/programmaStore.js` | gli stessi programmi su OneDrive: registro, un documento per commessa, `reapply` che unisce per chiave |
-| `src/programma/` | la vista: la matrice e la sua tastiera, l'elenco voci, il dettaglio, attiva, le voci nuove (a campi o incollate), il riepilogo, la scheda della commessa, la guida |
+| `src/programma/` | la vista: la matrice e la sua tastiera, la matrice per persona (in sola lettura, su tutti i programmi accesi), l'elenco voci, il dettaglio, attiva, le voci nuove (a campi o incollate), il riepilogo, la scheda della commessa, la guida |
 | `src/planner/` | la griglia del Piano (misure, colori, conti) e i suoi componenti: settimana, mese, capacità, modale evento |
 | `src/tokens.css` | colori, tipografia, spazi, raggi — la sola fonte |
 | `src/tempo.js` | il giorno locale, l'ora, le durate — scritti una volta sola |
 | `src/finanze/` | isola TypeScript, dati in IndexedDB, backup su OneDrive |
 | `scripts/mente-graph.mjs` | lo stesso nucleo fuori dal browser, con un refresh token invece di MSAL |
+| `scripts/ics.mjs` | il lettore di un calendario ICS: righe, fusi, ricorrenze espanse. Puro — da stringa a occorrenze — ed è per questo che si prova |
+| `scripts/sync-calendario-lavoro.mjs` | lo specchio: legge il feed di lavoro e riscrive tutta la finestra su OneDrive. Lo esegue una GitHub Action |
 | `src/finto/` | il OneDrive finto: quello su cui girano le prove, e quello che `dev:finto` monta nel browser |
 
 Le rotte stanno nell'**hash** (`#/oggi`, `#/piano`, …) e non nel path: il sito è
