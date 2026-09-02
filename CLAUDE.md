@@ -33,7 +33,8 @@ secondi. La CI esegue tutti e quattro i comandi a ogni push e ogni PR.
    rete, nessun account, e i dati veri restano dove sono.
 3. Niente push diretto su `main`: branch, PR, merge.
 4. Se hai toccato uno degli strati provati (`graphCore.js`, `api.js`,
-   `taskStore.js`, `taskMigrazione.js`, `paraConfig.js`, `poolAttivita.js`),
+   `taskStore.js`, `taskMigrazione.js`, `paraConfig.js`, `poolAttivita.js`, `programma.js`,
+   `programmaStore.js`),
    aggiungi la verifica che avrebbe
    intercettato quello che hai corretto. Le prove si sono rotte una volta e
    nessuno se n'è accorto per settimane: è successo perché nessuna misura
@@ -109,6 +110,9 @@ cose che non si ricostruiscono da una cronologia.
 | `src/queryClient.js` | TanStack Query, le chiavi, la persistenza col suo tetto |
 | `src/poolAttivita.js` | il serbatoio delle attività: una lettura della cache, non uno stato |
 | `src/use*.js` | i pezzi che stavano in `App.jsx` e non c'entravano con lui: la campanella, le scadenze ricorrenti, i colori, le sveglie |
+| `src/programma.js` | il Programma di commessa: i conti, le chiavi del carico, lo stato derivato di una voce. Niente rete, niente React: è il file su cui girano le prove |
+| `src/programmaStore.js` | gli stessi programmi su OneDrive: registro, un documento per commessa, `reapply` che unisce per chiave |
+| `src/programma/` | la vista: la matrice e la sua tastiera, l'elenco voci, il dettaglio, attiva, incolla in massa |
 | `src/planner/` | la griglia del Piano (misure, colori, conti) e i suoi componenti: settimana, mese, capacità, modale evento |
 | `src/tokens.css` | colori, tipografia, spazi, raggi — la sola fonte |
 | `src/tempo.js` | il giorno locale, l'ora, le durate — scritti una volta sola |

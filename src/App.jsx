@@ -59,6 +59,7 @@ const MindMap = lazy(() => import('./MindMap'));
 const PlannerView = lazy(() => import('./PlannerView'));
 const DiaryPanel = lazy(() => import('./DiaryPanel'));
 const SectionsView = lazy(() => import('./SectionsView'));
+const ProgrammaView = lazy(() => import('./ProgrammaView'));
 const ActivityBoard = lazy(() => import('./ActivityBoard'));
 const FinanzeSection = lazy(() => import('./finanze/FinanzeSection'));
 
@@ -1342,6 +1343,20 @@ export default function App() {
                 onTaskRestored={handleTaskRestored}
                 onCreateDeliverable={handleCreateDeliverable}
                 onRenameDeliverable={handleRenameDeliverable}
+              />
+            } />
+
+            {/* Il Programma di commessa: i mesi, non la giornata. Sta dietro
+                una rotta sua e non pesa sull'avvio — è la vista in cui si entra
+                una volta a settimana, e da portatile. */}
+            <Route path="/programma/:programmaId?" element={
+              <ProgrammaView
+                todoLists={todoLists}
+                tasks={scheduledTasks || []}
+                poolPronto={scheduledTasks !== null}
+                onCreateDeliverable={handleCreateDeliverable}
+                onTaskCreato={handleTaskRestored}
+                onTaskRimosso={handleTaskRemoved}
               />
             } />
 

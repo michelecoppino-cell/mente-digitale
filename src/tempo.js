@@ -94,3 +94,104 @@ export function durataInOre(min) {
   const ore = Math.floor(m / 60), resto = m % 60;
   return resto === 0 ? `${ore}h` : `${ore}h${String(resto).padStart(2, '0')}`;
 }
+
+// ── Le settimane ISO ────────────────────────────────────────────────────────
+// Le colonne della matrice del Programma sono settimane, e una settimana va
+// scritta in un modo solo: `2026-W12`, lunedì-domenica, con la regola ISO
+// (l'anno di una settimana è quello del suo giovedì). Senza, le settimane a
+// cavallo di capodanno finiscono in due colonne diverse a seconda di chi le
+// calcola — e la chiave del carico, che è una stringa, smetterebbe di
+// combaciare fra un dispositivo e l'altro.
+
+/** Il giovedì della settimana di `d`, che è quello che decide l'anno ISO. */
+function giovediDellaSettimana(/** @type {Date} */ d) {
+  const t = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  t.setDate(t.getDate() + 3 - ((t.getDay() + 6) % 7));
+  return t;
+}
+
+/**
+ * La settimana ISO di una data, `'YYYY-Www'`.
+ * @param {Date|string} [d] una data o un giorno 'YYYY-MM-DD'
+ * @returns {string}
+ */
+export function settimanaIso(d = new Date()) {
+  const data = typeof d === 'string' ? dataDaYmd(d) : d;
+  const giovedi = giovediDellaSettimana(data);
+  const primoGiovedi = giovediDellaSettimana(new Date(giovedi.getFullYear(), 0, 4));
+  // Differenza in giorni interi e non in millisecondi: fra marzo e ottobre c'è
+  // un'ora di fuso in mezzo, e `(a - b) / 7 giorni` sbaglia di un'unità
+  // proprio nelle settimane del cambio.
+  const giorni = Math.round((giovedi.getTime() - primoGiovedi.getTime()) / 86400000);
+  return `${giovedi.getFullYear()}-W${String(1 + giorni / 7).padStart(2, '0')}`;
+}
+
+/**
+ * Il lunedì di una settimana ISO, come giorno locale 'YYYY-MM-DD'.
+ * @param {string} settimana 'YYYY-Www'
+ * @returns {string}
+ */
+export function lunediDellaSettimana(settimana) {
+  const [anno, numero] = settimana.split('-W').map(Number);
+  const primoGiovedi = giovediDellaSettimana(new Date(anno, 0, 4));
+  const lunedi = new Date(primoGiovedi);
+  lunedi.setDate(primoGiovedi.getDate() - 3 + (numero - 1) * 7);
+  return ymd(lunedi);
+}
+
+/** Una data 'YYYY-MM-DD' come Date locale (mezzanotte). @param {string} s */
+function dataDaYmd(s) {
+  const [a, m, g] = String(s).split('-').map(Number);
+  return new Date(a, (m || 1) - 1, g || 1);
+}
+
+/**
+ * Le settimane da una all'altra, comprese, in ordine.
+ *
+ * Si cammina di sette giorni sul calendario invece di contare i numeri di
+ * settimana: gli anni ISO hanno 52 o 53 settimane, e sommare uno al numero
+ * inventerebbe una `2026-W53` che non esiste.
+ * @param {string} da  settimana o giorno
+ * @param {string} a
+ * @returns {string[]}
+ */
+export function settimaneTra(da, a) {
+  const primo = da.includes('W') ? da : settimanaIso(da);
+  const ultimo = a.includes('W') ? a : settimanaIso(a);
+  /** @type {string[]} */
+  const elenco = [];
+  const cursore = dataDaYmd(lunediDellaSettimana(primo));
+  const fine = dataDaYmd(lunediDellaSettimana(ultimo));
+  // Un tetto di sicurezza: una commessa con le date scambiate, o sbagliate di
+  // qualche secolo, non deve appendere il browser dentro un ciclo.
+  for (let i = 0; cursore <= fine && i < 520; i++) {
+    elenco.push(settimanaIso(cursore));
+    cursore.setDate(cursore.getDate() + 7);
+  }
+  return elenco;
+}
+
+/**
+ * Il mese in cui cade il lunedì di una settimana, 'YYYY-MM'. È come la matrice
+ * aggrega le colonne quando le settimane sono troppe per starci.
+ * @param {string} settimana
+ * @returns {string}
+ */
+export function meseDellaSettimana(settimana) {
+  return lunediDellaSettimana(settimana).slice(0, 7);
+}
+
+/**
+ * La settimana spostata avanti (o indietro) di tante settimane.
+ *
+ * Si cammina sul calendario invece di sommare al numero: un `+1` su `2026-W52`
+ * inventerebbe una `2026-W53` che in quell'anno non esiste.
+ * @param {string} settimana 'YYYY-Www'
+ * @param {number} quante
+ * @returns {string}
+ */
+export function spostaSettimane(settimana, quante) {
+  const lunedi = dataDaYmd(lunediDellaSettimana(settimana));
+  lunedi.setDate(lunedi.getDate() + 7 * quante);
+  return settimanaIso(lunedi);
+}

@@ -168,7 +168,7 @@ Per installarle: apri `/gtd.html` (e poi `/diario.html`) in Safari → Condividi
 
 ## Navigazione
 
-Sei destinazioni, ognuna con un indirizzo proprio. Il menù è il rail a sinistra
+Sette destinazioni, ognuna con un indirizzo proprio. Il menù è il rail a sinistra
 (216 px, riducibile a sole icone, drawer su schermo stretto); in cima il pulsante
 **Cattura** (`⌘N` da qualunque vista).
 
@@ -178,6 +178,7 @@ Sei destinazioni, ognuna con un indirizzo proprio. Il menù è il rail a sinistr
 | `#/piano` | Il Piano: serbatoio, giornata a blocchi, capacità della giornata, pannello di dettaglio |
 | `#/attivita` | Le cinque colonne del flusso, con la lente Scadenza (`?vista=`, `?ctx=`) |
 | `#/sezioni/:id` | Plancia della sezione: OneNote, percorsi, attività, dettaglio, oggi |
+| `#/programma/:id?` | Il Programma di commessa: ore vendute, pacchetti, matrice risorsa × settimana, voci |
 | `#/diario` | Diario |
 | `#/mappa` | La mappa mentale |
 
@@ -577,6 +578,63 @@ serve ci pensano già i filtri PARA/taccuino/sezione in cima alla colonna.
 quando i risultati sono tutti consegne dello stesso gruppo (gruppi diversi
 restano un'ambiguità, cioè un errore). Per *creare* un'attività la consegna va
 indicata: «tutta la commessa» non è un posto in cui scrivere.
+
+## Il Programma di commessa
+
+Il Piano è la **giornata**: fasce da mezz'ora, blocchi trascinati, l'orologio. Il
+Programma è i **mesi**: settimane, ore aggregate, persone. Serve alla domanda che
+prima viveva negli Excel — *quanto costa questa commessa, come si divide in
+pacchetti, chi la fa, e quanto manca* — e nasce da un problema preciso: una
+commessa da un anno ha duecento cose da fare di cui centottanta cominciano fra
+mesi, e metterle tutte fra le attività vuol dire spegnere lo strumento con cui si
+decide cosa fare oggi.
+
+Quindi non è un secondo tipo di attività. **Una voce di programma non diventa
+mai un'attività: ne genera una**, il giorno in cui la assegni, e da quel momento
+si limita a raccontare cosa sta succedendo al task che ha generato. Prima
+dell'attivazione una voce non esiste da nessuna parte tranne che qui: non nel
+pool, non nel Piano, non suona, non scade. Zero rumore per costruzione, non per
+un filtro che qualcuno si ricorda di applicare.
+
+Tre cose che vale la pena sapere prima di aprirlo:
+
+- **Le voci e le celle sono due dati veri, e non si derivano l'uno dall'altro.**
+  La voce dice *cosa c'è da fare e quanto pesa*; la cella dice *quante ore di
+  quella persona vanno lì quella settimana*. Spalmare le voci automaticamente
+  sulle settimane produrrebbe un piano che nessuno riconosce, e ricavare le
+  stime dal carico perderebbe il «cosa». Quello che serve è il **delta fra i
+  due**, sempre a schermo — ed è il motivo per cui il pannello esiste.
+- **Ore a finire senza timesheet.** La colonna della settimana corrente taglia
+  la matrice in due: a sinistra il passato, che si corregge con quanto è andato
+  davvero quando ci si passa sopra; a destra la previsione. Un dato solo, nessun
+  secondo inserimento — è la stessa approssimazione che si fa a mente guardando
+  un Excel, ed è abbastanza per decidere.
+- **Le liste nascono attivando.** Un pacchetto nasce senza lista: una commessa
+  con dodici pacchetti non deve creare dodici liste vuote nella vista Attività.
+  Alla prima attivazione la lista si crea col nome della convenzione PARA
+  (`2573.A30-Fondazioni-261127`), mostrato prima di crearla, e da lì in poi il
+  pacchetto se la ricorda.
+
+I dati stanno in `programmi/_registro.json` e in un documento per commessa, come
+tutto il resto: `putDriveJson`, ETag, `reapply` che unisce per chiave — la
+matrice si tocca dal portatile e dal telefono, e le celle messe di qua non devono
+cancellare la voce aggiunta di là. Il carico è una **mappa piatta sparsa**
+(`risorsa|pacchetto|YYYY-Www` → ore): una commessa da sei mesi ha migliaia di
+celle possibili e forse duecento piene, e salvare la matrice densa vorrebbe dire
+scrivere zeri per un anno.
+
+La vista è **da portatile**: sotto gli 860 px restano l'elenco delle voci e il
+dettaglio, e la matrice non compare. Non un Gantt in miniatura — sarebbe
+illeggibile, e si correggerebbero celle sbagliate col pollice.
+
+Il rischio dichiarato è «costruisco la struttura e poi non me ne faccio niente»,
+e la mitigazione è strutturale: **nessun'altra vista dipende dal Programma**. Se
+venisse abbandonato resterebbero un file JSON e una voce di menù, e le attività
+già attivate vivono benissimo da sole — non sanno nemmeno di essere nate lì.
+
+Fuori dalla prima versione, deciso adesso: niente timesheet, niente dipendenze o
+percorso critico, niente costi in euro, niente zoom mensile, e la saturazione si
+legge sul solo programma aperto invece che sommata su tutte le commesse accese.
 
 ## Design token
 

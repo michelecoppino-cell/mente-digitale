@@ -27,6 +27,7 @@ const DESTINATIONS = [
   { to: '/piano',    label: 'Piano',    icon: 'calendar' },
   { to: '/attivita', label: 'Attività', icon: 'check' },
   { to: '/sezioni',  label: 'Sezioni',  icon: 'book' },
+  { to: '/programma', label: 'Programma', icon: 'gantt' },
   { to: '/diario',   label: 'Diario',   icon: 'candle' },
   { to: '/mappa',    label: 'Mappa',    icon: 'map' },
   { to: '/finanze',  label: 'Finanze',  icon: 'euro' },
@@ -65,6 +66,12 @@ function Icon({ name }) {
     );
     case 'candle': return (
       <svg {...common}><path d="M12 3.2c1.6 1.7 2.4 3 2.4 4a2.4 2.4 0 1 1-4.8 0c0-1 .8-2.3 2.4-4z" /><rect x="8.6" y="11.4" width="6.8" height="9.4" rx="1.6" /></svg>
+    );
+    // Tre barre di lunghezza diversa, sfalsate: è la forma di un programma di
+    // commessa e non somiglia a nient'altro nel rail — il calendario di
+    // «Piano» è un rettangolo con la griglia, questo sono le barre.
+    case 'gantt': return (
+      <svg {...common}><path d="M4 6.5h9M4 12h13M4 17.5h6" /><path d="M4 3.5v17" opacity=".5" /></svg>
     );
     case 'map': return (
       <svg {...common}><circle cx="12" cy="12" r="2.6" /><circle cx="5" cy="6" r="1.9" /><circle cx="19" cy="6.6" r="1.9" /><circle cx="6" cy="18.4" r="1.9" /><circle cx="18.4" cy="17.6" r="1.9" /><path d="M10.1 10.6 6.5 7.4M13.8 10.9l3.6-2.9M10.3 13.7l-2.9 3.2M13.9 13.5l3.1 2.7" /></svg>
