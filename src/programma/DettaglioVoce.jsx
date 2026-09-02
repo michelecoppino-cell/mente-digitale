@@ -9,9 +9,10 @@
 // generato un'attività, «Attiva…» lascia il posto al collegamento a quella
 // attività: da lì in poi il Programma **racconta** e non comanda.
 import { useState } from 'react';
-import { eFoglia, ETICHETTE_STATO, figlieDi, scomponiTesto } from '../programma.js';
+import { eFoglia, ETICHETTE_STATO, figlieDi } from '../programma.js';
 import { GRANULARITY_MEMO_LINE, STATUS_LABELS } from '../taskModel.js';
 import { oreBrevi } from './formato.js';
+import NuoveVoci from './NuoveVoci.jsx';
 
 /** @typedef {import('../programma.js').DocProgramma} DocProgramma */
 /** @typedef {import('../programma.js').Voce} Voce */
@@ -26,16 +27,18 @@ import { oreBrevi } from './formato.js';
  * @param {(patch: Partial<Voce>) => void} props.onPatch
  * @param {(figlie: { titolo: string, ore: number }[]) => void} props.onScomponi
  * @param {() => void} props.onChiudi
+ * @param {() => void} props.onCancella   solo per una voce che non ha ancora generato niente
  * @param {() => void} props.onApriAttiva
  * @param {(task: import('../taskStore.js').Task) => void} props.onApriAttivita
  * @param {import('react').ReactNode} [props.attiva]  il modulo di attivazione, quando è aperto
  */
 export default function DettaglioVoce({
-  doc, voce, stato, task, settimane, onPatch, onScomponi, onChiudi, onApriAttiva, onApriAttivita, attiva,
+  doc, voce, stato, task, settimane, onPatch, onScomponi, onChiudi, onCancella,
+  onApriAttiva, onApriAttivita, attiva,
 }) {
   const [titolo, setTitolo] = useState(voce.titolo);
   const [nota, setNota] = useState(voce.nota);
-  const [scomposizione, setScomposizione] = useState(/** @type {string|null} */ (null));
+  const [scomponi, setScomponi] = useState(false);
   const contenitore = !eFoglia(doc, voce.id);
   const figlie = figlieDi(doc, voce.id);
 
@@ -43,9 +46,6 @@ export default function DettaglioVoce({
   // — e i campi in bozza ripartono da quella nuova. Tenerli in pari con un
   // effetto vorrebbe dire una riga di stato scritta durante il render, e nel
   // frattempo si scriverebbe il titolo di una voce dentro un'altra.
-
-  const righeNuove = scomposizione === null ? [] : scomponiTesto(scomposizione);
-  const sommaNuove = righeNuove.reduce((s, r) => s + r.ore, 0);
 
   return (
     <aside className="pg-dettaglio">
@@ -159,11 +159,7 @@ export default function DettaglioVoce({
 
         <div className="pg-dettaglio-azioni">
           <div className="pg-due-bottoni">
-            <button
-              type="button"
-              className="pg-btn"
-              onClick={() => setScomposizione(s => (s === null ? '' : null))}
-            >
+            <button type="button" className="pg-btn" onClick={() => setScomponi(s => !s)}>
               Scomponi
             </button>
             {stato === 'attiva' && task ? (
@@ -180,47 +176,58 @@ export default function DettaglioVoce({
           <p className="pg-memo">{GRANULARITY_MEMO_LINE}</p>
         </div>
 
-        {scomposizione !== null && (
+        {/* La scomposizione è lo stesso gesto delle voci nuove con due colonne in
+            meno — una figlia sta nel pacchetto della madre e la persona si
+            decide attivando — quindi è lo stesso componente, e i due modi di
+            scrivere (campi separati o elenco incollato) valgono anche qui.
+            Prima era una casella di testo sola, con la sintassi da imparare. */}
+        {scomponi && (
           <div className="pg-scomponi">
-            <div className="eyebrow">Una figlia per riga</div>
-            <textarea
-              className="pg-incolla-campo"
-              rows={4}
-              autoFocus
-              value={scomposizione}
-              placeholder={'Plinti P1-P4 | 80\nPlatea | 120'}
-              onChange={e => setScomposizione(e.target.value)}
+            <NuoveVoci
+              doc={doc}
+              pacchettoScelto={voce.pacchettoId}
+              semplice
+              titolo="Una figlia per riga"
+              etichetta="Crea"
+              onAggiungi={righe => {
+                onScomponi(righe.map(r => ({ titolo: r.titolo, ore: r.ore })));
+                setScomponi(false);
+              }}
             />
-            {righeNuove.length > 0 && (
-              <p className="pg-memo">
-                {sommaNuove === voce.ore
-                  ? `${oreBrevi(sommaNuove)} h di figlie: il padre resta a ${oreBrevi(voce.ore)} h`
-                  : `${oreBrevi(sommaNuove)} h di figlie contro ${oreBrevi(voce.ore)} h — il padre passa a ${oreBrevi(sommaNuove)} h`}
-              </p>
-            )}
-            <div className="pg-due-bottoni">
-              <button type="button" className="pg-btn" onClick={() => setScomposizione(null)}>Lascia stare</button>
-              <button
-                type="button"
-                className="pg-btn pg-btn-accento"
-                disabled={!righeNuove.length}
-                onClick={() => { onScomponi(righeNuove); setScomposizione(null); }}
-              >
-                Crea {righeNuove.length} figlie
-              </button>
-            </div>
+            <p className="pg-memo">
+              Le ore della madre diventano la somma delle figlie: adesso {oreBrevi(voce.ore)} h.
+            </p>
+            <button type="button" className="pg-btn" onClick={() => setScomponi(false)}>Lascia stare</button>
           </div>
         )}
 
         {attiva}
 
-        <button
-          type="button"
-          className="pg-scarta"
-          onClick={() => onPatch({ scartata: !voce.scartata })}
-        >
-          {voce.scartata ? 'Rimetti in programma' : 'Scarta questa voce'}
-        </button>
+        {/* Scartare e cancellare non sono la stessa cosa, e la differenza è
+            quale delle due è reversibile. Una voce che ha già generato
+            un'attività si **scarta**: il task esiste per conto suo, e la voce è
+            l'unica cosa che sa da dove è venuto. Una voce che non ha generato
+            niente si può cancellare davvero — altrimenti l'elenco si riempie di
+            righe barrate scritte per sbaglio, e nessuno le può togliere. */}
+        <div className="pg-scarta-riga">
+          <button
+            type="button"
+            className="pg-scarta"
+            onClick={() => onPatch({ scartata: !voce.scartata })}
+          >
+            {voce.scartata ? 'Rimetti in programma' : 'Scarta questa voce'}
+          </button>
+          {!voce.taskId && (
+            <button
+              type="button"
+              className="pg-scarta"
+              onClick={onCancella}
+              title={contenitore ? 'Cancella anche le voci che ci stanno dentro' : 'La voce non ha generato nessuna attività: si cancella davvero'}
+            >
+              {contenitore ? `Cancella con le sue ${figlie.length} figlie` : 'Cancella'}
+            </button>
+          )}
+        </div>
       </div>
     </aside>
   );

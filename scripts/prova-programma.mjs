@@ -190,4 +190,135 @@ const conFiglie = await store.cambiaProgramma(commessa.id, d => pg.senzaVoce(d, 
 verifica(!conFiglie.voci.some(v => [fondazioni.id, plinti.id].includes(v.id)),
   'cancellare una voce si porta via la sua discendenza');
 
+console.log('\nLe due strade per scrivere una voce\n');
+
+// I campi separati e l'incolla devono finire nello stesso posto: se fossero due
+// implementazioni, col tempo racconterebbero due cose diverse. Qui si prova che
+// leggere il testo e creare le voci sono davvero due pezzi dello stesso giro.
+const righeLette = pg.leggiRigheVoci('D20 Impianti | Schemi | 40 | Sara\nsolo titolo');
+verifica(righeLette.righe.length === 2 && righeLette.righe[0].ore === 40,
+  'il testo diventa righe strutturate');
+verifica(righeLette.righe[1].titolo === 'solo titolo' && righeLette.righe[1].pacchetto === '',
+  'una colonna sola resta un titolo, non un pacchetto');
+
+const daCampi = pg.conVociDaRighe(doc, righeLette.righe);
+const daTesto = pg.conVociIncollate(doc, 'D20 Impianti | Schemi | 40 | Sara\nsolo titolo');
+verifica(daCampi.aggiunte === daTesto.aggiunte && daCampi.pacchettiNuovi.length === daTesto.pacchettiNuovi.length,
+  'i campi separati e l\'incolla producono la stessa cosa');
+
+console.log('\nSistemare quello che si è già scritto\n');
+
+pulisci();
+const seconda = await store.creaProgramma('Ponte Tagliamento', {
+  codice: '', oreVendute: 800, inizio: '2026-01-05', fine: '2026-12-25', sezione: '2600-PONTE',
+});
+let d2 = await store.cambiaProgramma(seconda.id, d => {
+  let x = pg.conPacchetto(d, { nome: 'Spalle' });
+  x = pg.conPacchetto(x, { nome: 'Impalcato' });
+  x = pg.conRisorsa(x, 'Marco', 35);
+  return pg.conVoci(x, [
+    { titolo: 'Spalla ovest', ore: 40, pacchettoId: x.pacchetti[0].id, risorsa: 'Marco' },
+    { titolo: 'Travi', ore: 60, pacchettoId: x.pacchetti[1].id },
+  ]);
+});
+const [spalle, impalcato] = d2.pacchetti;
+
+d2 = await store.cambiaProgramma(seconda.id, d => {
+  let x = pg.conCarico(d, pg.chiaveCarico('Marco', spalle.id, '2026-W10'), 10);
+  return pg.conCarico(x, pg.chiaveCarico('Marco', impalcato.id, '2026-W10'), 5);
+});
+
+// Togliere un pacchetto è l'unico gesto che potrebbe portarsi via quaranta voci
+// e trecento ore: le voci passano, e le celle si fondono per somma, così il
+// totale della settimana di quella persona non cambia.
+const fuso = pg.senzaPacchetto(d2, spalle.id, { spostaSu: impalcato.id });
+verifica(fuso.pacchetti.length === 1 && fuso.voci.every(v => v.pacchettoId === impalcato.id),
+  'togliendo un pacchetto le sue voci passano a quello scelto');
+verifica(pg.oreCella(fuso, 'Marco', impalcato.id, '2026-W10') === 15,
+  'e le sue celle si sommano a quelle di destinazione');
+verifica(pg.oreRisorsaSettimana(fuso, 'Marco', '2026-W10') === 15,
+  'quindi il totale della settimana di quella persona non cambia');
+
+const senzaDestinazione = pg.senzaPacchetto(d2, spalle.id);
+verifica(senzaDestinazione.voci.some(v => v.titolo === 'Spalla ovest' && v.pacchettoId === null),
+  'senza destinazione le voci restano, senza pacchetto');
+verifica(pg.oreCarico(senzaDestinazione) === 5,
+  'ma le celle se ne vanno: non esiste una riga senza pacchetto in cui vivere');
+
+// Rinominare una persona in un posto solo lascerebbe un mese di ore appese a
+// una che non esiste più: il nome sta anche nelle chiavi del carico.
+const rinominato = pg.conRisorsaRinominata(d2, 'Marco', 'Marco Rossi');
+verifica(rinominato.risorse[0].nome === 'Marco Rossi'
+  && pg.oreCella(rinominato, 'Marco Rossi', spalle.id, '2026-W10') === 10,
+  'rinominando una persona si spostano anche le sue ore');
+verifica(rinominato.voci.find(v => v.titolo === 'Spalla ovest').risorsa === 'Marco Rossi',
+  'e le voci che la proponevano');
+
+const senzaMarco = pg.senzaRisorsa(d2, 'Marco');
+verifica(senzaMarco.risorse.length === 0 && pg.oreCarico(senzaMarco) === 0,
+  'togliere una persona si porta via le sue ore');
+verifica(senzaMarco.voci.find(v => v.titolo === 'Spalla ovest').risorsa === null,
+  'ma non le voci che la proponevano: la risorsa di una voce è una previsione');
+
+console.log('\nLe ore già spese, per pacchetto\n');
+
+// Del passato non si sa la distribuzione, si sa il totale: un numero per
+// pacchetto e persona, spalmato all'indietro. Il totale è vero, la
+// distribuzione è dichiaratamente approssimata.
+const passate = pg.settimanePassate(d2, '2026-W11');
+verifica(passate[0] === '2026-W02' && passate[passate.length - 1] === '2026-W10',
+  'le settimane passate vanno dall\'inizio della commessa a prima di quella corrente');
+
+const conSpeso = pg.conSpesoRipartito(d2, {
+  risorsa: 'Marco', pacchettoId: spalle.id, ore: 90, settimane: passate,
+});
+verifica(pg.oreCarico(conSpeso, { pacchettoId: spalle.id, risorsa: 'Marco' }) === 90,
+  'novanta ore spalmate fanno novanta ore');
+verifica(pg.spesoPerRisorsa(conSpeso, spalle.id, passate).get('Marco') === 90,
+  'e si rileggono per persona, che è quello che il campo mostra già scritto');
+
+// Riscrivere il consuntivo è una correzione, non un'aggiunta: sommare
+// vorrebbe dire raddoppiare le ore ogni volta che si cambia idea.
+const corretto = pg.conSpesoRipartito(conSpeso, {
+  risorsa: 'Marco', pacchettoId: spalle.id, ore: 50, settimane: passate,
+});
+verifica(pg.oreCarico(corretto, { pacchettoId: spalle.id, risorsa: 'Marco' }) === 50,
+  'riscriverlo sostituisce invece di sommarsi');
+verifica(pg.oreCella(corretto, 'Marco', impalcato.id, '2026-W10') === 5,
+  'e non tocca gli altri pacchetti');
+
+console.log('\nTutta la commessa in una tabella\n');
+
+// I numeri si leggevano un pacchetto alla volta: per sapere come stava messa
+// tutta la commessa bisognava cliccarli uno per uno e sommare a mente.
+const conOrfana = pg.conVoci(d2, [{ titolo: 'Coordinamento', ore: 12 }]);
+const riep = pg.riepilogoPacchetti(conOrfana, { settimanaOra: '2026-W11' });
+verifica(riep.righe.length === 3, 'una riga per pacchetto, più le voci senza pacchetto');
+verifica(riep.righe[riep.righe.length - 1].pacchettoId === null
+  && riep.righe[riep.righe.length - 1].stimate === 12,
+  'le voci senza pacchetto esistono e pesano: non vederle darebbe un totale che non torna');
+verifica(riep.righe.reduce((s, r) => s + r.stimate, 0) === riep.totale.stimate,
+  'la colonna delle stimate somma al totale');
+verifica(riep.totale.speso === 15 && riep.totale.aFinire === 0,
+  'speso e a finire sono la matrice tagliata in due dalla settimana di oggi');
+
+console.log('\nIl collegamento con la sezione\n');
+
+// È il collegamento che decide come si chiamano le liste: da lì la sezione se
+// le ritrova da sola, senza che nessuno le ricucia a mano.
+verifica(pg.gruppoCommessa(d2) === '2600-PONTE', 'senza codice la commessa è la sua sezione');
+verifica(pg.nomeListaProposto(d2, spalle) === '2600-PONTE.Spalle-261225',
+  'e la lista di un pacchetto prende quel nome, con la scadenza della commessa');
+const conCodice = pg.conCommessa(d2, { codice: '2600' });
+verifica(pg.gruppoCommessa(conCodice) === '2600', 'un codice scritto a mano scavalca la sezione');
+
+console.log('\nLa fotografia col giorno nel nome\n');
+
+const foto = pg.esportazione(d2, { giorno: '2026-03-12' });
+verifica(foto.nomeFile === 'ponte-tagliamento-2026-03-12.json',
+  'il nome del file porta la data: due fotografie non si coprono a vicenda');
+verifica(pg.normalizzaProgramma(foto.dati).voci.length === d2.voci.length,
+  'ed è rileggibile: è lo stesso schema del documento');
+
+
 fine();

@@ -15,6 +15,15 @@
 // nient'altro in comune. Le misure e i token invece sono gli stessi, ed è
 // quello che fa somigliare le due schermate.
 //
+// **Le quattro schede sono l'ordine in cui si lavora**, non quattro pagine
+// pari: Matrice e Elenco voci sono il lavoro di tutti i giorni, Riepilogo è la
+// domanda del coordinatore («come sta messa tutta la commessa»), Impostazioni è
+// la mezz'ora in cui si mette in piedi il programma e poi quasi mai più. Nella
+// prima versione le ultime due non c'erano, e il risultato era un pannello in
+// cui si poteva solo aggiungere: nessun modo di creare una seconda commessa,
+// di correggere un pacchetto, di vedere l'insieme, di dire quante ore erano già
+// state spese.
+//
 // Il rischio dichiarato — «costruisco la struttura e poi non me ne faccio
 // niente» — è tenuto basso per costruzione: **nessun'altra vista dipende da
 // questa**. Se il Programma venisse abbandonato resterebbero un file JSON e una
@@ -29,8 +38,8 @@ import {
 } from './programmaStore';
 import {
   totali, settimaneDellaMatrice, oreVoci, statoVoce, conVoceAggiornata, conVoci,
-  conVociIncollate, conVoceAttivata, conPacchettoAggiornato, conCarico, pacchettiCheSforano,
-  daCollocarePerPacchetto,
+  conVociDaRighe, conVoceAttivata, conPacchettoAggiornato, conCommessa, conCarico,
+  senzaVoce, pacchettiCheSforano, daCollocarePerPacchetto, esportazione,
 } from './programma';
 import { creaTask, eliminaTask } from './taskStore';
 import { settimanaIso } from './tempo.js';
@@ -39,7 +48,11 @@ import { oreBrevi } from './programma/formato.js';
 import ElencoVoci from './programma/ElencoVoci.jsx';
 import DettaglioVoce from './programma/DettaglioVoce.jsx';
 import AttivaVoce from './programma/AttivaVoce.jsx';
-import IncollaVoci from './programma/IncollaVoci.jsx';
+import NuoveVoci from './programma/NuoveVoci.jsx';
+import NuovaCommessa from './programma/NuovaCommessa.jsx';
+import SchedaCommessa from './programma/SchedaCommessa.jsx';
+import Riepilogo from './programma/Riepilogo.jsx';
+import Istruzioni from './programma/Istruzioni.jsx';
 import { useMediaQuery } from './useMediaQuery';
 import Skeleton from './Skeleton';
 import './ProgrammaView.css';
@@ -60,12 +73,15 @@ const conSegno = (/** @type {number} */ n) => (
  * @param {{ id: string, displayName: string }[]} props.todoLists
  * @param {import('./taskStore').Task[]} props.tasks   il pool delle attività aperte
  * @param {boolean} props.poolPronto
+ * @param {{ id: string, displayName: string }[]} [props.sezioni]  le sezioni OneNote, per il collegamento
+ * @param {() => void} [props.onCaricaSezioni]  le sezioni si caricano su richiesta
  * @param {(nome: string) => Promise<{ id: string, displayName: string }>} props.onCreateDeliverable
  * @param {(listId: string, task: import('./taskStore').Task) => void} props.onTaskCreato
  * @param {(listId: string, taskId: string) => void} props.onTaskRimosso
  */
 export default function ProgrammaView({
-  todoLists, tasks, poolPronto, onCreateDeliverable, onTaskCreato, onTaskRimosso,
+  todoLists, tasks, poolPronto, sezioni = [], onCaricaSezioni,
+  onCreateDeliverable, onTaskCreato, onTaskRimosso,
 }) {
   const { programmaId } = useParams();
   const navigate = useNavigate();
@@ -90,13 +106,15 @@ export default function ProgrammaView({
 
   const [railChiuso, setRailChiuso] = useState(true);
   const [pacchettoScelto, setPacchettoScelto] = useState(/** @type {string|null} */ (null));
-  const [scheda, setScheda] = useState(/** @type {'matrice'|'voci'} */ ('matrice'));
+  const [scheda, setScheda] = useState(/** @type {'matrice'|'voci'|'riepilogo'|'impostazioni'} */ ('matrice'));
   const [voceScelta, setVoceScelta] = useState(/** @type {string|null} */ (null));
   const [selezione, setSelezione] = useState(/** @type {string[]} */ ([]));
   const [attivaAperta, setAttivaAperta] = useState(false);
   const [soloScoperte, setSoloScoperte] = useState(false);
+  const [nuovaAperta, setNuovaAperta] = useState(false);
+  const [guidaAperta, setGuidaAperta] = useState(false);
   const [salvataggio, setSalvataggio] = useState(/** @type {'fermo'|'salvo'|'salvato'|'errore'} */ ('fermo'));
-  const [toast, setToast] = useState(/** @type {{ testo: string, annulla: () => void, apri?: () => void }|null} */ (null));
+  const [toast, setToast] = useState(/** @type {{ testo: string, annulla?: () => void, apri?: () => void }|null} */ (null));
 
   const settimanaOra = settimanaIso();
   const settimane = useMemo(() => (doc ? settimaneDellaMatrice(doc, settimanaOra) : []), [doc, settimanaOra]);
@@ -186,6 +204,68 @@ export default function ProgrammaView({
     }
   }
 
+  // ── La commessa ────────────────────────────────────────────────────────────
+
+  /**
+   * Una commessa nuova. Prima si arrivava qui solo dalla schermata di
+   * benvenuto, cioè **una volta sola**: creato il primo programma il bottone
+   * spariva con la schermata, e non c'era nessun altro modo di farne un
+   * secondo. Adesso il gesto sta nella colonna di sinistra, che è dove si
+   * scelgono le commesse.
+   * @param {{ nome: string, commessa: Partial<import('./programma').Commessa> }} dati
+   */
+  async function creaCommessa({ nome, commessa }) {
+    const creata = await creaProgramma(nome, commessa);
+    await registro.refetch();
+    setNuovaAperta(false);
+    setPacchettoScelto(null);
+    setVoceScelta(null);
+    // Si arriva in Impostazioni: una commessa appena nata non ha né persone né
+    // pacchetti, e la matrice sarebbe una griglia vuota senza righe.
+    setScheda('impostazioni');
+    navigate(`/programma/${creata.id}`);
+  }
+
+  /** Il nome sta in due posti — il registro e il documento — e cambiano insieme. @param {string} nome */
+  async function rinomina(nome) {
+    if (!scelto) return;
+    await cambia(d => conCommessa(d, { nome }));
+    await aggiornaRegistrazione(scelto.id, { nome });
+    registro.refetch();
+  }
+
+  async function spegni() {
+    if (!scelto) return;
+    const id = scelto.id;
+    await aggiornaRegistrazione(id, { attivo: false });
+    const { data } = await registro.refetch();
+    const resta = (data?.programmi || []).find(p => p.attivo && p.id !== id);
+    setScheda('matrice');
+    navigate(resta ? `/programma/${resta.id}` : '/programma');
+    setToast({
+      testo: 'Commessa spenta: il documento resta su OneDrive',
+      annulla: async () => { await aggiornaRegistrazione(id, { attivo: true }); registro.refetch(); setToast(null); },
+    });
+  }
+
+  /**
+   * La fotografia del giorno. Il documento vive già su OneDrive e non ha
+   * bisogno di essere salvato: questo serve a portarsi via il programma
+   * *com'era* il giorno in cui lo si è mandato — e senza la data nel nome due
+   * fotografie si coprirebbero a vicenda.
+   */
+  function esporta() {
+    if (!doc) return;
+    const { nomeFile, dati } = esportazione(doc);
+    const url = URL.createObjectURL(new Blob([JSON.stringify(dati, null, 2)], { type: 'application/json' }));
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = nomeFile;
+    a.click();
+    URL.revokeObjectURL(url);
+    setToast({ testo: `Scaricato ${nomeFile}` });
+  }
+
   // ── L'attivazione ──────────────────────────────────────────────────────────
 
   /**
@@ -271,6 +351,20 @@ export default function ProgrammaView({
 
   // ── Le viste ───────────────────────────────────────────────────────────────
 
+  const modali = (
+    <>
+      {nuovaAperta && (
+        <NuovaCommessa
+          sezioni={sezioni}
+          onCaricaSezioni={onCaricaSezioni}
+          onCrea={creaCommessa}
+          onChiudi={() => setNuovaAperta(false)}
+        />
+      )}
+      {guidaAperta && <Istruzioni onChiudi={() => setGuidaAperta(false)} />}
+    </>
+  );
+
   if (registro.isLoading) return <div className="pg"><Skeleton /></div>;
 
   if (!scelto) {
@@ -283,20 +377,29 @@ export default function ProgrammaView({
             Le voci restano qui finché non le assegni: prima di allora non stanno nel pool, non
             scadono e non suonano.
           </p>
-          <button
-            type="button"
-            className="pg-btn pg-btn-accento"
-            onClick={async () => {
-              const nome = prompt('Nome della commessa (es. 2573 · Sottopasso ferroviario)');
-              if (!nome) return;
-              const creata = await creaProgramma(nome, {});
-              await registro.refetch();
-              navigate(`/programma/${creata.id}`);
-            }}
-          >
-            Comincia una commessa
-          </button>
+          <div className="pg-due-bottoni">
+            <button type="button" className="pg-btn pg-btn-accento" onClick={() => setNuovaAperta(true)}>
+              Comincia una commessa
+            </button>
+            <button type="button" className="pg-btn" onClick={() => setGuidaAperta(true)}>Come si usa</button>
+          </div>
+          {programmi.length > 0 && (
+            <div className="pg-rail-spenti">
+              <div className="eyebrow">Spente</div>
+              {programmi.filter(p => !p.attivo).map(p => (
+                <button
+                  type="button"
+                  key={p.id}
+                  className="pg-rail-spento"
+                  onClick={async () => { await aggiornaRegistrazione(p.id, { attivo: true }); registro.refetch(); }}
+                >
+                  {p.nome}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
+        {modali}
       </div>
     );
   }
@@ -307,6 +410,41 @@ export default function ProgrammaView({
   const statoDellaVoce = voce ? statoVoce(voce, attivitaAperte, poolPronto) : null;
   const sfori = doc && numeri && numeri.margine < 0 ? pacchettiCheSforano(doc) : [];
   const daCollocare = doc ? daCollocarePerPacchetto(doc) : new Map();
+
+  // I passaggi che mancano perché il pannello dica qualcosa. Spariscono da soli
+  // man mano che si fanno: una lista di cose da fare che resta lì per sempre
+  // diventa arredamento, e smette di essere letta.
+  const passiMancanti = doc ? [
+    !doc.commessa.oreVendute && { testo: 'Dì quante ore sono vendute', dove: 'impostazioni' },
+    !doc.risorse.length && { testo: 'Aggiungi le persone', dove: 'impostazioni' },
+    !doc.pacchetti.length && { testo: 'Crea i pacchetti', dove: 'impostazioni' },
+    !doc.voci.length && { testo: 'Scrivi o incolla le voci', dove: 'voci' },
+  ].filter(/** @returns {p is { testo: string, dove: 'impostazioni'|'voci' }} */ p => !!p) : [];
+
+  /** L'elenco delle voci, con in fondo il modulo per scriverne di nuove. */
+  const elenco = doc && (
+    <ElencoVoci
+      doc={doc}
+      attivita={tasks}
+      poolPronto={poolPronto}
+      voceScelta={voceScelta}
+      pacchettoScelto={pacchettoScelto}
+      selezione={selezione}
+      onSelezione={setSelezione}
+      onScegli={id => { setVoceScelta(id); setAttivaAperta(false); }}
+      onAttivaBlocco={() => setAttivaAperta(true)}
+      soloScoperte={soloScoperte}
+      incolla={(
+        <NuoveVoci
+          doc={doc}
+          pacchettoScelto={pacchettoScelto}
+          titolo="Voci nuove"
+          etichetta="Aggiungi"
+          onAggiungi={righe => cambia(d => conVociDaRighe(d, righe, { pacchettoId: pacchettoScelto }).doc)}
+        />
+      )}
+    />
+  );
 
   return (
     <div className="pg">
@@ -327,7 +465,7 @@ export default function ProgrammaView({
                 <button
                   type="button"
                   className={`pg-rail-voce${p.id === scelto.id ? ' scelta' : ''}`}
-                  onClick={() => { navigate(`/programma/${p.id}`); setPacchettoScelto(null); setRailChiuso(true); }}
+                  onClick={() => { navigate(`/programma/${p.id}`); setPacchettoScelto(null); setVoceScelta(null); setRailChiuso(true); }}
                 >
                   <span className="pg-rail-nome">{p.nome}</span>
                   {p.id === scelto.id && doc && <span className="pg-rail-ore">{conMigliaia(doc.commessa.oreVendute)} h</span>}
@@ -346,6 +484,13 @@ export default function ProgrammaView({
                 ))}
               </div>
             ))}
+
+            {/* Il gesto che mancava del tutto: creata la prima commessa, la
+                schermata di benvenuto spariva e con lei l'unico bottone che
+                sapeva farne una. */}
+            <button type="button" className="pg-rail-nuova" onClick={() => setNuovaAperta(true)}>
+              + Nuova commessa
+            </button>
 
             {programmi.some(p => !p.attivo) && (
               <div className="pg-rail-spenti">
@@ -376,6 +521,7 @@ export default function ProgrammaView({
                   ? `${doc.commessa.inizio} → ${doc.commessa.fine} · ${settimane.length} settimane`
                   : `${settimane.length} settimane`}
                 {doc ? ` · ${doc.risorse.length} risorse` : ''}
+                {doc?.commessa.sezione ? ` · ${doc.commessa.sezione}` : ''}
               </div>
             </div>
             <span className="pg-testata-sp" />
@@ -416,6 +562,9 @@ export default function ProgrammaView({
                   {(daCollocare.get(p.id) || 0) > 0 && <span className="pg-chip-resto">{oreBrevi(daCollocare.get(p.id) || 0)}</span>}
                 </button>
               ))}
+              {pacchettoScelto && (
+                <button type="button" className="pg-chip" onClick={() => setPacchettoScelto(null)}>tutti ✕</button>
+              )}
             </div>
           )}
 
@@ -431,10 +580,24 @@ export default function ProgrammaView({
             )}
             <button
               type="button"
-              className={`pg-scheda${scheda === 'voci' || stretto ? ' scelta' : ''}`}
+              className={`pg-scheda${scheda === 'voci' || (stretto && scheda === 'matrice') ? ' scelta' : ''}`}
               onClick={() => setScheda('voci')}
             >
               Elenco voci
+            </button>
+            <button
+              type="button"
+              className={`pg-scheda${scheda === 'riepilogo' ? ' scelta' : ''}`}
+              onClick={() => setScheda('riepilogo')}
+            >
+              Riepilogo
+            </button>
+            <button
+              type="button"
+              className={`pg-scheda${scheda === 'impostazioni' ? ' scelta' : ''}`}
+              onClick={() => setScheda('impostazioni')}
+            >
+              Impostazioni
             </button>
             <span className="pg-testata-sp" />
             <span className="pg-salvataggio">
@@ -442,6 +605,9 @@ export default function ProgrammaView({
               {salvataggio === 'salvato' && 'salvato'}
               {salvataggio === 'errore' && 'non salvato — riprovo'}
             </span>
+            <button type="button" className="pg-guida" onClick={() => setGuidaAperta(true)} title="Come si usa il Programma">
+              ? come si usa
+            </button>
           </div>
         </header>
 
@@ -463,22 +629,45 @@ export default function ProgrammaView({
           </div>
         )}
 
+        {passiMancanti.length > 0 && doc && (
+          <div className="pg-passi-riga">
+            <span className="eyebrow">da fare per cominciare</span>
+            {passiMancanti.map(p => (
+              <button type="button" key={p.testo} className="pg-chip" onClick={() => setScheda(p.dove)}>
+                {p.testo}
+              </button>
+            ))}
+          </div>
+        )}
+
         {!doc ? (
           <div className="pg-corpo"><Skeleton /></div>
+        ) : scheda === 'impostazioni' ? (
+          <div className="pg-corpo">
+            <SchedaCommessa
+              doc={doc}
+              sezioni={sezioni}
+              onCaricaSezioni={onCaricaSezioni}
+              onCambia={cambia}
+              onRinomina={rinomina}
+              onSpegni={spegni}
+              onEsporta={esporta}
+            />
+          </div>
+        ) : scheda === 'riepilogo' ? (
+          <div className="pg-corpo">
+            <Riepilogo
+              doc={doc}
+              settimanaOra={settimanaOra}
+              pacchettoScelto={pacchettoScelto}
+              onScegliPacchetto={setPacchettoScelto}
+              onCambia={cambia}
+            />
+          </div>
         ) : stretto ? (
           <div className="pg-corpo">
             <p className="pg-empty pg-solo-portatile">La matrice si apre da portatile.</p>
-            <ElencoVoci
-              doc={doc}
-              attivita={tasks}
-              poolPronto={poolPronto}
-              voceScelta={voceScelta}
-              pacchettoScelto={pacchettoScelto}
-              selezione={selezione}
-              onSelezione={setSelezione}
-              onScegli={setVoceScelta}
-              onAttivaBlocco={() => setAttivaAperta(true)}
-            />
+            {elenco}
           </div>
         ) : scheda === 'matrice' ? (
           <Matrice
@@ -491,27 +680,7 @@ export default function ProgrammaView({
             onSceltaRiga={(_risorsa, pacchettoId) => setPacchettoScelto(pacchettoId)}
           />
         ) : (
-          <div className="pg-corpo">
-            <ElencoVoci
-              doc={doc}
-              attivita={tasks}
-              poolPronto={poolPronto}
-              voceScelta={voceScelta}
-              pacchettoScelto={pacchettoScelto}
-              selezione={selezione}
-              onSelezione={setSelezione}
-              onScegli={id => { setVoceScelta(id); setAttivaAperta(false); }}
-              onAttivaBlocco={() => setAttivaAperta(true)}
-              soloScoperte={soloScoperte}
-              incolla={(
-                <IncollaVoci
-                  doc={doc}
-                  pacchettoScelto={pacchettoScelto}
-                  onIncolla={testo => cambia(d => conVociIncollate(d, testo, { pacchettoId: pacchettoScelto }).doc)}
-                />
-              )}
-            />
-          </div>
+          <div className="pg-corpo">{elenco}</div>
         )}
       </div>
 
@@ -529,6 +698,11 @@ export default function ProgrammaView({
             padreId: voce.id, pacchettoId: voce.pacchettoId, risorsa: voce.risorsa,
           }))))}
           onChiudi={() => { setVoceScelta(null); setAttivaAperta(false); }}
+          onCancella={() => {
+            setVoceScelta(null);
+            setSelezione(sel => sel.filter(id => id !== voce.id));
+            cambia(d => senzaVoce(d, voce.id));
+          }}
           onApriAttiva={() => setAttivaAperta(true)}
           onApriAttivita={() => navigate('/attivita')}
           attiva={attivaAperta && (
@@ -572,9 +746,11 @@ export default function ProgrammaView({
         <div className="pg-toast">
           <span>{toast.testo}</span>
           {toast.apri && <button type="button" className="pg-toast-azione" onClick={toast.apri}>Apri</button>}
-          <button type="button" className="pg-toast-azione" onClick={toast.annulla}>Annulla</button>
+          {toast.annulla && <button type="button" className="pg-toast-azione" onClick={toast.annulla}>Annulla</button>}
         </div>
       )}
+
+      {modali}
     </div>
   );
 }

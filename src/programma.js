@@ -25,8 +25,8 @@
 // per id, il task non sa niente del programma. Regge perché gli id delle
 // attività non si rigenerano mai, nemmeno spostandole di lista.
 
-import { settimanaIso, settimaneTra, meseDellaSettimana, spostaSettimane, lunediDellaSettimana } from './tempo.js';
-import { buildListName } from './paraConfig.js';
+import { settimanaIso, settimaneTra, meseDellaSettimana, spostaSettimane, lunediDellaSettimana, ymd } from './tempo.js';
+import { buildListName, groupKeyForSection } from './paraConfig.js';
 /** La cartella dei programmi, dentro quella dell'app. */
 const CARTELLA = 'programmi';
 
@@ -57,6 +57,8 @@ export const ORE_SETTIMANA_DEFAULT = 35;
  * @property {string|null} fine
  * @property {string|null} settimaneDa  scavalco manuale dell'orizzonte, 'YYYY-Www'
  * @property {string|null} settimaneA
+ * @property {string|null} sezione    il **nome** della sezione OneNote della commessa
+ * @property {string|null} sezioneId  il suo id, per arrivarci con un click
  */
 
 /**
@@ -234,6 +236,12 @@ export function normalizzaProgramma(raw, contesto = {}) {
       fine: testoONull(c.fine),
       settimaneDa: testoONull(c.settimaneDa),
       settimaneA: testoONull(c.settimaneA),
+      // La sezione si tiene **per nome**, non per id: è il nome che regge la
+      // convenzione PARA (`2573-ABS` → liste `2573.A60-…`), ed è quello che
+      // resta vero se un giorno la sezione viene ricreata altrove. L'id sta
+      // accanto solo per aprirla con un click, e può anche mancare.
+      sezione: testoONull(c.sezione),
+      sezioneId: testoONull(c.sezioneId),
     },
     risorse: (Array.isArray(raw?.risorse) ? raw.risorse : []).map(normalizzaRisorsa).filter((/** @type {Risorsa} */ r) => r.nome),
     pacchetti: (Array.isArray(raw?.pacchetti) ? raw.pacchetti : []).map(normalizzaPacchetto),
@@ -301,6 +309,43 @@ export function conPacchettoAggiornato(doc, pacchettoId, patch) {
   };
 }
 
+/**
+ * Toglie un pacchetto. Le sue voci e le sue celle **non si buttano**: passano a
+ * un altro pacchetto, o restano senza — cancellare un pacchetto con dentro
+ * quaranta voci e trecento ore a piano sarebbe l'unico gesto irreversibile di
+ * tutto il pannello, e non c'è ragione perché lo sia.
+ *
+ * Le celle si fondono per somma: se la persona aveva ore in tutti e due i
+ * pacchetti nella stessa settimana, il totale della sua settimana non cambia —
+ * ed è il numero su cui si colora la riga.
+ *
+ * @param {DocProgramma} doc
+ * @param {string} pacchettoId
+ * @param {{ spostaSu?: string|null }} [opts]  dove vanno voci e celle; null = senza pacchetto
+ * @returns {DocProgramma}
+ */
+export function senzaPacchetto(doc, pacchettoId, opts = {}) {
+  const spostaSu = opts.spostaSu || null;
+  /** @type {Record<string, number>} */
+  const carico = {};
+  for (const [chiave, ore] of Object.entries(doc.carico)) {
+    const { risorsa, pacchettoId: suo, settimana } = leggiChiaveCarico(chiave);
+    if (suo !== pacchettoId) { carico[chiave] = (carico[chiave] || 0) + ore; continue; }
+    // Senza una destinazione le celle se ne vanno: non esiste una riga «senza
+    // pacchetto» nella matrice, e tenerle vorrebbe dire ore invisibili che
+    // continuano a pesare sui totali.
+    if (!spostaSu) continue;
+    const nuova = chiaveCarico(risorsa, spostaSu, settimana);
+    carico[nuova] = (carico[nuova] || 0) + ore;
+  }
+  return {
+    ...doc,
+    pacchetti: doc.pacchetti.filter(p => p.id !== pacchettoId),
+    voci: doc.voci.map(v => (v.pacchettoId === pacchettoId ? { ...v, pacchettoId: spostaSu } : v)),
+    carico,
+  };
+}
+
 /** @param {DocProgramma} doc @param {string} nome @param {number} [oreSettimana] @returns {DocProgramma} */
 export function conRisorsa(doc, nome, oreSettimana = ORE_SETTIMANA_DEFAULT) {
   const pulito = String(nome || '').trim();
@@ -311,6 +356,61 @@ export function conRisorsa(doc, nome, oreSettimana = ORE_SETTIMANA_DEFAULT) {
 /** @param {DocProgramma} doc @param {string} nome @param {Partial<Risorsa>} patch @returns {DocProgramma} */
 export function conRisorsaAggiornata(doc, nome, patch) {
   return { ...doc, risorse: doc.risorse.map(r => (r.nome === nome ? normalizzaRisorsa({ ...r, ...patch }) : r)) };
+}
+
+/**
+ * Cambiare nome a una persona **non è** una patch al suo nome: il nome sta
+ * dentro le chiavi del carico e dentro il campo `risorsa` delle voci, e
+ * riscriverlo in un posto solo lascerebbe un mese di ore appese a una persona
+ * che non esiste più. Qui si sposta tutto insieme, o niente.
+ * @param {DocProgramma} doc
+ * @param {string} da
+ * @param {string} a
+ * @returns {DocProgramma}
+ */
+export function conRisorsaRinominata(doc, da, a) {
+  const nuovo = String(a || '').trim();
+  if (!nuovo || nuovo === da) return doc;
+  /** @type {Record<string, number>} */
+  const carico = {};
+  for (const [chiave, ore] of Object.entries(doc.carico)) {
+    const { risorsa, pacchettoId, settimana } = leggiChiaveCarico(chiave);
+    const k = risorsa === da ? chiaveCarico(nuovo, pacchettoId, settimana) : chiave;
+    carico[k] = (carico[k] || 0) + ore;
+  }
+  return {
+    ...doc,
+    // Se il nome nuovo è già di un'altra persona le due si fondono in una: due
+    // righe con lo stesso nome sarebbero due righe che si contendono le stesse
+    // celle.
+    risorse: doc.risorse
+      .map(r => (r.nome === da ? { ...r, nome: nuovo } : r))
+      .filter((r, i, tutte) => tutte.findIndex(x => x.nome === r.nome) === i),
+    voci: doc.voci.map(v => (v.risorsa === da ? { ...v, risorsa: nuovo } : v)),
+    carico,
+  };
+}
+
+/**
+ * Toglie una persona dalla commessa, con le sue ore. Le voci che la
+ * *proponevano* restano — la risorsa di una voce è una previsione, non un
+ * impegno, e perdere la voce per aver tolto una riga sarebbe sproporzionato.
+ * @param {DocProgramma} doc
+ * @param {string} nome
+ * @returns {DocProgramma}
+ */
+export function senzaRisorsa(doc, nome) {
+  /** @type {Record<string, number>} */
+  const carico = {};
+  for (const [chiave, ore] of Object.entries(doc.carico)) {
+    if (leggiChiaveCarico(chiave).risorsa !== nome) carico[chiave] = ore;
+  }
+  return {
+    ...doc,
+    risorse: doc.risorse.filter(r => r.nome !== nome),
+    voci: doc.voci.map(v => (v.risorsa === nome ? { ...v, risorsa: null } : v)),
+    carico,
+  };
 }
 
 /**
@@ -429,31 +529,47 @@ export function conVoceAttivata(doc, voceId, legame) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// L'incolla in massa
+// Le voci nuove: quattro campi, o centocinquanta righe incollate
 // ─────────────────────────────────────────────────────────────────────────────
-// Senza, il caricamento iniziale ferma tutto alla seconda commessa: duecento
-// voci scritte una alla volta non le scrive nessuno. È la funzione che decide
-// se lo strumento verrà usato davvero, quindi sta nel modello e non nella
-// vista — e si prova.
+// Senza l'incolla il caricamento iniziale ferma tutto alla seconda commessa:
+// duecento voci scritte una alla volta non le scrive nessuno. Senza i campi
+// separati si ferma alla **prima**: alla prima voce nessuno ha voglia di
+// imparare una sintassi con le barre verticali. Servono tutti e due, e portano
+// allo stesso posto — quindi la lettura del testo e la creazione delle voci
+// sono due funzioni, non una.
 
 /**
- * Righe `pacchetto | titolo | ore | risorsa` (tabulazioni o barre verticali)
- * in voci pronte. I pacchetti nominati e non ancora esistenti vengono creati.
- *
- * @param {DocProgramma} doc
- * @param {string} testo
- * @param {{ pacchettoId?: string|null }} [opts] il pacchetto per le righe che non lo dicono
- * @returns {{ doc: DocProgramma, aggiunte: number, pacchettiNuovi: string[], scartate: string[] }}
+ * @typedef {object} RigaVoce
+ * @property {string} pacchetto  il **nome**, non l'id: chi scrive non conosce gli id
+ * @property {string} titolo
+ * @property {number} ore
+ * @property {string} risorsa
  */
-export function conVociIncollate(doc, testo, opts = {}) {
-  let risultato = doc;
-  /** @type {Partial<Voce>[]} */
-  const voci = [];
-  /** @type {string[]} */
-  const pacchettiNuovi = [];
+
+/** «120», «120h», «120,5»: le ore si scrivono come vengono in mente. @param {any} v */
+function oreScritte(v) {
+  return Math.max(0, numero(String(v ?? '').replace(',', '.').replace(/[^\d.]/g, ''), 0));
+}
+
+/**
+ * Righe `pacchetto | titolo | ore | risorsa` (tabulazioni o barre verticali) in
+ * righe strutturate.
+ *
+ * È separata da `conVociDaRighe` perché **i modi di scrivere una voce sono
+ * due**: incollare centocinquanta righe da un Excel, e compilare quattro campi
+ * quando la voce è una sola. Il secondo non deve passare per una sintassi con
+ * le barre verticali — è quello che rendeva difficile la prima riga di tutte —
+ * quindi il testo si legge qui e le voci si creano di là, e i due modi
+ * arrivano allo stesso posto.
+ *
+ * @param {string} testo
+ * @returns {{ righe: RigaVoce[], scartate: string[] }}
+ */
+export function leggiRigheVoci(testo) {
+  /** @type {RigaVoce[]} */
+  const righe = [];
   /** @type {string[]} */
   const scartate = [];
-
   for (const riga of String(testo || '').split(/\r?\n/)) {
     if (!riga.trim()) continue;
     const campi = riga.split(/\t|\|/).map(c => c.trim());
@@ -461,9 +577,39 @@ export function conVociIncollate(doc, testo, opts = {}) {
     // copiato da una mail. Non deve essere un errore.
     const [primo, secondo, terzo, quarto] = campi;
     const unaColonna = campi.filter(c => c).length === 1;
-    const nomePacchetto = unaColonna ? '' : primo;
     const titolo = unaColonna ? primo : secondo;
     if (!titolo) { scartate.push(riga); continue; }
+    righe.push({
+      pacchetto: unaColonna ? '' : (primo || ''),
+      titolo,
+      ore: oreScritte(terzo),
+      risorsa: (quarto || '').trim(),
+    });
+  }
+  return { righe, scartate };
+}
+
+/**
+ * Righe strutturate in voci vere. I pacchetti nominati e non ancora esistenti
+ * vengono creati, e le persone nominate entrano fra le risorse: sono le due
+ * cose che, dovendole fare a mano prima, fermavano il caricamento iniziale.
+ *
+ * @param {DocProgramma} doc
+ * @param {RigaVoce[]} righe
+ * @param {{ pacchettoId?: string|null }} [opts] il pacchetto per le righe che non lo dicono
+ * @returns {{ doc: DocProgramma, aggiunte: number, pacchettiNuovi: string[] }}
+ */
+export function conVociDaRighe(doc, righe, opts = {}) {
+  let risultato = doc;
+  /** @type {Partial<Voce>[]} */
+  const voci = [];
+  /** @type {string[]} */
+  const pacchettiNuovi = [];
+
+  for (const riga of righe) {
+    const titolo = String(riga?.titolo || '').trim();
+    if (!titolo) continue;
+    const nomePacchetto = String(riga?.pacchetto || '').trim();
 
     let pacchettoId = opts.pacchettoId || null;
     if (nomePacchetto) {
@@ -477,14 +623,26 @@ export function conVociIncollate(doc, testo, opts = {}) {
       }
     }
 
-    // «120», «120h», «120,5»: le ore si scrivono come vengono in mente.
-    const ore = Math.max(0, numero(String(terzo ?? '').replace(',', '.').replace(/[^\d.]/g, ''), 0));
-    const risorsa = testoONull(quarto);
+    const ore = Math.max(0, numero(riga?.ore, 0));
+    const risorsa = testoONull(riga?.risorsa);
     if (risorsa) risultato = conRisorsa(risultato, risorsa);
     voci.push({ titolo, ore, oreIniziali: ore, pacchettoId, risorsa });
   }
 
-  return { doc: conVoci(risultato, voci), aggiunte: voci.length, pacchettiNuovi, scartate };
+  return { doc: conVoci(risultato, voci), aggiunte: voci.length, pacchettiNuovi };
+}
+
+/**
+ * Il testo incollato, fino in fondo: si legge e si scrive in un colpo solo.
+ *
+ * @param {DocProgramma} doc
+ * @param {string} testo
+ * @param {{ pacchettoId?: string|null }} [opts] il pacchetto per le righe che non lo dicono
+ * @returns {{ doc: DocProgramma, aggiunte: number, pacchettiNuovi: string[], scartate: string[] }}
+ */
+export function conVociIncollate(doc, testo, opts = {}) {
+  const { righe, scartate } = leggiRigheVoci(testo);
+  return { ...conVociDaRighe(doc, righe, opts), scartate };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -644,6 +802,70 @@ export function totali(doc, opts = {}) {
     daCollocare: stimate - aPiano,
   };
 }
+
+/**
+ * Gli stessi cinque numeri, **una riga per pacchetto e una per tutta la
+ * commessa**.
+ *
+ * Nella prima versione i numeri si leggevano un pacchetto alla volta,
+ * scegliendolo dalle pastiglie: per rispondere a «come sta messa tutta la
+ * sezione» bisognava cliccarli uno per uno e sommare a mente. È esattamente la
+ * domanda per cui il pannello esiste, quindi qui c'è la tabella intera.
+ *
+ * L'ultima riga sono le voci senza pacchetto: esistono, pesano sulle ore
+ * stimate, e non vederle vorrebbe dire un totale che non torna con la somma
+ * della colonna.
+ *
+ * @param {DocProgramma} doc
+ * @param {{ settimanaOra?: string }} [opts]
+ * @returns {{ righe: RigaRiepilogo[], totale: ReturnType<typeof totali> }}
+ */
+export function riepilogoPacchetti(doc, opts = {}) {
+  const ora = opts.settimanaOra || settimanaIso();
+  /** @type {RigaRiepilogo[]} */
+  const righe = doc.pacchetti.map(p => ({
+    pacchettoId: p.id,
+    nome: p.nome,
+    colore: p.colore,
+    listId: p.listId,
+    voci: doc.voci.filter(v => v.pacchettoId === p.id && !v.scartata && eFoglia(doc, v.id)).length,
+    ...totali(doc, { pacchettoId: p.id, settimanaOra: ora }),
+  }));
+
+  const senza = doc.voci.filter(v => !v.pacchettoId && !v.scartata && eFoglia(doc, v.id));
+  if (senza.length) {
+    const stimate = oreVoci(doc, v => !v.pacchettoId);
+    righe.push({
+      pacchettoId: null,
+      nome: 'senza pacchetto',
+      colore: null,
+      listId: null,
+      voci: senza.length,
+      // Il carico si scrive solo su una riga di pacchetto: queste ore non
+      // stanno in nessuna settimana per costruzione, ed è il dato utile.
+      vendute: stimate, stimate, speso: 0, aFinire: 0, aPiano: 0,
+      margine: stimate, daCollocare: stimate,
+    });
+  }
+
+  return { righe, totale: totali(doc, { settimanaOra: ora }) };
+}
+
+/**
+ * @typedef {object} RigaRiepilogo
+ * @property {string|null} pacchettoId  null è la riga delle voci senza pacchetto
+ * @property {string} nome
+ * @property {string|null} colore
+ * @property {string|null} listId
+ * @property {number} voci
+ * @property {number} vendute
+ * @property {number} stimate
+ * @property {number} speso
+ * @property {number} aFinire
+ * @property {number} aPiano
+ * @property {number} margine
+ * @property {number} daCollocare
+ */
 
 /**
  * Le colonne della matrice: da `inizio` a `fine` della commessa, salvo lo
@@ -806,6 +1028,76 @@ export function spalma(totale, quante) {
   return Array.from({ length: quante }, (_, i) => (base + (i < resto ? 1 : 0)) / 2);
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Le ore già spese, per pacchetto
+// ─────────────────────────────────────────────────────────────────────────────
+// La matrice si compila cella per cella, ed è giusto così per il futuro: lì
+// ogni settimana è una decisione. Per il **passato** no: quando una commessa
+// entra qui dopo sei mesi di lavoro, quello che si sa è «su questo pacchetto
+// Marco ha fatto circa 90 ore», non come erano distribuite. Battere quel numero
+// settimana per settimana all'indietro è il passaggio che fa smettere di
+// compilare, e produrrebbe comunque una precisione finta.
+//
+// Quindi: un numero per pacchetto e persona, spalmato all'indietro sulle
+// settimane passate. Il **totale è vero**, la distribuzione è dichiaratamente
+// approssimata — che è la stessa promessa delle «ore a finire senza timesheet».
+
+/**
+ * Le settimane della matrice già passate: quelle a sinistra della colonna di
+ * oggi, che è dove sta lo speso.
+ * @param {DocProgramma} doc
+ * @param {string} [settimanaOra]
+ * @returns {string[]}
+ */
+export function settimanePassate(doc, settimanaOra) {
+  const ora = settimanaOra || settimanaIso();
+  return settimaneDellaMatrice(doc, ora).filter(w => w < ora);
+}
+
+/**
+ * Le ore già spese di una persona su un pacchetto, spalmate sulle settimane
+ * indicate. **Sostituisce** quelle celle invece di sommarcisi: è un consuntivo,
+ * cioè la risposta definitiva su quel tratto, e sommare vorrebbe dire
+ * raddoppiare le ore ogni volta che si corregge il numero.
+ *
+ * @param {DocProgramma} doc
+ * @param {{ risorsa: string, pacchettoId: string, ore: number, settimane: string[] }} dati
+ * @returns {DocProgramma}
+ */
+export function conSpesoRipartito(doc, { risorsa, pacchettoId, ore, settimane }) {
+  const nome = String(risorsa || '').trim();
+  if (!nome || !pacchettoId || !settimane?.length) return doc;
+  const quote = spalma(Math.max(0, numero(ore, 0)), settimane.length);
+  // Chi non era ancora fra le risorse ci entra: le ore che ha già fatto sono la
+  // prova migliore che ci deve stare.
+  let risultato = conRisorsa(doc, nome);
+  settimane.forEach((settimana, i) => {
+    risultato = conCarico(risultato, chiaveCarico(nome, pacchettoId, settimana), quote[i] || 0);
+  });
+  return risultato;
+}
+
+/**
+ * Quanto risulta già speso adesso su un pacchetto, persona per persona: è
+ * quello che il campo del consuntivo mostra già scritto, così si corregge un
+ * numero invece di ricominciare da capo.
+ * @param {DocProgramma} doc
+ * @param {string} pacchettoId
+ * @param {string[]} settimane
+ * @returns {Map<string, number>}
+ */
+export function spesoPerRisorsa(doc, pacchettoId, settimane) {
+  const dentro = new Set(settimane);
+  /** @type {Map<string, number>} */
+  const somme = new Map();
+  for (const [chiave, ore] of Object.entries(doc.carico)) {
+    const k = leggiChiaveCarico(chiave);
+    if (k.pacchettoId !== pacchettoId || !dentro.has(k.settimana)) continue;
+    somme.set(k.risorsa, (somme.get(k.risorsa) || 0) + ore);
+  }
+  return somme;
+}
+
 /**
  * Le righe `titolo | ore` di una scomposizione. Stessa sintassi dell'incolla in
  * massa, meno le colonne che qui non servono: le figlie stanno nel pacchetto
@@ -845,6 +1137,24 @@ export function pacchettiCheSforano(doc, quanti = 2) {
 }
 
 /**
+ * La commessa con cui si nominano le liste di questo programma.
+ *
+ * **La sezione vince sul nome inventato.** Un programma collegato a `2573-ABS`
+ * genera liste `2573.A60-Fondazioni-270630`, che è esattamente il nome che
+ * `listsForSection` ricuce alla sezione: da lì le consegne compaiono nel
+ * pannello della sezione senza che nessuno le colleghi a mano. Un codice
+ * scritto a mano scavalca tutto — è il caso di chi la commessa ce l'ha già in
+ * testa con un numero suo — e lo slug del nome è l'ultima spiaggia.
+ * @param {DocProgramma} doc
+ * @returns {string}
+ */
+export function gruppoCommessa(doc) {
+  return doc.commessa.codice
+    || groupKeyForSection(doc.commessa.sezione)
+    || slug(doc.commessa.nome).toUpperCase();
+}
+
+/**
  * Il nome che avrà la lista di un pacchetto, se e quando ne servirà una.
  *
  * Segue la convenzione PARA di `paraConfig.js` — `2573.A60-Fondazioni-261127` —
@@ -856,9 +1166,33 @@ export function pacchettiCheSforano(doc, quanti = 2) {
  * @returns {string}
  */
 export function nomeListaProposto(doc, pacchetto) {
-  const gruppo = doc.commessa.codice || slug(doc.commessa.nome).toUpperCase();
   const consegna = pacchetto?.nome || doc.commessa.nome || 'Programma';
-  return buildListName({ gruppo, consegna, scadenza: doc.commessa.fine || null });
+  return buildListName({ gruppo: gruppoCommessa(doc), consegna, scadenza: doc.commessa.fine || null });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// L'esportazione
+// ─────────────────────────────────────────────────────────────────────────────
+// «Ha senso esportare un json con la data?» Sì, ma non come backup: il backup
+// è OneDrive, che tiene già le versioni. Serve come **fotografia**: il
+// programma com'era il giorno in cui è stato mandato al cliente o discusso in
+// riunione, con dentro le ore che valevano allora. Il documento non ha una
+// cronologia — `putDriveJson` sovrascrive — quindi una fotografia si può solo
+// prendere, e senza data nel nome due fotografie si coprono a vicenda.
+
+/**
+ * Il programma da conservare: il documento intero, più il giorno in cui è stato
+ * preso. Rileggibile: è lo stesso schema che `normalizzaProgramma` accetta.
+ * @param {DocProgramma} doc
+ * @param {{ giorno?: string }} [opts]
+ * @returns {{ nomeFile: string, dati: any }}
+ */
+export function esportazione(doc, opts = {}) {
+  const giorno = opts.giorno || ymd();
+  return {
+    nomeFile: `${slug(doc.commessa.nome || 'programma')}-${giorno}.json`,
+    dati: { ...doc, esportatoIl: giorno },
+  };
 }
 
 /**
