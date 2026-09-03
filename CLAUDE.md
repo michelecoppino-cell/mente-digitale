@@ -71,10 +71,30 @@ campo, e non devono diventarlo: `inbox` è *la lista in cui il task sta*,
 la voce **facoltativa**, e in coda apposta: le celle scritte prima restano
 valide e vogliono dire «ore del pacchetto, senza voce», nessun file su OneDrive
 da riscrivere, e `const [r, p, s] = chiave.split('|')` continua a dire quello
-che diceva. Quelle ore non si migrano da sole — nessuno può dire, al posto di
-chi le ha scritte, a quale voce andassero — e la matrice le mostra in coda al
-pacchetto invece di lasciarle pesare sui totali senza una riga. Anche il
-consuntivo continua a scriverle così, ed è voluto: del passato si sa il totale.
+che diceva.
+
+**Le ore lasciate sul pacchetto le adotta la voce che propone quella persona.**
+Sono le celle di prima che le voci ci fossero, e quelle che arrivano dal
+consuntivo. Restavano in coda al pacchetto perché nessuno poteva dire a quale
+voce andassero — ma la voce lo dice: se dentro un pacchetto una sola voce
+propone Riccardo, «Riccardo, A10, W39» e «Riccardo, Calcolo, W39» sono la stessa
+frase. Adottare non riscrive niente sul file: la chiave resta a tre segmenti
+finché qualcuno non scrive in quella riga, e allora la cella della voce prende il
+valore e quella del pacchetto si azzera. Due voci che propongono la stessa
+persona non adottano niente — indovinare è quello che qui non si fa — e chi
+nessuna voce reclama tiene la sua riga in coda, marcata «sul pacchetto». La
+regola sta in `voceAdottiva`, e le tre letture che la rispettano
+(`oreSottoRiga`, `destinazioneOre`, `celleConsuntivo`) sono l'unico posto da cui
+la matrice, la scheda Persone e il consuntivo la leggono.
+
+**Una riga dice la somma di quello che ha sotto, e si scrive in una cella
+sola.** Vale per le persone come per le voci: la riga di una persona conta le
+sotto-voci nascoste e le ore adottate, e scrivendoci dentro le ore vanno nella
+cella più profonda in cui stanno già, mentre quelle che sostituiscono si
+azzerano — sono le stesse ore, e tenerle in due posti raddoppia la settimana.
+Con ore su due voci diverse la destinazione non esiste: si scende di un livello
+invece di sceglierne una. Prima ogni riga leggeva la sua sola cella, e bastava
+spegnere «voci» per vedere il pacchetto dire quaranta e la persona sotto zero.
 
 **Gli id delle attività non si rigenerano mai.** I blocchi in `daily-plans`, le
 sveglie già suonate e la deduplica delle scadenze ricorrenti citano i task per

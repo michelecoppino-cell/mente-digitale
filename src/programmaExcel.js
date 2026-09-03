@@ -31,7 +31,7 @@
 
 import { xlsx, STILE } from './xlsx.js';
 import {
-  chiaveCarico, settimaneDellaMatrice, oreCella, oreRisorsaSettimana, riepilogoPacchetti,
+  celleConsuntivo, settimaneDellaMatrice, oreSottoRiga, oreRisorsaSettimana, riepilogoPacchetti,
   alberoVoci, eFoglia, statoVoce, ETICHETTE_STATO, slug,
 } from './programma.js';
 import { lunediDellaSettimana, meseDellaSettimana, settimanaIso, ymd } from './tempo.js';
@@ -89,7 +89,10 @@ export function righeMatrice(doc, settimane, settimanaOra) {
     ...settimane.map(w => ({ v: giornoBreve(w) + (w === settimanaOra ? ' ◂' : ''), s: STILE.tenue })), '']);
 
   for (const risorsa of doc.risorse) {
-    const suoi = doc.pacchetti.filter(p => settimane.some(w => oreCella(doc, risorsa.nome, p.id, w) > 0));
+    // Le ore del pacchetto sono tutte le sue: quelle date al pacchetto e quelle
+    // finite su una voce. Leggere la sola cella a tre segmenti faceva un foglio
+    // in cui la riga di totale non era la somma di quelle sotto.
+    const suoi = doc.pacchetti.filter(p => settimane.some(w => oreSottoRiga(doc, risorsa.nome, p.id, null, w) > 0));
     const totali = settimane.map(w => oreRisorsaSettimana(doc, risorsa.nome, w));
     righe.push([
       { v: risorsa.nome, s: STILE.totale },
@@ -98,7 +101,7 @@ export function righeMatrice(doc, settimane, settimanaOra) {
       { v: totali.reduce((s, o) => s + o, 0) || '', s: STILE.totale },
     ]);
     for (const p of suoi) {
-      const ore = settimane.map(w => oreCella(doc, risorsa.nome, p.id, w));
+      const ore = settimane.map(w => oreSottoRiga(doc, risorsa.nome, p.id, null, w));
       righe.push([
         '',
         p.nome,
@@ -370,7 +373,10 @@ export function leggiOreRegistrate(doc, testo, opts = {}) {
     const r = doc.risorse.find(x => uguale(x.nome, persona));
     const p = doc.pacchetti.find(x => uguale(x.nome, pacchetto));
     if (!r || !p) { ignorate.push(riga); return; }
-    celle[chiaveCarico(r.nome, p.id, settimana)] = ore;
+    // Un consuntivo sostituisce: se quelle ore stanno su una voce si riscrive
+    // quella cella, invece di aggiungerne una sul pacchetto — due celle per la
+    // stessa settimana sarebbero la settimana contata due volte.
+    Object.assign(celle, celleConsuntivo(doc, r.nome, p.id, settimana, ore));
     persone.add(r.nome);
     settimaneViste.add(settimana);
   };
