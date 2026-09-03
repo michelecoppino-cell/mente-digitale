@@ -146,17 +146,23 @@
 
 .pg-dove { margin-top: var(--sp-3); font-size: var(--fs-micro); color: var(--danger); }
 
+/* Le pastiglie dei pacchetti vanno a capo. Prima erano una striscia sola che
+   scorreva in orizzontale: con dodici pacchetti dai nomi lunghi restavano
+   fuori schermo proprio quelle in fondo, e una barra che si scorre a lato non
+   dice nemmeno che c'è dell'altro. Andando a capo si vedono tutte, e la riga
+   diventa due — che è il prezzo giusto per non dover cercare. */
 .pg-chip-riga {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: var(--sp-2);
   margin-top: var(--sp-5);
-  overflow-x: auto;
   padding-bottom: 2px;
 }
 .pg-chip-riga .eyebrow { flex: 0 0 auto; padding-right: var(--sp-2); }
 .pg-chip {
   flex: 0 0 auto;
+  max-width: 100%;
   display: flex;
   align-items: center;
   gap: var(--sp-2);
@@ -348,7 +354,7 @@
 /* Stringendo le colonne si stringe anche la colonna dei nomi: è la metà del
    guadagno, perché duecentoventi pixel di nomi sono otto settimane. */
 .pg-densita-anno .pg-nome { flex-basis: 158px; width: 158px; padding: 0 6px; font-size: var(--fs-meta); }
-.pg-densita-anno .pg-tot { flex-basis: 46px; width: 46px; }
+.pg-densita-anno .pg-tot { flex-basis: 66px; width: 66px; }
 .pg-densita-stretta .pg-nome { flex-basis: 190px; width: 190px; }
 
 /* Rete di sicurezza: un numero non deve mai uscire dalla sua cella e finire
@@ -447,9 +453,12 @@
   cursor: ew-resize;
 }
 
+/* La colonna in coda porta due numeri, non uno: le ore a piano e — dopo la
+   barra, in tono minore — quelle stimate. Da qui gli ottantotto pixel invece
+   dei sessantaquattro di quando ce n'era uno solo. */
 .pg-tot {
-  flex: 0 0 64px;
-  width: 64px;
+  flex: 0 0 88px;
+  width: 88px;
   height: 32px;
   position: sticky;
   right: 0;
@@ -465,6 +474,7 @@
   color: var(--text-3);
   font-variant-numeric: tabular-nums;
 }
+.pg-tot-stima { padding-left: 1px; font-size: var(--fs-micro); color: var(--disabled); }
 .pg-tot-angolo, .pg-tot-testa { background: var(--bg); }
 .pg-riga-mesi .pg-tot { height: 20px; }
 .pg-riga-testa .pg-tot { height: 36px; font-size: var(--fs-micro); color: var(--muted); }

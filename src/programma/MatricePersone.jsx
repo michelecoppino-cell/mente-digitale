@@ -237,7 +237,14 @@ export default function MatricePersone({
                     // Col filtro acceso la cella dice le ore del pacchetto, ma
                     // il rosso continua a dire «questa persona è oltre»: conta
                     // tutto quello che ha addosso, non il pezzo in vista.
-                    const sat = livelloSaturazione(persona.oreIntere[w] || 0, persona.capacita);
+                    //
+                    // Il passato però non si colora: una settimana già andata
+                    // è un fatto, non un allarme — nessuno può più spostare
+                    // quelle ore, e il rosso su una colonna che non si può
+                    // cambiare è solo rumore fra i rossi che contano.
+                    const sat = w < settimanaOra
+                      ? 'vuota'
+                      : livelloSaturazione(persona.oreIntere[w] || 0, persona.capacita);
                     return (
                       <div
                         key={w}
