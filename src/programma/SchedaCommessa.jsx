@@ -96,11 +96,21 @@ export default function SchedaCommessa({
 
           <label className="pg-campo-riga">
             <span className="pg-campo-etichetta">inizio</span>
+            {/* Non controllato, come nome/codice qui sopra: un `type="date"`
+                manda un onChange ad ogni cifra composta nel picker, anche a
+                data non ancora completa (valore ''). Con un campo controllato
+                ogni cifra partiva una `cambia()` che rilegge e riscrive il
+                documento su OneDrive: scritture in volo in parallelo, che
+                possono finire in ordine diverso da quello in cui sono partite
+                — e quella con la data ancora vuota, arrivata per ultima,
+                cancellava quella appena finita di scrivere. Scrivendo solo al
+                blur parte una scrittura sola, con il valore finale. */}
             <input
               type="date"
               className="pg-campo"
-              value={c.inizio || ''}
-              onChange={e => onCambia(d => conCommessa(d, { inizio: e.target.value || null }))}
+              defaultValue={c.inizio || ''}
+              key={`inizio-${doc.id}-${c.inizio}`}
+              onBlur={e => e.target.value !== (c.inizio || '') && onCambia(d => conCommessa(d, { inizio: e.target.value || null }))}
             />
           </label>
 
@@ -109,8 +119,9 @@ export default function SchedaCommessa({
             <input
               type="date"
               className="pg-campo"
-              value={c.fine || ''}
-              onChange={e => onCambia(d => conCommessa(d, { fine: e.target.value || null }))}
+              defaultValue={c.fine || ''}
+              key={`fine-${doc.id}-${c.fine}`}
+              onBlur={e => e.target.value !== (c.fine || '') && onCambia(d => conCommessa(d, { fine: e.target.value || null }))}
             />
             <span className="pg-memo">è anche la scadenza proposta alle liste</span>
           </label>
