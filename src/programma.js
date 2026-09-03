@@ -735,6 +735,39 @@ function pacchettoDelRamo(doc, voce) {
 }
 
 /**
+ * Le voci di un pacchetto, in ordine di albero e potate a una profondità.
+ *
+ * Serve alla matrice, che sotto la riga di un pacchetto sa aprire anche il
+ * lavoro che c'è dentro — le lavorazioni, e a un altro clic le sotto-voci.
+ * Il pacchetto di un ramo si legge come in `alberoVoci`: dal ramo, non dalla
+ * singola voce, perché una lavorazione porta spesso il pacchetto solo sulle sue
+ * figlie e altrimenti non comparirebbe sotto nessuno.
+ *
+ * `profondita` è quanti livelli si mostrano: 1 le sole lavorazioni di primo
+ * livello, 2 anche le loro figlie, e così via. Le scartate non ci sono: sono
+ * lavoro che non si fa, e nella tabella del quando peserebbero come il resto.
+ *
+ * @param {DocProgramma} doc
+ * @param {string} pacchettoId
+ * @param {number} [profondita]
+ * @returns {{ voce: Voce, livello: number }[]}
+ */
+export function vociDiPacchetto(doc, pacchettoId, profondita = 1) {
+  /** @type {{ voce: Voce, livello: number }[]} */
+  const fila = [];
+  /** @param {Voce} v @param {number} livello */
+  const scendi = (v, livello) => {
+    if (v.scartata) return;
+    fila.push({ voce: v, livello });
+    if (livello + 1 < profondita) for (const f of figlieDi(doc, v.id)) scendi(f, livello + 1);
+  };
+  for (const r of vociRadice(doc)) {
+    if (pacchettoDelRamo(doc, r) === pacchettoId) scendi(r, 0);
+  }
+  return fila;
+}
+
+/**
  * Le voci in ordine di albero — la madre, poi le sue figlie — con la
  * profondità, che è il rientro con cui l'elenco le mostra.
  *

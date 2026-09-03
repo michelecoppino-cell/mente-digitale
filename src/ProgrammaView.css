@@ -289,6 +289,36 @@
 }
 .pg-riga-risorsa.pg-aperta .pg-nome { border-bottom-color: var(--accent-line); }
 
+/* La riga di una voce: sotto le persone, e visibilmente un'altra cosa — lì si
+   legge, non si scrive. Il rientro lo mette il componente, perché dipende dalla
+   profondità della scomposizione e non è un livello solo. */
+.pg-riga-voce .pg-nome {
+  padding-left: 26px;
+  background: var(--surface);
+  font-size: var(--fs-micro);
+  color: var(--text-3);
+}
+.pg-voce-segno { flex: 0 0 8px; color: var(--disabled); }
+.pg-riga-voce .pg-tot { color: var(--text-3); font-size: var(--fs-micro); }
+.pg-cella-voce { cursor: default; position: relative; }
+/* La finestra della voce è una **barra**, non una cella colorata: dice *quando*
+   quel lavoro era previsto, e deve leggersi come un Gantt e non come una cella
+   in cui si può scrivere. Una velatura di fondo non bastava — cambiava aspetto
+   sulle righe pari e dispari, perché è translucida, e mezze finestre sembravano
+   un'altra cosa dalle altre. Sfora di un pixel a destra e a sinistra per
+   ricucire il bordo fra due settimane contigue: una barra spezzettata si legge
+   come cinque barre. */
+.pg-finestra::before {
+  content: '';
+  position: absolute;
+  inset: 42% -1px;
+  background: var(--accent);
+  opacity: .5;
+}
+.pg-finestra-inizio::before { left: 3px; border-top-left-radius: 3px; border-bottom-left-radius: 3px; }
+.pg-finestra-fine::before { right: 3px; border-top-right-radius: 3px; border-bottom-right-radius: 3px; }
+.pg-campione.pg-finestra { position: relative; }
+
 .pg-mese {
   height: 20px;
   display: flex;

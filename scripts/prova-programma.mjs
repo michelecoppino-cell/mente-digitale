@@ -172,6 +172,23 @@ verifica(pg.oreRisorsaSettimana(doc, 'Marco', '2026-W38', c10.id) === 20
 verifica(pg.risorseDiPacchetto(doc, c10.id).map(r => r.nome).join() === 'Marco',
   'le sotto-righe di un pacchetto sono solo chi ci ha davvero qualcosa');
 
+// E sotto un pacchetto si apre anche il lavoro che ci sta dentro, un livello
+// per bottone: le lavorazioni, poi le loro figlie.
+const soloRadici = pg.vociDiPacchetto(doc, a60.id, 1);
+verifica(soloRadici.length === 1 && soloRadici[0].voce.titolo === 'Fondazioni',
+  'a un livello si vedono le lavorazioni, non le loro figlie');
+const conSottovoci = pg.vociDiPacchetto(doc, a60.id, 2);
+verifica(conSottovoci.map(x => x.voce.titolo).join() === 'Fondazioni,Plinti,Platea'
+  && conSottovoci[1].livello === 1,
+  'a due si aprono le sotto-voci, in ordine di albero e con il loro rientro');
+// Una lavorazione porta il pacchetto solo sulle figlie: guardando il suo campo
+// e non il ramo, non comparirebbe sotto nessun pacchetto.
+verifica(doc.voci.find(v => v.titolo === 'Fondazioni').pacchettoId === a60.id
+  || conSottovoci.length === 3,
+  'e il pacchetto di una lavorazione si legge dal ramo, non dalla sola voce');
+const scartate = pg.vociDiPacchetto(doc, a60.id, 3).filter(x => x.voce.scartata);
+verifica(scartate.length === 0, 'le scartate non ci sono: è lavoro che non si fa');
+
 console.log('\nSpalmare un numero su un intervallo\n');
 
 // «40 h in tutto» su otto settimane: mezze ore, e il resto sulle prime — di
