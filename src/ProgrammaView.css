@@ -189,7 +189,7 @@
   cursor: pointer;
 }
 .pg-scheda.scelta { color: var(--accent); border-bottom-color: var(--accent); }
-.pg-salvataggio { font-size: var(--fs-micro); color: var(--muted); padding-bottom: 10px; }
+.pg-salvataggio { font-size: var(--fs-micro); color: var(--muted); padding: 0 var(--sp-3) 10px var(--sp-4); }
 
 .pg-delta {
   padding: 10px var(--sp-7);
@@ -217,6 +217,37 @@
    questa vista è da portatile e su telefono non esiste. Non si propaga altrove. */
 
 .pg-matrice-guscio { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; }
+
+/* La barra della matrice: i tre gesti che una tabella da dieci righe per
+   cinquanta colonne non può non avere — tornare a oggi, aprire o chiudere
+   tutto, stringere finché ci sta l'anno. Vedi programma/Matrice.jsx. */
+.pg-barra {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-3) var(--sp-7);
+  border-bottom: 1px solid var(--line);
+}
+.pg-barra-sp { flex: 1; }
+.pg-barra .eyebrow { padding: 0 var(--sp-2) 0 var(--sp-3); }
+.pg-barra-btn {
+  padding: 4px 10px;
+  background: none;
+  border: 1px solid var(--line);
+  border-radius: var(--r-2);
+  color: var(--text-2);
+  font-family: var(--font-ui);
+  font-size: var(--fs-meta);
+  cursor: pointer;
+}
+.pg-barra-btn:hover { border-color: var(--line-strong); color: var(--text); }
+.pg-barra-btn.scelto { border-color: var(--accent-line); background: var(--accent-tint); color: var(--accent); }
+.pg-barra-conto {
+  padding-left: var(--sp-4);
+  font-size: var(--fs-micro);
+  color: var(--disabled);
+  font-variant-numeric: tabular-nums;
+}
 .pg-matrice { flex: 1; min-height: 0; overflow: auto; outline: none; }
 .pg-matrice-vuota { padding: var(--sp-7); }
 .pg-griglia { display: inline-block; min-width: 100%; --pg-w: 52px; }
@@ -285,6 +316,28 @@
 .pg-w-iso { font-size: var(--fs-chip); color: var(--text-3); }
 .pg-w-giorno { font-size: var(--fs-micro); color: var(--disabled); }
 
+/* Stringendo, le due righe dell'intestazione non ci stanno più: sparisce il
+   giorno e resta il numero di settimana, che è quello che si legge davvero. E
+   il padding della cella si stringe con lei, altrimenti il numero non ci sta. */
+.pg-densita-anno .pg-w-giorno,
+.pg-densita-anno .pg-w-w { display: none; }
+.pg-densita-anno .pg-w,
+.pg-densita-anno .pg-cella { padding: 0 3px; font-size: var(--fs-micro); }
+.pg-densita-stretta .pg-w,
+.pg-densita-stretta .pg-cella { padding: 0 5px; }
+.pg-densita-stretta .pg-w-giorno { font-size: 9px; }
+
+/* Stringendo le colonne si stringe anche la colonna dei nomi: è la metà del
+   guadagno, perché duecentoventi pixel di nomi sono otto settimane. */
+.pg-densita-anno .pg-nome { flex-basis: 158px; width: 158px; padding: 0 6px; font-size: var(--fs-meta); }
+.pg-densita-anno .pg-tot { flex-basis: 46px; width: 46px; }
+.pg-densita-stretta .pg-nome { flex-basis: 190px; width: 190px; }
+
+/* Rete di sicurezza: un numero non deve mai uscire dalla sua cella e finire
+   sopra a quello accanto — succedeva stringendo, ed è illeggibile in un modo
+   che sembra un dato sbagliato. */
+.pg-cella, .pg-tot, .pg-w { overflow: hidden; }
+
 /* La settimana corrente taglia la matrice in due: a sinistra lo speso, a
    destra la previsione. Una linea in cima e un fondo appena più chiaro — mai
    una campitura che copra il numero nella cella. */
@@ -326,6 +379,29 @@
 
 .pg-dentro { background: var(--accent-tint); }
 .pg-scelta { outline: 1px solid var(--accent); outline-offset: -1px; z-index: 1; }
+
+/* ── Tenere il segno in una tabella grande ────────────────────────────────
+   Tre cose che si vedono e non si toccano. Sono deboli apposta: devono farsi
+   trovare quando si cerca dove si è, e sparire quando si legge un numero. */
+
+/* A righe alterne, contando le persone e non le righe: una persona aperta
+   resta un blocco solo con le sue sotto-righe. */
+.pg-riga.pg-dispari .pg-cella,
+.pg-riga.pg-dispari .pg-nome { background-image: linear-gradient(var(--surface-2), var(--surface-2)); }
+.pg-riga.pg-dispari .pg-cella { background-color: transparent; }
+
+/* La riga in cui si sta, per tutta la sua larghezza. */
+.pg-riga-scelta .pg-nome { box-shadow: inset 2px 0 0 var(--accent); }
+.pg-riga-scelta .pg-cella { box-shadow: inset 0 -1px 0 var(--accent-line); }
+
+/* E la colonna: senza, guardando la riga in fondo non si sa più in che
+   settimana si è. */
+.pg-colonna-scelta { box-shadow: inset 1px 0 0 var(--accent-line), inset -1px 0 0 var(--accent-line); }
+.pg-riga-testa .pg-colonna-scelta .pg-w-iso { color: var(--text); }
+
+/* Il primo lunedì di ogni mese: la fascia in cima dice dove comincia, questa
+   linea lo dice anche in fondo alla tabella. */
+.pg-mese-inizio { border-left: 1px solid var(--line); }
 
 .pg-input {
   width: 100%;
@@ -386,6 +462,7 @@
   color: var(--disabled);
 }
 .pg-legenda-sp { flex: 1; }
+.pg-legenda-nota { color: var(--accent); }
 /* L'avviso della vista per persona: è l'unica cosa per cui quella schermata
    esiste, quindi non ha il colore spento del resto della legenda. */
 .pg-persone-avviso {
@@ -490,6 +567,34 @@
 }
 .pg-voce-attiva .pg-voce-titolo { color: var(--text); }
 .pg-voce-risorsa { flex: 0 0 92px; font-size: var(--fs-chip); color: var(--text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Il caret prende il posto del segno di stato: una lavorazione non ha uno
+   stato suo — è un contenitore — quindi lì quella colonna era vuota. */
+.pg-voce-caret {
+  flex: 0 0 12px;
+  padding: 0;
+  background: none;
+  border: none;
+  color: var(--text-3);
+  font-size: 9px;
+  line-height: 1;
+  cursor: pointer;
+}
+.pg-voce-caret:hover { color: var(--accent); }
+
+.pg-voce-pacchetto {
+  flex: 0 0 168px;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  font-size: var(--fs-chip);
+  color: var(--text-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pg-conto-voci { font-size: var(--fs-micro); color: var(--disabled); font-variant-numeric: tabular-nums; }
 .pg-voce-ore { flex: 0 0 64px; text-align: right; font-size: var(--fs-meta); color: var(--text); font-variant-numeric: tabular-nums; }
 .pg-voce-somma { color: var(--text-3); }
 .pg-voce-delta { flex: 0 0 76px; text-align: right; font-size: var(--fs-chip); color: var(--muted); font-variant-numeric: tabular-nums; }
@@ -739,7 +844,7 @@
   /* Le colonne fisse della riga voce sommano più di quanto sia largo un
      telefono, e a schiacciarsi è il titolo — cioè l'unica che serve sempre.
      Via il delta e la risorsa, che sono la lettura da scrivania. */
-  .pg-voce-delta, .pg-voce-risorsa { display: none; }
+  .pg-voce-delta, .pg-voce-risorsa, .pg-voce-pacchetto { display: none; }
   .pg-voce-ore { flex: 0 0 52px; }
   .pg-voce-stato { flex: 0 0 96px; }
 }
@@ -778,6 +883,42 @@
   gap: var(--sp-5);
   overflow-y: auto;
 }
+/* ── Le ore registrate ──────────────────────────────────────────────────── */
+/* Cosa cambia, prima che cambi: sostituire un mese di ore in un gesto merita
+   di essere letto prima. Vedi programma/OreRegistrate.jsx. */
+
+.pg-incolla-alto { min-height: 190px; }
+.pg-lettura {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  padding: var(--sp-4);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-2);
+}
+.pg-lettura-conti {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-5);
+  font-size: var(--fs-meta);
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+}
+.pg-lettura-conti b { font-weight: 500; color: var(--text); }
+.pg-lettura-su b { color: var(--accent); }
+.pg-lettura-chi { font-size: var(--fs-micro); color: var(--muted); }
+.pg-lettura-scartate { display: flex; flex-direction: column; gap: 2px; padding-top: var(--sp-3); border-top: 1px solid var(--line-soft); }
+.pg-lettura-scartate .eyebrow { color: var(--danger); padding-bottom: var(--sp-2); }
+.pg-scartata {
+  font-family: var(--font-mono, monospace);
+  font-size: var(--fs-micro);
+  color: var(--disabled);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .pg-campo-doppio { display: flex; gap: var(--sp-4); }
 .pg-campo-doppio > * { flex: 1; }
 .pg-campo-sezione { display: flex; flex-direction: column; gap: var(--sp-1); }

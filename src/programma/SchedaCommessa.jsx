@@ -291,7 +291,9 @@ export default function SchedaCommessa({
         <p className="pg-memo">
           Il programma vive su OneDrive e non serve salvarlo: quello che si scrive è già scritto.
           L&apos;esportazione è un&apos;altra cosa — una fotografia col giorno nel nome, di com&apos;era
-          il programma quando lo si è mandato o discusso.
+          il programma quando lo si è mandato o discusso. Il JSON è quello che si rilegge da qui;
+          il foglio Excel è quello che si manda ai colleghi, e sta in cima alla schermata insieme
+          alle ore registrate perché non è un&apos;impostazione: è un gesto che si fa spesso.
         </p>
         <div className="pg-due-bottoni">
           <button type="button" className="pg-btn" onClick={onEsporta}>Esporta una fotografia (JSON)</button>

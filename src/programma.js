@@ -225,7 +225,13 @@ export function normalizzaProgramma(raw, contesto = {}) {
     // non restare a occupare posto con dentro niente.
     if (ore > 0 && k.split('|').length === 3) carico[k] = ore;
   }
-  return {
+  // Le ore dei contenitori si rifanno **anche in lettura**, non solo dopo una
+  // modifica. Sono una somma derivata: se il file ne porta una vecchia — perché
+  // l'ha scritta una versione di prima, o una mano — la vista mostrerebbe un
+  // totale che non torna con le righe che ha sotto, che è esattamente la classe
+  // di difetti per cui `risommaContenitori` esiste. Derivare in un posto solo
+  // vuol dire derivare anche qui.
+  return risommaContenitori({
     version: VERSIONE,
     id: String(raw?.id || contesto.id || nuovoId()),
     commessa: {
@@ -247,7 +253,7 @@ export function normalizzaProgramma(raw, contesto = {}) {
     pacchetti: (Array.isArray(raw?.pacchetti) ? raw.pacchetti : []).map(normalizzaPacchetto),
     voci: (Array.isArray(raw?.voci) ? raw.voci : []).map(normalizzaVoce),
     carico,
-  };
+  });
 }
 
 /** @param {any} raw @returns {{ version: number, programmi: ProgrammaRegistrato[] }} */

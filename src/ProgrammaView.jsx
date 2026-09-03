@@ -55,6 +55,8 @@ import NuovaCommessa from './programma/NuovaCommessa.jsx';
 import SchedaCommessa from './programma/SchedaCommessa.jsx';
 import Riepilogo from './programma/Riepilogo.jsx';
 import Istruzioni from './programma/Istruzioni.jsx';
+import OreRegistrate from './programma/OreRegistrate.jsx';
+import { libroProgramma } from './programmaExcel.js';
 import { useMediaQuery } from './useMediaQuery';
 import Skeleton from './Skeleton';
 import './ProgrammaView.css';
@@ -115,6 +117,7 @@ export default function ProgrammaView({
   const [soloScoperte, setSoloScoperte] = useState(false);
   const [nuovaAperta, setNuovaAperta] = useState(false);
   const [guidaAperta, setGuidaAperta] = useState(false);
+  const [oreAperte, setOreAperte] = useState(false);
   const [salvataggio, setSalvataggio] = useState(/** @type {'fermo'|'salvo'|'salvato'|'errore'} */ ('fermo'));
   const [toast, setToast] = useState(/** @type {{ testo: string, annulla?: () => void, apri?: () => void }|null} */ (null));
 
@@ -281,7 +284,29 @@ export default function ProgrammaView({
   function esporta() {
     if (!doc) return;
     const { nomeFile, dati } = esportazione(doc);
-    const url = URL.createObjectURL(new Blob([JSON.stringify(dati, null, 2)], { type: 'application/json' }));
+    scaricaFile(nomeFile, new Blob([JSON.stringify(dati, null, 2)], { type: 'application/json' }));
+  }
+
+  /**
+   * Lo stesso programma in un foglio di calcolo: tre fogli, e il primo è quello
+   * che si guarda in riunione.
+   *
+   * È l'altra metà del giro delle ore vere — si esporta, si corregge la colonna
+   * della settimana finita, si rimanda indietro da «Ore registrate» — e per
+   * questo il foglio Matrice esce nella stessa forma in cui rientra. Il perché
+   * per esteso è in `programmaExcel.js`.
+   */
+  function esportaExcel() {
+    if (!doc) return;
+    const { nomeFile, byte } = libroProgramma(doc, { settimanaOra, settimane, attivitaAperte });
+    scaricaFile(nomeFile, new Blob([/** @type {BlobPart} */ (/** @type {unknown} */ (byte))], {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    }));
+  }
+
+  /** @param {string} nomeFile @param {Blob} blob */
+  function scaricaFile(nomeFile, blob) {
+    const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
     a.download = nomeFile;
@@ -386,6 +411,22 @@ export default function ProgrammaView({
         />
       )}
       {guidaAperta && <Istruzioni onChiudi={() => setGuidaAperta(false)} />}
+      {oreAperte && doc && (
+        <OreRegistrate
+          doc={doc}
+          settimane={settimane}
+          onChiudi={() => setOreAperte(false)}
+          onApplica={celle => {
+            // Passano dalla stessa strada di una cella battuta a mano: la coda
+            // che scrive a raffiche, e la pila dell'annulla che le riprende
+            // tutte insieme con ⌘Z.
+            scriviCelle(celle);
+            setOreAperte(false);
+            setScheda('matrice');
+            setToast({ testo: `${Object.keys(celle).length} celle aggiornate con le ore vere — ⌘Z annulla` });
+          }}
+        />
+      )}
     </>
   );
 
@@ -637,6 +678,21 @@ export default function ProgrammaView({
               Impostazioni
             </button>
             <span className="pg-testata-sp" />
+            {/* Il programma esce e rientra. Stanno qui e non in Impostazioni
+                perché non sono la mezz'ora in cui si mette in piedi il
+                programma: l'esportazione si fa prima di ogni riunione, e le ore
+                vere rientrano ogni lunedì. */}
+            <button type="button" className="pg-guida" onClick={esportaExcel} title="Tre fogli: riepilogo, matrice, voci">
+              ↓ Excel
+            </button>
+            <button
+              type="button"
+              className="pg-guida"
+              onClick={() => setOreAperte(true)}
+              title="Incolla le ore davvero fatte: sostituiscono quelle previste"
+            >
+              ↑ Ore registrate
+            </button>
             <span className="pg-salvataggio">
               {salvataggio === 'salvo' && 'salvo…'}
               {salvataggio === 'salvato' && 'salvato'}

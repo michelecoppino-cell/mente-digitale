@@ -120,11 +120,61 @@ export default function Istruzioni({ onChiudi }) {
           </section>
 
           <section>
+            <h3>Quando diventa grande</h3>
+            <p>
+              Dieci persone e un anno sono cinquanta colonne: la griglia si legge solo se si
+              governa, e i gesti per governarla stanno nella barra sopra la matrice.
+            </p>
+            <ul className="pg-elenco">
+              <li>
+                <b>densità</b> — la stessa griglia a tre larghezze. «anno» rimpicciolisce finché
+                la commessa intera sta in una schermata; lì le ore si scrivono all&apos;ora intera,
+                e le mezze ore si rivedono tornando a «stretta».
+              </li>
+              <li><b>oggi</b> — riporta a schermo la colonna di adesso, che è la linea fra lo speso e la previsione.</li>
+              <li><b>apri / chiudi tutte</b> e <b>una persona sola</b> — dieci righe aperte sono sessanta sotto-righe, e quasi sempre la domanda è su una persona.</li>
+              <li>
+                La riga e la colonna in cui si sta restano segnate, le righe si alternano di fondo,
+                e il primo lunedì di ogni mese porta una linea: sono i modi di tenere il segno
+                scorrendo, e non costano un click.
+              </li>
+              <li>
+                In <b>Elenco voci</b> le lavorazioni si chiudono: chiuse tutte, quaranta righe
+                tornano a essere le dieci lavorazioni che sono la commessa.
+              </li>
+            </ul>
+          </section>
+
+          <section>
+            <h3>Excel: come esce e come rientra</h3>
+            <p>
+              <b>↓ Excel</b>, in cima, scarica un file con tre fogli — Riepilogo, Matrice, Voci —
+              da mandare ai colleghi. È una fotografia col giorno nel nome: due esportazioni non si
+              coprono a vicenda.
+            </p>
+            <p>
+              <b>↑ Ore registrate</b> è il giro all&apos;indietro. Nel foglio Matrice si corregge la
+              colonna della settimana appena chiusa con le ore davvero fatte, si seleziona il
+              rettangolo — <i>intestazione compresa</i> — e si incolla lì. Prima di applicare, il
+              riquadro dice quante celle cambiano, di chi, quante ore c&apos;erano e quante ce ne
+              saranno, ed elenca le righe che non ha capito. Vanno bene anche righe sciolte
+              <code> persona | pacchetto | settimana | ore</code>.
+            </p>
+            <p>
+              Le ore incollate <b>sostituiscono</b> quelle previste: sono un consuntivo, quindi
+              reincollare lo stesso foglio non raddoppia niente. Una cella lasciata vuota non si
+              tocca — così si corregge una settimana sola senza azzerare le altre — e <b>⌘Z</b>
+              annulla tutto l&apos;incollato in un colpo.
+            </p>
+          </section>
+
+          <section>
             <h3>Quello che non fa, per scelta</h3>
             <p>
-              Niente timesheet, niente dipendenze o percorso critico, niente costi in euro. La
-              saturazione di una persona si legge sul solo programma aperto, non sommata su tutte
-              le commesse accese: è l&apos;approssimazione dichiarata di questa versione.
+              Niente timesheet automatico, niente dipendenze o percorso critico, niente costi in
+              euro. Le ore vere entrano incollate e non lette da un file: leggere un <code>.xlsx</code>
+              vorrebbe dire scrivere un decompressore per far arrivare qui gli stessi numeri che
+              gli appunti hanno già.
             </p>
           </section>
         </div>
