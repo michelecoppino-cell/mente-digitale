@@ -18,6 +18,22 @@ import NuoveVoci from './NuoveVoci.jsx';
 /** @typedef {import('../programma.js').Voce} Voce */
 
 /**
+ * Il nome scritto, appoggiato a una risorsa che c'è già quando è la stessa a
+ * meno di maiuscole e spazi. «gaia» e «Gaia » sono la stessa persona, e due
+ * righe con lo stesso nome scritto in due modi sarebbero due righe che si
+ * contendono le stesse celle. Un nome davvero nuovo resta com'è scritto: entra
+ * fra le risorse della commessa.
+ * @param {string} scritto
+ * @param {string[]} nomi
+ * @returns {string}
+ */
+function accostaNome(scritto, nomi) {
+  const pulito = String(scritto || '').trim().replace(/\s+/g, ' ');
+  if (!pulito) return '';
+  return nomi.find(n => n.toLowerCase() === pulito.toLowerCase()) || pulito;
+}
+
+/**
  * @param {object} props
  * @param {DocProgramma} props.doc
  * @param {Voce} props.voce
@@ -110,14 +126,45 @@ export default function DettaglioVoce({
             )}
           </span>
 
-          <span className="pg-scheda-et">risorsa</span>
-          <input
-            className="pg-campo pg-campo-nudo"
-            defaultValue={voce.risorsa || ''}
-            key={`ris-${voce.id}`}
-            placeholder="—"
-            onBlur={e => onPatch({ risorsa: e.target.value.trim() || null })}
-          />
+          <span className="pg-scheda-et pg-scheda-et-alto">risorse</span>
+          {/*
+            Una voce può essere di due persone: un calcolo lo fanno in due, e
+            fingere che sia di uno solo obbligava a sdoppiare la voce per far
+            comparire la seconda riga nella matrice. Quindi un campo per ognuna,
+            e **sotto l'ultimo pieno ce n'è sempre uno vuoto**: aggiungere è
+            scrivere, togliere è cancellare. Nessun bottone «+», che sarebbe un
+            gesto in più per la cosa che si fa più spesso.
+
+            I nomi vengono dall'elenco (`datalist`) e quello che si scrive si
+            appoggia a una risorsa che c'è già anche se scritto in minuscolo:
+            una proposta che non combacia con nessuna risorsa non farebbe
+            comparire nessuna riga, e nessuno lo direbbe.
+          */}
+          <span className="pg-scheda-risorse">
+            {[...voce.risorse, ''].map((nome, i) => (
+              <input
+                className="pg-campo pg-campo-nudo"
+                key={`ris-${voce.id}-${i}-${nome}`}
+                defaultValue={nome}
+                list={`pg-persone-${voce.id}`}
+                placeholder={i === 0 ? '—' : 'un\'altra'}
+                onBlur={e => {
+                  const scritto = accostaNome(e.target.value, doc.risorse.map(r => r.nome));
+                  if (scritto === nome) { e.target.value = nome; return; }
+                  const prossime = [...voce.risorse];
+                  if (i < prossime.length) {
+                    if (scritto) prossime[i] = scritto; else prossime.splice(i, 1);
+                  } else if (scritto) {
+                    prossime.push(scritto);
+                  }
+                  onPatch({ risorse: prossime.filter((n, k) => n && prossime.indexOf(n) === k) });
+                }}
+              />
+            ))}
+            <datalist id={`pg-persone-${voce.id}`}>
+              {doc.risorse.map(r => <option key={r.nome} value={r.nome} />)}
+            </datalist>
+          </span>
 
           <span className="pg-scheda-et">finestra</span>
           <span className="pg-finestra">

@@ -346,8 +346,13 @@ export const PROGRAMMA = {
       { id: 'vc-5', titolo: 'Impalcato — carpenteria', nota: '', pacchettoId: 'pk-a40', padreId: null,
         ore: 260, oreIniziali: 260, risorsa: 'Marco', finestra: { da: settimana(0), a: settimana(4) },
         scartata: false, taskId: null, listId: null, creatoIl: istante(g(-35), '10:00'), attivataIl: null },
+      // Le altre voci portano `risorsa`, una stringa, come i file scritti prima
+      // che le proposte fossero un elenco: è il formato vecchio, e deve
+      // continuare a leggersi. Questa porta `risorse` — due persone sulla
+      // stessa voce, di cui una senza ancora un'ora, che è la riga da cui si
+      // comincia a darle lavoro.
       { id: 'vc-6', titolo: 'Drenaggio e pompe', nota: '', pacchettoId: 'pk-a50', padreId: null,
-        ore: 96, oreIniziali: 96, risorsa: null, finestra: { da: settimana(3), a: settimana(8) },
+        ore: 96, oreIniziali: 96, risorse: ['Sara', 'Marco'], finestra: { da: settimana(3), a: settimana(8) },
         scartata: false, taskId: null, listId: null, creatoIl: istante(g(-30), '11:00'), attivataIl: null },
     ],
     carico: CARICO,

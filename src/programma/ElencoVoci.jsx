@@ -114,7 +114,7 @@ export default function ElencoVoci({
     const stato = statoVoce(v, aperte, poolPronto);
     if (stato === 'scartata' && !conScartate) return false;
     if (filtroPacchetto && v.pacchettoId !== filtroPacchetto) return false;
-    if (filtroRisorsa && v.risorsa !== filtroRisorsa) return false;
+    if (filtroRisorsa && !v.risorse.includes(filtroRisorsa)) return false;
     if (filtroStato && stato !== filtroStato) return false;
     if (scoperte && !(v.pacchettoId && pacchettiScoperti.has(v.pacchettoId))) return false;
     return true;
@@ -251,7 +251,7 @@ export default function ElencoVoci({
                 {pacchetto && <span className="pg-punto" style={pacchetto.colore ? { background: pacchetto.colore } : undefined} />}
                 {pacchetto?.nome || ''}
               </span>
-              <span className="pg-voce-risorsa">{voce.risorsa || '—'}</span>
+              <span className="pg-voce-risorsa">{voce.risorse.join(', ') || '—'}</span>
               <span className={`pg-voce-ore${contenitore ? ' pg-voce-somma' : ''}`}>{oreBrevi(voce.ore)}</span>
               <span className={`pg-voce-delta${delta > 0 ? ' su' : ''}`}>
                 {contenitore && delta ? `${delta > 0 ? '▲+' : '▼−'}${Math.abs(delta)}` : ''}

@@ -85,9 +85,16 @@ export default function Istruzioni({ onChiudi }) {
                 acceso, si vedono solo le ore di quel pacchetto — righe, totali e piede compresi.
               </li>
               <li>
+                <b>Chi la fa.</b> Nel pannello di destra, sotto «risorse», c&apos;è un campo per
+                ogni persona che la voce propone e uno vuoto in coda: una voce può essere di due,
+                e ognuna avrà la sua riga nella matrice. Cancellare il nome la toglie. Sono
+                previsioni, non impegni: servono a far esistere la riga in cui scrivere le ore.
+              </li>
+              <li>
                 <b>Attivare.</b> Quando una voce sta per cominciare, «Attiva…» crea l&apos;attività
-                vera, con persona e scadenza. Nessuna conferma prima: c&apos;è l&apos;annulla dopo,
-                per otto secondi.
+                vera, con persona e scadenza. Se la voce è di due, si sceglie a chi: le altre
+                proposte restano dov&apos;erano. Nessuna conferma prima: c&apos;è l&apos;annulla
+                dopo, per otto secondi.
               </li>
             </ol>
           </section>
@@ -132,6 +139,12 @@ export default function Istruzioni({ onChiudi }) {
               <li><b>barra spaziatrice</b> apre e chiude un pacchetto. Si scrive nelle sotto-righe: la riga chiusa è il totale del pacchetto, e non ha una persona a cui dare le ore.</li>
               <li><b>⌘Z</b> annulla. Il quadratino in basso a destra della cella ripete il valore verso destra.</li>
               <li><b>Canc</b> svuota. Una cella vuota è vuota: non salva uno zero.</li>
+              <li>
+                <b>una persona sola</b>, nel menù delle persone, è anche il modo di
+                <b>aggiungerla a una voce</b>: con lei scelta la sua riga compare sotto ogni
+                voce, anche vuota, e i pacchetti in cui non ha ancora niente restano in coda,
+                tenui. Scritta la prima ora, la riga resta anche togliendo il filtro.
+              </li>
               <li>
                 <b>voci</b> e <b>sottovoci</b>, nella barra, dicono quanto scendere: spenti, sotto
                 il pacchetto ci sono le persone; accesi, la catena diventa pacchetto › voce ›
