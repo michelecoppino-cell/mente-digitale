@@ -852,9 +852,80 @@ Si può portar via una **fotografia**: il documento intero con il giorno nel nom
 tiene già le versioni — è il programma com'era il giorno in cui è stato mandato
 o discusso, e senza la data nel nome due fotografie si coprirebbero a vicenda.
 
-Fuori dalla prima versione, deciso adesso: niente timesheet, niente dipendenze o
-percorso critico, niente costi in euro, niente zoom mensile, e la saturazione si
-legge sul solo programma aperto invece che sommata su tutte le commesse accese.
+### Quando diventa grande
+
+Tre risorse e sedici settimane stanno a schermo e non c'è niente da governare.
+Dieci persone e un anno sono **cinquanta colonne**: la stessa griglia diventa un
+tunnel — si scorre per due schermate, si perde di vista la settimana di oggi, e
+la riga che si sta leggendo si confonde con le altre nove. Da lì la barra sopra
+la matrice, e sono tre gesti soli: la **densità** (la stessa griglia a tre
+larghezze di colonna — «anno» rimpicciolisce finché la commessa intera ci sta in
+una schermata, e lì le ore si scrivono all'ora intera perché «16,5» a ventotto
+pixel non ci sta, e un numero tagliato a metà è peggio di un numero arrotondato);
+**«oggi»**, che riporta a schermo la colonna di adesso — quella che divide lo
+speso dalla previsione, e senza la quale i numeri della testata non si sanno più
+leggere; e **una persona sola**, perché dieci righe aperte sono sessanta
+sotto-righe e quasi sempre la domanda è su una persona.
+
+Poi tre cose che si vedono e non si toccano: la riga e la colonna in cui si sta
+restano segnate mentre si scorre, le righe si alternano di fondo **per persona**
+(una persona aperta resta un blocco solo con le sue sotto-righe), e il primo
+lunedì di ogni mese porta una linea verticale. Sono i modi di tenere il segno in
+una tabella grande, e nessuno costa un click. Nell'elenco voci le **lavorazioni
+si chiudono**: chiuse tutte, quaranta righe tornano a essere le dieci
+lavorazioni che sono la commessa.
+
+Nel OneDrive finto c'è una commessa a questa scala — dieci persone, sei
+pacchetti, dieci lavorazioni in trenta sotto-voci, un anno di settimane — perché
+è la scala a cui i difetti di leggibilità sono difetti veri, e su sei voci non
+si vedono.
+
+### Excel: come esce, e come rientra
+
+Il programma esce dallo studio: si discute in riunione, si manda al
+capocommessa. Finché l'unica uscita era il JSON, l'unico modo di farlo vedere a
+un collega era fargli guardare lo schermo. **↓ Excel** scarica un `.xlsx` con
+tre fogli — Riepilogo, Matrice, Voci — col giorno nel nome come la fotografia.
+
+Senza librerie: `xlsx` e `exceljs` pesano fra i 400 kB e il megabyte, cioè
+sarebbero il pacchetto più grosso del progetto per una cosa che si fa due volte
+al mese, in un'app che si apre da un telefono. Un `.xlsx` è uno zip di file XML,
+e le due parti che servono — lo zip «store» (nessuna compressione: un'intestazione
+e i byte come sono) e i fogli con le stringhe dentro la cella invece che in una
+tabella condivisa — stanno in duecento righe che si leggono (`src/xlsx.js`).
+
+**↑ Ore registrate** è il giro all'indietro, e serve perché le ore davvero fatte
+non stanno qui: stanno nel foglio ore dello studio. Ribatterle a mano cinquanta
+celle per volta è il passaggio che fa smettere di aggiornare il programma, e un
+programma non aggiornato è peggio di nessun programma — dice un margine che non
+c'è. Quindi il foglio che esce rientra: si corregge la colonna della settimana
+appena chiusa, si seleziona il rettangolo (intestazione compresa) e si incolla.
+Il foglio Matrice esce apposta nella stessa forma in cui rientra, e la persona
+scritta una volta sola sulla riga del totale si trascina in giù sulle righe dei
+pacchetti sotto.
+
+Si **incolla** e non si carica un file: leggere un `.xlsx` vorrebbe dire
+scrivere anche il decompressore, cioè la metà difficile del formato, per far
+arrivare qui gli stessi numeri che il sistema operativo mette negli appunti
+appena si seleziona un rettangolo in Excel. Incollare è più corto per chi lo fa
+e non ha un formato da indovinare — ed è il gesto con cui in questa app entrano
+già le voci, le sotto-voci e i movimenti. Vanno bene anche righe sciolte
+`persona | pacchetto | settimana | ore`, che è quello che esce da un gestionale.
+
+Un consuntivo **sostituisce** le celle che tocca, non ci si somma: reincollare
+lo stesso foglio non raddoppia niente. Una cella lasciata vuota non si tocca —
+chi corregge una settimana seleziona tutto il rettangolo, e le altre colonne sono
+vuote perché non le ha guardate, non perché quelle ore non ci siano più. E
+siccome sostituire un mese di ore di quattro persone in un gesto è irreversibile
+in un modo che scrivere una cella non è, prima di applicare si vede **cosa
+cambia**: quante celle, di chi, in quali settimane, quante ore c'erano e quante
+ce ne saranno, e l'elenco delle righe che non si sono capite — una riga persa in
+silenzio, in un consuntivo, è un margine sbagliato che poi nessuno sa da dove
+venga. Le celle passano dalla stessa strada di una cifra battuta a mano, quindi
+`⌘Z` annulla tutto l'incollato in un colpo.
+
+Fuori dalla prima versione, deciso adesso: niente timesheet automatico, niente
+dipendenze o percorso critico, niente costi in euro.
 
 ## Design token
 

@@ -24,18 +24,43 @@
 // **L'annulla non è un lusso.** Un trascinamento sbagliato riscrive un mese in
 // un secondo: senza ⌘Z la matrice diventa una cosa che si tocca con paura, e
 // una matrice che si tocca con paura non la compila nessuno.
-import { useEffect, useMemo, useRef, useState } from 'react';
+//
+// **Dieci persone e un anno sono un'altra tabella.** Con tre risorse e sedici
+// settimane tutto sta a schermo e non c'è niente da governare; con dieci righe
+// e cinquanta colonne la stessa griglia diventa un tunnel — si scorre a destra
+// per due schermate, si perde di vista la settimana di oggi, e la riga che si
+// sta leggendo si confonde con le altre nove. Da lì la barra qui sopra, e sono
+// tre gesti soli:
+//
+//   · **la densità** — la stessa griglia a tre larghezze di colonna. «Anno»
+//     rimpicciolisce finché l'intera commessa ci sta in una schermata: non è
+//     uno zoom estetico, è la differenza fra vedere l'andamento e ricostruirselo
+//     scorrendo.
+//   · **«oggi»** — la colonna di adesso torna al suo posto. Scorrendo la si
+//     perde, ed è la linea che divide lo speso dalla previsione: senza, i
+//     numeri della testata non si sanno più leggere.
+//   · **una persona sola** — dieci righe aperte sono sessanta sotto-righe. Il
+//     più delle volte la domanda è su una persona, e allora le altre nove sono
+//     rumore.
+//
+// E tre cose che si vedono e non si toccano: la riga e la colonna in cui si sta
+// restano segnate mentre si scorre, le righe si alternano di fondo, e il primo
+// lunedì di ogni mese porta una linea verticale. Sono i tre modi in cui si
+// tiene il segno in una tabella grande, e nessuno costa un click.
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { lunediDellaSettimana } from '../tempo.js';
 import {
   chiaveCarico, livelloSaturazione, oreCella, oreRisorsaSettimana, pacchettiDiRisorsa,
   perMese, spalma,
 } from '../programma.js';
 import { oreBrevi, leggiOre } from './formato.js';
+import { DENSITA, useDensita } from './densita.js';
 
 /** @typedef {import('../programma.js').DocProgramma} DocProgramma */
 /** @typedef {{ tipo: 'risorsa'|'pacchetto', nome: string, risorsa: string, capacita: number, colore: string|null, pacchettoId: string|null, aperta: boolean }} Riga */
 
 const MESI = ['gen', 'feb', 'mar', 'apr', 'mag', 'giu', 'lug', 'ago', 'set', 'ott', 'nov', 'dic'];
+
 
 /** «mag» dal mese 'YYYY-MM'. @param {string} mese */
 const nomeMese = mese => MESI[Number(mese.slice(5, 7)) - 1] || mese;
@@ -58,6 +83,10 @@ export default function Matrice({
   const [ancora, setAncora] = useState(/** @type {{r:number,c:number}|null} */ (null));
   const [bozza, setBozza] = useState(/** @type {string|null} */ (null));
   const [spalmatura, setSpalmatura] = useState(/** @type {string|null} */ (null));
+  // La stessa densità della matrice per persona: sono le stesse colonne, e una
+  // stretta e l'altra no sarebbero due tabelle diverse a guardarsi.
+  const [densita, cambiaDensita] = useDensita();
+  const [personaSola, setPersonaSola] = useState('');
   const scorrevole = useRef(/** @type {HTMLDivElement|null} */ (null));
   const trascina = useRef(/** @type {'selezione'|'riempi'|null} */ (null));
 
@@ -66,6 +95,7 @@ export default function Matrice({
     /** @type {Riga[]} */
     const fila = [];
     for (const r of doc.risorse) {
+      if (personaSola && r.nome !== personaSola) continue;
       const aperta = aperte.includes(r.nome);
       fila.push({
         tipo: 'risorsa', nome: r.nome, risorsa: r.nome, capacita: r.oreSettimana,
@@ -84,19 +114,28 @@ export default function Matrice({
       }
     }
     return fila;
-  }, [doc, aperte, pacchettoScelto]);
+  }, [doc, aperte, pacchettoScelto, personaSola]);
 
-  // All'apertura la matrice si mette con la settimana corrente a un terzo da
-  // sinistra: si vuole vedere un po' di passato e molto futuro, e su venticinque
-  // colonne partire dall'inizio della commessa vuol dire scorrere ogni volta
-  // prima di vedere qualcosa.
-  useEffect(() => {
+  // La matrice si mette con la settimana corrente a un terzo da sinistra: si
+  // vuole vedere un po' di passato e molto futuro, e su cinquanta colonne
+  // partire dall'inizio della commessa vuol dire scorrere ogni volta prima di
+  // vedere qualcosa.
+  //
+  // È anche il bottone «oggi», perché è lo stesso gesto: scorrendo la colonna
+  // di adesso si perde, ed è la linea che divide lo speso dalla previsione.
+  const vaiAOggi = useCallback(() => {
     const box = scorrevole.current;
     const colonna = box?.querySelector('.pg-w-ora');
     if (box && colonna instanceof HTMLElement) {
       box.scrollLeft = Math.max(0, colonna.offsetLeft - box.clientWidth / 3);
     }
-  }, [doc.id]);
+  }, []);
+
+  useEffect(() => { vaiAOggi(); }, [doc.id, vaiAOggi]);
+  // Cambiando densità cambiano tutte le distanze: senza rimetterla a posto, la
+  // colonna di oggi finisce fuori schermo proprio mentre si stringe per vedere
+  // di più.
+  useEffect(() => { vaiAOggi(); }, [densita, vaiAOggi]);
 
   const rettangolo = () => {
     const a = ancora || sel;
@@ -121,6 +160,10 @@ export default function Matrice({
     }
     return elenco;
   };
+
+  /** Le ore come si scrivono a questa densità. @param {number} ore */
+  const scritte = ore => (
+    DENSITA[densita].intere ? oreBrevi(Math.round(ore)) : oreBrevi(ore));
 
   /** @param {Riga} riga @param {number} colonna */
   const valore = (riga, colonna) => (riga.tipo === 'pacchetto'
@@ -205,6 +248,12 @@ export default function Matrice({
   }
 
   const gruppiMese = perMese(settimane);
+  // Il numero d'ordine di ogni persona: serve alla zebra, che alterna per
+  // persona e non per riga.
+  const indiciPersona = new Map(doc.risorse.map((r, i) => [r.nome, i]));
+  // Le settimane che aprono un mese: con cinquanta colonne la fascia in cima
+  // non basta a tenere il segno, e una linea verticale sì.
+  const inizioMese = new Set(gruppiMese.map(g => g.settimane[0]));
 
   if (!doc.risorse.length) {
     return (
@@ -214,17 +263,63 @@ export default function Matrice({
     );
   }
 
+  const tutteAperte = doc.risorse.length > 0 && doc.risorse.every(r => aperte.includes(r.nome));
+
   return (
     <div className="pg-matrice-guscio">
+      <div className="pg-barra">
+        <button type="button" className="pg-barra-btn" onClick={vaiAOggi} title="Riporta a schermo la settimana di adesso">
+          oggi
+        </button>
+        <button
+          type="button"
+          className="pg-barra-btn"
+          onClick={() => setAperte(tutteAperte ? [] : doc.risorse.map(r => r.nome))}
+        >
+          {tutteAperte ? 'chiudi tutte' : 'apri tutte'}
+        </button>
+
+        {/* Una persona sola. Con dieci righe aperte le sotto-righe sono
+            sessanta, e la domanda quasi sempre è su una persona: le altre nove
+            in quel momento sono rumore. */}
+        <select
+          className="pg-filtro"
+          value={personaSola}
+          onChange={e => setPersonaSola(e.target.value)}
+          title="Restringi la matrice a una persona sola"
+        >
+          <option value="">tutte le persone</option>
+          {doc.risorse.map(r => <option key={r.nome} value={r.nome}>solo {r.nome}</option>)}
+        </select>
+
+        <span className="pg-barra-sp" />
+
+        <span className="eyebrow">densità</span>
+        {Object.entries(DENSITA).map(([chiave, { etichetta }]) => (
+          <button
+            type="button"
+            key={chiave}
+            className={`pg-barra-btn${densita === chiave ? ' scelto' : ''}`}
+            onClick={() => cambiaDensita(/** @type {import('./densita.js').Densita} */ (chiave))}
+          >
+            {etichetta}
+          </button>
+        ))}
+        <span className="pg-barra-conto">{settimane.length} settimane · {doc.risorse.length} persone</span>
+      </div>
+
       <div
-        className="pg-matrice"
+        className={`pg-matrice pg-densita-${densita}`}
         ref={scorrevole}
         tabIndex={0}
         onKeyDown={tasti}
         onMouseUp={() => { trascina.current = null; }}
         onMouseLeave={() => { trascina.current = null; }}
       >
-        <div className="pg-griglia">
+        <div
+          className="pg-griglia"
+          style={/** @type {import('react').CSSProperties} */ ({ '--pg-w': `${DENSITA[densita].w}px` })}
+        >
           {/* La fascia dei mesi: con venticinque colonne è l'unico modo di
               sapere dove si è senza contare le settimane. */}
           <div className="pg-riga pg-riga-mesi">
@@ -240,8 +335,11 @@ export default function Matrice({
           <div className="pg-riga pg-riga-testa">
             <div className="pg-nome pg-nome-angolo eyebrow">risorsa</div>
             {settimane.map(w => (
-              <div key={w} className={`pg-w${w === settimanaOra ? ' pg-w-ora' : ''}`}>
-                <span className="pg-w-iso">W{w.slice(6)}</span>
+              <div key={w} className={`pg-w${w === settimanaOra ? ' pg-w-ora' : ''}${inizioMese.has(w) ? ' pg-mese-inizio' : ''}${sel.c === settimane.indexOf(w) ? ' pg-colonna-scelta' : ''}`}>
+                {/* La «W» sparisce alla densità più stretta: a ventotto pixel
+                    è la lettera che manda fuori il numero, ed è anche la meno
+                    utile — la colonna delle settimane si sa che è. */}
+                <span className="pg-w-iso"><span className="pg-w-w">W</span>{w.slice(6)}</span>
                 <span className="pg-w-giorno">{lunediDellaSettimana(w).slice(8)}/{lunediDellaSettimana(w).slice(5, 7)}</span>
               </div>
             ))}
@@ -256,7 +354,18 @@ export default function Matrice({
               return { w, c, v };
             });
             return (
-              <div key={`${riga.risorsa}|${riga.pacchettoId || 'tot'}|${riga.tipo}`} className={`pg-riga pg-riga-${riga.tipo}${riga.aperta ? ' pg-aperta' : ''}`}>
+              <div
+                key={`${riga.risorsa}|${riga.pacchettoId || 'tot'}|${riga.tipo}`}
+                className={[
+                  'pg-riga', `pg-riga-${riga.tipo}`,
+                  riga.aperta ? 'pg-aperta' : '',
+                  // A righe alterne, contando le **persone** e non le righe:
+                  // una persona aperta resta un blocco solo con le sue
+                  // sotto-righe, che è quello che si segue con l'occhio.
+                  (indiciPersona.get(riga.risorsa) || 0) % 2 ? 'pg-dispari' : '',
+                  r === sel.r ? 'pg-riga-scelta' : '',
+                ].filter(Boolean).join(' ')}
+              >
                 <div
                   className="pg-nome"
                   onClick={() => {
@@ -293,7 +402,12 @@ export default function Matrice({
                         `pg-sat-${sat}`,
                         w === settimanaOra ? 'pg-w-ora' : '',
                         w < settimanaOra ? 'pg-passato' : '',
+                        inizioMese.has(w) ? 'pg-mese-inizio' : '',
                         dentro ? 'pg-dentro' : '',
+                        // La colonna in cui si sta, segnata per tutta l'altezza:
+                        // su cinquanta colonne, guardando la riga in fondo non
+                        // si sa più in che settimana si è.
+                        sel.c === c ? 'pg-colonna-scelta' : '',
                         scelta ? 'pg-scelta' : '',
                       ].filter(Boolean).join(' ')}
                       onMouseDown={e => {
@@ -334,7 +448,7 @@ export default function Matrice({
                             if (ore !== null) muovi(passo[0], ev.shiftKey ? -passo[1] : passo[1], false);
                           }}
                         />
-                      ) : oreBrevi(v)}
+                      ) : scritte(v)}
 
                       {/* Il quadratino che ripete il valore. Solo in
                           orizzontale: verso il basso vorrebbe dire copiare le
@@ -379,7 +493,7 @@ export default function Matrice({
                   );
                 })}
 
-                <div className="pg-tot">{oreBrevi(totale)}</div>
+                <div className="pg-tot">{scritte(totale)}</div>
               </div>
             );
           })}
@@ -387,8 +501,8 @@ export default function Matrice({
           <div className="pg-riga pg-riga-piede">
             <div className="pg-nome">totale settimana</div>
             {settimane.map(w => (
-              <div key={w} className={`pg-cella pg-cella-piede${w === settimanaOra ? ' pg-w-ora' : ''}`}>
-                {oreBrevi(doc.risorse.reduce((s, r) => s + oreRisorsaSettimana(doc, r.nome, w), 0))}
+              <div key={w} className={`pg-cella pg-cella-piede${w === settimanaOra ? ' pg-w-ora' : ''}${inizioMese.has(w) ? ' pg-mese-inizio' : ''}`}>
+                {scritte(doc.risorse.reduce((s, r) => s + oreRisorsaSettimana(doc, r.nome, w), 0))}
               </div>
             ))}
             <div className="pg-tot">{oreBrevi(Object.values(doc.carico).reduce((s, o) => s + o, 0))}</div>
@@ -421,6 +535,9 @@ export default function Matrice({
 
       <div className="pg-legenda">
         <span>frecce per muoversi · una cifra per scrivere · ⇧+frecce per un intervallo · ⌘Z annulla</span>
+        {DENSITA[densita].intere && (
+          <span className="pg-legenda-nota">ore arrotondate all&apos;intero: le mezze ore ci sono, si rivedono a densità «stretta»</span>
+        )}
         <span className="pg-legenda-sp" />
         <span className="pg-legenda-voce"><span className="pg-campione pg-sat-soglia" /> in soglia</span>
         <span className="pg-legenda-voce"><span className="pg-campione pg-sat-sopra" /> oltre la capacità</span>

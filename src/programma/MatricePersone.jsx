@@ -19,10 +19,17 @@
 // **Le righe si aprono, come nella matrice di commessa.** Chiusa è il totale
 // della persona, aperta è una sotto-riga per commessa — e solo quelle in cui
 // ha davvero delle ore.
-import { useEffect, useMemo, useRef, useState } from 'react';
+//
+// **La densità è la stessa dell'altra matrice**, letta dallo stesso posto
+// (`densita.js`): qui le colonne sono ancora più di là — l'unione degli
+// orizzonti di tutti i programmi accesi, fino a sessanta settimane — e con dieci
+// persone il problema è identico. Stringere in una e non nell'altra farebbe due
+// tabelle diverse a guardarsi.
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { lunediDellaSettimana } from '../tempo.js';
 import { caricoPersone, livelloSaturazione, perMese } from '../programma.js';
 import { oreBrevi } from './formato.js';
+import { DENSITA, useDensita } from './densita.js';
 
 /** @typedef {import('../programma.js').DocProgramma} DocProgramma */
 
@@ -43,6 +50,7 @@ export default function MatricePersone({
   programmi, settimane, settimanaOra, inCaricamento = false, onApriCommessa,
 }) {
   const [aperte, setAperte] = useState(/** @type {string[]} */ ([]));
+  const [densita, cambiaDensita] = useDensita();
   const scorrevole = useRef(/** @type {HTMLDivElement|null} */ (null));
 
   const persone = useMemo(
@@ -50,17 +58,24 @@ export default function MatricePersone({
     [programmi, settimane]);
 
   // Come nella matrice di commessa: la settimana corrente a un terzo da
-  // sinistra, perché è la colonna da cui si guarda avanti.
-  useEffect(() => {
+  // sinistra, perché è la colonna da cui si guarda avanti — e lo stesso gesto
+  // è il bottone «oggi», perché scorrendo quella colonna si perde.
+  const vaiAOggi = useCallback(() => {
     const box = scorrevole.current;
     const colonna = box?.querySelector('.pg-w-ora');
     if (box && colonna instanceof HTMLElement) {
       box.scrollLeft = Math.max(0, colonna.offsetLeft - box.clientWidth / 3);
     }
-  }, [settimane.length]);
+  }, []);
+
+  useEffect(() => { vaiAOggi(); }, [settimane.length, densita, vaiAOggi]);
 
   const gruppiMese = perMese(settimane);
   const sovrapposti = persone.filter(p => p.sovrapposte.length);
+  const inizioMese = new Set(gruppiMese.map(g => g.settimane[0]));
+  /** Le ore come si scrivono a questa densità. @param {number} ore */
+  const scritte = ore => (DENSITA[densita].intere ? oreBrevi(Math.round(ore)) : oreBrevi(ore));
+  const tutteAperte = persone.length > 0 && persone.every(p => aperte.includes(p.nome));
 
   if (!persone.length) {
     return (
@@ -76,8 +91,37 @@ export default function MatricePersone({
 
   return (
     <div className="pg-matrice-guscio">
-      <div className="pg-matrice" ref={scorrevole}>
-        <div className="pg-griglia">
+      <div className="pg-barra">
+        <button type="button" className="pg-barra-btn" onClick={vaiAOggi} title="Riporta a schermo la settimana di adesso">
+          oggi
+        </button>
+        <button
+          type="button"
+          className="pg-barra-btn"
+          onClick={() => setAperte(tutteAperte ? [] : persone.map(p => p.nome))}
+        >
+          {tutteAperte ? 'chiudi tutte' : 'apri tutte'}
+        </button>
+        <span className="pg-barra-sp" />
+        <span className="eyebrow">densità</span>
+        {Object.entries(DENSITA).map(([chiave, { etichetta }]) => (
+          <button
+            type="button"
+            key={chiave}
+            className={`pg-barra-btn${densita === chiave ? ' scelto' : ''}`}
+            onClick={() => cambiaDensita(/** @type {import('./densita.js').Densita} */ (chiave))}
+          >
+            {etichetta}
+          </button>
+        ))}
+        <span className="pg-barra-conto">{settimane.length} settimane · {persone.length} persone</span>
+      </div>
+
+      <div className={`pg-matrice pg-densita-${densita}`} ref={scorrevole}>
+        <div
+          className="pg-griglia"
+          style={/** @type {import('react').CSSProperties} */ ({ '--pg-w': `${DENSITA[densita].w}px` })}
+        >
           <div className="pg-riga pg-riga-mesi">
             <div className="pg-nome pg-nome-angolo" />
             {gruppiMese.map(g => (
@@ -91,8 +135,8 @@ export default function MatricePersone({
           <div className="pg-riga pg-riga-testa">
             <div className="pg-nome pg-nome-angolo eyebrow">persona</div>
             {settimane.map(w => (
-              <div key={w} className={`pg-w${w === settimanaOra ? ' pg-w-ora' : ''}`}>
-                <span className="pg-w-iso">W{w.slice(6)}</span>
+              <div key={w} className={`pg-w${w === settimanaOra ? ' pg-w-ora' : ''}${inizioMese.has(w) ? ' pg-mese-inizio' : ''}`}>
+                <span className="pg-w-iso"><span className="pg-w-w">W</span>{w.slice(6)}</span>
                 <span className="pg-w-giorno">{lunediDellaSettimana(w).slice(8)}/{lunediDellaSettimana(w).slice(5, 7)}</span>
               </div>
             ))}
@@ -124,16 +168,17 @@ export default function MatricePersone({
                           'pg-cella', `pg-sat-${sat}`,
                           w === settimanaOra ? 'pg-w-ora' : '',
                           w < settimanaOra ? 'pg-passato' : '',
+                          inizioMese.has(w) ? 'pg-mese-inizio' : '',
                         ].filter(Boolean).join(' ')}
                         title={sat === 'sopra'
                           ? `${persona.nome}, ${w}: ${oreBrevi(ore)} h su ${persona.capacita || '—'} — ${persona.commesse.filter(c => c.ore[w]).map(c => `${c.nome} ${oreBrevi(c.ore[w])}`).join(' + ')}`
                           : undefined}
                       >
-                        {oreBrevi(ore)}
+                        {scritte(ore)}
                       </div>
                     );
                   })}
-                  <div className="pg-tot">{oreBrevi(persona.totale)}</div>
+                  <div className="pg-tot">{scritte(persona.totale)}</div>
                 </div>
 
                 {aperta && persona.commesse.map(c => (
@@ -149,12 +194,13 @@ export default function MatricePersone({
                           'pg-cella',
                           w === settimanaOra ? 'pg-w-ora' : '',
                           w < settimanaOra ? 'pg-passato' : '',
+                          inizioMese.has(w) ? 'pg-mese-inizio' : '',
                         ].filter(Boolean).join(' ')}
                       >
-                        {oreBrevi(c.ore[w] || 0)}
+                        {scritte(c.ore[w] || 0)}
                       </div>
                     ))}
-                    <div className="pg-tot">{oreBrevi(c.totale)}</div>
+                    <div className="pg-tot">{scritte(c.totale)}</div>
                   </div>
                 ))}
                 {aperta && !persona.commesse.length && (
@@ -169,11 +215,11 @@ export default function MatricePersone({
           <div className="pg-riga pg-riga-piede">
             <div className="pg-nome">totale settimana</div>
             {settimane.map(w => (
-              <div key={w} className={`pg-cella pg-cella-piede${w === settimanaOra ? ' pg-w-ora' : ''}`}>
-                {oreBrevi(persone.reduce((s, p) => s + (p.ore[w] || 0), 0))}
+              <div key={w} className={`pg-cella pg-cella-piede${w === settimanaOra ? ' pg-w-ora' : ''}${inizioMese.has(w) ? ' pg-mese-inizio' : ''}`}>
+                {scritte(persone.reduce((s, p) => s + (p.ore[w] || 0), 0))}
               </div>
             ))}
-            <div className="pg-tot">{oreBrevi(persone.reduce((s, p) => s + p.totale, 0))}</div>
+            <div className="pg-tot">{scritte(persone.reduce((s, p) => s + p.totale, 0))}</div>
           </div>
         </div>
       </div>
@@ -187,11 +233,20 @@ export default function MatricePersone({
           : `somma di ${programmi.length} programmi accesi`}</span>
         <span className="pg-legenda-voce">·</span>
         {sovrapposti.length ? (
+          // Con due o tre persone le settimane si scrivono per nome, che è la
+          // risposta completa. Con dieci non ci stanno, e l'avviso finiva
+          // troncato a metà parola: sopra le tre resta il nome — che è la metà
+          // che serve per andare a guardare — e delle settimane resta il conto.
           <span className="pg-persone-avviso">
-            oltre la capacità: {sovrapposti.map(p => `${p.nome} (${p.sovrapposte.map(w => `W${w.slice(6)}`).join(', ')})`).join(' · ')}
+            oltre la capacità: {sovrapposti.map(p => (sovrapposti.length <= 3
+              ? `${p.nome} (${p.sovrapposte.map(w => `W${w.slice(6)}`).join(', ')})`
+              : `${p.nome} (${p.sovrapposte.length} sett.)`)).join(' · ')}
           </span>
         ) : (
           <span>nessuno oltre la sua capacità in queste settimane</span>
+        )}
+        {DENSITA[densita].intere && (
+          <span className="pg-legenda-nota">ore arrotondate all&apos;intero</span>
         )}
         <span className="pg-legenda-sp" />
         <span className="pg-legenda-voce"><span className="pg-campione pg-sat-soglia" /> in soglia</span>

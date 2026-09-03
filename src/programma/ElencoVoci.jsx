@@ -9,12 +9,23 @@
 // parola: un bordo a sinistra e una parola scritta. Non per colore soltanto —
 // la differenza fra una voce prevista, una attiva e una fatta è la prima cosa
 // che si guarda, e non deve dipendere da come uno vede i colori.
+//
+// **Dieci lavorazioni scomposte in trenta sotto-voci sono quaranta righe.** A
+// quel punto due cose che con sei voci non servivano diventano necessarie: il
+// **pacchetto scritto su ogni riga** — con il filtro sui pacchetti si vede una
+// commessa alla volta, ma leggendola tutta non si sa più dove si è — e la
+// **lavorazione che si chiude**, perché il più delle volte si cerca una
+// lavorazione fra dieci e non una sotto-voce fra trenta. Chiuse tutte, l'elenco
+// torna a essere le dieci righe che sono la commessa.
 import { useMemo, useState } from 'react';
 import {
   alberoVoci, statoVoce, eFoglia, oreCarico, ETICHETTE_STATO,
 } from '../programma.js';
 import { STATUS_LABELS } from '../taskModel.js';
 import { oreBrevi } from './formato.js';
+import { readPref, writePref } from '../viewPrefs.js';
+
+const CHIAVE_CHIUSE = 'md_pg_voci_chiuse_v1';
 
 /** @typedef {import('../programma.js').DocProgramma} DocProgramma */
 /** @typedef {import('../programma.js').Voce} Voce */
@@ -58,6 +69,20 @@ export default function ElencoVoci({
   const [filtroStato, setFiltroStato] = useState('');
   const [scoperte, setScoperte] = useState(soloScoperte);
   const [conScartate, setConScartate] = useState(false);
+  // Le lavorazioni chiuse si tengono per id e si ricordano: si tiene l'elenco
+  // dei **chiusi** e non degli aperti, così una lavorazione appena scomposta
+  // nasce aperta invece che nascosta.
+  const [chiuse, setChiuse] = useState(() => {
+    const salvate = readPref(CHIAVE_CHIUSE, []);
+    return /** @type {string[]} */ (Array.isArray(salvate) ? salvate.filter(v => typeof v === 'string') : []);
+  });
+
+  /** @param {string} id */
+  const apriChiudi = id => setChiuse(prec => {
+    const dopo = prec.includes(id) ? prec.filter(x => x !== id) : [...prec, id];
+    writePref(CHIAVE_CHIUSE, dopo);
+    return dopo;
+  });
 
   const aperte = useMemo(() => new Set(attivita.map(t => t.id)), [attivita]);
 
@@ -69,6 +94,12 @@ export default function ElencoVoci({
   ), [doc]);
 
   const fila = alberoVoci(doc, v => {
+    // Una figlia di una lavorazione chiusa non si mostra — a qualunque
+    // profondità: chiudere una lavorazione deve chiudere il ramo, non un piano.
+    for (let p = v.padreId, giro = 0; p && giro < 8; giro++) {
+      if (chiuse.includes(p)) return false;
+      p = doc.voci.find(x => x.id === p)?.padreId || null;
+    }
     const stato = statoVoce(v, aperte, poolPronto);
     if (stato === 'scartata' && !conScartate) return false;
     if (filtroPacchetto && v.pacchettoId !== filtroPacchetto) return false;
@@ -77,6 +108,12 @@ export default function ElencoVoci({
     if (scoperte && !(v.pacchettoId && pacchettiScoperti.has(v.pacchettoId))) return false;
     return true;
   });
+
+  const contenitori = doc.voci.filter(v => doc.voci.some(f => f.padreId === v.id)).map(v => v.id);
+  // Le ore di quello che si sta guardando, contando **solo le foglie**: sommare
+  // anche le lavorazioni conterebbe ogni ora due volte.
+  const oreMostrate = fila.reduce((somma, { voce }) => (
+    eFoglia(doc, voce.id) && !voce.scartata ? somma + voce.ore : somma), 0);
 
   /** @param {string} id @param {boolean} conShift */
   function spunta(id, conShift) {
@@ -124,7 +161,23 @@ export default function ElencoVoci({
         >
           anche le scartate
         </button>
+        {/* Chiuse tutte, quaranta righe tornano a essere le dieci lavorazioni
+            che sono la commessa. */}
+        {contenitori.length > 0 && (
+          <button
+            type="button"
+            className="pg-filtro pg-filtro-bottone"
+            onClick={() => {
+              const dopo = contenitori.every(id => chiuse.includes(id)) ? [] : contenitori;
+              setChiuse(dopo);
+              writePref(CHIAVE_CHIUSE, dopo);
+            }}
+          >
+            {contenitori.every(id => chiuse.includes(id)) ? 'apri le lavorazioni' : 'chiudi le lavorazioni'}
+          </button>
+        )}
         <span className="pg-filtri-sp" />
+        <span className="pg-conto-voci">{fila.length} righe · {oreBrevi(oreMostrate)} h</span>
         {selezione.length > 0 && (
           <>
             <span className="pg-selezionate">{selezione.length} selezionate</span>
@@ -140,6 +193,7 @@ export default function ElencoVoci({
         {fila.map(({ voce, livello }) => {
           const stato = statoVoce(voce, aperte, poolPronto);
           const contenitore = !eFoglia(doc, voce.id);
+          const pacchetto = doc.pacchetti.find(p => p.id === voce.pacchettoId);
           const delta = voce.ore - voce.oreIniziali;
           return (
             <div
@@ -155,8 +209,26 @@ export default function ElencoVoci({
                 onClick={e => { e.stopPropagation(); spunta(voce.id, /** @type {any} */ (e).shiftKey); }}
                 onChange={() => {}}
               />
-              <span className="pg-voce-segno">{stato === 'fatta' ? '✓' : (stato === 'attiva' ? '⟶' : '')}</span>
+              {contenitore ? (
+                <button
+                  type="button"
+                  className="pg-voce-caret"
+                  onClick={e => { e.stopPropagation(); apriChiudi(voce.id); }}
+                  aria-label={chiuse.includes(voce.id) ? 'Apri la lavorazione' : 'Chiudi la lavorazione'}
+                >
+                  {chiuse.includes(voce.id) ? '▸' : '▾'}
+                </button>
+              ) : (
+                <span className="pg-voce-segno">{stato === 'fatta' ? '✓' : (stato === 'attiva' ? '⟶' : '')}</span>
+              )}
               <span className="pg-voce-titolo">{voce.titolo}</span>
+              {/* Il pacchetto su ogni riga. Il filtro in cima serve a guardarne
+                  uno per volta; leggendo tutta la commessa, senza, non si sa più
+                  in quale si è. */}
+              <span className="pg-voce-pacchetto">
+                {pacchetto && <span className="pg-punto" style={pacchetto.colore ? { background: pacchetto.colore } : undefined} />}
+                {pacchetto?.nome || ''}
+              </span>
               <span className="pg-voce-risorsa">{voce.risorsa || '—'}</span>
               <span className={`pg-voce-ore${contenitore ? ' pg-voce-somma' : ''}`}>{oreBrevi(voce.ore)}</span>
               <span className={`pg-voce-delta${delta > 0 ? ' su' : ''}`}>

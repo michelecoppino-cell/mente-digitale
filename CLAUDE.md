@@ -39,8 +39,8 @@ secondi. La CI esegue tutti e quattro i comandi a ogni push e ogni PR.
 3. Niente push diretto su `main`: branch, PR, merge.
 4. Se hai toccato uno degli strati provati (`graphCore.js`, `api.js`,
    `taskStore.js`, `taskMigrazione.js`, `paraConfig.js`, `poolAttivita.js`, `programma.js`,
-   `programmaStore.js`, `captureParse.js`, `deadlineReminders.js`,
-   `calendarioLavoro.js`, `scripts/ics.mjs`),
+   `programmaStore.js`, `programmaExcel.js`, `xlsx.js`, `captureParse.js`,
+   `deadlineReminders.js`, `calendarioLavoro.js`, `scripts/ics.mjs`),
    aggiungi la verifica che avrebbe
    intercettato quello che hai corretto. Le prove si sono rotte una volta e
    nessuno se n'è accorto per settimane: è successo perché nessuna misura
@@ -114,6 +114,16 @@ stata fatta). Vale anche il contrario: da telefono, dopo una scelta, il fuoco
 appena aperto. È `useMediaQuery('(pointer: coarse)')` in `QuickCapture.jsx`, e
 sta in JS e non nel CSS perché è un comportamento, non un aspetto.
 
+**Un consuntivo sostituisce, non somma.** Le ore vere di una settimana —
+incollate da «Ore registrate», o ripartite da `conSpesoRipartito` — sono la
+risposta definitiva su quel tratto: si scrivono *sopra* le celle previste. Se si
+sommassero, reincollare lo stesso foglio raddoppierebbe il mese, e sarebbe una
+cosa che si scopre dal margine sbagliato tre settimane dopo. Da qui anche il
+resto: una cella lasciata vuota nell'incollato **non azzera** (chi corregge una
+settimana seleziona tutto il rettangolo, e le altre colonne sono vuote perché
+non le ha toccate), e le righe che non si capiscono si mostrano invece di
+sparire.
+
 **Il calendario di lavoro è uno specchio, e si legge soltanto.** Il file su
 OneDrive lo riscrive intero una GitHub Action ogni paio d'ore: qualunque cosa si
 scrivesse da qui sopravviverebbe fino al giro dopo e poi sparirebbe in silenzio.
@@ -157,6 +167,8 @@ che ha già smesso di funzionare.
 | `src/calendarioLavoro.js` | lo specchio del calendario aziendale: cosa c'è nel file su OneDrive e come diventa un evento nella forma di Graph |
 | `src/programma.js` | il Programma di commessa: i conti, le chiavi del carico, lo stato derivato di una voce, e il carico di una persona su tutte le commesse. Niente rete, niente React: è il file su cui girano le prove |
 | `src/programmaStore.js` | gli stessi programmi su OneDrive: registro, un documento per commessa, `reapply` che unisce per chiave |
+| `src/programmaExcel.js` | il foglio che esce (tre fogli: riepilogo, matrice, voci) e le ore vere che rientrano incollate. Puro, e il foglio Matrice esce nella stessa forma in cui rientra |
+| `src/xlsx.js` | un `.xlsx` vero senza librerie: lo zip «store» e i fogli con le celle in chiaro. Duecento righe invece di mezzo megabyte di JavaScript |
 | `src/programma/` | la vista: la matrice e la sua tastiera, la matrice per persona (in sola lettura, su tutti i programmi accesi), l'elenco voci, il dettaglio, attiva, le voci nuove (a campi o incollate), il riepilogo, la scheda della commessa, la guida |
 | `src/planner/` | la griglia del Piano (misure, colori, conti) e i suoi componenti: settimana, mese, capacità, modale evento |
 | `src/tokens.css` | colori, tipografia, spazi, raggi — la sola fonte |

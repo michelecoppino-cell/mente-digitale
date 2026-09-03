@@ -12,6 +12,8 @@ const { verifica, fine } = creaTabellone();
 const api = await importaModulo('api.js');
 const pg = await importaModulo('programma.js');
 const store = await importaModulo('programmaStore.js');
+const excel = await importaModulo('programmaExcel.js');
+const foglio = await importaModulo('xlsx.js');
 const tempo = await importaModulo('tempo.js');
 
 function pulisci() {
@@ -367,5 +369,141 @@ const sara = righe.find(r => r.nome === 'Sara');
 verifica(!!sara && sara.totale === 0,
   'chi è in anagrafica ma non ha ore ha comunque la sua riga: è il posto in cui si guarda prima di dargliene');
 verifica(pg.caricoPersone([], []).length === 0, 'e senza programmi non c\'è nessuna riga');
+
+console.log('\nIl foglio che esce, e le ore che rientrano\n');
+
+// La scala vera: dieci persone, sei pacchetti, un anno. È a questa scala che i
+// difetti sono difetti — un foglio da tre colonne torna sempre.
+pulisci();
+const grande = await store.creaProgramma('2588 Ampliamento', {
+  codice: '2588', oreVendute: 4200, settimaneDa: '2026-W10', settimaneA: '2026-W22',
+});
+let big = await store.cambiaProgramma(grande.id, d => {
+  let x = d;
+  for (const nome of ['B10 Fondazioni', 'C10 Carpenterie', 'D10 Sismica']) x = pg.conPacchetto(x, { nome });
+  for (const nome of ['Michele', 'Marco', 'Sara', 'Luca', 'Elena', 'Giovanni', 'Chiara', 'Andrea', 'Federica', 'Stefano']) {
+    x = pg.conRisorsa(x, nome, 35);
+  }
+  const [pkB10, pkC10] = x.pacchetti;
+  x = pg.conVoci(x, [{ id: 'madre', titolo: 'Fondazioni corpo A', pacchettoId: pkB10.id, ore: 0 }]);
+  const madre = x.voci[x.voci.length - 1].id;
+  x = pg.conVoci(x, [
+    { titolo: 'Plinti', pacchettoId: pkB10.id, padreId: madre, ore: 120, oreIniziali: 120, risorsa: 'Marco' },
+    { titolo: 'Travi rovesce', pacchettoId: pkB10.id, padreId: madre, ore: 80, oreIniziali: 80, risorsa: 'Luca' },
+  ]);
+  x = pg.conCarico(x, pg.chiaveCarico('Marco', pkB10.id, '2026-W12'), 20);
+  x = pg.conCarico(x, pg.chiaveCarico('Marco', pkC10.id, '2026-W12'), 6);
+  x = pg.conCarico(x, pg.chiaveCarico('Luca', pkB10.id, '2026-W13'), 14.5);
+  return x;
+});
+const [bigB10, bigC10] = big.pacchetti;
+
+// ── La somma dei contenitori, anche in lettura ────────────────────────────────
+// La madre nasce a zero e le figlie pesano 200: se la somma si rifacesse solo
+// alla modifica, un file scritto da fuori — o da una versione di prima —
+// mostrerebbe una lavorazione da zero ore con dentro duecento ore di lavoro.
+verifica(big.voci.find(v => v.titolo === 'Fondazioni corpo A').ore === 200,
+  'le ore di una lavorazione sono la somma delle sue sotto-voci');
+const dalDisco = pg.normalizzaProgramma({
+  ...big,
+  voci: big.voci.map(v => (v.titolo === 'Fondazioni corpo A' ? { ...v, ore: 7 } : v)),
+});
+verifica(dalDisco.voci.find(v => v.titolo === 'Fondazioni corpo A').ore === 200,
+  'e una somma sbagliata nel file si rifà leggendola, non si mostra');
+
+// ── Il file .xlsx ─────────────────────────────────────────────────────────────
+verifica(foglio.lettera(0) === 'A' && foglio.lettera(25) === 'Z' && foglio.lettera(26) === 'AA'
+  && foglio.lettera(51) === 'AZ' && foglio.lettera(52) === 'BA',
+  'le colonne oltre la Z hanno due lettere: cinquanta settimane arrivano alla BA');
+
+const libro = excel.libroProgramma(big, { settimanaOra: '2026-W13' });
+verifica(libro.nomeFile.endsWith('.xlsx') && libro.nomeFile.startsWith('2588-ampliamento-'),
+  'il file porta il nome della commessa e il giorno: due fotografie non si coprono');
+const byte = libro.byte;
+verifica(byte[0] === 0x50 && byte[1] === 0x4b && byte[2] === 0x03 && byte[3] === 0x04,
+  'e comincia con PK: è uno zip, che è quello che un .xlsx è');
+// La coda dell'indice va trovata dove Excel la cerca: negli ultimi 22 byte.
+const coda = new DataView(byte.buffer, byte.byteLength - 22);
+verifica(coda.getUint32(0, true) === 0x06054b50, 'lo zip si chiude con la fine dell\'indice');
+verifica(coda.getUint16(8, true) === 8, 'e dentro ci sono otto pezzi: le quattro parti fisse, gli stili, tre fogli');
+const dentro = new TextDecoder().decode(byte);
+verifica(dentro.includes('2026-W12') && dentro.includes('Marco') && dentro.includes('B10 Fondazioni'),
+  'le settimane, le persone e i pacchetti sono scritti in chiaro nelle celle');
+verifica(dentro.includes('state="frozen"'),
+  'i riquadri sono bloccati: su cinquanta colonne, senza, non si sa più di chi sia la riga');
+verifica(!dentro.includes(']]>') && !/<t[^>]*>[^<]*</.test('') , 'niente resta appeso a metà');
+
+const matrice = excel.righeMatrice(big, ['2026-W12', '2026-W13'], '2026-W13');
+const rigaMarco = matrice.find(r => r[0]?.v === 'Marco');
+verifica(rigaMarco && rigaMarco[1] === '', 'la riga di totale di una persona non porta un pacchetto');
+verifica(rigaMarco[2].v === 26, 'e somma i suoi pacchetti: venti su B10 più sei su C10');
+const rigaB10 = matrice[matrice.indexOf(rigaMarco) + 1];
+verifica(rigaB10[1] === 'B10 Fondazioni' && rigaB10[2].v === 20,
+  'sotto, una riga per pacchetto con le ore di quella settimana');
+
+// ── Le ore che rientrano ─────────────────────────────────────────────────────
+verifica(excel.interpretaSettimana('2026-W12', []) === '2026-W12', 'la settimana com\'esce si rilegge');
+verifica(excel.interpretaSettimana('W12', ['2026-W12']) === '2026-W12',
+  'e anche abbreviata, risolta contro le settimane che il programma conosce');
+verifica(excel.interpretaSettimana('2026-03-18', []) === '2026-W12', 'una data ISO diventa la sua settimana');
+verifica(excel.interpretaSettimana('16/03/2026', []) === '2026-W12', 'e una data all\'italiana pure');
+verifica(excel.interpretaSettimana('ciao', ['2026-W12']) === null, 'quello che non è una settimana non lo diventa');
+
+// Il giro vero: si esporta, si corregge la colonna della settimana finita, si
+// rimanda indietro. Il rettangolo incollato ha la persona scritta una volta
+// sola, sulla riga del totale, e le righe sotto la ereditano.
+const rettangolo = [
+  'Persona\tPacchetto\t2026-W12\t2026-W13',
+  'Marco\t\t26\t',
+  '\tB10 Fondazioni\t31\t',
+  '\tC10 Carpenterie\t4\t',
+  'Luca\t\t\t14,5',
+  '\tB10 Fondazioni\t\t12',
+].join('\n');
+const lettura = excel.leggiOreRegistrate(big, rettangolo, { settimane: ['2026-W12', '2026-W13'] });
+verifica(lettura.celle[pg.chiaveCarico('Marco', bigB10.id, '2026-W12')] === 31,
+  'le ore vere entrano nella cella giusta');
+verifica(lettura.celle[pg.chiaveCarico('Marco', bigC10.id, '2026-W12')] === 4,
+  'e la persona si trascina in giù: la riga del pacchetto non ripete il nome');
+verifica(lettura.celle[pg.chiaveCarico('Luca', bigB10.id, '2026-W13')] === 12,
+  'la seconda persona ricomincia da capo');
+verifica(!Object.keys(lettura.celle).some(k => k.includes('|2026-W13') && k.startsWith('Marco')),
+  'una cella lasciata vuota non azzera: chi corregge una settimana non tocca le altre');
+verifica(!Object.values(lettura.celle).includes(26),
+  'e la riga di somma della persona non si reimporta: sarebbe il totale scritto dentro un pacchetto');
+verifica(lettura.sostituite === 3 && lettura.persone.join(' ') === 'Luca Marco',
+  'prima di applicare si sa quante celle cambiano e di chi');
+
+const applicato = Object.entries(lettura.celle).reduce((d, [k, o]) => pg.conCarico(d, k, o), big);
+verifica(pg.oreCella(applicato, 'Marco', bigB10.id, '2026-W12') === 31,
+  'un consuntivo sostituisce le ore previste, non ci si somma');
+const dueVolte = Object.entries(excel.leggiOreRegistrate(applicato, rettangolo).celle)
+  .reduce((d, [k, o]) => pg.conCarico(d, k, o), applicato);
+verifica(pg.oreCella(dueVolte, 'Marco', bigB10.id, '2026-W12') === 31,
+  'e reincollare lo stesso foglio non raddoppia niente');
+
+const sciolte = excel.leggiOreRegistrate(big, [
+  'Marco | B10 Fondazioni | 2026-W12 | 18',
+  'Nessuno | B10 Fondazioni | 2026-W12 | 9',
+  'due parole soltanto',
+].join('\n'), { settimane: ['2026-W12', '2026-W13'] });
+verifica(sciolte.celle[pg.chiaveCarico('Marco', bigB10.id, '2026-W12')] === 18,
+  'righe sciolte persona|pacchetto|settimana|ore: l\'altro modo di scriverle');
+verifica(sciolte.ignorate.length === 2,
+  'e quello che non si capisce si dice invece di sparire: in un consuntivo una riga persa è un margine sbagliato');
+
+// Il difetto che si vede solo con un orizzonte vero: in una riga sciolta il
+// numero delle ore — «18» — è anche un modo di scrivere la W18, e dentro
+// cinquanta settimane la W18 esiste. Quella riga passava per un'intestazione, e
+// da lì il rettangolo che non c'era: nessun errore, nessuna cella scritta.
+const orizzonte = tempo.settimaneTra('2026-W01', '2026-W52');
+const conW18 = excel.leggiOreRegistrate(big, `Marco | B10 Fondazioni | 2026-W12 | 18`, { settimane: orizzonte });
+verifica(conW18.celle[pg.chiaveCarico('Marco', bigB10.id, '2026-W12')] === 18,
+  'una riga sciolta resta una riga sciolta anche se le sue ore somigliano a una settimana');
+verifica(Object.keys(conW18.celle).length === 1, 'e non ne nasce una seconda cella dal nulla');
+
+const delta = excel.differenza(big, lettura.celle);
+verifica(delta.prima === 40.5 && delta.dopo === 47,
+  'quanto si sta per spostare si sa prima di premere');
 
 fine();
