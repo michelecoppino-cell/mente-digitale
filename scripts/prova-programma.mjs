@@ -208,6 +208,16 @@ const daTesto = pg.conVociIncollate(doc, 'D20 Impianti | Schemi | 40 | Sara\nsol
 verifica(daCampi.aggiunte === daTesto.aggiunte && daCampi.pacchettiNuovi.length === daTesto.pacchettiNuovi.length,
   'i campi separati e l\'incolla producono la stessa cosa');
 
+// La scomposizione usa lo stesso testo incollato, ma con due colonne in meno:
+// `titolo | ore` invece di `pacchetto | titolo | ore | risorsa`. Senza
+// `semplice` il parser leggeva «titolo | ore» come se ore fosse in terza
+// colonna: il titolo diventava il numero delle ore, e le ore restavano a zero.
+const righeSemplici = pg.leggiRigheVoci('Plinti P1-P4 | 80\nsolo titolo', { semplice: true });
+verifica(righeSemplici.righe[0].titolo === 'Plinti P1-P4' && righeSemplici.righe[0].ore === 80,
+  'nella scomposizione «titolo | ore» legge il titolo in prima colonna, non la seconda');
+verifica(righeSemplici.righe[1].titolo === 'solo titolo' && righeSemplici.righe[1].ore === 0,
+  'e una colonna sola resta un titolo con zero ore, come per le voci normali');
+
 console.log('\nSistemare quello che si è già scritto\n');
 
 pulisci();

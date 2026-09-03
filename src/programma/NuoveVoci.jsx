@@ -51,7 +51,7 @@ export default function NuoveVoci({
   // Le righe pronte: quelle con un titolo. Le altre sono la riga in fondo
   // ancora vuota, che deve poter restare lì senza essere un errore.
   const daiCampi = righe.filter(r => r.titolo.trim());
-  const dalTesto = useMemo(() => leggiRigheVoci(testo), [testo]);
+  const dalTesto = useMemo(() => leggiRigheVoci(testo, { semplice }), [testo, semplice]);
   const pronte = modo === 'campi' ? daiCampi : dalTesto.righe;
   const ore = pronte.reduce((s, r) => s + r.ore, 0);
 
