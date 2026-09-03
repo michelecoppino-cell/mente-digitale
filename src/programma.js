@@ -719,13 +719,38 @@ export function vociRadice(doc) {
 }
 
 /**
+ * Il pacchetto di un ramo: quello della voce, o — se non ce l'ha — il primo che
+ * si trova scendendo. Una lavorazione scomposta porta spesso il pacchetto solo
+ * sulle sue sotto-voci, e ordinare per pacchetto lasciando quelle madri tutte
+ * insieme in fondo darebbe l'elenco meno leggibile dei due.
+ * @param {DocProgramma} doc @param {Voce} voce @returns {string|null}
+ */
+function pacchettoDelRamo(doc, voce) {
+  if (voce.pacchettoId) return voce.pacchettoId;
+  for (const f of figlieDi(doc, voce.id)) {
+    const suo = pacchettoDelRamo(doc, f);
+    if (suo) return suo;
+  }
+  return null;
+}
+
+/**
  * Le voci in ordine di albero — la madre, poi le sue figlie — con la
  * profondità, che è il rientro con cui l'elenco le mostra.
+ *
+ * **Con `ordine: 'pacchetto'` i rami di primo livello si raggruppano per
+ * pacchetto**, nell'ordine in cui i pacchetti stanno nella commessa, e le voci
+ * senza pacchetto vanno in fondo. Dentro un pacchetto l'ordine del file non si
+ * tocca: è l'ordine in cui le voci sono state scritte, e vuol dire qualcosa.
+ * Il senso è che l'elenco si legge come si legge la commessa — un pacchetto per
+ * volta — anche quando le voci sono arrivate mescolate da un incollato.
+ *
  * @param {DocProgramma} doc
  * @param {(v: Voce) => boolean} [tieni]
+ * @param {{ ordine?: 'file'|'pacchetto' }} [opts]
  * @returns {{ voce: Voce, livello: number }[]}
  */
-export function alberoVoci(doc, tieni) {
+export function alberoVoci(doc, tieni, opts = {}) {
   /** @type {{ voce: Voce, livello: number }[]} */
   const fila = [];
   /** @param {Voce} v @param {number} livello */
@@ -733,7 +758,18 @@ export function alberoVoci(doc, tieni) {
     fila.push({ voce: v, livello });
     if (livello < 6) for (const f of figlieDi(doc, v.id)) scendi(f, livello + 1);
   };
-  for (const r of vociRadice(doc)) scendi(r, 0);
+
+  let radici = vociRadice(doc);
+  if (opts.ordine === 'pacchetto') {
+    const posto = new Map(doc.pacchetti.map((p, i) => [p.id, i]));
+    const chiave = (/** @type {Voce} */ v) => {
+      const suo = pacchettoDelRamo(doc, v);
+      return suo === null ? Number.MAX_SAFE_INTEGER : (posto.get(suo) ?? Number.MAX_SAFE_INTEGER - 1);
+    };
+    // `sort` è stabile: a parità di pacchetto resta l'ordine del file.
+    radici = [...radici].sort((a, b) => chiave(a) - chiave(b));
+  }
+  for (const r of radici) scendi(r, 0);
   // Il filtro si applica dopo aver costruito l'albero: una figlia che passa il
   // filtro resta visibile anche se sua madre non lo passa, ed è quello che
   // serve quando si filtra per risorsa o per stato.
@@ -781,11 +817,25 @@ export function oreCarico(doc, filtro = {}) {
 /**
  * I cinque numeri della testata.
  *
- * **Ore a finire senza timesheet**: la colonna della settimana corrente taglia
- * la matrice in due. A sinistra c'è il passato, e quelle celle si correggono con
- * quanto è andato davvero quando ci si passa sopra; a destra c'è la previsione.
- * Un dato solo, nessun secondo inserimento — è la stessa approssimazione che si
- * fa a mente guardando un Excel, ed è abbastanza per decidere.
+ * **Lo speso è la matrice a sinistra della settimana di oggi**: quelle celle si
+ * correggono con quanto è andato davvero quando ci si passa sopra (o in blocco,
+ * dal consuntivo del riepilogo). Un dato solo, nessun secondo inserimento — è
+ * la stessa approssimazione che si fa a mente guardando un Excel, ed è
+ * abbastanza per decidere.
+ *
+ * **«A finire» sono le ore stimate meno quelle spese, non le celle a destra.**
+ * Prima era la matrice futura, e leggeva bene solo su una commessa programmata
+ * fino in fondo: qui la programmazione si ferma dove serve, quindi «a finire»
+ * diceva sistematicamente meno del lavoro che restava, e il margine ne usciva
+ * ottimista. Le stime invece ci sono sempre — sono le voci — e quello che resta
+ * da fare è quello che le voci pesano meno quello che si è già speso. Mai
+ * negativo: chi ha già speso più di quanto stimava non ha ore «di credito» da
+ * finire, ha un margine rosso, ed è là che si legge.
+ *
+ * Restano tutt'e due i mondi, e servono a due domande diverse:
+ * `programmate` sono le celle da qui in avanti (quanto lavoro è in calendario),
+ * `aFinire` è quanto ne resta secondo le stime. Il loro delta, per costruzione,
+ * è `daCollocare`.
  *
  * `stimate` e `aPiano` non devono coincidere e non si derivano l'una
  * dall'altra: la voce dice *cosa c'è da fare e quanto pesa*, la cella dice
@@ -802,8 +852,13 @@ export function totali(doc, opts = {}) {
 
   const stimate = oreVoci(doc, tieni);
   const speso = oreCarico(doc, { pacchettoId, a: spostaSettimane(ora, -1) });
-  const aFinire = oreCarico(doc, { pacchettoId, da: ora });
-  const aPiano = speso + aFinire;
+  const programmate = oreCarico(doc, { pacchettoId, da: ora });
+  const aFinire = Math.max(0, stimate - speso);
+  const aPiano = speso + programmate;
+  // Quanto costerà in tutto: quello che è già andato più quello che le stime
+  // dicono che manca. È il numero da cui si misura il margine, perché è il solo
+  // che non dipende da quanto avanti si è arrivati a programmare.
+  const previsione = speso + aFinire;
   // Il metro è il numero contrattuale. Per un pacchetto non esiste un venduto
   // suo: lì il metro sono le sue voci, ed è il delta con le celle a contare.
   const vendute = pacchettoId ? stimate : doc.commessa.oreVendute;
@@ -812,9 +867,11 @@ export function totali(doc, opts = {}) {
     vendute,
     stimate,
     speso,
+    programmate,
     aFinire,
     aPiano,
-    margine: vendute - aPiano,
+    previsione,
+    margine: vendute - previsione,
     daCollocare: stimate - aPiano,
   };
 }
@@ -858,9 +915,10 @@ export function riepilogoPacchetti(doc, opts = {}) {
       listId: null,
       voci: senza.length,
       // Il carico si scrive solo su una riga di pacchetto: queste ore non
-      // stanno in nessuna settimana per costruzione, ed è il dato utile.
-      vendute: stimate, stimate, speso: 0, aFinire: 0, aPiano: 0,
-      margine: stimate, daCollocare: stimate,
+      // stanno in nessuna settimana per costruzione, ed è il dato utile. Da
+      // fare c'è tutto — niente di speso, niente in calendario.
+      vendute: stimate, stimate, speso: 0, programmate: 0, aFinire: stimate,
+      aPiano: 0, previsione: stimate, margine: 0, daCollocare: stimate,
     });
   }
 
@@ -877,8 +935,10 @@ export function riepilogoPacchetti(doc, opts = {}) {
  * @property {number} vendute
  * @property {number} stimate
  * @property {number} speso
- * @property {number} aFinire
+ * @property {number} programmate  le celle da questa settimana in avanti
+ * @property {number} aFinire      stimate meno speso, mai negativo
  * @property {number} aPiano
+ * @property {number} previsione   speso + a finire
  * @property {number} margine
  * @property {number} daCollocare
  */
@@ -953,20 +1013,60 @@ export function oreCella(doc, risorsa, pacchettoId, settimana) {
 }
 
 /**
- * Il totale di una persona in una settimana, dentro questa commessa: è quello
- * che si legge sulla riga chiusa, ed è il numero su cui si colora la cella.
+ * Il totale di una persona in una settimana, dentro questa commessa: è il
+ * numero su cui si colora la cella, e con un pacchetto scelto è il totale
+ * *dentro quel pacchetto* — perché un filtro deve valere anche per le somme,
+ * altrimenti la riga dice una cosa e le celle un'altra.
  * @param {DocProgramma} doc
  * @param {string} risorsa
  * @param {string} settimana
+ * @param {string|null} [pacchettoId]  quando c'è, solo le ore di quel pacchetto
  * @returns {number}
  */
-export function oreRisorsaSettimana(doc, risorsa, settimana) {
+export function oreRisorsaSettimana(doc, risorsa, settimana, pacchettoId = null) {
   let somma = 0;
   for (const [chiave, ore] of Object.entries(doc.carico)) {
-    const [r, , s] = chiave.split('|');
-    if (r === risorsa && s === settimana) somma += ore;
+    const [r, p, s] = chiave.split('|');
+    if (r === risorsa && s === settimana && (!pacchettoId || p === pacchettoId)) somma += ore;
   }
   return somma;
+}
+
+/**
+ * Il totale di un pacchetto in una settimana, su tutte le persone o su una
+ * sola: è il numero della riga chiusa nella matrice, che adesso ha in cima il
+ * pacchetto e non la persona.
+ * @param {DocProgramma} doc
+ * @param {string} pacchettoId
+ * @param {string} settimana
+ * @param {string|null} [risorsa]  quando c'è, solo le sue ore
+ * @returns {number}
+ */
+export function orePacchettoSettimana(doc, pacchettoId, settimana, risorsa = null) {
+  let somma = 0;
+  for (const [chiave, ore] of Object.entries(doc.carico)) {
+    const [r, p, s] = chiave.split('|');
+    if (p === pacchettoId && s === settimana && (!risorsa || r === risorsa)) somma += ore;
+  }
+  return somma;
+}
+
+/**
+ * Le persone che hanno ore in un pacchetto: le sotto-righe che si aprono sotto
+ * la sua. È il gemello di `pacchettiDiRisorsa`, girato — e come quello tiene
+ * dentro anche chi è solo *proposto* su una voce, perché è lì che si va a
+ * scrivere la prima ora.
+ * @param {DocProgramma} doc
+ * @param {string} pacchettoId
+ * @returns {Risorsa[]}
+ */
+export function risorseDiPacchetto(doc, pacchettoId) {
+  const con = new Set(Object.keys(doc.carico)
+    .map(k => k.split('|'))
+    .filter(([, p]) => p === pacchettoId)
+    .map(([r]) => r));
+  for (const v of doc.voci) if (v.pacchettoId === pacchettoId && v.risorsa) con.add(v.risorsa);
+  return doc.risorse.filter(r => con.has(r.nome));
 }
 
 // ── Il carico di una persona su tutte le commesse ───────────────────────────
@@ -1037,6 +1137,7 @@ export function settimaneDellePersone(docs, settimanaOra) {
  * @property {string} nome
  * @property {number} capacita          ore/settimana dichiarate; 0 se nessun programma lo dice
  * @property {Record<string, number>} ore  settimana → ore su tutte le commesse
+ * @property {Record<string, number>} oreIntere  le stesse, senza il filtro sul pacchetto
  * @property {number} totale
  * @property {QuotaCommessa[]} commesse  solo quelle in cui ha davvero delle ore
  * @property {string[]} sovrapposte     le settimane in cui è oltre la capacità
@@ -1053,41 +1154,60 @@ export function settimaneDellePersone(docs, settimanaOra) {
  * generoso che qualcuno gli ha dato, e un falso allarme in questa tabella
  * varrebbe quanto nessun allarme.
  *
+ * **Il filtro sul pacchetto vale anche qui.** Un pacchetto sta dentro una
+ * commessa sola, quindi filtrando resta il carico che quel pacchetto dà a ogni
+ * persona: è la stessa domanda della matrice, letta per riga invece che per
+ * colonna. Con un filtro acceso spariscono le persone che su quel pacchetto non
+ * hanno niente — un elenco di righe a zero non è una risposta — e le
+ * sovrapposizioni restano quelle vere, calcolate sul carico **intero** della
+ * persona: sarebbe una bugia dire che è scarica solo perché si sta guardando un
+ * pacchetto per volta.
+ *
  * @param {{ id: string, nome: string, doc: DocProgramma }[]} programmi
  * @param {string[]} settimane
+ * @param {{ pacchettoId?: string|null }} [filtro]
  * @returns {RigaPersona[]}
  */
-export function caricoPersone(programmi, settimane) {
+export function caricoPersone(programmi, settimane, filtro = {}) {
+  const soloPacchetto = filtro.pacchettoId || null;
   const finestra = new Set(settimane);
   /** @type {Map<string, RigaPersona>} */
   const persone = new Map();
+  /** @type {Map<string, number>} le capacità dichiarate, la più alta vince */
+  const capacita = new Map();
+  /** @type {Map<string, Record<string, number>>} il carico intero, filtro o no */
+  const intero = new Map();
 
   /** @param {string} nome @returns {RigaPersona} */
   const riga = nome => {
     let r = persone.get(nome);
     if (!r) {
-      r = { nome, capacita: 0, ore: {}, totale: 0, commesse: [], sovrapposte: [] };
+      r = { nome, capacita: capacita.get(nome) || 0, ore: {}, oreIntere: {}, totale: 0, commesse: [], sovrapposte: [] };
       persone.set(nome, r);
     }
     return r;
   };
 
-  // Prima le anagrafiche: una persona che c'è ma non ha ancora ore va vista
-  // comunque, altrimenti la riga in cui scriverla non esiste.
   for (const { doc } of programmi) {
     for (const r of doc.risorse) {
-      const p = riga(r.nome);
-      if (r.oreSettimana > p.capacita) p.capacita = r.oreSettimana;
+      if (r.oreSettimana > (capacita.get(r.nome) || 0)) capacita.set(r.nome, r.oreSettimana);
     }
   }
+  // Senza filtro, prima le anagrafiche: una persona che c'è ma non ha ancora
+  // ore va vista comunque, altrimenti la riga in cui scriverla non esiste.
+  if (!soloPacchetto) for (const nome of capacita.keys()) riga(nome);
 
   for (const { id, nome, doc } of programmi) {
     /** @type {Map<string, QuotaCommessa>} */
     const quote = new Map();
     for (const [chiave, ore] of Object.entries(doc.carico)) {
       if (!ore) continue;
-      const [risorsa, , settimana] = chiave.split('|');
+      const [risorsa, pacchettoId, settimana] = chiave.split('|');
       if (!finestra.has(settimana)) continue;
+      const tutte = intero.get(risorsa) || {};
+      tutte[settimana] = (tutte[settimana] || 0) + ore;
+      intero.set(risorsa, tutte);
+      if (soloPacchetto && pacchettoId !== soloPacchetto) continue;
       const p = riga(risorsa);
       p.ore[settimana] = (p.ore[settimana] || 0) + ore;
       p.totale += ore;
@@ -1100,7 +1220,11 @@ export function caricoPersone(programmi, settimane) {
   }
 
   for (const p of persone.values()) {
-    p.sovrapposte = settimane.filter(w => (p.ore[w] || 0) > (p.capacita || ORE_SETTIMANA_DEFAULT));
+    // Il carico intero resta a disposizione della vista: col filtro acceso è
+    // quello che decide il rosso, perché è la persona a essere sovraccarica,
+    // non il pacchetto che si sta guardando.
+    p.oreIntere = intero.get(p.nome) || p.ore;
+    p.sovrapposte = settimane.filter(w => (p.oreIntere[w] || 0) > (p.capacita || ORE_SETTIMANA_DEFAULT));
     // Le commesse che pesano di più in cima: aprendo una riga si vuole sapere
     // subito da dove viene il grosso.
     p.commesse.sort((a, b) => b.totale - a.totale);

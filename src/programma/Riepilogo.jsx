@@ -12,8 +12,8 @@
 //   passato non si sa la distribuzione, si sa il totale: «su A60 Marco ha fatto
 //   novanta ore». Quindi un numero per pacchetto e persona, spalmato
 //   all'indietro sulle settimane passate — il totale è vero, la distribuzione è
-//   dichiaratamente approssimata, che è la stessa promessa delle «ore a finire
-//   senza timesheet».
+//   dichiaratamente approssimata, che è la stessa promessa dello «speso senza
+//   timesheet».
 import { useMemo, useState } from 'react';
 import { riepilogoPacchetti, settimanePassate, spesoPerRisorsa, conSpesoRipartito } from '../programma.js';
 import { oreBrevi } from './formato.js';
@@ -45,6 +45,7 @@ export default function Riepilogo({ doc, settimanaOra, pacchettoScelto, onScegli
         <span className="pg-riep-num">stimate</span>
         <span className="pg-riep-num">speso</span>
         <span className="pg-riep-num">a finire</span>
+        <span className="pg-riep-num">programmate</span>
         <span className="pg-riep-num">a piano</span>
         <span className="pg-riep-num">da collocare</span>
         <span className="pg-riep-azione" />
@@ -71,6 +72,7 @@ export default function Riepilogo({ doc, settimanaOra, pacchettoScelto, onScegli
             <span className="pg-riep-num">{oreBrevi(r.stimate)}</span>
             <span className="pg-riep-num">{oreBrevi(r.speso)}</span>
             <span className="pg-riep-num">{oreBrevi(r.aFinire)}</span>
+            <span className="pg-riep-num">{oreBrevi(r.programmate)}</span>
             <span className="pg-riep-num">{oreBrevi(r.aPiano)}</span>
             {/* Il delta fra le voci e le celle: positivo è lavoro che c'è ma
                 che nessuno sta facendo in nessuna settimana. È il numero da cui
@@ -109,6 +111,7 @@ export default function Riepilogo({ doc, settimanaOra, pacchettoScelto, onScegli
         <span className="pg-riep-num">{oreBrevi(totale.stimate)}</span>
         <span className="pg-riep-num">{oreBrevi(totale.speso)}</span>
         <span className="pg-riep-num">{oreBrevi(totale.aFinire)}</span>
+        <span className="pg-riep-num">{oreBrevi(totale.programmate)}</span>
         <span className="pg-riep-num">{oreBrevi(totale.aPiano)}</span>
         <span className={`pg-riep-num${totale.margine < 0 ? ' pg-riep-scoperto' : ''}`}>
           {conSegno(totale.margine)} margine
@@ -118,8 +121,10 @@ export default function Riepilogo({ doc, settimanaOra, pacchettoScelto, onScegli
 
       <p className="pg-memo">
         stimate sono le ore delle voci · a piano sono le celle della matrice · i due numeri non
-        devono coincidere, e il loro delta è «da collocare» · speso e a finire sono la matrice
-        tagliata in due dalla settimana di oggi
+        devono coincidere, e il loro delta è «da collocare» · speso sono le celle prima di
+        questa settimana, programmate quelle da qui in avanti · a finire sono le stimate meno lo
+        speso, perché la programmazione non si fa mai fino in fondo · il margine è il venduto
+        meno speso più a finire
       </p>
     </div>
   );

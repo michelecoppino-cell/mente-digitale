@@ -1,20 +1,35 @@
 // @ts-check
-// La matrice del carico: una colonna per settimana, una riga per persona.
+// La matrice del carico: una colonna per settimana, una riga per **pacchetto**.
 //
 // È il pezzo difficile del Programma, e le decisioni prese qui dentro sono
 // tutte sullo stesso problema: **queste celle si compilano cento volte**, quindi
 // ogni gesto che costa un giro di mouse in più si paga cento volte.
 //
-// **La riga chiusa è il totale della persona su tutta la commessa**, aperta si
-// spezza in una sotto-riga per pacchetto — e solo nei pacchetti in cui quella
-// persona ha qualcosa. Con sei persone e dodici pacchetti le righe sarebbero
-// settantadue: quello che si guarda a colpo d'occhio è se una persona è carica,
-// il dettaglio si apre dove serve.
+// **Le righe sono il lavoro, non le persone.** È l'esatto contrario della
+// scheda Persone, ed è voluto: là la domanda è «a questa persona quanto ho già
+// dato», qui è «questo pacchetto quando si fa, e chi ci sta sopra». Prima
+// erano tutt'e due per persona, e la domanda sul lavoro non aveva una vista
+// sua: per sapere quante ore c'erano su un pacchetto in una settimana bisognava
+// aprire tutte le righe e sommare a mente le sotto-righe con lo stesso nome.
+//
+// **La riga chiusa è il totale del pacchetto su tutte le persone**, aperta si
+// spezza in una sotto-riga per persona — e solo le persone che su quel
+// pacchetto hanno qualcosa (o che una voce ci propone). Con dodici pacchetti e
+// sei persone le righe sarebbero settantadue: quello che si guarda a colpo
+// d'occhio è quando cade il lavoro, il dettaglio si apre dove serve.
 //
 // **Si scrive solo nelle sotto-righe.** Una riga chiusa non ha una
-// destinazione: le ore andrebbero in quale pacchetto? L'unica eccezione è la
-// persona che ha un pacchetto solo, dove la destinazione è ovvia. Negli altri
+// destinazione: le ore andrebbero a quale persona? L'unica eccezione è il
+// pacchetto con una persona sola, dove la destinazione è ovvia. Negli altri
 // casi la cella non dà errore, **apre la riga**: l'apertura *è* la risposta.
+//
+// **La tinta della saturazione resta quella della persona, non della cella.**
+// In una sotto-riga il numero sono le ore di quella persona *su questo
+// pacchetto*, ma il rosso continua a voler dire una cosa sola — quella persona,
+// quella settimana, è oltre la sua capacità contando tutto quello che ha
+// addosso in questa commessa. Colorare sul numero della cella direbbe che chi
+// ha dieci ore su un pacchetto sta bene, anche con altre trenta due righe più
+// sotto: è esattamente l'allarme che serve, e si perderebbe girando la tabella.
 //
 // **La settimana corrente è una linea, non un riempimento.** Taglia la matrice
 // in due — a sinistra lo speso, a destra la previsione — ed è la cosa che dà
@@ -39,9 +54,16 @@
 //   · **«oggi»** — la colonna di adesso torna al suo posto. Scorrendo la si
 //     perde, ed è la linea che divide lo speso dalla previsione: senza, i
 //     numeri della testata non si sanno più leggere.
-//   · **una persona sola** — dieci righe aperte sono sessanta sotto-righe. Il
-//     più delle volte la domanda è su una persona, e allora le altre nove sono
-//     rumore.
+//   · **una persona sola** — dieci pacchetti aperti sono sessanta sotto-righe.
+//     Il più delle volte la domanda è su una persona, e allora le altre nove
+//     sono rumore. Scegliendone una, anche i totali dei pacchetti diventano i
+//     suoi: una riga chiusa che continuasse a sommare tutti non direbbe più
+//     niente sul filtro acceso.
+//
+// E il filtro dei pacchetti della testata vale **dappertutto**: restano le sue
+// righe, e i totali in fondo e in colonna sono i suoi. Un filtro che lascia in
+// piedi somme di tutto il resto è peggio di nessun filtro, perché il numero
+// sbagliato sembra giusto.
 //
 // E tre cose che si vedono e non si toccano: la riga e la colonna in cui si sta
 // restano segnate mentre si scorre, le righe si alternano di fondo, e il primo
@@ -50,14 +72,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { lunediDellaSettimana } from '../tempo.js';
 import {
-  chiaveCarico, livelloSaturazione, oreCella, oreRisorsaSettimana, pacchettiDiRisorsa,
-  perMese, spalma,
+  chiaveCarico, livelloSaturazione, oreCella, oreRisorsaSettimana, orePacchettoSettimana,
+  risorseDiPacchetto, perMese, spalma,
 } from '../programma.js';
 import { oreBrevi, leggiOre } from './formato.js';
 import { DENSITA, useDensita } from './densita.js';
 
 /** @typedef {import('../programma.js').DocProgramma} DocProgramma */
-/** @typedef {{ tipo: 'risorsa'|'pacchetto', nome: string, risorsa: string, capacita: number, colore: string|null, pacchettoId: string|null, aperta: boolean }} Riga */
+/** @typedef {{ tipo: 'pacchetto'|'risorsa', nome: string, risorsa: string|null, capacita: number, colore: string|null, pacchettoId: string, aperta: boolean }} Riga */
 
 const MESI = ['gen', 'feb', 'mar', 'apr', 'mag', 'giu', 'lug', 'ago', 'set', 'ott', 'nov', 'dic'];
 
@@ -70,7 +92,7 @@ const nomeMese = mese => MESI[Number(mese.slice(5, 7)) - 1] || mese;
  * @param {DocProgramma} props.doc
  * @param {string[]} props.settimane
  * @param {string} props.settimanaOra
- * @param {string|null} props.pacchettoScelto  quando c'è, restano solo le sue sotto-righe
+ * @param {string|null} props.pacchettoScelto  quando c'è, resta solo la sua riga — totali compresi
  * @param {(celle: Record<string, number>) => void} props.onCelle  le ore cambiate, tutte insieme
  * @param {() => void} props.onAnnulla
  * @param {(risorsa: string, pacchettoId: string) => void} [props.onSceltaRiga]
@@ -90,26 +112,31 @@ export default function Matrice({
   const scorrevole = useRef(/** @type {HTMLDivElement|null} */ (null));
   const trascina = useRef(/** @type {'selezione'|'riempi'|null} */ (null));
 
-  // Le righe visibili: una per persona, più le sue sotto-righe se è aperta.
+  // Le righe visibili: una per pacchetto, più le sue sotto-righe se è aperto.
   const righe = useMemo(() => {
     /** @type {Riga[]} */
     const fila = [];
-    for (const r of doc.risorse) {
-      if (personaSola && r.nome !== personaSola) continue;
-      const aperta = aperte.includes(r.nome);
+    const pacchetti = pacchettoScelto
+      ? doc.pacchetti.filter(p => p.id === pacchettoScelto)
+      : doc.pacchetti;
+    for (const p of pacchetti) {
+      const aperto = aperte.includes(p.id);
+      // Con una persona sola scelta, restano i pacchetti in cui ha qualcosa:
+      // gli altri sarebbero righe a zero, cioè rumore travestito da dato.
+      const sue = personaSola
+        ? doc.risorse.filter(r => r.nome === personaSola)
+        : risorseDiPacchetto(doc, p.id);
+      if (personaSola && !risorseDiPacchetto(doc, p.id).some(r => r.nome === personaSola)) continue;
       fila.push({
-        tipo: 'risorsa', nome: r.nome, risorsa: r.nome, capacita: r.oreSettimana,
-        colore: null, pacchettoId: unicoPacchetto(doc, r.nome, pacchettoScelto), aperta,
+        tipo: 'pacchetto', nome: p.nome, risorsa: unicaRisorsa(sue, personaSola),
+        capacita: 0, colore: p.colore, pacchettoId: p.id, aperta: aperto,
       });
-      if (!aperta) continue;
-      const suoi = pacchettoScelto
-        ? doc.pacchetti.filter(p => p.id === pacchettoScelto)
-        : pacchettiDiRisorsa(doc, r.nome);
-      const elenco = suoi.length ? suoi : doc.pacchetti.slice(0, 1);
-      for (const p of elenco) {
+      if (!aperto) continue;
+      const elenco = sue.length ? sue : doc.risorse.slice(0, 1);
+      for (const r of elenco) {
         fila.push({
-          tipo: 'pacchetto', nome: p.nome, risorsa: r.nome, capacita: 0,
-          colore: p.colore, pacchettoId: p.id, aperta: false,
+          tipo: 'risorsa', nome: r.nome, risorsa: r.nome, capacita: r.oreSettimana,
+          colore: null, pacchettoId: p.id, aperta: false,
         });
       }
     }
@@ -155,7 +182,7 @@ export default function Matrice({
     const elenco = [];
     for (let r = q.r1; r <= q.r2; r++) {
       const riga = righe[r];
-      if (!riga?.pacchettoId) continue;
+      if (!riga?.risorsa) continue;
       for (let c = q.c1; c <= q.c2; c++) elenco.push({ riga, colonna: c });
     }
     return elenco;
@@ -166,16 +193,17 @@ export default function Matrice({
     DENSITA[densita].intere ? oreBrevi(Math.round(ore)) : oreBrevi(ore));
 
   /** @param {Riga} riga @param {number} colonna */
-  const valore = (riga, colonna) => (riga.tipo === 'pacchetto'
-    ? oreCella(doc, riga.risorsa, /** @type {string} */ (riga.pacchettoId), settimane[colonna])
-    : oreRisorsaSettimana(doc, riga.risorsa, settimane[colonna]));
+  const valore = (riga, colonna) => (riga.tipo === 'risorsa'
+    ? oreCella(doc, /** @type {string} */ (riga.risorsa), riga.pacchettoId, settimane[colonna])
+    // La riga chiusa somma le persone — tutte, o la sola scelta nel filtro.
+    : orePacchettoSettimana(doc, riga.pacchettoId, settimane[colonna], personaSola || null));
 
   /** Scrive un valore nelle celle indicate. @param {{ riga: Riga, colonna: number }[]} celle @param {number[]} valori */
   function scrivi(celle, valori) {
     /** @type {Record<string, number>} */
     const mappa = {};
     celle.forEach((cella, i) => {
-      const chiave = chiaveCarico(cella.riga.risorsa, /** @type {string} */ (cella.riga.pacchettoId), settimane[cella.colonna]);
+      const chiave = chiaveCarico(/** @type {string} */ (cella.riga.risorsa), cella.riga.pacchettoId, settimane[cella.colonna]);
       mappa[chiave] = valori[Math.min(i, valori.length - 1)];
     });
     if (Object.keys(mappa).length) onCelle(mappa);
@@ -184,10 +212,10 @@ export default function Matrice({
   /** La riga su cui si sta scrivendo, o l'apertura che ci porta. @param {number} r */
   function apriSeServe(r) {
     const riga = righe[r];
-    if (!riga || riga.pacchettoId) return true;
+    if (!riga || riga.risorsa) return true;
     // Non un errore: scrivere in una riga chiusa non ha una destinazione, e
-    // l'apertura è la risposta alla domanda «in quale pacchetto?».
-    setAperte(p => (p.includes(riga.risorsa) ? p : [...p, riga.risorsa]));
+    // l'apertura è la risposta alla domanda «a quale persona?».
+    setAperte(p => (p.includes(riga.pacchettoId) ? p : [...p, riga.pacchettoId]));
     return false;
   }
 
@@ -217,7 +245,7 @@ export default function Matrice({
     if (e.key === ' ') {
       e.preventDefault();
       const riga = righe[sel.r];
-      if (riga) setAperte(p => (p.includes(riga.risorsa) ? p.filter(n => n !== riga.risorsa) : [...p, riga.risorsa]));
+      if (riga) setAperte(p => (p.includes(riga.pacchettoId) ? p.filter(n => n !== riga.pacchettoId) : [...p, riga.pacchettoId]));
       return;
     }
     if (e.key === 'Escape') { setAncora(null); setSpalmatura(null); return; }
@@ -248,22 +276,39 @@ export default function Matrice({
   }
 
   const gruppiMese = perMese(settimane);
-  // Il numero d'ordine di ogni persona: serve alla zebra, che alterna per
-  // persona e non per riga.
-  const indiciPersona = new Map(doc.risorse.map((r, i) => [r.nome, i]));
+  // I pacchetti che la tabella sta mostrando: è da qui che i totali del piede
+  // sanno del filtro.
+  const pacchettiVisti = righe.filter(r => r.tipo === 'pacchetto')
+    .map(r => ({ id: r.pacchettoId }));
+  // Il numero d'ordine di ogni pacchetto: serve alla zebra, che alterna per
+  // pacchetto e non per riga.
+  const indiciPacchetto = new Map(doc.pacchetti.map((p, i) => [p.id, i]));
   // Le settimane che aprono un mese: con cinquanta colonne la fascia in cima
   // non basta a tenere il segno, e una linea verticale sì.
   const inizioMese = new Set(gruppiMese.map(g => g.settimane[0]));
 
+  if (!doc.pacchetti.length) {
+    return (
+      <div className="pg-matrice-vuota">
+        <p className="pg-empty">
+          La matrice ha una riga per pacchetto, e non ce n&apos;è ancora nessuno. I pacchetti si
+          creano in Impostazioni, o nascono da soli incollando delle voci che li nominano.
+        </p>
+      </div>
+    );
+  }
   if (!doc.risorse.length) {
     return (
       <div className="pg-matrice-vuota">
-        <p className="pg-empty">La matrice ha una riga per persona, e non c&apos;è ancora nessuno.</p>
+        <p className="pg-empty">
+          Le ore si danno a qualcuno, e non c&apos;è ancora nessuno: le persone si aggiungono
+          nelle Impostazioni della commessa.
+        </p>
       </div>
     );
   }
 
-  const tutteAperte = doc.risorse.length > 0 && doc.risorse.every(r => aperte.includes(r.nome));
+  const tutteAperte = doc.pacchetti.length > 0 && doc.pacchetti.every(p => aperte.includes(p.id));
 
   return (
     <div className="pg-matrice-guscio">
@@ -274,14 +319,15 @@ export default function Matrice({
         <button
           type="button"
           className="pg-barra-btn"
-          onClick={() => setAperte(tutteAperte ? [] : doc.risorse.map(r => r.nome))}
+          onClick={() => setAperte(tutteAperte ? [] : doc.pacchetti.map(p => p.id))}
         >
           {tutteAperte ? 'chiudi tutte' : 'apri tutte'}
         </button>
 
-        {/* Una persona sola. Con dieci righe aperte le sotto-righe sono
+        {/* Una persona sola. Con dieci pacchetti aperti le sotto-righe sono
             sessanta, e la domanda quasi sempre è su una persona: le altre nove
-            in quel momento sono rumore. */}
+            in quel momento sono rumore. Scelta una, tutti i totali di questa
+            tabella — righe chiuse, colonna «tot», piede — diventano i suoi. */}
         <select
           className="pg-filtro"
           value={personaSola}
@@ -305,7 +351,9 @@ export default function Matrice({
             {etichetta}
           </button>
         ))}
-        <span className="pg-barra-conto">{settimane.length} settimane · {doc.risorse.length} persone</span>
+        <span className="pg-barra-conto">
+          {settimane.length} settimane · {pacchettoScelto ? '1' : doc.pacchetti.length} pacchetti
+        </span>
       </div>
 
       <div
@@ -333,7 +381,7 @@ export default function Matrice({
           </div>
 
           <div className="pg-riga pg-riga-testa">
-            <div className="pg-nome pg-nome-angolo eyebrow">risorsa</div>
+            <div className="pg-nome pg-nome-angolo eyebrow">pacchetto</div>
             {settimane.map(w => (
               <div key={w} className={`pg-w${w === settimanaOra ? ' pg-w-ora' : ''}${inizioMese.has(w) ? ' pg-mese-inizio' : ''}${sel.c === settimane.indexOf(w) ? ' pg-colonna-scelta' : ''}`}>
                 {/* La «W» sparisce alla densità più stretta: a ventotto pixel
@@ -355,37 +403,39 @@ export default function Matrice({
             });
             return (
               <div
-                key={`${riga.risorsa}|${riga.pacchettoId || 'tot'}|${riga.tipo}`}
+                key={`${riga.pacchettoId}|${riga.risorsa || 'tot'}|${riga.tipo}`}
                 className={[
-                  'pg-riga', `pg-riga-${riga.tipo}`,
+                  'pg-riga', `pg-riga-${riga.tipo === 'pacchetto' ? 'risorsa' : 'pacchetto'}`,
                   riga.aperta ? 'pg-aperta' : '',
-                  // A righe alterne, contando le **persone** e non le righe:
-                  // una persona aperta resta un blocco solo con le sue
+                  // A righe alterne, contando i **pacchetti** e non le righe:
+                  // un pacchetto aperto resta un blocco solo con le sue
                   // sotto-righe, che è quello che si segue con l'occhio.
-                  (indiciPersona.get(riga.risorsa) || 0) % 2 ? 'pg-dispari' : '',
+                  (indiciPacchetto.get(riga.pacchettoId) || 0) % 2 ? 'pg-dispari' : '',
                   r === sel.r ? 'pg-riga-scelta' : '',
                 ].filter(Boolean).join(' ')}
               >
                 <div
                   className="pg-nome"
                   onClick={() => {
-                    if (riga.tipo === 'risorsa') {
-                      setAperte(p => (p.includes(riga.risorsa) ? p.filter(n => n !== riga.risorsa) : [...p, riga.risorsa]));
-                    } else if (riga.pacchettoId) {
+                    if (riga.tipo === 'pacchetto') {
+                      setAperte(p => (p.includes(riga.pacchettoId)
+                        ? p.filter(id => id !== riga.pacchettoId)
+                        : [...p, riga.pacchettoId]));
+                    } else if (riga.risorsa) {
                       onSceltaRiga?.(riga.risorsa, riga.pacchettoId);
                     }
                   }}
                 >
-                  {riga.tipo === 'risorsa' ? (
+                  {riga.tipo === 'pacchetto' ? (
                     <>
                       <span className="pg-caret">{riga.aperta ? '▾' : '▸'}</span>
+                      <span className="pg-punto" style={riga.colore ? { background: riga.colore } : undefined} />
                       <span className="pg-nome-testo">{riga.nome}</span>
-                      <span className="pg-cap">{riga.capacita}h/s</span>
                     </>
                   ) : (
                     <>
-                      <span className="pg-punto" style={riga.colore ? { background: riga.colore } : undefined} />
                       <span className="pg-nome-testo">{riga.nome}</span>
+                      <span className="pg-cap">{riga.capacita}h/s</span>
                     </>
                   )}
                 </div>
@@ -393,7 +443,13 @@ export default function Matrice({
                 {celle.map(({ w, c, v }) => {
                   const scelta = sel.r === r && sel.c === c;
                   const dentro = nelRettangolo(r, c);
-                  const sat = riga.tipo === 'risorsa' ? livelloSaturazione(v, riga.capacita) : 'vuota';
+                  // La tinta è la persona, non la cella: dice «questa persona,
+                  // questa settimana, è oltre la sua capacità in questa
+                  // commessa», e conta tutto quello che ha addosso — non le
+                  // sole ore di questo pacchetto, che direbbero sempre di sì.
+                  const sat = riga.tipo === 'risorsa'
+                    ? livelloSaturazione(oreRisorsaSettimana(doc, /** @type {string} */ (riga.risorsa), w), riga.capacita)
+                    : 'vuota';
                   return (
                     <div
                       key={w}
@@ -442,7 +498,7 @@ export default function Matrice({
                             const ore = leggiOre(bozza);
                             // Un valore che non si legge non svuota la cella:
                             // si resta dov'è, e chi ha sbagliato lo vede.
-                            if (ore !== null && riga.pacchettoId) scrivi([{ riga, colonna: c }], [ore]);
+                            if (ore !== null && riga.risorsa) scrivi([{ riga, colonna: c }], [ore]);
                             setBozza(null);
                             scorrevole.current?.focus();
                             if (ore !== null) muovi(passo[0], ev.shiftKey ? -passo[1] : passo[1], false);
@@ -452,9 +508,9 @@ export default function Matrice({
 
                       {/* Il quadratino che ripete il valore. Solo in
                           orizzontale: verso il basso vorrebbe dire copiare le
-                          ore di una persona su un'altra, che non è mai quello
-                          che si intende. */}
-                      {scelta && riga.pacchettoId && bozza === null && (
+                          ore di una persona su un'altra — o peggio, su un altro
+                          pacchetto — che non è mai quello che si intende. */}
+                      {scelta && riga.risorsa && bozza === null && (
                         <span
                           className="pg-maniglia"
                           onMouseDown={e => {
@@ -500,12 +556,19 @@ export default function Matrice({
 
           <div className="pg-riga pg-riga-piede">
             <div className="pg-nome">totale settimana</div>
+            {/* Il piede rispetta i filtri accesi: sommare tutta la commessa
+                sotto una tabella che ne mostra un pezzo darebbe un numero
+                giusto alla domanda sbagliata, e nessuno se ne accorgerebbe. */}
             {settimane.map(w => (
               <div key={w} className={`pg-cella pg-cella-piede${w === settimanaOra ? ' pg-w-ora' : ''}${inizioMese.has(w) ? ' pg-mese-inizio' : ''}`}>
-                {scritte(doc.risorse.reduce((s, r) => s + oreRisorsaSettimana(doc, r.nome, w), 0))}
+                {scritte(pacchettiVisti.reduce(
+                  (s, p) => s + orePacchettoSettimana(doc, p.id, w, personaSola || null), 0))}
               </div>
             ))}
-            <div className="pg-tot">{oreBrevi(Object.values(doc.carico).reduce((s, o) => s + o, 0))}</div>
+            <div className="pg-tot">
+              {scritte(settimane.reduce((s, w) => s + pacchettiVisti.reduce(
+                (q, p) => q + orePacchettoSettimana(doc, p.id, w, personaSola || null), 0), 0))}
+            </div>
           </div>
         </div>
       </div>
@@ -535,6 +598,9 @@ export default function Matrice({
 
       <div className="pg-legenda">
         <span>frecce per muoversi · una cifra per scrivere · ⇧+frecce per un intervallo · ⌘Z annulla</span>
+        <span className="pg-legenda-nota">
+          la tinta è la persona nella settimana, su tutta la commessa — non le ore della cella
+        </span>
         {DENSITA[densita].intere && (
           <span className="pg-legenda-nota">ore arrotondate all&apos;intero: le mezze ore ci sono, si rivedono a densità «stretta»</span>
         )}
@@ -547,16 +613,14 @@ export default function Matrice({
 }
 
 /**
- * Il pacchetto di una persona quando ne ha uno solo: lì scrivere in una riga
- * chiusa ha una destinazione ovvia, e chiedere di aprirla sarebbe un passaggio
- * per niente.
- * @param {DocProgramma} doc
- * @param {string} risorsa
- * @param {string|null} pacchettoScelto
+ * La persona di un pacchetto quando ce n'è una sola — o quella scelta nel
+ * filtro: lì scrivere in una riga chiusa ha una destinazione ovvia, e chiedere
+ * di aprirla sarebbe un passaggio per niente.
+ * @param {import('../programma.js').Risorsa[]} sue  le persone del pacchetto
+ * @param {string} personaSola
  * @returns {string|null}
  */
-function unicoPacchetto(doc, risorsa, pacchettoScelto) {
-  if (pacchettoScelto) return pacchettoScelto;
-  const suoi = pacchettiDiRisorsa(doc, risorsa);
-  return suoi.length === 1 ? suoi[0].id : null;
+function unicaRisorsa(sue, personaSola) {
+  if (personaSola) return personaSola;
+  return sue.length === 1 ? sue[0].nome : null;
 }

@@ -20,6 +20,15 @@
 // della persona, aperta è una sotto-riga per commessa — e solo quelle in cui
 // ha davvero delle ore.
 //
+// **Il filtro dei pacchetti della testata vale anche qui.** Un pacchetto sta in
+// una commessa sola, quindi filtrando questa tabella diventa «di questo
+// pacchetto, chi fa cosa e quando»: è la stessa domanda della matrice, letta
+// per riga invece che per colonna. Restano solo le persone che su quel
+// pacchetto hanno qualcosa — un elenco di righe a zero non è una risposta — ma
+// **le sovrapposizioni continuano a contare il carico intero**: dire che uno è
+// scarico perché si sta guardando un pacchetto per volta sarebbe la bugia che
+// questa vista esiste per non raccontare.
+//
 // **La densità è la stessa dell'altra matrice**, letta dallo stesso posto
 // (`densita.js`): qui le colonne sono ancora più di là — l'unione degli
 // orizzonti di tutti i programmi accesi, fino a sessanta settimane — e con dieci
@@ -44,18 +53,21 @@ const nomeMese = mese => MESI[Number(mese.slice(5, 7)) - 1] || mese;
  * @param {string[]} props.settimane
  * @param {string} props.settimanaOra
  * @param {boolean} [props.inCaricamento]  qualche documento sta ancora arrivando
+ * @param {string|null} [props.pacchettoScelto]  il filtro della testata, se acceso
+ * @param {string} [props.nomePacchetto]  come si chiama, per scriverlo in legenda
  * @param {(programmaId: string) => void} [props.onApriCommessa]
  */
 export default function MatricePersone({
-  programmi, settimane, settimanaOra, inCaricamento = false, onApriCommessa,
+  programmi, settimane, settimanaOra, inCaricamento = false,
+  pacchettoScelto = null, nomePacchetto = '', onApriCommessa,
 }) {
   const [aperte, setAperte] = useState(/** @type {string[]} */ ([]));
   const [densita, cambiaDensita] = useDensita();
   const scorrevole = useRef(/** @type {HTMLDivElement|null} */ (null));
 
   const persone = useMemo(
-    () => caricoPersone(programmi, settimane),
-    [programmi, settimane]);
+    () => caricoPersone(programmi, settimane, { pacchettoId: pacchettoScelto }),
+    [programmi, settimane, pacchettoScelto]);
 
   // Come nella matrice di commessa: la settimana corrente a un terzo da
   // sinistra, perché è la colonna da cui si guarda avanti — e lo stesso gesto
@@ -83,7 +95,9 @@ export default function MatricePersone({
         <p className="pg-empty">
           {inCaricamento
             ? 'Sto leggendo i programmi accesi…'
-            : 'Nessuna persona nei programmi accesi: le persone si aggiungono nelle Impostazioni di una commessa.'}
+            : (pacchettoScelto
+              ? `Nessuno ha ore su ${nomePacchetto || 'questo pacchetto'}: il filtro è ancora acceso in testata.`
+              : 'Nessuna persona nei programmi accesi: le persone si aggiungono nelle Impostazioni di una commessa.')}
         </p>
       </div>
     );
@@ -114,7 +128,10 @@ export default function MatricePersone({
             {etichetta}
           </button>
         ))}
-        <span className="pg-barra-conto">{settimane.length} settimane · {persone.length} persone</span>
+        <span className="pg-barra-conto">
+          {settimane.length} settimane · {persone.length} persone
+          {pacchettoScelto ? ` · solo ${nomePacchetto || 'un pacchetto'}` : ''}
+        </span>
       </div>
 
       <div className={`pg-matrice pg-densita-${densita}`} ref={scorrevole}>
@@ -160,7 +177,10 @@ export default function MatricePersone({
                   </div>
                   {settimane.map(w => {
                     const ore = persona.ore[w] || 0;
-                    const sat = livelloSaturazione(ore, persona.capacita);
+                    // Col filtro acceso la cella dice le ore del pacchetto, ma
+                    // il rosso continua a dire «questa persona è oltre»: conta
+                    // tutto quello che ha addosso, non il pezzo in vista.
+                    const sat = livelloSaturazione(persona.oreIntere[w] || 0, persona.capacita);
                     return (
                       <div
                         key={w}
@@ -171,7 +191,7 @@ export default function MatricePersone({
                           inizioMese.has(w) ? 'pg-mese-inizio' : '',
                         ].filter(Boolean).join(' ')}
                         title={sat === 'sopra'
-                          ? `${persona.nome}, ${w}: ${oreBrevi(ore)} h su ${persona.capacita || '—'} — ${persona.commesse.filter(c => c.ore[w]).map(c => `${c.nome} ${oreBrevi(c.ore[w])}`).join(' + ')}`
+                          ? `${persona.nome}, ${w}: ${oreBrevi(persona.oreIntere[w] || 0)} h su ${persona.capacita || '—'} — ${persona.commesse.filter(c => c.ore[w]).map(c => `${c.nome} ${oreBrevi(c.ore[w])}`).join(' + ')}`
                           : undefined}
                       >
                         {scritte(ore)}
@@ -228,10 +248,15 @@ export default function MatricePersone({
           dire. Un elenco e non un contatore: «tre sovrapposizioni» obbliga a
           cercarle, i nomi no. */}
       <div className="pg-legenda">
-        <span>{programmi.length === 1
-          ? 'un solo programma acceso'
-          : `somma di ${programmi.length} programmi accesi`}</span>
+        <span>{pacchettoScelto
+          ? `solo le ore di ${nomePacchetto || 'un pacchetto'}`
+          : (programmi.length === 1
+            ? 'un solo programma acceso'
+            : `somma di ${programmi.length} programmi accesi`)}</span>
         <span className="pg-legenda-voce">·</span>
+        {/* Le sovrapposizioni si contano sempre sul carico intero, anche col
+            filtro acceso: sono la sola cosa che questa vista esiste per dire,
+            e un filtro non deve poterle spegnere. */}
         {sovrapposti.length ? (
           // Con due o tre persone le settimane si scrivono per nome, che è la
           // risposta completa. Con dieci non ci stanno, e l'avviso finiva

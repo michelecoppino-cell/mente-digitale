@@ -600,7 +600,14 @@ export default function ProgrammaView({
                   <span>vendute <b>{conMigliaia(numeri.vendute)}</b></span>
                   <span>stimate <b>{conMigliaia(numeri.stimate)}</b></span>
                   <span>speso <b>{conMigliaia(numeri.speso)}</b></span>
+                  {/* «A finire» sono le stime meno lo speso, non le celle
+                      future: la programmazione qui non si fa mai completa, e
+                      contare quella direbbe sempre meno lavoro di quanto ne
+                      resta. Le celle future restano a schermo accanto, come
+                      «programmate», perché sono l'altra domanda — quanto di
+                      quel lavoro è già in calendario. */}
                   <span>a finire <b>{conMigliaia(numeri.aFinire)}</b></span>
+                  <span className="muted">programmate <b>{conMigliaia(numeri.programmate)}</b></span>
                 </div>
               </div>
             )}
@@ -768,6 +775,8 @@ export default function ProgrammaView({
             settimane={settimanePersone}
             settimanaOra={settimanaOra}
             inCaricamento={personeInCaricamento}
+            pacchettoScelto={pacchettoScelto}
+            nomePacchetto={pacchetto?.nome || ''}
             onApriCommessa={id => { navigate(`/programma/${id}`); setScheda('matrice'); setPacchettoScelto(null); }}
           />
         ) : scheda === 'matrice' ? (

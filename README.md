@@ -774,6 +774,25 @@ anche un «come si usa», perché il pannello ha quattro oggetti che si somiglia
 (commessa, pacchetto, voce, cella) e due numeri che apposta non coincidono, e
 niente di tutto questo si indovina la prima volta.
 
+**La Matrice ha in cima il lavoro, non le persone**: una riga per pacchetto,
+e aprendola le persone che ci stanno sopra. Le due tabelle rispondono a due
+domande diverse, e girarne una era il modo di dargliele tutte e due: qui è
+«questo pacchetto quando si fa, e chi ci sta sopra», nella scheda Persone è «a
+questa persona quanto ho già dato». Finché erano tutt'e due per persona, per
+sapere quante ore c'erano su un pacchetto in una settimana bisognava aprire tutte
+le righe e sommare a mente le sotto-righe con lo stesso nome. Una cosa non si
+perde nel giro: **la tinta della cella resta la persona** — dice che quella
+settimana è oltre la sua capacità contando tutto quello che ha addosso, non le
+ore del pacchetto che si sta guardando, che direbbero sempre che va tutto bene.
+
+**Il filtro dei pacchetti vale dappertutto.** Acceso, restano le ore di quel
+pacchetto: le righe, i totali di riga, la colonna «tot» e il piede — e vale anche
+nella scheda Persone, dove diventa «di questo pacchetto, chi fa cosa e quando».
+Un filtro che lascia in piedi le somme di tutto il resto è peggio di nessun
+filtro, perché il numero sbagliato sembra giusto. Le sovrapposizioni no: quelle
+restano contate sul carico intero, perché è la persona a essere sovraccarica, non
+il pacchetto che si sta guardando.
+
 **Persone** è la stessa matrice girata: una riga per persona, e le ore sommate
 su **tutti i programmi accesi**. Serve a una domanda sola, e non ha una risposta
 dentro un documento solo — la commessa è una, la persona è la stessa in tutte.
@@ -804,16 +823,29 @@ Tre cose che vale la pena sapere prima di aprirlo:
   sulle settimane produrrebbe un piano che nessuno riconosce, e ricavare le
   stime dal carico perderebbe il «cosa». Quello che serve è il **delta fra i
   due**, sempre a schermo — ed è il motivo per cui il pannello esiste.
-- **Ore a finire senza timesheet.** La colonna della settimana corrente taglia
+- **Ore spese senza timesheet.** La colonna della settimana corrente taglia
   la matrice in due: a sinistra il passato, che si corregge con quanto è andato
-  davvero quando ci si passa sopra; a destra la previsione. Un dato solo, nessun
-  secondo inserimento — è la stessa approssimazione che si fa a mente guardando
-  un Excel, ed è abbastanza per decidere. Il passato però non si compila cella
+  davvero quando ci si passa sopra; a destra quello che è già in calendario. Un
+  dato solo, nessun secondo inserimento — è la stessa approssimazione che si fa a
+  mente guardando un Excel, ed è abbastanza per decidere. Il passato però non si compila cella
   per cella all'indietro: di quello che è già andato non si sa la distribuzione,
   si sa il totale — «su A30 Marco ha fatto novanta ore». Quindi dal Riepilogo si
   scrive **un numero per pacchetto e persona**, spalmato sulle settimane
   passate: il totale è vero, la distribuzione è dichiaratamente approssimata, ed
   è la stessa promessa di sopra.
+- **«A finire» sono le stime meno lo speso, non le celle a destra.** Prima era la
+  matrice futura, e leggeva bene solo su una commessa programmata fino in fondo.
+  Qui la programmazione si ferma dove serve — si mettono in calendario le
+  settimane vicine e non l'anno intero — quindi «a finire» diceva
+  sistematicamente meno del lavoro che restava, e il margine ne usciva ottimista:
+  migliorava smettendo di programmare, che è esattamente il contrario di quello
+  che dovrebbe fare. Le stime invece ci sono sempre — sono le voci. Restano a
+  schermo tutt'e due, perché sono due domande: «programmate» è quanto lavoro è
+  già in calendario, «a finire» è quanto ne resta. Il loro delta, per
+  costruzione, è il «da collocare». E il **margine** è il venduto meno *speso più
+  a finire*, cioè meno quello che la commessa costerà in tutto. «A finire» non va
+  mai sotto zero: chi ha già speso più di quanto stimava non ha ore di credito da
+  finire, ha un margine rosso, ed è lì che si legge.
 - **Una voce si scrive in due modi, e portano allo stesso posto.** Quattro campi
   separati (`pacchetto`, `titolo`, `ore`, `risorsa`) per scriverne una, e una
   casella da incollare per scriverne duecento. Servono tutti e due: senza
