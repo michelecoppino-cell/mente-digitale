@@ -795,28 +795,48 @@ sono nella scheda Persone, dove la stessa catena si legge dall'altro capo: là s
 parte dal lavoro e si arriva alla persona, qui si parte dalla persona e si
 arriva al lavoro.
 
-Tre cose che questo comporta, e che sono la parte interessante:
+Quattro cose che questo comporta, e che sono la parte interessante:
 
+- **Ogni riga dice la somma di quello che ha sotto.** La riga di una persona
+  sotto una voce conta anche le sotto-voci che non si stanno mostrando, e quella
+  sotto un pacchetto — coi due bottoni spenti — conta tutte le sue ore lì
+  dentro, voci comprese. Prima ogni riga leggeva la sua sola cella: bastava
+  spegnere «voci» per vedere un pacchetto dire quaranta e la persona sotto di
+  lui zero, che è un totale che non torna e nessuno che lo dice.
 - **Si scrive nell'ultimo livello mostrato, mai in una somma.** Una riga di voce
   dice il totale del suo ramo, come le ore stimate: batterci dentro un numero
   vorrebbe dire deciderne la ripartizione fra le figlie al posto di chi scrive.
-  Sotto una voce che ha figlie mostrate compaiono solo le persone che ci hanno
-  già delle ore — la risorsa *proposta* no, perché lì sarebbe una riga vuota in
-  mezzo, cioè un invito a scrivere le stesse ore due volte.
+  Una riga di persona invece si compila sempre, e le ore vanno nella **cella più
+  profonda in cui stanno già** — la sotto-voce nascosta in cui erano, la voce che
+  le adotta — mentre quella che sostituiscono si azzera nello stesso colpo:
+  sono le stesse ore, e tenerle in due posti raddoppierebbe la settimana.
+  L'unico caso senza destinazione è la persona che sotto quella riga ha ore su
+  **due voci diverse**: lì scegliere vorrebbe dire cancellare un'attribuzione
+  fatta da qualcuno, e la risposta è scendere di un livello — infatti è quello
+  che succede.
 - **La voce sta in coda alla chiave, e può non esserci.**
   `risorsa|pacchetto|settimana` era la chiave, `risorsa|pacchetto|settimana|voce`
   è quella nuova: le celle scritte prima restano valide e vogliono dire «ore del
   pacchetto, senza voce». Non un file su OneDrive da riscrivere, nessuna
   migrazione da sbagliare, e `const [r, p, s] = chiave.split('|')` continua a
   dire quello che diceva.
-- **Quelle ore restano visibili.** Sono le celle di prima, e quelle che ci
-  arrivano ancora dal consuntivo — del passato si sa il totale, non su quale
-  voce sia caduto. Nessuno può dire al posto di chi le ha scritte dove
-  andassero, quindi non si migrano: stanno in coda al pacchetto, marcate «sul
-  pacchetto». Sparire da una schermata e continuare a pesare sui totali è
-  esattamente la cosa che non devono fare. Cancellando una voce le sue ore
-  risalgono alla madre, o al pacchetto: il totale della commessa non cambia mai
-  di nascosto.
+- **Le ore lasciate sul pacchetto le adotta la voce che propone quella
+  persona.** Sono le celle di prima che le voci ci fossero, e quelle che
+  arrivano dal consuntivo. Restavano in coda al pacchetto, in righe marcate «sul
+  pacchetto», perché nessuno poteva dire a quale voce andassero — ma **la voce
+  lo dice**: porta la persona che la fa, e se dentro un pacchetto una sola voce
+  propone Riccardo, «Riccardo, A10, W39» e «Riccardo, Calcolo, W39» sono la
+  stessa frase detta con meno parole. Scomporre un pacchetto e vedersi le sue
+  ore restare in fondo, in righe che ripetono i nomi di quelle appena aperte,
+  rende illeggibile proprio la schermata che si è appena aperta. Adottare non
+  riscrive niente sul file: la chiave resta a tre segmenti finché qualcuno non
+  scrive in quella riga. Se le voci che propongono la stessa persona sono due
+  non si adotta — lì la domanda torna senza risposta, e indovinarla è quello che
+  qui non si fa — e chi nessuna voce reclama tiene la sua riga in coda, marcata
+  «sul pacchetto»: sparire da una schermata e continuare a pesare sui totali è
+  esattamente la cosa che quelle ore non devono fare. Cancellando una voce le
+  sue ore risalgono alla madre, o al pacchetto: il totale della commessa non
+  cambia mai di nascosto.
 
 **Il filtro dei pacchetti vale dappertutto.** Acceso, restano le ore di quel
 pacchetto: le righe, i totali di riga, la colonna «tot» e il piede — e vale anche
@@ -978,7 +998,12 @@ già le voci, le sotto-voci e i movimenti. Vanno bene anche righe sciolte
 `persona | pacchetto | settimana | ore`, che è quello che esce da un gestionale.
 
 Un consuntivo **sostituisce** le celle che tocca, non ci si somma: reincollare
-lo stesso foglio non raddoppia niente. Una cella lasciata vuota non si tocca —
+lo stesso foglio non raddoppia niente. E sostituisce *dove quelle ore stanno* —
+se la settimana era programmata su una voce, si riscrive quella cella invece di
+aggiungerne una sul pacchetto: due celle per la stessa settimana sarebbero la
+settimana contata due volte, cioè un margine sbagliato che si scopre tre
+settimane dopo. Se sotto ci sono due voci diverse va sul pacchetto e le azzera:
+del passato si sa il totale, non su quale voce sia caduto. Una cella lasciata vuota non si tocca —
 chi corregge una settimana seleziona tutto il rettangolo, e le altre colonne sono
 vuote perché non le ha guardate, non perché quelle ore non ci siano più. E
 siccome sostituire un mese di ore di quattro persone in un gesto è irreversibile

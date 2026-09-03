@@ -223,8 +223,69 @@ verifica(pg.risorseDiVoce(conVoci, plinti.id).map(r => r.nome).join() === 'Marco
   'sotto una voce compare chi ci ha le ore');
 verifica(pg.risorseDiVoce(conVoci, plinti.id, false).map(r => r.nome).join() === 'Marco',
   'e su una voce con figlie mostrate, la proposta non aggiunge una riga vuota');
-verifica(pg.risorseSenzaVoce(conVoci, c10.id).length > 0,
-  'le ore rimaste sul pacchetto hanno ancora la loro riga: sparire sarebbe un totale che non torna');
+
+// ── Le ore lasciate sul pacchetto, e la voce che le adotta ───────────────────
+// Marco ha venti ore date a C10 e basta — scritte prima che il pacchetto fosse
+// scomposto — e dentro C10 una sola voce lo propone: «Carpenterie». Quelle ore
+// sono di quella voce, e devono comparire nella sua riga invece che in coda al
+// pacchetto, in una riga che ripete il nome di quella appena aperta.
+const carpAdottiva = doc.voci.find(v => v.titolo === 'Carpenterie');
+verifica(pg.voceAdottiva(conVoci, c10.id, 'Marco') === carpAdottiva.id,
+  'la voce che propone quella persona, e che è l\'unica, adotta le ore del pacchetto');
+verifica(pg.oreSottoRiga(conVoci, 'Marco', c10.id, carpAdottiva.id, '2026-W38') === 20,
+  'e la sua riga le mostra: era il numero che finiva in fondo');
+verifica(pg.oreVoceSettimana(conVoci, carpAdottiva.id, '2026-W38') === 20,
+  'anche il totale della voce le conta, altrimenti sarebbe una somma che non torna');
+verifica(pg.orePacchettoSettimana(conVoci, c10.id, '2026-W38') === 20,
+  'e il pacchetto continua a dire venti: adottare non è duplicare');
+verifica(pg.risorseSenzaVoce(conVoci, c10.id).length === 0,
+  'chi è adottato non ha più la riga in coda al pacchetto: sarebbe la stessa cella due volte');
+verifica(pg.risorseSenzaVoce(conVoci, a60.id).map(r => r.nome).join() === 'Sara',
+  'chi nessuna voce reclama ce l\'ha ancora: sparire sarebbe un totale che non torna');
+
+// Due voci che propongono la stessa persona non adottano niente: lì la domanda
+// «a quale voce andavano» torna senza risposta, e indovinarla è quello che qui
+// non si fa.
+const dueVociStessa = pg.conVoci(conVoci, [{ titolo: 'Carpenterie bis', pacchettoId: c10.id, ore: 10, risorsa: 'Marco' }]);
+verifica(pg.voceAdottiva(dueVociStessa, c10.id, 'Marco') === null,
+  'con due voci che propongono la stessa persona non si adotta');
+verifica(pg.risorseSenzaVoce(dueVociStessa, c10.id).map(r => r.nome).join() === 'Marco',
+  'e quelle ore tornano nella loro riga in coda, invece di sparire dalla schermata');
+
+// Scrivere in una riga adottata porta le ore sulla voce e svuota la cella del
+// pacchetto: sono le stesse ore, e tenerle in due posti raddoppierebbe la
+// settimana.
+const dove = pg.destinazioneOre(conVoci, 'Marco', c10.id, carpAdottiva.id, '2026-W38');
+verifica(dove.chiave === pg.chiaveCarico('Marco', c10.id, '2026-W38', carpAdottiva.id)
+  && dove.assorbe.join() === pg.chiaveCarico('Marco', c10.id, '2026-W38'),
+  'scrivendoci dentro, le ore vanno sulla voce e la cella del pacchetto si azzera');
+const adottate = Object.entries({ [dove.chiave]: 25, [dove.assorbe[0]]: 0 })
+  .reduce((d, [k, o]) => pg.conCarico(d, k, o), conVoci);
+verifica(pg.orePacchettoSettimana(adottate, c10.id, '2026-W38') === 25,
+  'e il pacchetto dice venticinque, non quarantacinque');
+
+// Da ultimo livello mostrato una voce dice anche quello che sta nelle sue
+// sotto-voci nascoste, e le persone che lo fanno hanno la loro riga: un totale
+// senza le righe che lo compongono è un numero che non si può seguire.
+verifica(pg.risorseDiVoce(conVoci, fondazioni.id).map(r => r.nome).sort().join() === 'Marco,Sara',
+  'una lavorazione mostrata da sola porta chi ha ore nelle sue sotto-voci');
+verifica(pg.oreSottoRiga(conVoci, 'Marco', a60.id, fondazioni.id, '2026-W40') === 10,
+  'e la riga dice le ore del ramo, non quelle della sola voce');
+verifica(pg.destinazioneOre(conVoci, 'Marco', a60.id, fondazioni.id, '2026-W40').chiave
+  === pg.chiaveCarico('Marco', a60.id, '2026-W40', plinti.id),
+  'scrivendoci dentro, le ore restano sulla sotto-voce in cui stavano');
+
+// L'altro verso, ed è il difetto che si vedeva spegnendo i due bottoni: la riga
+// della persona sotto il pacchetto è l'ultimo livello mostrato, quindi dice
+// tutte le sue ore lì dentro — anche quelle finite su una voce.
+verifica(pg.oreSottoRiga(conVoci, 'Marco', a60.id, null, '2026-W40') === 10,
+  'sotto il pacchetto la persona dice tutto quello che ha lì, voci comprese');
+verifica(pg.destinazioneOre(conVoci, 'Marco', a60.id, null, '2026-W40').chiave
+  === pg.chiaveCarico('Marco', a60.id, '2026-W40', plinti.id),
+  'e scrivendoci dentro le ore restano dove stavano, invece di sdoppiarsi sul pacchetto');
+const dueRami = pg.conCarico(conVoci, pg.chiaveCarico('Marco', a60.id, '2026-W40', platea.id), 4);
+verifica(pg.destinazioneOre(dueRami, 'Marco', a60.id, null, '2026-W40') === null,
+  'con due voci sotto, la riga è una somma e non ha una destinazione: si scende di un livello');
 
 // Cancellare una voce non cancella delle ore in silenzio.
 const senzaPlinti = pg.senzaVoce(conVoci, plinti.id);
@@ -505,7 +566,7 @@ const filtrate = pg.caricoPersone(
   settimanePersone, { pacchettoId: unPacchetto.id });
 const marcoFiltrato = filtrate.find(r => r.nome === 'Marco');
 verifica(!!marcoFiltrato && marcoFiltrato.totale === settimanePersone.reduce(
-  (s, w) => s + pg.oreCella(corretto, 'Marco', unPacchetto.id, w), 0),
+  (s, w) => s + pg.oreSottoRiga(corretto, 'Marco', unPacchetto.id, null, w), 0),
   'col filtro acceso restano le ore di quel pacchetto, e solo quelle');
 verifica(marcoFiltrato.totale < marco.totale,
   'che sono meno di quelle che ha in tutto: se fossero uguali il filtro non starebbe filtrando');
@@ -628,26 +689,33 @@ const rettangolo = [
   'Luca\t\t\t14,5',
   '\tB10 Fondazioni\t\t12',
 ].join('\n');
+const plintiBig = big.voci.find(v => v.titolo === 'Plinti');
+const traviBig = big.voci.find(v => v.titolo === 'Travi rovesce');
 const lettura = excel.leggiOreRegistrate(big, rettangolo, { settimane: ['2026-W12', '2026-W13'] });
-verifica(lettura.celle[pg.chiaveCarico('Marco', bigB10.id, '2026-W12')] === 31,
-  'le ore vere entrano nella cella giusta');
+// Le ore vere sostituiscono quelle previste **dove stanno**: in B10 Marco è
+// proposto da Plinti e basta, quindi la sua cella è quella — e quella lasciata
+// sul pacchetto si azzera, perché sono le stesse ore e tenerle in due posti
+// vorrebbe dire contare la settimana due volte.
+verifica(lettura.celle[pg.chiaveCarico('Marco', bigB10.id, '2026-W12', plintiBig.id)] === 31
+  && lettura.celle[pg.chiaveCarico('Marco', bigB10.id, '2026-W12')] === 0,
+  'le ore vere entrano nella cella giusta, e non se ne aggiunge una seconda sul pacchetto');
 verifica(lettura.celle[pg.chiaveCarico('Marco', bigC10.id, '2026-W12')] === 4,
   'e la persona si trascina in giù: la riga del pacchetto non ripete il nome');
-verifica(lettura.celle[pg.chiaveCarico('Luca', bigB10.id, '2026-W13')] === 12,
+verifica(lettura.celle[pg.chiaveCarico('Luca', bigB10.id, '2026-W13', traviBig.id)] === 12,
   'la seconda persona ricomincia da capo');
 verifica(!Object.keys(lettura.celle).some(k => k.includes('|2026-W13') && k.startsWith('Marco')),
   'una cella lasciata vuota non azzera: chi corregge una settimana non tocca le altre');
 verifica(!Object.values(lettura.celle).includes(26),
   'e la riga di somma della persona non si reimporta: sarebbe il totale scritto dentro un pacchetto');
-verifica(lettura.sostituite === 3 && lettura.persone.join(' ') === 'Luca Marco',
+verifica(lettura.sostituite === 5 && lettura.persone.join(' ') === 'Luca Marco',
   'prima di applicare si sa quante celle cambiano e di chi');
 
 const applicato = Object.entries(lettura.celle).reduce((d, [k, o]) => pg.conCarico(d, k, o), big);
-verifica(pg.oreCella(applicato, 'Marco', bigB10.id, '2026-W12') === 31,
+verifica(pg.oreSottoRiga(applicato, 'Marco', bigB10.id, null, '2026-W12') === 31,
   'un consuntivo sostituisce le ore previste, non ci si somma');
 const dueVolte = Object.entries(excel.leggiOreRegistrate(applicato, rettangolo).celle)
   .reduce((d, [k, o]) => pg.conCarico(d, k, o), applicato);
-verifica(pg.oreCella(dueVolte, 'Marco', bigB10.id, '2026-W12') === 31,
+verifica(pg.oreSottoRiga(dueVolte, 'Marco', bigB10.id, null, '2026-W12') === 31,
   'e reincollare lo stesso foglio non raddoppia niente');
 
 const sciolte = excel.leggiOreRegistrate(big, [
@@ -655,7 +723,7 @@ const sciolte = excel.leggiOreRegistrate(big, [
   'Nessuno | B10 Fondazioni | 2026-W12 | 9',
   'due parole soltanto',
 ].join('\n'), { settimane: ['2026-W12', '2026-W13'] });
-verifica(sciolte.celle[pg.chiaveCarico('Marco', bigB10.id, '2026-W12')] === 18,
+verifica(sciolte.celle[pg.chiaveCarico('Marco', bigB10.id, '2026-W12', plintiBig.id)] === 18,
   'righe sciolte persona|pacchetto|settimana|ore: l\'altro modo di scriverle');
 verifica(sciolte.ignorate.length === 2,
   'e quello che non si capisce si dice invece di sparire: in un consuntivo una riga persa è un margine sbagliato');
@@ -666,9 +734,13 @@ verifica(sciolte.ignorate.length === 2,
 // da lì il rettangolo che non c'era: nessun errore, nessuna cella scritta.
 const orizzonte = tempo.settimaneTra('2026-W01', '2026-W52');
 const conW18 = excel.leggiOreRegistrate(big, `Marco | B10 Fondazioni | 2026-W12 | 18`, { settimane: orizzonte });
-verifica(conW18.celle[pg.chiaveCarico('Marco', bigB10.id, '2026-W12')] === 18,
+verifica(conW18.celle[pg.chiaveCarico('Marco', bigB10.id, '2026-W12', plintiBig.id)] === 18,
   'una riga sciolta resta una riga sciolta anche se le sue ore somigliano a una settimana');
-verifica(Object.keys(conW18.celle).length === 1, 'e non ne nasce una seconda cella dal nulla');
+// Due celle e non una: la sua, e quella sul pacchetto che sostituisce. Quello
+// che non deve nascere è una **terza** settimana, letta da un'intestazione che
+// non c'era.
+verifica(Object.keys(conW18.celle).every(k => k.includes('|2026-W12')),
+  'e non ne nasce una seconda cella dal nulla');
 
 const delta = excel.differenza(big, lettura.celle);
 verifica(delta.prima === 40.5 && delta.dopo === 47,

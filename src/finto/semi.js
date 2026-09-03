@@ -283,8 +283,11 @@ const PACCHETTI = [
 // Le prime tre colonne sono la cella; la quarta, quando c'è, è la **voce** su
 // cui cadono quelle ore. Senza, sono ore date al pacchetto e basta — che è
 // quello che scrive il consuntivo del passato, e quello che c'era nei file
-// prima che le voci esistessero. Il seme tiene apposta tutti e due i casi: è
-// l'unico modo di vedere, provando, che convivono.
+// prima che le voci esistessero. Il seme tiene apposta tutti e due i casi, e
+// anche i due modi in cui le ore senza voce finiscono a schermo: quelle di
+// Marco su A30 e di Sara su A20 le **adotta** la voce che li propone e
+// compaiono nella sua riga, quelle di Michele su A30 — che nessuna voce
+// reclama — restano in coda al pacchetto. È l'unico modo di vederlo provando.
 const CARICO = {};
 for (const [risorsa, pacchetto, da, ore, voce] of /** @type {[string, string, number, number, string?][]} */ ([
   ['Michele', 'pk-a30', -6, 8], ['Michele', 'pk-a30', -3, 12],

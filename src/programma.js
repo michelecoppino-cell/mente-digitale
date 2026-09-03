@@ -1137,12 +1137,23 @@ export function ramoVoce(doc, voceId) {
  */
 export function oreVoceSettimana(doc, voceId, settimana, risorsa = null) {
   const ramo = ramoVoce(doc, voceId);
+  const voce = doc.voci.find(v => v.id === voceId);
+  const suoPacchetto = voce ? pacchettoDelRamo(doc, voce) : null;
   let somma = 0;
   for (const [chiave, ore] of Object.entries(doc.carico)) {
     const c = leggiChiaveCarico(chiave);
-    if (c.settimana !== settimana || !c.voceId || !ramo.has(c.voceId)) continue;
+    if (c.settimana !== settimana) continue;
     if (risorsa && c.risorsa !== risorsa) continue;
-    somma += ore;
+    if (c.voceId) {
+      if (ramo.has(c.voceId)) somma += ore;
+      continue;
+    }
+    // Le ore lasciate sul pacchetto che una voce di questo ramo adotta: sono
+    // già quelle che la matrice mostra nella sua riga, e una riga di totale
+    // che non conta le celle che ha sotto è la somma che non torna.
+    if (c.pacchettoId !== suoPacchetto) continue;
+    const adottiva = voceAdottiva(doc, c.pacchettoId, c.risorsa);
+    if (adottiva && ramo.has(adottiva)) somma += ore;
   }
   return somma;
 }
@@ -1150,10 +1161,11 @@ export function oreVoceSettimana(doc, voceId, settimana, risorsa = null) {
 /**
  * Le persone che compaiono sotto una voce.
  *
- * Chi ha già ore **su quella voce esatta** (non sul ramo: le ore di una figlia
- * si scrivono sotto la figlia), più la persona che la voce *propone* nel suo
- * campo `risorsa` — così la riga in cui mettere la prima ora esiste già, e non
- * bisogna aggiungerla a mano. Tutte e tredici le risorse sotto ogni sotto-voce
+ * Da **ultimo livello mostrato** (`conProposta`): chi ha ore in tutto il ramo —
+ * le sotto-voci nascoste ci sono sommate, e una riga di totale senza le righe
+ * che la fanno è un numero che non si può seguire — più la persona che la voce
+ * *propone* nel suo campo `risorsa`, così la riga in cui mettere la prima ora
+ * esiste già e non bisogna aggiungerla a mano. Tutte e tredici le risorse sotto ogni sotto-voce
  * sarebbero invece una tabella che non si legge.
  * Su una voce che ha sotto di sé altre righe la proposta non si conta: lì le
  * ore si scrivono nelle figlie, e una riga vuota in mezzo sarebbe un invito a
@@ -1167,14 +1179,31 @@ export function oreVoceSettimana(doc, voceId, settimana, risorsa = null) {
  * @returns {Risorsa[]}
  */
 export function risorseDiVoce(doc, voceId, conProposta = true) {
+  // Da ultimo livello mostrato la voce prende anche chi ha ore nelle sue
+  // sotto-voci nascoste: sono ore che il suo totale conta già, e senza la loro
+  // riga si vedrebbe un numero di cui sotto non c'è traccia.
+  const ramo = conProposta ? ramoVoce(doc, voceId) : null;
   const con = new Set();
   for (const [chiave, ore] of Object.entries(doc.carico)) {
     if (!ore) continue;
     const c = leggiChiaveCarico(chiave);
-    if (c.voceId === voceId) con.add(c.risorsa);
+    if (c.voceId && (ramo ? ramo.has(c.voceId) : c.voceId === voceId)) con.add(c.risorsa);
   }
-  const proposta = doc.voci.find(v => v.id === voceId)?.risorsa;
-  if (conProposta && proposta) con.add(proposta);
+  const voce = doc.voci.find(v => v.id === voceId);
+  if (conProposta && voce?.risorsa) con.add(voce.risorsa);
+  // Chi ha ore lasciate sul pacchetto che una voce di questo ramo adotta ha una
+  // riga anche qui: sono ore vere, il totale della voce le conta già, e senza
+  // la loro riga si vedrebbe un numero di cui sotto non c'è traccia.
+  const suoPacchetto = voce ? pacchettoDelRamo(doc, voce) : null;
+  if (suoPacchetto) {
+    for (const [chiave, ore] of Object.entries(doc.carico)) {
+      if (!ore) continue;
+      const c = leggiChiaveCarico(chiave);
+      if (c.voceId || c.pacchettoId !== suoPacchetto) continue;
+      const adottiva = voceAdottiva(doc, suoPacchetto, c.risorsa);
+      if (adottiva && (ramo ? ramo.has(adottiva) : adottiva === voceId)) con.add(c.risorsa);
+    }
+  }
   return doc.risorse.filter(r => con.has(r.nome));
 }
 
@@ -1195,9 +1224,185 @@ export function risorseSenzaVoce(doc, pacchettoId) {
   for (const [chiave, ore] of Object.entries(doc.carico)) {
     if (!ore) continue;
     const c = leggiChiaveCarico(chiave);
-    if (c.pacchettoId === pacchettoId && !c.voceId) con.add(c.risorsa);
+    if (c.pacchettoId !== pacchettoId || c.voceId) continue;
+    // Adottate da una voce: la loro riga è già lì sotto, e ripeterla qui in
+    // coda sarebbe la stessa cella mostrata due volte.
+    if (voceAdottiva(doc, pacchettoId, c.risorsa)) continue;
+    con.add(c.risorsa);
   }
   return doc.risorse.filter(r => con.has(r.nome));
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Le ore lasciate sul pacchetto, e la voce che le adotta
+// ─────────────────────────────────────────────────────────────────────────────
+// Le celle a tre segmenti sono ore date al pacchetto e basta: quelle scritte
+// prima che la matrice sapesse delle voci, e quelle che ci arrivano dal
+// consuntivo. Finivano tutte in coda al pacchetto, in righe a parte marcate
+// «sul pacchetto», perché nessuno poteva dire al posto di chi le aveva scritte
+// a quale voce andassero.
+//
+// **La voce però lo dice.** Una voce porta la persona che la fa: se dentro un
+// pacchetto una sola voce propone Riccardo, «Riccardo, A10, W39» e «Riccardo,
+// Calcolo, W39» sono la stessa frase detta con meno parole. Scomporre un
+// pacchetto e vedersi le sue ore restare in fondo, in righe che ripetono i nomi
+// di quelle appena aperte, rende illeggibile proprio la schermata che si è
+// appena aperta — e lascia la riga della voce a zero mentre quella del
+// pacchetto dice quaranta.
+//
+// **Adottare non riscrive niente sul file.** La chiave resta a tre segmenti
+// finché qualcuno non scrive in quella riga: allora la cella della voce prende
+// il valore e quella del pacchetto si azzera, perché sono le stesse ore e
+// tenerle in due posti vorrebbe dire contarle due volte. Il totale del
+// pacchetto non cambia mai — è sempre la somma delle chiavi, con voce o senza.
+//
+// **Se le voci che propongono la stessa persona sono due, non si adotta.** Lì
+// la domanda «a quale voce andavano» torna senza risposta, e indovinarla è
+// esattamente quello che qui non si fa.
+
+/**
+ * La voce che adotta le ore lasciate sul pacchetto da una persona: quella —
+ * una sola — che dentro quel pacchetto la propone.
+ * @param {DocProgramma} doc
+ * @param {string} pacchettoId
+ * @param {string} risorsa
+ * @returns {string|null}
+ */
+export function voceAdottiva(doc, pacchettoId, risorsa) {
+  if (!pacchettoId || !risorsa) return null;
+  const candidate = doc.voci.filter(v => (
+    !v.scartata && v.risorsa === risorsa && pacchettoDelRamo(doc, v) === pacchettoId));
+  return candidate.length === 1 ? candidate[0].id : null;
+}
+
+/**
+ * Le chiavi del carico che cadono **sotto una riga di persona** della matrice:
+ * la sua cella, quelle delle sotto-voci che non si stanno mostrando, e — se
+ * questa voce le adotta — quelle lasciate sul pacchetto.
+ *
+ * Con `voceId` a `null` la riga è la persona sotto il pacchetto, cioè l'ultimo
+ * livello mostrato quando le voci sono spente: lì ci cade tutto quello che ha
+ * su quel pacchetto, voci comprese.
+ * @param {DocProgramma} doc
+ * @param {string} risorsa
+ * @param {string} pacchettoId
+ * @param {string|null} voceId
+ * @param {string} settimana
+ * @returns {string[]}
+ */
+function celleSottoRiga(doc, risorsa, pacchettoId, voceId, settimana) {
+  const ramo = voceId ? ramoVoce(doc, voceId) : null;
+  // Adottate qui se la voce che le adotta sta in questo ramo: da ultimo
+  // livello mostrato una riga dice anche quello che ha nelle sotto-voci
+  // nascoste, e le ore adottate non fanno eccezione.
+  const adottiva = voceAdottiva(doc, pacchettoId, risorsa);
+  const adotta = Boolean(ramo && adottiva && ramo.has(adottiva));
+  /** @type {string[]} */
+  const chiavi = [];
+  for (const chiave of Object.keys(doc.carico)) {
+    const c = leggiChiaveCarico(chiave);
+    if (c.risorsa !== risorsa || c.pacchettoId !== pacchettoId || c.settimana !== settimana) continue;
+    if (ramo && !(c.voceId ? ramo.has(c.voceId) : adotta)) continue;
+    chiavi.push(chiave);
+  }
+  return chiavi;
+}
+
+/**
+ * Le ore che una riga di persona mostra: la somma di quello che ha sotto.
+ *
+ * È il numero della cella nella matrice, ed è sempre un totale del ramo — come
+ * per le righe di voce. Prima la riga leggeva la sua sola chiave: bastava
+ * spegnere «voci» per vedere il pacchetto dire quaranta e la persona sotto di
+ * lui zero, che è un totale che non torna e nessuno che lo dice.
+ * @param {DocProgramma} doc
+ * @param {string} risorsa
+ * @param {string} pacchettoId
+ * @param {string|null} voceId
+ * @param {string} settimana
+ * @returns {number}
+ */
+export function oreSottoRiga(doc, risorsa, pacchettoId, voceId, settimana) {
+  return celleSottoRiga(doc, risorsa, pacchettoId, voceId, settimana)
+    .reduce((somma, chiave) => somma + (doc.carico[chiave] || 0), 0);
+}
+
+/**
+ * Dove finiscono le ore scritte in una riga di persona, e quali celle si porta
+ * via. Una sola destinazione: la riga mostra un totale, e scrivere dentro un
+ * totale vuol dire «da adesso sono queste», non sommarcisi.
+ *
+ * La destinazione è la cella più profonda che quelle ore hanno già — le ore
+ * adottate tornano alla loro voce, quelle di una sotto-voce nascosta restano
+ * dov'erano — e le altre si azzerano nello stesso colpo, perché sono le stesse
+ * ore: lasciarle vorrebbe dire raddoppiare la settimana.
+ *
+ * `null` quando sotto la riga ci sono **due voci diverse** con delle ore: lì la
+ * destinazione non esiste, e sceglierla al posto di chi scrive vorrebbe dire
+ * cancellare un'attribuzione che qualcuno aveva fatto. La risposta è aprire un
+ * livello, come per le righe di somma.
+ * @param {DocProgramma} doc
+ * @param {string} risorsa
+ * @param {string} pacchettoId
+ * @param {string|null} voceId
+ * @param {string} settimana
+ * @returns {{ chiave: string, assorbe: string[] }|null}
+ */
+export function destinazioneOre(doc, risorsa, pacchettoId, voceId, settimana) {
+  const propria = chiaveCarico(risorsa, pacchettoId, settimana, voceId);
+  const sotto = celleSottoRiga(doc, risorsa, pacchettoId, voceId, settimana)
+    .filter(k => (doc.carico[k] || 0) > 0);
+  const voci = new Set(sotto.map(k => leggiChiaveCarico(k).voceId).filter(Boolean));
+  if (voci.size > 1) return null;
+  // Senza ore su nessuna voce si scrive nella cella della riga — con una
+  // eccezione: se una voce di qui sotto adotta quella persona, le ore vanno
+  // lì. È lo stesso posto in cui la matrice le sta già mostrando, ed è dove il
+  // lavoro è davvero descritto.
+  const ramo = voceId ? ramoVoce(doc, voceId) : null;
+  const adottiva = voceAdottiva(doc, pacchettoId, risorsa);
+  const dove = voci.size === 1
+    ? /** @type {string} */ ([...voci][0])
+    : ((adottiva && (!ramo || ramo.has(adottiva))) ? adottiva : voceId);
+  const chiave = dove ? chiaveCarico(risorsa, pacchettoId, settimana, dove) : propria;
+  const assorbe = [...new Set([propria, ...sotto])]
+    .filter(k => k !== chiave && (doc.carico[k] || 0) > 0);
+  return { chiave, assorbe };
+}
+
+/**
+ * Le celle da scrivere perché una persona abbia **esattamente** quelle ore su
+ * un pacchetto in una settimana. È la regola del consuntivo — sostituisce, non
+ * somma — scritta in un posto solo, e la usano tutt'e due i modi in cui le ore
+ * vere rientrano: il campo del riepilogo e il rettangolo incollato.
+ *
+ * Quando quelle ore stanno su una voce si riscrive quella cella, invece di
+ * aggiungerne una sul pacchetto: due celle per la stessa settimana sarebbero
+ * la settimana contata due volte, ed è la cosa che si scopre dal margine
+ * sbagliato tre settimane dopo.
+ *
+ * Con due voci sotto, il consuntivo resta la risposta definitiva su quella
+ * settimana e va sul pacchetto: del passato si sa il totale, non su quale voce
+ * sia caduto. Le celle di voce si azzerano — sono le stesse ore, appena
+ * corrette.
+ * @param {DocProgramma} doc
+ * @param {string} risorsa
+ * @param {string} pacchettoId
+ * @param {string} settimana
+ * @param {number} ore
+ * @returns {Record<string, number>}
+ */
+export function celleConsuntivo(doc, risorsa, pacchettoId, settimana, ore) {
+  /** @type {Record<string, number>} */
+  const celle = {};
+  const dove = destinazioneOre(doc, risorsa, pacchettoId, null, settimana);
+  if (dove) {
+    for (const k of dove.assorbe) celle[k] = 0;
+    celle[dove.chiave] = ore;
+    return celle;
+  }
+  for (const k of celleSottoRiga(doc, risorsa, pacchettoId, null, settimana)) celle[k] = 0;
+  celle[chiaveCarico(risorsa, pacchettoId, settimana)] = ore;
+  return celle;
 }
 
 /**
@@ -1429,8 +1634,13 @@ export function caricoPersone(programmi, settimane, filtro = {}) {
       });
       // Le voci si mostrano fino alla profondità chiesta: quello che sta più
       // sotto si somma nell'ultimo nodo mostrato, non sparisce.
-      if (dettaglio && voceId) {
-        for (const v of catenaVoce(doc, voceId).slice(0, dettaglio)) {
+      // Anche le ore lasciate sul pacchetto scendono nella voce che le adotta:
+      // è la stessa catena della matrice letta dall'altro capo, e vederle
+      // ferme sul pacchetto di qua e sotto la voce di là sarebbe due tabelle
+      // che si smentiscono.
+      const doveScende = voceId || voceAdottiva(doc, pacchettoId, risorsa);
+      if (dettaglio && doveScende) {
+        for (const v of catenaVoce(doc, doveScende).slice(0, dettaglio)) {
           percorso.push({ chiave: `${id}:${v.id}`, tipo: 'voce', nome: v.titolo, colore: pacchetto?.colore || null });
         }
       }
@@ -1587,7 +1797,12 @@ export function conSpesoRipartito(doc, { risorsa, pacchettoId, ore, settimane })
   // prova migliore che ci deve stare.
   let risultato = conRisorsa(doc, nome);
   settimane.forEach((settimana, i) => {
-    risultato = conCarico(risultato, chiaveCarico(nome, pacchettoId, settimana), quote[i] || 0);
+    // La stessa regola dell'incollato: le ore vere sostituiscono quello che
+    // c'era in quella settimana, anche quando stava su una voce.
+    for (const [chiave, ore] of Object.entries(
+      celleConsuntivo(risultato, nome, pacchettoId, settimana, quote[i] || 0))) {
+      risultato = conCarico(risultato, chiave, ore);
+    }
   });
   return risultato;
 }

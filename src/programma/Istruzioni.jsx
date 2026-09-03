@@ -136,10 +136,13 @@ export default function Istruzioni({ onChiudi }) {
                 <b>voci</b> e <b>sottovoci</b>, nella barra, dicono quanto scendere: spenti, sotto
                 il pacchetto ci sono le persone; accesi, la catena diventa pacchetto › voce ›
                 sotto-voce › persona, e le ore si scrivono in fondo. Una riga di voce è la somma
-                del suo ramo e non si compila. Le ore date al pacchetto e basta — un consuntivo, o
-                le celle di prima che ci fossero le voci — restano in coda al pacchetto, marcate
-                «sul pacchetto»: non si migrano da sole, perché nessuno può dire a quale voce
-                andassero. Gli stessi due bottoni ci sono nella scheda Persone, dove la stessa
+                del suo ramo e non si compila; una riga di persona dice tutto quello che ha sotto,
+                e scrivendoci dentro le ore vanno nella cella più profonda in cui stanno già.
+                Le ore date al pacchetto e basta — un consuntivo, o le celle di prima che ci
+                fossero le voci — le adotta la voce che propone quella persona, quando ce n&apos;è
+                una sola: compaiono nella sua riga, che è dove il lavoro è descritto. Quelle che
+                nessuna voce reclama restano in coda al pacchetto, marcate «sul pacchetto».
+                Gli stessi due bottoni ci sono nella scheda Persone, dove la stessa
                 catena si legge dall&apos;altro capo.
               </li>
             </ul>

@@ -30,19 +30,31 @@
 // davvero descritto — «Calcolo plinti, Marco, W35: 34 ore» — invece che su un
 // pacchetto da quattrocento ore in cui non si distingue più cosa è cosa.
 //
+// **Ogni riga dice la somma di quello che ha sotto.** Una riga di persona conta
+// anche le sotto-voci che non si stanno mostrando, e coi due bottoni spenti
+// conta tutte le sue ore del pacchetto, voci comprese. Prima leggeva la sua
+// sola cella: bastava spegnere «voci» per vedere il pacchetto dire quaranta e
+// la persona sotto di lui zero.
+//
 // **Si scrive nell'ultimo livello mostrato, mai in una somma.** Una riga di
 // voce dice il totale del suo ramo, come le ore stimate: batterci dentro un
 // numero vorrebbe dire deciderne la ripartizione fra le figlie al posto di chi
-// scrive. Sotto una voce che ha figlie mostrate compaiono solo le persone che
-// ci hanno già delle ore — la risorsa *proposta* no, perché lì sarebbe una riga
-// vuota in mezzo, cioè un invito a scrivere le stesse ore due volte.
+// scrive. Una riga di persona invece si compila sempre, e le ore vanno nella
+// cella più profonda in cui stanno già — mentre quella che sostituiscono si
+// azzera: sono le stesse ore, e tenerle in due posti raddoppierebbe la
+// settimana. Se sotto quella riga ce ne sono su due voci diverse la
+// destinazione non esiste, e scrivere scende di un livello invece di
+// sceglierne una al posto di chi ce le aveva messe.
 //
-// **Le ore date al pacchetto e basta restano visibili.** Sono le celle di prima
-// che le voci esistessero, e quelle che ci arrivano ancora dal consuntivo: del
-// passato si sa il totale, non su quale voce sia caduto. Nessuno può dire al
-// posto di chi le ha scritte dove andassero, quindi non si migrano: stanno in
-// coda al pacchetto, marcate «sul pacchetto». Sparire da una schermata e
-// continuare a pesare sui totali è la cosa che non devono fare.
+// **Le ore date al pacchetto e basta le adotta la voce che propone quella
+// persona.** Sono le celle di prima che le voci esistessero, e quelle che ci
+// arrivano dal consuntivo. Restavano in coda al pacchetto perché nessuno poteva
+// dire a quale voce andassero — ma la voce lo dice: se in un pacchetto una sola
+// voce propone Riccardo, quelle ore sono di quella voce, e vederle in fondo
+// mentre la riga aperta resta a zero rende illeggibile la schermata che si è
+// appena aperta. Chi nessuna voce reclama tiene la sua riga in coda, marcata
+// «sul pacchetto»: sparire da una schermata e continuare a pesare sui totali è
+// la cosa che quelle ore non devono fare.
 //
 // **La tinta della saturazione resta quella della persona, non della cella.**
 // In una sotto-riga il numero sono le ore di quella persona *su questo
@@ -93,9 +105,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { lunediDellaSettimana } from '../tempo.js';
 import {
-  chiaveCarico, livelloSaturazione, oreCella, oreRisorsaSettimana, orePacchettoSettimana,
-  oreVoceSettimana, risorseDiPacchetto, risorseDiVoce, risorseSenzaVoce, vociDiPacchetto,
-  perMese, spalma,
+  chiaveCarico, destinazioneOre, livelloSaturazione, oreCella, oreRisorsaSettimana, orePacchettoSettimana,
+  oreSottoRiga, oreVoceSettimana, risorseDiPacchetto, risorseDiVoce, risorseSenzaVoce,
+  vociDiPacchetto, perMese, spalma,
 } from '../programma.js';
 import { readPref, writePref } from '../viewPrefs.js';
 import { oreBrevi, leggiOre } from './formato.js';
@@ -279,7 +291,18 @@ export default function Matrice({
   const valore = (riga, colonna) => {
     const w = settimane[colonna];
     if (riga.tipo === 'risorsa') {
-      return oreCella(doc, /** @type {string} */ (riga.risorsa), riga.pacchettoId, w, riga.voceId);
+      // La riga in coda al pacchetto dice **solo** le ore senza voce: è la sua
+      // ragione di esistere, e sommarci quelle di una voce le mostrerebbe due
+      // volte, qui e nella riga della voce qui sopra.
+      if (riga.orfana) {
+        return oreCella(doc, /** @type {string} */ (riga.risorsa), riga.pacchettoId, w);
+      }
+      // Altrimenti il totale di quello che la riga ha sotto: le sotto-voci che
+      // non si stanno mostrando, e le ore lasciate sul pacchetto che questa
+      // voce adotta. Leggere la sola chiave della riga lasciava la persona a
+      // zero sotto un pacchetto che diceva quaranta.
+      return oreSottoRiga(
+        doc, /** @type {string} */ (riga.risorsa), riga.pacchettoId, riga.voceId, w);
     }
     // Le righe chiuse sommano quello che hanno sotto — la voce prende tutto il
     // suo ramo, come le ore stimate — e rispettano il filtro sulla persona.
@@ -289,17 +312,45 @@ export default function Matrice({
     return orePacchettoSettimana(doc, riga.pacchettoId, w, personaSola || null);
   };
 
-  /** Scrive un valore nelle celle indicate. @param {{ riga: Riga, colonna: number }[]} celle @param {number[]} valori */
+  /**
+   * Scrive un valore nelle celle indicate.
+   *
+   * La cella non è più la chiave della riga: è la sua **destinazione** — la
+   * cella più profonda in cui quelle ore stanno già — e quello che sostituisce
+   * si azzera nello stesso colpo, perché sono le stesse ore. Una riga che è la
+   * somma di due voci diverse non ha una destinazione: come per le righe di
+   * totale, la risposta è scendere di un livello.
+   * @param {{ riga: Riga, colonna: number }[]} celle @param {number[]} valori
+   */
   function scrivi(celle, valori) {
+    /** @type {Map<string, number>} */
+    const scritte = new Map();
+    /** @type {Set<string>} */
+    const azzerate = new Set();
+    let somme = false;
+    celle.forEach((cella, i) => {
+      // La riga in coda al pacchetto scrive nella sua cella e basta: mostra le
+      // sole ore senza voce, e mandarle su una voce vorrebbe dire spostare
+      // quello che si sta guardando.
+      const dove = cella.riga.orfana
+        ? { chiave: chiaveCarico(/** @type {string} */ (cella.riga.risorsa),
+          cella.riga.pacchettoId, settimane[cella.colonna]), assorbe: [] }
+        : destinazioneOre(
+          doc, /** @type {string} */ (cella.riga.risorsa), cella.riga.pacchettoId,
+          cella.riga.voceId, settimane[cella.colonna]);
+      if (!dove) { somme = true; return; }
+      scritte.set(dove.chiave, valori[Math.min(i, valori.length - 1)]);
+      for (const chiave of dove.assorbe) azzerate.add(chiave);
+    });
     /** @type {Record<string, number>} */
     const mappa = {};
-    celle.forEach((cella, i) => {
-      const chiave = chiaveCarico(
-        /** @type {string} */ (cella.riga.risorsa), cella.riga.pacchettoId,
-        settimane[cella.colonna], cella.riga.voceId);
-      mappa[chiave] = valori[Math.min(i, valori.length - 1)];
-    });
+    // Prima gli zeri, poi i valori: in una selezione larga la stessa cella può
+    // essere la destinazione di una riga e l'assorbita di un'altra, e vince
+    // quello che si è scritto.
+    for (const chiave of azzerate) mappa[chiave] = 0;
+    for (const [chiave, ore] of scritte) mappa[chiave] = ore;
     if (Object.keys(mappa).length) onCelle(mappa);
+    else if (somme && dettaglio < 2) cambiaDettaglio(dettaglio + 1);
   }
 
   /** La riga su cui si sta scrivendo, o l'apertura che ci porta. @param {number} r */
