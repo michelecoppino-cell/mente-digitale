@@ -17,6 +17,14 @@
 // **lavorazione che si chiude**, perché il più delle volte si cerca una
 // lavorazione fra dieci e non una sotto-voce fra trenta. Chiuse tutte, l'elenco
 // torna a essere le dieci righe che sono la commessa.
+//
+// **Di default si legge per pacchetto.** Le voci arrivano incollate a blocchi e
+// nell'ordine in cui vengono in mente, quindi l'ordine del file è quasi sempre
+// un ordine di scrittura e non di lettura: due voci dello stesso pacchetto
+// finiscono a venti righe di distanza, e per farsi un'idea di un pacchetto
+// bisogna accendere il filtro. Raggruppate, l'elenco si legge come si legge la
+// commessa. L'ordine del file resta a un clic, perché è l'unico che dice *in
+// che ordine sono state pensate*, e serve quando si sta ancora scrivendo.
 import { useMemo, useState } from 'react';
 import {
   alberoVoci, statoVoce, eFoglia, oreCarico, ETICHETTE_STATO,
@@ -26,6 +34,7 @@ import { oreBrevi } from './formato.js';
 import { readPref, writePref } from '../viewPrefs.js';
 
 const CHIAVE_CHIUSE = 'md_pg_voci_chiuse_v1';
+const CHIAVE_ORDINE = 'md_pg_voci_ordine_v1';
 
 /** @typedef {import('../programma.js').DocProgramma} DocProgramma */
 /** @typedef {import('../programma.js').Voce} Voce */
@@ -69,6 +78,8 @@ export default function ElencoVoci({
   const [filtroStato, setFiltroStato] = useState('');
   const [scoperte, setScoperte] = useState(soloScoperte);
   const [conScartate, setConScartate] = useState(false);
+  const [ordine, setOrdine] = useState(() => (
+    readPref(CHIAVE_ORDINE, 'pacchetto') === 'file' ? 'file' : 'pacchetto'));
   // Le lavorazioni chiuse si tengono per id e si ricordano: si tiene l'elenco
   // dei **chiusi** e non degli aperti, così una lavorazione appena scomposta
   // nasce aperta invece che nascosta.
@@ -107,7 +118,7 @@ export default function ElencoVoci({
     if (filtroStato && stato !== filtroStato) return false;
     if (scoperte && !(v.pacchettoId && pacchettiScoperti.has(v.pacchettoId))) return false;
     return true;
-  });
+  }, { ordine: /** @type {'file'|'pacchetto'} */ (ordine) });
 
   const contenitori = doc.voci.filter(v => doc.voci.some(f => f.padreId === v.id)).map(v => v.id);
   // Le ore di quello che si sta guardando, contando **solo le foglie**: sommare
@@ -142,6 +153,17 @@ export default function ElencoVoci({
         <select className="pg-filtro" value={filtroRisorsa} onChange={e => setFiltroRisorsa(e.target.value)}>
           <option value="">risorsa: tutte</option>
           {doc.risorse.map(r => <option key={r.nome} value={r.nome}>{r.nome}</option>)}
+        </select>
+        {/* L'ordine è accanto ai filtri perché è la stessa cosa: due modi di
+            togliere di mezzo quello che adesso non si sta guardando. */}
+        <select
+          className="pg-filtro"
+          value={ordine}
+          onChange={e => { setOrdine(e.target.value); writePref(CHIAVE_ORDINE, e.target.value); }}
+          title="Come sono ordinate le lavorazioni di primo livello"
+        >
+          <option value="pacchetto">ordine: per pacchetto</option>
+          <option value="file">ordine: come scritte</option>
         </select>
         <select className="pg-filtro" value={filtroStato} onChange={e => setFiltroStato(e.target.value)}>
           <option value="">stato: tutti</option>

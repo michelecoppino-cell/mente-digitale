@@ -69,16 +69,20 @@ export default function Istruzioni({ onChiudi }) {
               </li>
               <li>
                 <b>La matrice.</b> Quante ore di quella persona vanno in quella settimana su quel
-                pacchetto. Il passato si compila in blocco dal Riepilogo («già spese»), il futuro
-                cella per cella — perché lì ogni settimana è una decisione.
+                pacchetto. Una riga per <b>pacchetto</b>, e aprendola le persone che ci stanno
+                sopra: la domanda qui è sul lavoro — quando si fa, e chi lo fa. Il passato si
+                compila in blocco dal Riepilogo («già spese»), il futuro cella per cella — perché
+                lì ogni settimana è una decisione. La tinta rossa di una cella è la persona, non la
+                cella: dice che quella settimana è oltre la sua capacità contando tutto.
               </li>
               <li>
-                <b>Persone.</b> La stessa matrice girata: una riga per persona, e le ore sommate su
+                <b>Persone.</b> La matrice al contrario: una riga per persona, e le ore sommate su
                 <b> tutte le commesse accese</b>. Serve a una domanda che dentro una commessa sola
                 non ha risposta — «a questa persona ho già dato quella settimana?» —, perché dieci
                 ore qui e trenta là stanno sotto la capacità in tutte e due le matrici e sopra nella
                 realtà. Si legge e basta: le ore si cambiano nella matrice della commessa, e un clic
-                sul suo nome ci porta.
+                sul suo nome ci porta. Il filtro dei pacchetti in testata vale in tutt&apos;e due:
+                acceso, si vedono solo le ore di quel pacchetto — righe, totali e piede compresi.
               </li>
               <li>
                 <b>Attivare.</b> Quando una voce sta per cominciare, «Attiva…» crea l&apos;attività
@@ -94,17 +98,29 @@ export default function Istruzioni({ onChiudi }) {
               <li><b>vendute</b> — il numero contrattuale. Non si tocca da solo.</li>
               <li><b>stimate</b> — la somma delle ore delle <i>voci</i>: cosa c&apos;è da fare.</li>
               <li><b>a piano</b> — la somma delle <i>celle</i> della matrice: chi lo fa, e quando.</li>
+              <li><b>programmate</b> — le sole celle da questa settimana in avanti.</li>
               <li>
                 <b>da collocare</b> — stimate meno a piano. Positivo vuol dire lavoro che c&apos;è ma
                 che nessuno sta facendo in nessuna settimana. È il numero per cui il pannello
                 esiste: i due dati sono veri tutti e due e non si derivano l&apos;uno dall&apos;altro.
               </li>
               <li>
-                <b>speso</b> e <b>a finire</b> — la matrice tagliata in due dalla colonna di questa
-                settimana. Niente timesheet: le settimane passate si correggono con quanto è andato
-                davvero.
+                <b>speso</b> e <b>programmate</b> — la matrice tagliata in due dalla colonna di
+                questa settimana: a sinistra quello che è andato, a destra quello che è già in
+                calendario. Niente timesheet: le settimane passate si correggono con quanto è
+                andato davvero, una per una o in blocco dal Riepilogo.
               </li>
-              <li><b>margine</b> — vendute meno a piano. Quando è rosso, sotto c&apos;è scritto da quali pacchetti viene.</li>
+              <li>
+                <b>a finire</b> — stimate meno speso. <i>Non</i> le celle a destra: la
+                programmazione non si fa mai fino in fondo, e contare quella direbbe sempre meno
+                lavoro di quanto ne resta. Non va sotto zero — chi ha già speso più di quanto
+                stimava non ha ore di credito, ha un margine rosso.
+              </li>
+              <li>
+                <b>margine</b> — vendute meno <i>speso più a finire</i>, cioè meno quello che la
+                commessa costerà in tutto. Quando è rosso, sotto c&apos;è scritto da quali pacchetti
+                viene.
+              </li>
             </ul>
           </section>
 
@@ -113,7 +129,7 @@ export default function Istruzioni({ onChiudi }) {
             <ul className="pg-elenco">
               <li><b>frecce</b> per muoversi, <b>una cifra</b> per cominciare a scrivere, <b>Invio</b> o <b>Tab</b> per confermare.</li>
               <li><b>⇧+frecce</b> seleziona un intervallo. Battendo un numero su un intervallo chiede se va in ogni settimana o spalmato su tutte.</li>
-              <li><b>barra spaziatrice</b> apre e chiude una persona. Si scrive nelle sotto-righe: la riga chiusa è il totale, e non ha un pacchetto in cui mettere le ore.</li>
+              <li><b>barra spaziatrice</b> apre e chiude un pacchetto. Si scrive nelle sotto-righe: la riga chiusa è il totale del pacchetto, e non ha una persona a cui dare le ore.</li>
               <li><b>⌘Z</b> annulla. Il quadratino in basso a destra della cella ripete il valore verso destra.</li>
               <li><b>Canc</b> svuota. Una cella vuota è vuota: non salva uno zero.</li>
             </ul>

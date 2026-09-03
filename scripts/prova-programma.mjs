@@ -92,6 +92,23 @@ const plinti = doc.voci.find(v => v.titolo === 'Plinti');
 doc = await store.cambiaProgramma(commessa.id, d => pg.conVoceAggiornata(d, plinti.id, { ore: 100 }));
 verifica(doc.voci.find(v => v.id === fondazioni.id).ore === 390, 'e si risomma a ogni modifica');
 
+// L'elenco voci si legge per pacchetto, non nell'ordine in cui le voci sono
+// state scritte: incollate a blocchi, due voci dello stesso pacchetto finivano a
+// venti righe di distanza.
+const perPacchettoOrd = pg.alberoVoci(doc, undefined, { ordine: 'pacchetto' });
+const pacchettiInFila = perPacchettoOrd.filter(x => x.livello === 0)
+  .map(x => x.voce.pacchettoId || doc.voci.find(f => f.padreId === x.voce.id)?.pacchettoId || null);
+verifica(pacchettiInFila.filter((p, i) => p !== pacchettiInFila[i - 1]).length
+  === new Set(pacchettiInFila).size,
+  'i rami di primo livello si raggruppano per pacchetto, senza tornare indietro');
+verifica(pg.alberoVoci(doc).map(x => x.voce.id).sort().join()
+  === perPacchettoOrd.map(x => x.voce.id).sort().join(),
+  'e non si perde né si duplica niente: è lo stesso albero, in un altro ordine');
+// Una lavorazione porta spesso il pacchetto solo sulle sue sotto-voci: se
+// contasse il suo, finirebbe con le orfane in fondo invece che coi suoi figli.
+verifica(perPacchettoOrd[0].livello === 0,
+  'l\'albero resta un albero: la madre prima delle figlie');
+
 console.log('\nIl carico, e i due numeri che non devono coincidere\n');
 
 const settimana = '2026-W40';
@@ -109,14 +126,25 @@ doc = await store.cambiaProgramma(commessa.id, d => {
 });
 const numeri = pg.totali(doc, { settimanaOra: '2026-W40' });
 verifica(numeri.speso === 40, 'a sinistra della settimana corrente c\'è lo speso');
-verifica(numeri.aFinire === 15, 'a destra c\'è quello che manca');
-verifica(numeri.margine === 1200 - 55, 'il margine è il venduto meno tutto quello che c\'è a piano');
+verifica(numeri.programmate === 15, 'a destra c\'è quello che è già in calendario');
+// «A finire» non guarda le celle future: la programmazione non si fa mai fino in
+// fondo, e leggerla lì diceva sistematicamente meno lavoro di quanto ne restava.
+verifica(numeri.aFinire === 590 - 40, 'a finire sono le stime meno lo speso, non le celle a destra');
+verifica(numeri.margine === 1200 - 590, 'il margine è il venduto meno speso più a finire');
 verifica(numeri.stimate === 590 && numeri.daCollocare === 590 - 55,
   'stime e celle restano due numeri diversi, e il delta è quello che si guarda');
 
 const perPacchetto = pg.totali(doc, { pacchettoId: c10.id, settimanaOra: '2026-W40' });
 verifica(perPacchetto.stimate === 200 && perPacchetto.aPiano === 40,
   'gli stessi numeri, per un pacchetto solo');
+verifica(perPacchetto.aFinire === 200 - 40 && perPacchetto.margine === 0,
+  'e per un pacchetto il metro sono le sue voci: speso più a finire le ripagano esatte');
+// Chi ha già speso più di quanto stimava non ha ore «di credito» da finire.
+const sforato = pg.conCarico(doc, pg.chiaveCarico('Marco', c10.id, '2026-W37'), 500);
+verifica(pg.totali(sforato, { pacchettoId: c10.id, settimanaOra: '2026-W40' }).aFinire === 0,
+  'e a finire non va mai sotto zero: speso più delle stime è un margine rosso, non ore di credito');
+verifica(pg.totali(sforato, { pacchettoId: c10.id, settimanaOra: '2026-W40' }).margine === 200 - 540,
+  'il rosso si legge tutto nel margine');
 
 console.log('\nLa saturazione\n');
 
@@ -128,6 +156,21 @@ verifica(pg.livelloSaturazione(36, 35) === 'sopra', 'oltre la capacità');
 verifica(pg.livelloSaturazione(32, 35) === 'soglia', 'dal 90% in su si è in soglia');
 verifica(pg.livelloSaturazione(20, 35) === 'sotto' && pg.livelloSaturazione(0, 35) === 'vuota',
   'e sotto la soglia la cella non urla');
+
+console.log('\nLa matrice girata: le righe sono il lavoro, non le persone\n');
+
+// La matrice ha in cima il pacchetto e sotto le persone. Le somme che quella
+// tabella legge sono queste, ed è qui che si controlla che un filtro non lasci
+// in piedi il totale di tutto il resto.
+verifica(pg.orePacchettoSettimana(doc, c10.id, '2026-W38') === 20,
+  'il totale di un pacchetto in una settimana: è la riga chiusa');
+verifica(pg.orePacchettoSettimana(doc, c10.id, '2026-W38', 'Sara') === 0,
+  'e ristretto a una persona sola, sono le sue ore e basta');
+verifica(pg.oreRisorsaSettimana(doc, 'Marco', '2026-W38', c10.id) === 20
+  && pg.oreRisorsaSettimana(doc, 'Marco', '2026-W38', a60.id) === 0,
+  'anche il totale di una persona sa del filtro: un filtro che non tocca le somme è peggio di nessun filtro');
+verifica(pg.risorseDiPacchetto(doc, c10.id).map(r => r.nome).join() === 'Marco',
+  'le sotto-righe di un pacchetto sono solo chi ci ha davvero qualcosa');
 
 console.log('\nSpalmare un numero su un intervallo\n');
 
@@ -311,8 +354,12 @@ verifica(riep.righe[riep.righe.length - 1].pacchettoId === null
   'le voci senza pacchetto esistono e pesano: non vederle darebbe un totale che non torna');
 verifica(riep.righe.reduce((s, r) => s + r.stimate, 0) === riep.totale.stimate,
   'la colonna delle stimate somma al totale');
-verifica(riep.totale.speso === 15 && riep.totale.aFinire === 0,
-  'speso e a finire sono la matrice tagliata in due dalla settimana di oggi');
+verifica(riep.totale.speso === 15 && riep.totale.programmate === 0,
+  'speso e programmate sono la matrice tagliata in due dalla settimana di oggi');
+verifica(riep.totale.aFinire === riep.totale.stimate - 15,
+  'a finire invece non guarda la matrice: sono le stime meno lo speso');
+verifica(riep.righe.every(r => r.aFinire === Math.max(0, r.stimate - r.speso)),
+  'e vale riga per riga, pacchetto per pacchetto');
 
 console.log('\nIl collegamento con la sezione\n');
 
@@ -379,6 +426,27 @@ const sara = righe.find(r => r.nome === 'Sara');
 verifica(!!sara && sara.totale === 0,
   'chi è in anagrafica ma non ha ore ha comunque la sua riga: è il posto in cui si guarda prima di dargliene');
 verifica(pg.caricoPersone([], []).length === 0, 'e senza programmi non c\'è nessuna riga');
+
+// Il filtro dei pacchetti della testata vale anche qui: la stessa domanda della
+// matrice, letta per riga invece che per colonna.
+const unPacchetto = corretto.pacchetti[0];
+const filtrate = pg.caricoPersone(
+  [{ id: 'a', nome: '2600 Ponte', doc: corretto }, { id: 'b', nome: '2601 Muro', doc: docAltra }],
+  settimanePersone, { pacchettoId: unPacchetto.id });
+const marcoFiltrato = filtrate.find(r => r.nome === 'Marco');
+verifica(!!marcoFiltrato && marcoFiltrato.totale === settimanePersone.reduce(
+  (s, w) => s + pg.oreCella(corretto, 'Marco', unPacchetto.id, w), 0),
+  'col filtro acceso restano le ore di quel pacchetto, e solo quelle');
+verifica(marcoFiltrato.totale < marco.totale,
+  'che sono meno di quelle che ha in tutto: se fossero uguali il filtro non starebbe filtrando');
+verifica(!filtrate.some(r => r.totale === 0),
+  'e spariscono le righe a zero: un elenco di zeri non è una risposta');
+// La sovrapposizione è della persona, non del pacchetto: un filtro non deve
+// poter spegnere l'unica cosa che questa vista esiste per dire.
+verifica(marcoFiltrato.sovrapposte.includes('2026-W10'),
+  'ma le settimane sopra la capacità restano quelle vere, contate sul carico intero');
+verifica(marcoFiltrato.oreIntere['2026-W10'] === marco.ore['2026-W10'],
+  'ed è il carico intero a restare a disposizione della vista, per il rosso della cella');
 
 console.log('\nIl foglio che esce, e le ore che rientrano\n');
 

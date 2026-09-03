@@ -169,6 +169,7 @@ function righeRiepilogo(doc, settimanaOra) {
       { v: 'Stimate', s: STILE.intestazione },
       { v: 'Speso', s: STILE.intestazione },
       { v: 'A finire', s: STILE.intestazione },
+      { v: 'Programmate', s: STILE.intestazione },
       { v: 'A piano', s: STILE.intestazione },
       { v: 'Da collocare', s: STILE.intestazione },
     ],
@@ -176,19 +177,25 @@ function righeRiepilogo(doc, settimanaOra) {
   for (const r of perPacchetto) {
     righe.push([r.nome, r.voci,
       { v: r.stimate || '', s: STILE.ore }, { v: r.speso || '', s: STILE.ore },
-      { v: r.aFinire || '', s: STILE.ore }, { v: r.aPiano || '', s: STILE.ore },
+      { v: r.aFinire || '', s: STILE.ore }, { v: r.programmate || '', s: STILE.ore },
+      { v: r.aPiano || '', s: STILE.ore },
       { v: r.daCollocare || '', s: STILE.ore }]);
   }
   righe.push([
     { v: 'Tutta la commessa', s: STILE.totale },
     { v: doc.voci.filter(v => !v.scartata && eFoglia(doc, v.id)).length, s: STILE.totale },
     { v: totale.stimate, s: STILE.totale }, { v: totale.speso, s: STILE.totale },
-    { v: totale.aFinire, s: STILE.totale }, { v: totale.aPiano, s: STILE.totale },
+    { v: totale.aFinire, s: STILE.totale }, { v: totale.programmate, s: STILE.totale },
+    { v: totale.aPiano, s: STILE.totale },
     { v: totale.daCollocare, s: STILE.totale },
   ]);
   righe.push([]);
   righe.push([{ v: 'Vendute', s: STILE.intestazione }, { v: doc.commessa.oreVendute, s: STILE.ore }]);
-  righe.push([{ v: 'A piano', s: STILE.intestazione }, { v: totale.aPiano, s: STILE.ore }]);
+  // Il margine si misura sulla previsione — speso più quello che le stime dicono
+  // che manca — e non sulle celle: la programmazione non si fa mai fino in
+  // fondo, e misurarlo lì darebbe un margine che migliora smettendo di
+  // programmare.
+  righe.push([{ v: 'Speso + a finire', s: STILE.intestazione }, { v: totale.previsione, s: STILE.ore }]);
   righe.push([{ v: 'Margine', s: STILE.totale }, { v: totale.margine, s: STILE.totale }]);
   righe.push([]);
   righe.push([{ v: 'Per rimandare indietro le ore vere: nel foglio Matrice correggi le celle della settimana finita, poi selezionale con le due colonne di sinistra e la riga delle settimane, copia e incolla in Programma › Matrice › Ore registrate.', s: STILE.tenue }]);

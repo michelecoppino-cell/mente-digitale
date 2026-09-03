@@ -1037,7 +1037,10 @@
 
 /* ── Il riepilogo: tutta la commessa in una tabella ──────────────────────── */
 
-.pg-riepilogo { display: flex; flex-direction: column; max-width: 900px; }
+/* Una colonna in più — «programmate» accanto ad «a finire» — e le sette
+   colonne di numeri non stavano più dentro i novecento pixel: il nome del
+   pacchetto si riduceva a due lettere e tre puntini. */
+.pg-riepilogo { display: flex; flex-direction: column; max-width: 1040px; }
 .pg-riep-riga {
   display: flex;
   align-items: center;
@@ -1060,7 +1063,7 @@
 @media (hover: hover) { .pg-riep-testa:hover, .pg-riep-totale:hover { background: none; } }
 .pg-riep-totale { border-top: 1px solid var(--line); border-bottom: none; color: var(--text); }
 .pg-riep-nome { flex: 1; min-width: 0; display: flex; align-items: center; gap: var(--sp-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.pg-riep-num { flex: 0 0 86px; text-align: right; font-variant-numeric: tabular-nums; }
+.pg-riep-num { flex: 0 0 80px; text-align: right; font-variant-numeric: tabular-nums; }
 .pg-riep-scoperto { color: var(--danger); }
 .pg-riep-azione { flex: 0 0 76px; text-align: right; }
 .pg-riep-link {
