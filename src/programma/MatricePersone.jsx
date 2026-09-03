@@ -16,9 +16,17 @@
 // e un clic sulla commessa porta nella sua matrice, dove quelle ore si
 // cambiano davvero.
 //
-// **Le righe si aprono, come nella matrice di commessa.** Chiusa è il totale
-// della persona, aperta è una sotto-riga per commessa — e solo quelle in cui
-// ha davvero delle ore.
+// **Le righe si aprono, come nella matrice di commessa**, e con gli stessi due
+// bottoni: chiusa è il totale della persona, aperta scende la catena — la
+// commessa, il pacchetto, e con «voci» e «sottovoci» il lavoro dentro. È la
+// stessa catena della matrice letta dall'altro capo: là si parte dal lavoro e
+// si arriva alla persona, qui si parte dalla persona e si arriva al lavoro.
+// Solo i rami in cui ha davvero delle ore.
+//
+// **Con una commessa sola accesa il suo livello sparisce.** Sarebbe una riga
+// che ripete il titolo della pagina, e un gradino in più fra la persona e il
+// lavoro. Con due o più torna, perché lì «da dove viene questo carico»
+// comincia proprio dalla commessa.
 //
 // **Il filtro dei pacchetti della testata vale anche qui.** Un pacchetto sta in
 // una commessa sola, quindi filtrando questa tabella diventa «di questo
@@ -39,6 +47,12 @@ import { lunediDellaSettimana } from '../tempo.js';
 import { caricoPersone, livelloSaturazione, perMese } from '../programma.js';
 import { oreBrevi } from './formato.js';
 import { DENSITA, useDensita } from './densita.js';
+import { readPref, writePref } from '../viewPrefs.js';
+
+// La stessa preferenza della matrice: sono due letture della stessa catena, e
+// vederla a due profondità diverse passando da una scheda all'altra sarebbe
+// esattamente il modo di non fidarsi né dell'una né dell'altra.
+const CHIAVE_DETTAGLIO = 'md_pg_matrice_dettaglio_v1';
 
 /** @typedef {import('../programma.js').DocProgramma} DocProgramma */
 
@@ -46,6 +60,25 @@ const MESI = ['gen', 'feb', 'mar', 'apr', 'mag', 'giu', 'lug', 'ago', 'set', 'ot
 
 /** «mag» dal mese 'YYYY-MM'. @param {string} mese */
 const nomeMese = mese => MESI[Number(mese.slice(5, 7)) - 1] || mese;
+
+/**
+ * L'albero sotto una persona, disteso in righe con la loro profondità: la
+ * griglia è una lista di righe, e annidare dei `<div>` romperebbe l'allineamento
+ * delle colonne. Aperto o chiuso lo decide già il modello — qui ci sono solo i
+ * rami che hanno ore.
+ * @param {import('../programma.js').QuotaCommessa[]} nodi
+ * @param {number} [livello]
+ * @returns {{ nodo: import('../programma.js').QuotaCommessa, livello: number }[]}
+ */
+function appiattisci(nodi, livello = 0) {
+  /** @type {{ nodo: import('../programma.js').QuotaCommessa, livello: number }[]} */
+  const fila = [];
+  for (const nodo of nodi) {
+    fila.push({ nodo, livello });
+    if (nodo.figli.length) fila.push(...appiattisci(nodo.figli, livello + 1));
+  }
+  return fila;
+}
 
 /**
  * @param {object} props
@@ -63,11 +96,18 @@ export default function MatricePersone({
 }) {
   const [aperte, setAperte] = useState(/** @type {string[]} */ ([]));
   const [densita, cambiaDensita] = useDensita();
+  const [dettaglio, setDettaglio] = useState(() => {
+    const salvato = readPref(CHIAVE_DETTAGLIO, 0);
+    return typeof salvato === 'number' && salvato >= 0 && salvato <= 2 ? salvato : 0;
+  });
   const scorrevole = useRef(/** @type {HTMLDivElement|null} */ (null));
 
   const persone = useMemo(
-    () => caricoPersone(programmi, settimane, { pacchettoId: pacchettoScelto }),
-    [programmi, settimane, pacchettoScelto]);
+    () => caricoPersone(programmi, settimane, { pacchettoId: pacchettoScelto, dettaglio }),
+    [programmi, settimane, pacchettoScelto, dettaglio]);
+
+  /** @param {number} livelli */
+  const cambiaDettaglio = livelli => { setDettaglio(livelli); writePref(CHIAVE_DETTAGLIO, livelli); };
 
   // Come nella matrice di commessa: la settimana corrente a un terzo da
   // sinistra, perché è la colonna da cui si guarda avanti — e lo stesso gesto
@@ -116,6 +156,23 @@ export default function MatricePersone({
         >
           {tutteAperte ? 'chiudi tutte' : 'apri tutte'}
         </button>
+        <button
+          type="button"
+          className={`pg-barra-btn${dettaglio >= 1 ? ' scelto' : ''}`}
+          onClick={() => cambiaDettaglio(dettaglio >= 1 ? 0 : 1)}
+          title="Sotto ogni pacchetto, le lavorazioni su cui la persona ha ore"
+        >
+          voci
+        </button>
+        <button
+          type="button"
+          className={`pg-barra-btn${dettaglio >= 2 ? ' scelto' : ''}`}
+          onClick={() => cambiaDettaglio(dettaglio >= 2 ? 1 : 2)}
+          title="Anche le figlie delle lavorazioni scomposte"
+        >
+          sottovoci
+        </button>
+
         <span className="pg-barra-sp" />
         <span className="eyebrow">densità</span>
         {Object.entries(DENSITA).map(([chiave, { etichetta }]) => (
@@ -201,11 +258,18 @@ export default function MatricePersone({
                   <div className="pg-tot">{scritte(persona.totale)}</div>
                 </div>
 
-                {aperta && persona.commesse.map(c => (
-                  <div key={c.programmaId} className="pg-riga pg-riga-pacchetto">
-                    <div className="pg-nome" onClick={() => onApriCommessa?.(c.programmaId)} title="Apri la matrice di questa commessa">
-                      <span className="pg-punto" />
-                      <span className="pg-nome-testo">{c.nome}</span>
+                {aperta && appiattisci(persona.commesse).map(({ nodo, livello }) => (
+                  <div key={nodo.chiave} className={`pg-riga pg-riga-pacchetto${nodo.tipo === 'voce' ? ' pg-riga-voce' : ''}`}>
+                    <div
+                      className="pg-nome"
+                      style={{ paddingLeft: `calc(var(--sp-3) + ${(livello + 1) * 16}px)` }}
+                      onClick={() => onApriCommessa?.(nodo.programmaId)}
+                      title="Apri la matrice di questa commessa"
+                    >
+                      {nodo.tipo === 'voce'
+                        ? <span className="pg-voce-segno">·</span>
+                        : <span className="pg-punto" style={nodo.colore ? { background: nodo.colore } : undefined} />}
+                      <span className="pg-nome-testo">{nodo.nome}</span>
                     </div>
                     {settimane.map(w => (
                       <div
@@ -217,10 +281,10 @@ export default function MatricePersone({
                           inizioMese.has(w) ? 'pg-mese-inizio' : '',
                         ].filter(Boolean).join(' ')}
                       >
-                        {scritte(c.ore[w] || 0)}
+                        {scritte(nodo.ore[w] || 0)}
                       </div>
                     ))}
-                    <div className="pg-tot">{scritte(c.totale)}</div>
+                    <div className="pg-tot">{scritte(nodo.totale)}</div>
                   </div>
                 ))}
                 {aperta && !persona.commesse.length && (

@@ -66,6 +66,16 @@ campo, e non devono diventarlo: `inbox` è *la lista in cui il task sta*,
 `scheduled` è *avere un blocco nel piano del giorno*. La mappatura sta in
 `taskModel.js`, i campi in `taskStore.js`.
 
+**La voce sta in coda alla chiave del carico, e può non esserci.** La chiave era
+`risorsa|pacchetto|settimana`, adesso è `risorsa|pacchetto|settimana|voce` — con
+la voce **facoltativa**, e in coda apposta: le celle scritte prima restano
+valide e vogliono dire «ore del pacchetto, senza voce», nessun file su OneDrive
+da riscrivere, e `const [r, p, s] = chiave.split('|')` continua a dire quello
+che diceva. Quelle ore non si migrano da sole — nessuno può dire, al posto di
+chi le ha scritte, a quale voce andassero — e la matrice le mostra in coda al
+pacchetto invece di lasciarle pesare sui totali senza una riga. Anche il
+consuntivo continua a scriverle così, ed è voluto: del passato si sa il totale.
+
 **Gli id delle attività non si rigenerano mai.** I blocchi in `daily-plans`, le
 sveglie già suonate e la deduplica delle scadenze ricorrenti citano i task per
 id. Spostare un'attività fra liste è uno spostamento vero (`spostaTask`), non un
@@ -165,11 +175,11 @@ che ha già smesso di funzionare.
 | `src/use*.js` | i pezzi che stavano in `App.jsx` e non c'entravano con lui: la campanella, le scadenze ricorrenti, i colori, le sveglie |
 | `src/deadlineReminders.js` | le scadenze che tornano ogni anno: come si scrive un evento `[LISTA +30g] Titolo`, quali occorrenze sono dovute oggi, e come si sa che ci sono già |
 | `src/calendarioLavoro.js` | lo specchio del calendario aziendale: cosa c'è nel file su OneDrive e come diventa un evento nella forma di Graph |
-| `src/programma.js` | il Programma di commessa: i conti, le chiavi del carico, lo stato derivato di una voce, e il carico di una persona su tutte le commesse. Niente rete, niente React: è il file su cui girano le prove |
+| `src/programma.js` | il Programma di commessa: i conti, le chiavi del carico (`risorsa\|pacchetto\|settimana` più, in coda e facoltativa, la voce), lo stato derivato di una voce, e il carico di una persona su tutte le commesse. Niente rete, niente React: è il file su cui girano le prove |
 | `src/programmaStore.js` | gli stessi programmi su OneDrive: registro, un documento per commessa, `reapply` che unisce per chiave |
 | `src/programmaExcel.js` | il foglio che esce (tre fogli: riepilogo, matrice, voci) e le ore vere che rientrano incollate. Puro, e il foglio Matrice esce nella stessa forma in cui rientra |
 | `src/xlsx.js` | un `.xlsx` vero senza librerie: lo zip «store» e i fogli con le celle in chiaro. Duecento righe invece di mezzo megabyte di JavaScript |
-| `src/programma/` | la vista: la matrice (una riga per pacchetto, le persone sotto) e la sua tastiera, la matrice per persona (in sola lettura, su tutti i programmi accesi), l'elenco voci, il dettaglio, attiva, le voci nuove (a campi o incollate), il riepilogo, la scheda della commessa, la guida |
+| `src/programma/` | la vista: la matrice (pacchetto › voce › sotto-voce › persona, potata da due bottoni) e la sua tastiera, la matrice per persona (in sola lettura, su tutti i programmi accesi), l'elenco voci, il dettaglio, attiva, le voci nuove (a campi o incollate), il riepilogo, la scheda della commessa, la guida |
 | `src/planner/` | la griglia del Piano (misure, colori, conti) e i suoi componenti: settimana, mese, capacità, modale evento |
 | `src/tokens.css` | colori, tipografia, spazi, raggi — la sola fonte |
 | `src/tempo.js` | il giorno locale, l'ora, le durate — scritti una volta sola |

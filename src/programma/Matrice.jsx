@@ -23,16 +23,26 @@
 // pacchetto con una persona sola, dove la destinazione è ovvia. Negli altri
 // casi la cella non dà errore, **apre la riga**: l'apertura *è* la risposta.
 //
-// **Sotto un pacchetto c'è anche il lavoro, non solo chi lo fa.** Due bottoni
-// nella barra — «voci» e «sottovoci» — aggiungono sotto ogni pacchetto aperto le
-// sue lavorazioni, e a un altro clic le loro figlie. Sono righe che **si leggono
-// e basta**: le ore vivono nella cella `persona × pacchetto × settimana`, una
-// voce non ne ha di sue, e inventargliele vorrebbe dire un secondo posto in cui
-// scrivere le stesse ore. Quello che la riga dice è l'altra metà della domanda:
-// la **finestra** della voce disegnata sulle settimane, e le sue ore stimate nel
-// totale. Da lì si vede in un colpo se le celle che si stanno riempiendo cadono
-// dove il lavoro era previsto — che prima si poteva sapere solo tenendo aperte
-// due schede.
+// **La catena è pacchetto › voce › sotto-voce › persona**, e le ore stanno in
+// fondo. Due bottoni nella barra — «voci» e «sottovoci» — dicono quanto scendere:
+// spenti, sotto il pacchetto ci sono direttamente le persone, com'era prima.
+// La cella porta la voce nella sua chiave, quindi si programma dove il lavoro è
+// davvero descritto — «Calcolo plinti, Marco, W35: 34 ore» — invece che su un
+// pacchetto da quattrocento ore in cui non si distingue più cosa è cosa.
+//
+// **Si scrive nell'ultimo livello mostrato, mai in una somma.** Una riga di
+// voce dice il totale del suo ramo, come le ore stimate: batterci dentro un
+// numero vorrebbe dire deciderne la ripartizione fra le figlie al posto di chi
+// scrive. Sotto una voce che ha figlie mostrate compaiono solo le persone che
+// ci hanno già delle ore — la risorsa *proposta* no, perché lì sarebbe una riga
+// vuota in mezzo, cioè un invito a scrivere le stesse ore due volte.
+//
+// **Le ore date al pacchetto e basta restano visibili.** Sono le celle di prima
+// che le voci esistessero, e quelle che ci arrivano ancora dal consuntivo: del
+// passato si sa il totale, non su quale voce sia caduto. Nessuno può dire al
+// posto di chi le ha scritte dove andassero, quindi non si migrano: stanno in
+// coda al pacchetto, marcate «sul pacchetto». Sparire da una schermata e
+// continuare a pesare sui totali è la cosa che non devono fare.
 //
 // **La tinta della saturazione resta quella della persona, non della cella.**
 // In una sotto-riga il numero sono le ore di quella persona *su questo
@@ -84,14 +94,15 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { lunediDellaSettimana } from '../tempo.js';
 import {
   chiaveCarico, livelloSaturazione, oreCella, oreRisorsaSettimana, orePacchettoSettimana,
-  risorseDiPacchetto, vociDiPacchetto, perMese, spalma,
+  oreVoceSettimana, risorseDiPacchetto, risorseDiVoce, risorseSenzaVoce, vociDiPacchetto,
+  perMese, spalma,
 } from '../programma.js';
 import { readPref, writePref } from '../viewPrefs.js';
 import { oreBrevi, leggiOre } from './formato.js';
 import { DENSITA, useDensita } from './densita.js';
 
 /** @typedef {import('../programma.js').DocProgramma} DocProgramma */
-/** @typedef {{ tipo: 'pacchetto'|'risorsa'|'voce', nome: string, risorsa: string|null, capacita: number, colore: string|null, pacchettoId: string, aperta: boolean, voce?: import('../programma.js').Voce, rientro?: number }} Riga */
+/** @typedef {{ tipo: 'pacchetto'|'voce'|'risorsa', nome: string, risorsa: string|null, capacita: number, colore: string|null, pacchettoId: string, voceId: string|null, aperta: boolean, rientro: number, orfana?: boolean }} Riga */
 
 const CHIAVE_DETTAGLIO = 'md_pg_matrice_dettaglio_v1';
 
@@ -134,42 +145,80 @@ export default function Matrice({
   const scorrevole = useRef(/** @type {HTMLDivElement|null} */ (null));
   const trascina = useRef(/** @type {'selezione'|'riempi'|null} */ (null));
 
-  // Le righe visibili: una per pacchetto, più le sue sotto-righe se è aperto.
+  // Le righe visibili: pacchetto › voce › sotto-voce › persona, potato dai
+  // due bottoni «voci» e «sottovoci». Le celle stanno in fondo alla catena.
   const righe = useMemo(() => {
     /** @type {Riga[]} */
     const fila = [];
     const pacchetti = pacchettoScelto
       ? doc.pacchetti.filter(p => p.id === pacchettoScelto)
       : doc.pacchetti;
+
+    /** Le righe di persona sotto una voce (o sotto il pacchetto, senza voce). */
+    const persone = (/** @type {import('../programma.js').Risorsa[]} */ sue,
+      /** @type {string} */ pacchettoId, /** @type {string|null} */ voceId,
+      /** @type {number} */ rientro, /** @type {boolean} */ orfana = false) => {
+      for (const r of sue) {
+        if (personaSola && r.nome !== personaSola) continue;
+        fila.push({
+          tipo: 'risorsa', nome: r.nome, risorsa: r.nome, capacita: r.oreSettimana,
+          colore: null, pacchettoId, voceId, aperta: false, rientro, orfana,
+        });
+      }
+    };
+
     for (const p of pacchetti) {
       const aperto = aperte.includes(p.id);
-      // Con una persona sola scelta, restano i pacchetti in cui ha qualcosa:
-      // gli altri sarebbero righe a zero, cioè rumore travestito da dato.
       const sue = personaSola
         ? doc.risorse.filter(r => r.nome === personaSola)
         : risorseDiPacchetto(doc, p.id);
       if (personaSola && !risorseDiPacchetto(doc, p.id).some(r => r.nome === personaSola)) continue;
       fila.push({
-        tipo: 'pacchetto', nome: p.nome, risorsa: unicaRisorsa(sue, personaSola),
-        capacita: 0, colore: p.colore, pacchettoId: p.id, aperta: aperto,
+        tipo: 'pacchetto', nome: p.nome,
+        // La riga chiusa si scrive solo quando la destinazione è ovvia: una
+        // persona sola, e nessuna voce di mezzo a cui quelle ore potrebbero
+        // andare. Guardando per voci quella domanda c'è sempre.
+        risorsa: dettaglio === 0 ? unicaRisorsa(sue, personaSola) : null,
+        capacita: 0, colore: p.colore, pacchettoId: p.id, voceId: null,
+        aperta: aperto, rientro: 0,
       });
       if (!aperto) continue;
-      const elenco = sue.length ? sue : doc.risorse.slice(0, 1);
-      for (const r of elenco) {
-        fila.push({
-          tipo: 'risorsa', nome: r.nome, risorsa: r.nome, capacita: r.oreSettimana,
-          colore: null, pacchettoId: p.id, aperta: false,
-        });
+
+      if (!dettaglio) {
+        persone(sue.length ? sue : doc.risorse.slice(0, 1), p.id, null, 1);
+        continue;
       }
-      // Le voci vengono dopo le persone: lì si scrive, qui si legge, e la riga
-      // in cui si batte un numero deve restare la prima che si incontra.
-      if (!dettaglio) continue;
-      for (const { voce, livello } of vociDiPacchetto(doc, p.id, dettaglio)) {
+
+      // Guardando per voci, la catena è pacchetto › voce › sotto-voce ›
+      // persona: le ore stanno in fondo, dove il lavoro è davvero descritto.
+      const voci = vociDiPacchetto(doc, p.id, dettaglio);
+      voci.forEach(({ voce, livello }, i) => {
+        // Una voce è l'ultimo livello **mostrato** se la riga dopo non è una
+        // sua figlia. È lì che si scrive: più in alto le ore sarebbero una
+        // somma, e una somma non si compila.
+        const foglia = !(voci[i + 1] && voci[i + 1].livello > livello);
         fila.push({
           tipo: 'voce', nome: voce.titolo, risorsa: null, capacita: 0,
-          colore: p.colore, pacchettoId: p.id, aperta: false, voce, rientro: livello,
+          colore: p.colore, pacchettoId: p.id, voceId: voce.id,
+          aperta: false, rientro: livello + 1,
         });
-      }
+        // Su una voce con figlie mostrate compaiono solo le persone che ci
+        // hanno già delle ore: la proposta lì sarebbe una riga vuota in mezzo,
+        // cioè un invito a scrivere le stesse ore due volte.
+        const chi = risorseDiVoce(doc, voce.id, foglia);
+        const conFiltro = personaSola && foglia
+          ? doc.risorse.filter(r => r.nome === personaSola)
+          : chi;
+        persone(conFiltro, p.id, voce.id, livello + 2);
+      });
+
+      // Le ore date al pacchetto e basta: le celle di prima che ci fossero le
+      // voci, e quelle che ci arrivano ancora oggi dal consuntivo — del
+      // passato si sa il totale, non su quale voce sia caduto. Nessuno può
+      // dire al posto di chi le ha scritte a quale voce andassero: restano
+      // dove sono, visibili, invece di sparire da una schermata e continuare
+      // a pesare sui totali.
+      persone(risorseSenzaVoce(doc, p.id), p.id, null, 1, true);
     }
     return fila;
   }, [doc, aperte, pacchettoScelto, personaSola, dettaglio]);
@@ -227,17 +276,27 @@ export default function Matrice({
     DENSITA[densita].intere ? oreBrevi(Math.round(ore)) : oreBrevi(ore));
 
   /** @param {Riga} riga @param {number} colonna */
-  const valore = (riga, colonna) => (riga.tipo === 'voce' ? 0 : riga.tipo === 'risorsa'
-    ? oreCella(doc, /** @type {string} */ (riga.risorsa), riga.pacchettoId, settimane[colonna])
-    // La riga chiusa somma le persone — tutte, o la sola scelta nel filtro.
-    : orePacchettoSettimana(doc, riga.pacchettoId, settimane[colonna], personaSola || null));
+  const valore = (riga, colonna) => {
+    const w = settimane[colonna];
+    if (riga.tipo === 'risorsa') {
+      return oreCella(doc, /** @type {string} */ (riga.risorsa), riga.pacchettoId, w, riga.voceId);
+    }
+    // Le righe chiuse sommano quello che hanno sotto — la voce prende tutto il
+    // suo ramo, come le ore stimate — e rispettano il filtro sulla persona.
+    if (riga.tipo === 'voce') {
+      return oreVoceSettimana(doc, /** @type {string} */ (riga.voceId), w, personaSola || null);
+    }
+    return orePacchettoSettimana(doc, riga.pacchettoId, w, personaSola || null);
+  };
 
   /** Scrive un valore nelle celle indicate. @param {{ riga: Riga, colonna: number }[]} celle @param {number[]} valori */
   function scrivi(celle, valori) {
     /** @type {Record<string, number>} */
     const mappa = {};
     celle.forEach((cella, i) => {
-      const chiave = chiaveCarico(/** @type {string} */ (cella.riga.risorsa), cella.riga.pacchettoId, settimane[cella.colonna]);
+      const chiave = chiaveCarico(
+        /** @type {string} */ (cella.riga.risorsa), cella.riga.pacchettoId,
+        settimane[cella.colonna], cella.riga.voceId);
       mappa[chiave] = valori[Math.min(i, valori.length - 1)];
     });
     if (Object.keys(mappa).length) onCelle(mappa);
@@ -247,8 +306,10 @@ export default function Matrice({
   function apriSeServe(r) {
     const riga = righe[r];
     if (!riga || riga.risorsa) return true;
-    // Non un errore: scrivere in una riga chiusa non ha una destinazione, e
-    // l'apertura è la risposta alla domanda «a quale persona?».
+    // Non un errore: scrivere in una riga di totale non ha una destinazione —
+    // a quale persona andrebbero quelle ore? — e l'apertura è la risposta.
+    // Su una riga di voce il pacchetto è già aperto e non c'è altro da fare:
+    // le sue persone sono lì sotto, ed è dove si scrive.
     setAperte(p => (p.includes(riga.pacchettoId) ? p : [...p, riga.pacchettoId]));
     return false;
   }
@@ -457,10 +518,11 @@ export default function Matrice({
             });
             return (
               <div
-                key={`${riga.pacchettoId}|${riga.risorsa || 'tot'}|${riga.tipo}`}
+                key={`${riga.pacchettoId}|${riga.voceId || '-'}|${riga.risorsa || 'tot'}|${riga.tipo}`}
                 className={[
                   'pg-riga',
                   riga.tipo === 'pacchetto' ? 'pg-riga-risorsa' : (riga.tipo === 'voce' ? 'pg-riga-voce' : 'pg-riga-pacchetto'),
+                  riga.orfana ? 'pg-riga-orfana' : '',
                   riga.aperta ? 'pg-aperta' : '',
                   // A righe alterne, contando i **pacchetti** e non le righe:
                   // un pacchetto aperto resta un blocco solo con le sue
@@ -471,19 +533,21 @@ export default function Matrice({
               >
                 <div
                   className="pg-nome"
-                  style={riga.rientro ? { paddingLeft: `calc(26px + ${riga.rientro * 14}px)` } : undefined}
+                  style={riga.rientro ? { paddingLeft: `calc(var(--sp-3) + ${riga.rientro * 16}px)` } : undefined}
                   onClick={() => {
                     if (riga.tipo === 'pacchetto') {
                       setAperte(p => (p.includes(riga.pacchettoId)
                         ? p.filter(id => id !== riga.pacchettoId)
                         : [...p, riga.pacchettoId]));
-                    } else if (riga.tipo === 'voce' && riga.voce) {
-                      onSceltaVoce?.(riga.voce.id);
+                    } else if (riga.tipo === 'voce' && riga.voceId) {
+                      onSceltaVoce?.(riga.voceId);
                     } else if (riga.risorsa) {
                       onSceltaRiga?.(riga.risorsa, riga.pacchettoId);
                     }
                   }}
-                  title={riga.tipo === 'voce' ? `${riga.nome} · ${oreBrevi(riga.voce?.ore || 0)} h stimate${riga.voce?.finestra ? ` · ${riga.voce.finestra.da} → ${riga.voce.finestra.a}` : ' · senza finestra'}` : undefined}
+                  title={riga.orfana
+                    ? `${riga.nome}: ore date al pacchetto e non a una voce — un consuntivo, o le celle di prima che ci fossero le voci. Restano qui finché non le si riscrive su una voce.`
+                    : undefined}
                 >
                   {riga.tipo === 'pacchetto' && (
                     <>
@@ -492,46 +556,24 @@ export default function Matrice({
                       <span className="pg-nome-testo">{riga.nome}</span>
                     </>
                   )}
-                  {riga.tipo === 'risorsa' && (
-                    <>
-                      <span className="pg-nome-testo">{riga.nome}</span>
-                      <span className="pg-cap">{riga.capacita}h/s</span>
-                    </>
-                  )}
                   {riga.tipo === 'voce' && (
                     <>
                       <span className="pg-voce-segno">·</span>
                       <span className="pg-nome-testo">{riga.nome}</span>
-                      {/* Una voce senza finestra non ha una barra da disegnare,
-                          e la riga sembrerebbe un errore: lo dice invece di
-                          lasciarlo indovinare. */}
-                      {!riga.voce?.finestra && <span className="pg-cap">quando?</span>}
+                    </>
+                  )}
+                  {riga.tipo === 'risorsa' && (
+                    <>
+                      <span className="pg-nome-testo">{riga.nome}</span>
+                      {/* Le ore rimaste sul pacchetto si riconoscono a vista,
+                          altrimenti sembrano una persona in più che compare da
+                          sola in fondo. */}
+                      <span className="pg-cap">{riga.orfana ? 'sul pacchetto' : `${riga.capacita}h/s`}</span>
                     </>
                   )}
                 </div>
 
                 {celle.map(({ w, c, v }) => {
-                  // La riga di una voce non ha celle: ha una **finestra**. Un
-                  // numero lì dentro sarebbe un secondo posto in cui leggere le
-                  // ore, e il primo che si contraddice vince.
-                  if (riga.tipo === 'voce') {
-                    const f = riga.voce?.finestra;
-                    const dentro = !!f && w >= f.da && w <= f.a;
-                    return (
-                      <div
-                        key={w}
-                        className={[
-                          'pg-cella', 'pg-cella-voce',
-                          dentro ? 'pg-finestra' : '',
-                          dentro && w === f?.da ? 'pg-finestra-inizio' : '',
-                          dentro && w === f?.a ? 'pg-finestra-fine' : '',
-                          w === settimanaOra ? 'pg-w-ora' : '',
-                          inizioMese.has(w) ? 'pg-mese-inizio' : '',
-                          sel.c === c ? 'pg-colonna-scelta' : '',
-                        ].filter(Boolean).join(' ')}
-                      />
-                    );
-                  }
                   const scelta = sel.r === r && sel.c === c;
                   const dentro = nelRettangolo(r, c);
                   // La tinta è la persona, non la cella: dice «questa persona,
@@ -640,9 +682,7 @@ export default function Matrice({
                   );
                 })}
 
-                <div className="pg-tot">
-                  {riga.tipo === 'voce' ? oreBrevi(riga.voce?.ore || 0) : scritte(totale)}
-                </div>
+                <div className="pg-tot">{scritte(totale)}</div>
               </div>
             );
           })}
@@ -695,8 +735,8 @@ export default function Matrice({
           la tinta è la persona nella settimana, su tutta la commessa — non le ore della cella
         </span>
         {dettaglio > 0 && (
-          <span className="pg-legenda-voce">
-            <span className="pg-campione pg-finestra" /> la finestra di una voce · si legge, non si scrive
+          <span className="pg-legenda-nota">
+            le ore si scrivono nella riga della persona, sotto la voce più in basso
           </span>
         )}
         {DENSITA[densita].intere && (

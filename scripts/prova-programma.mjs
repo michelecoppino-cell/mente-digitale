@@ -189,6 +189,59 @@ verifica(doc.voci.find(v => v.titolo === 'Fondazioni').pacchettoId === a60.id
 const scartate = pg.vociDiPacchetto(doc, a60.id, 3).filter(x => x.voce.scartata);
 verifica(scartate.length === 0, 'le scartate non ci sono: è lavoro che non si fa');
 
+console.log('\nLe ore di una voce\n');
+
+// La cella impara la voce, e la impara **in coda**: le chiavi a tre segmenti
+// sono le ore date al pacchetto prima che le voci ci fossero, e restano valide.
+verifica(pg.chiaveCarico('Marco', a60.id, '2026-W40') === `Marco|${a60.id}|2026-W40`,
+  'senza voce la chiave è quella di sempre: nessun file su OneDrive da riscrivere');
+verifica(pg.chiaveCarico('Marco', a60.id, '2026-W40', plinti.id).endsWith(`|${plinti.id}`),
+  'e con la voce il quarto segmento si aggiunge in coda');
+verifica(pg.leggiChiaveCarico(`Marco|${a60.id}|2026-W40`).voceId === null,
+  'una chiave vecchia si legge senza voce, non con una voce sbagliata');
+
+const platea = doc.voci.find(v => v.titolo === 'Platea');
+let conVoci = pg.conCarico(doc, pg.chiaveCarico('Marco', a60.id, '2026-W40', plinti.id), 10);
+conVoci = pg.conCarico(conVoci, pg.chiaveCarico('Sara', a60.id, '2026-W40', platea.id), 6);
+verifica(pg.oreCella(conVoci, 'Marco', a60.id, '2026-W40', plinti.id) === 10,
+  'una cella di voce si scrive e si rilegge');
+verifica(pg.oreCella(conVoci, 'Marco', a60.id, '2026-W40') === 0,
+  'e non è la stessa cella di quelle senza voce: sarebbero le stesse ore contate due volte');
+// La riga di una lavorazione dice il totale del suo ramo, come le ore stimate.
+verifica(pg.oreVoceSettimana(conVoci, fondazioni.id, '2026-W40') === 16,
+  'la riga di una lavorazione somma le sue sotto-voci');
+verifica(pg.oreVoceSettimana(conVoci, fondazioni.id, '2026-W40', 'Marco') === 10,
+  'e ristretta a una persona, le sole sue');
+verifica(pg.orePacchettoSettimana(conVoci, a60.id, '2026-W40') === 16,
+  'e il pacchetto le prende tutte, con voce o senza');
+verifica(pg.oreCarico(conVoci, { voceId: fondazioni.id }) === 16
+  && pg.oreCarico(conVoci, { voceId: plinti.id }) === 10,
+  'il filtro per voce prende il ramo, non la sola riga');
+
+// Chi compare sotto una voce: chi ci ha già ore, più chi la voce propone.
+verifica(pg.risorseDiVoce(conVoci, plinti.id).map(r => r.nome).join() === 'Marco',
+  'sotto una voce compare chi ci ha le ore');
+verifica(pg.risorseDiVoce(conVoci, plinti.id, false).map(r => r.nome).join() === 'Marco',
+  'e su una voce con figlie mostrate, la proposta non aggiunge una riga vuota');
+verifica(pg.risorseSenzaVoce(conVoci, c10.id).length > 0,
+  'le ore rimaste sul pacchetto hanno ancora la loro riga: sparire sarebbe un totale che non torna');
+
+// Cancellare una voce non cancella delle ore in silenzio.
+const senzaPlinti = pg.senzaVoce(conVoci, plinti.id);
+verifica(pg.oreCella(senzaPlinti, 'Marco', a60.id, '2026-W40', fondazioni.id) === 10,
+  'togliendo una voce le sue ore risalgono alla madre, invece di sparire');
+const senzaTutto = pg.senzaVoce(conVoci, fondazioni.id);
+verifica(pg.oreCella(senzaTutto, 'Marco', a60.id, '2026-W40') === 10
+  && pg.oreCella(senzaTutto, 'Sara', a60.id, '2026-W40') === 6,
+  'e togliendo tutta la lavorazione risalgono al pacchetto');
+verifica(pg.oreCarico(senzaTutto) === pg.oreCarico(conVoci),
+  'in nessuno dei due casi il totale della commessa cambia');
+
+// La catena serve al pannello Persone: attacca le ore al nodo più profondo
+// che si sta mostrando, invece di perderle.
+verifica(pg.catenaVoce(doc, plinti.id).map(v => v.titolo).join() === 'Fondazioni,Plinti',
+  'la catena di una voce va dalla radice fino a lei');
+
 console.log('\nSpalmare un numero su un intervallo\n');
 
 // «40 h in tutto» su otto settimane: mezze ore, e il resto sulle prime — di
@@ -464,6 +517,26 @@ verifica(marcoFiltrato.sovrapposte.includes('2026-W10'),
   'ma le settimane sopra la capacità restano quelle vere, contate sul carico intero');
 verifica(marcoFiltrato.oreIntere['2026-W10'] === marco.ore['2026-W10'],
   'ed è il carico intero a restare a disposizione della vista, per il rosso della cella');
+
+// L'albero sotto una persona: commessa, pacchetto, voce, sotto-voce. È la
+// stessa catena della matrice, letta dall'altro capo.
+verifica(righe[0].commesse.every(c => c.tipo === 'commessa'),
+  'con due programmi accesi il primo livello è la commessa');
+const unaSola = pg.caricoPersone([{ id: 'a', nome: '2600 Ponte', doc: corretto }], settimanePersone);
+const marcoSolo = unaSola.find(r => r.nome === 'Marco');
+verifica(marcoSolo.commesse.every(c => c.tipo === 'pacchetto'),
+  'con una commessa sola il suo livello sparisce: ripeterebbe il titolo della pagina');
+const conVociPersone = pg.caricoPersone(
+  [{ id: 'a', nome: '2600 Ponte', doc: corretto }], settimanePersone, { dettaglio: 2 });
+const marcoVoci = conVociPersone.find(r => r.nome === 'Marco');
+verifica(marcoVoci.commesse.reduce((s, c) => s + c.totale, 0) === marcoSolo.totale,
+  'aprendo le voci il totale della persona non cambia: è lo stesso carico, letto più a fondo');
+// Un nodo dice le sue ore più quelle di tutto quello che ha sotto: mai meno,
+// altrimenti aprirlo farebbe comparire ore che la riga chiusa non contava.
+const somme = (/** @type {any[]} */ nodi) => nodi.every(n => (
+  n.totale >= n.figli.reduce((/** @type {number} */ s, /** @type {any} */ f) => s + f.totale, 0)
+  && somme(n.figli)));
+verifica(somme(marcoVoci.commesse), 'e ogni nodo chiuso contiene la somma di quello che ha sotto');
 
 console.log('\nIl foglio che esce, e le ore che rientrano\n');
 

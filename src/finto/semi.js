@@ -280,15 +280,24 @@ const PACCHETTI = [
 ];
 
 /** @type {Record<string, number>} */
+// Le prime tre colonne sono la cella; la quarta, quando c'è, è la **voce** su
+// cui cadono quelle ore. Senza, sono ore date al pacchetto e basta — che è
+// quello che scrive il consuntivo del passato, e quello che c'era nei file
+// prima che le voci esistessero. Il seme tiene apposta tutti e due i casi: è
+// l'unico modo di vedere, provando, che convivono.
 const CARICO = {};
-for (const [risorsa, pacchetto, da, ore] of /** @type {[string, string, number, number][]} */ ([
-  ['Michele', 'pk-a30', -6, 8], ['Michele', 'pk-a30', -3, 12], ['Michele', 'pk-a30', 0, 10],
-  ['Michele', 'pk-a40', 1, 14], ['Michele', 'pk-a40', 2, 16],
-  ['Marco', 'pk-a30', -4, 30], ['Marco', 'pk-a30', -1, 34], ['Marco', 'pk-a40', 0, 36],
-  ['Marco', 'pk-a40', 1, 28], ['Marco', 'pk-a40', 3, 20],
-  ['Sara', 'pk-a20', -5, 18], ['Sara', 'pk-a20', -2, 16], ['Sara', 'pk-a50', 2, 12],
+for (const [risorsa, pacchetto, da, ore, voce] of /** @type {[string, string, number, number, string?][]} */ ([
+  ['Michele', 'pk-a30', -6, 8], ['Michele', 'pk-a30', -3, 12],
+  ['Michele', 'pk-a30', 0, 10, 'vc-4'],
+  ['Michele', 'pk-a40', 1, 14, 'vc-5'], ['Michele', 'pk-a40', 2, 16, 'vc-5'],
+  ['Marco', 'pk-a30', -4, 30], ['Marco', 'pk-a30', -1, 34, 'vc-3'],
+  ['Marco', 'pk-a40', 0, 36, 'vc-5'],
+  ['Marco', 'pk-a40', 1, 28, 'vc-5'], ['Marco', 'pk-a40', 3, 20, 'vc-5'],
+  ['Sara', 'pk-a20', -5, 18], ['Sara', 'pk-a20', -2, 16, 'vc-1'],
+  ['Sara', 'pk-a50', 2, 12, 'vc-6'],
 ])) {
-  CARICO[`${risorsa}|${pacchetto}|${settimana(da)}`] = ore;
+  const chiave = `${risorsa}|${pacchetto}|${settimana(da)}${voce ? `|${voce}` : ''}`;
+  CARICO[chiave] = ore;
 }
 
 export const PROGRAMMI = [
@@ -479,7 +488,9 @@ LAVORAZIONI.forEach(([pacchettoId, titolo, ore, risorsa, daW, aW, figlie], i) =>
     const quante = a - da + 1;
     const perSettimana = Math.round((oreFiglia / quante) * 2) / 2;
     for (let k = 0; k < quante; k++) {
-      const chiave = `${chi}|${pacchettoId}|${settimana(da + k)}`;
+      // Le ore vanno **sulla figlia**: è dove sta la descrizione del lavoro,
+      // ed è la riga in cui la matrice le fa scrivere.
+      const chiave = `${chi}|${pacchettoId}|${settimana(da + k)}|gv-${i + 1}-${j + 1}`;
       CARICO_G[chiave] = (CARICO_G[chiave] || 0) + perSettimana;
     }
   });
