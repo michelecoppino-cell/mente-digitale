@@ -96,6 +96,22 @@ regola sta in `voceAdottiva`, e le tre letture che la rispettano
 (`oreSottoRiga`, `destinazioneOre`, `celleConsuntivo`) sono l'unico posto da cui
 la matrice, la scheda Persone e il consuntivo la leggono.
 
+**A schermo i numeri stanno solo nell'ultimo livello mostrato.** La riga li
+*conta* sempre — è la regola qui sotto, ed è come si scrive e come si fa il
+totale in coda — ma se ha delle figlie a schermo non li *mostra*: aprendo tutto,
+la stessa ora compariva quattro volte incolonnata (pacchetto, voce, sotto-voce,
+persona) su venti colonne, e non si distingueva più il dato dalla sua eco. La
+sola cosa che un'intestazione dice comunque è la colonna in coda,
+`programmate/stimate`: la stima non è una somma delle celle, quindi non è
+un'eco. Nella matrice i tre bottoni — «voci», «sottovoci», «persone» — dicono
+fin dove si scende; spenti tutti e tre resta una riga per pacchetto, e la si
+compila. Il perché per esteso sta in `programma/Matrice.jsx`.
+
+**Il rosso è per le settimane che si possono ancora cambiare.** Prima di quella
+corrente la saturazione non si colora, in tutt'e due le matrici: una settimana
+andata è un fatto, non un allarme, e il rosso su una colonna che nessuno può
+più spostare toglie forza ai rossi che invece si risolvono.
+
 **Una riga dice la somma di quello che ha sotto, e si scrive in una cella
 sola.** Vale per le persone come per le voci: la riga di una persona conta le
 sotto-voci nascoste e le ore adottate, e scrivendoci dentro le ore vanno nella

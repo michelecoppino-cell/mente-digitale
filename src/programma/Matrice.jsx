@@ -16,35 +16,43 @@
 // spezza in una sotto-riga per persona — e solo le persone che su quel
 // pacchetto hanno qualcosa (o che una voce ci propone). Con dodici pacchetti e
 // sei persone le righe sarebbero settantadue: quello che si guarda a colpo
-// d'occhio è quando cade il lavoro, il dettaglio si apre dove serve.
+// d'occhio è quando cade il lavoro, il dettaglio si apre dove serve. Aprendola,
+// i suoi numeri passano alle righe che ha sotto e la sua resta il nome: una
+// somma che si vede già scomposta due righe più in basso è la stessa cosa
+// scritta due volte.
 //
-// **Si scrive solo nelle sotto-righe.** Una riga chiusa non ha una
-// destinazione: le ore andrebbero a quale persona? L'unica eccezione è il
-// pacchetto con una persona sola, dove la destinazione è ovvia. Negli altri
-// casi la cella non dà errore, **apre la riga**: l'apertura *è* la risposta.
+// **Si scrive dove la destinazione esiste.** Su una riga di somma le ore
+// andrebbero a quale persona? Quando la risposta è ovvia — una persona sola sul
+// pacchetto o sulla voce, oppure il filtro acceso su una — la riga si compila.
+// Negli altri casi la cella non dà errore, **scende di un livello**: l'apertura
+// *è* la risposta.
 //
-// **La catena è pacchetto › voce › sotto-voce › persona**, e le ore stanno in
-// fondo. Due bottoni nella barra — «voci» e «sottovoci» — dicono quanto scendere:
-// spenti, sotto il pacchetto ci sono direttamente le persone, com'era prima.
+// **La catena è pacchetto › voce › sotto-voce › persona**, e tre bottoni nella
+// barra — «voci», «sottovoci», «persone» — dicono quali di quei livelli si
+// vedono. Spenti tutti e tre resta la sola riga del pacchetto, che è la vista
+// da cui si guarda l'andamento della commessa; accesi tutti e tre si scende
+// fino alla persona, che è la vista in cui si compila.
 // La cella porta la voce nella sua chiave, quindi si programma dove il lavoro è
 // davvero descritto — «Calcolo plinti, Marco, W35: 34 ore» — invece che su un
 // pacchetto da quattrocento ore in cui non si distingue più cosa è cosa.
 //
-// **Ogni riga dice la somma di quello che ha sotto.** Una riga di persona conta
-// anche le sotto-voci che non si stanno mostrando, e coi due bottoni spenti
-// conta tutte le sue ore del pacchetto, voci comprese. Prima leggeva la sua
-// sola cella: bastava spegnere «voci» per vedere il pacchetto dire quaranta e
-// la persona sotto di lui zero.
+// **I numeri stanno solo nell'ultimo livello mostrato.** Prima ogni riga
+// portava la somma di quello che aveva sotto, e aprendo tutto la stessa ora
+// compariva quattro volte incolonnata — pacchetto, voce, sotto-voce, persona —
+// su venti colonne: una schermata di numeri in cui non si distingueva più il
+// dato dalla sua eco. Adesso una riga che ha delle figlie a schermo è un
+// intestazione e basta: le sue somme sono le righe qui sotto, già a schermo,
+// e ripeterle non aggiungeva niente. Chi vuole i totali del pacchetto chiude
+// il pacchetto, ed è lo stesso gesto con cui li aveva aperti.
 //
-// **Si scrive nell'ultimo livello mostrato, mai in una somma.** Una riga di
-// voce dice il totale del suo ramo, come le ore stimate: batterci dentro un
-// numero vorrebbe dire deciderne la ripartizione fra le figlie al posto di chi
-// scrive. Una riga di persona invece si compila sempre, e le ore vanno nella
-// cella più profonda in cui stanno già — mentre quella che sostituiscono si
-// azzera: sono le stesse ore, e tenerle in due posti raddoppierebbe la
-// settimana. Se sotto quella riga ce ne sono su due voci diverse la
-// destinazione non esiste, e scrivere scende di un livello invece di
-// sceglierne una al posto di chi ce le aveva messe.
+// **Si scrive dove i numeri si vedono**, cioè nell'ultimo livello mostrato.
+// Sulla riga di una persona sempre, e le ore vanno nella cella più profonda in
+// cui stanno già — mentre quella che sostituiscono si azzera: sono le stesse
+// ore, e tenerle in due posti raddoppierebbe la settimana. Su una riga di voce
+// o di pacchetto solo quando la persona è ovvia: una sola, o il filtro acceso.
+// Altrimenti la destinazione non esiste — a quale persona andrebbero quelle
+// ore? — e scrivere scende di un livello invece di sceglierne una al posto di
+// chi ce le aveva messe.
 //
 // **Le ore date al pacchetto e basta le adotta la voce che propone quella
 // persona.** Sono le celle di prima che le voci esistessero, e quelle che ci
@@ -83,10 +91,9 @@
 //   · **la densità** — la stessa griglia a tre larghezze di colonna. «Anno»
 //     rimpicciolisce finché l'intera commessa ci sta in una schermata: non è
 //     uno zoom estetico, è la differenza fra vedere l'andamento e ricostruirselo
-//     scorrendo.
-//   · **«oggi»** — la colonna di adesso torna al suo posto. Scorrendo la si
-//     perde, ed è la linea che divide lo speso dalla previsione: senza, i
-//     numeri della testata non si sanno più leggere.
+//     scorrendo. «Comoda» fa l'opposto e si prende tutto lo spazio che c'è: con
+//     dodici settimane su una finestra larga, le colonne fisse lasciavano metà
+//     schermo vuoto a destra e i numeri stretti in un angolo.
 //   · **una persona sola** — dieci pacchetti aperti sono sessanta sotto-righe.
 //     Il più delle volte la domanda è su una persona, e allora le altre nove
 //     sono rumore. Scegliendone una, anche i totali dei pacchetti diventano i
@@ -106,17 +113,22 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { lunediDellaSettimana } from '../tempo.js';
 import {
   chiaveCarico, destinazioneOre, livelloSaturazione, oreCella, oreRisorsaSettimana, orePacchettoSettimana,
-  oreSottoRiga, oreVoceSettimana, risorseDiPacchetto, risorseDiVoce, risorseSenzaVoce,
-  vociDiPacchetto, perMese, spalma,
+  oreSottoRiga, oreVoceSettimana, oreVoci, ramoVoce, risorseDiPacchetto, risorseDiVoce,
+  risorseSenzaVoce, vociDiPacchetto, perMese, spalma,
 } from '../programma.js';
 import { readPref, writePref } from '../viewPrefs.js';
 import { oreBrevi, leggiOre } from './formato.js';
 import { DENSITA, useDensita } from './densita.js';
 
 /** @typedef {import('../programma.js').DocProgramma} DocProgramma */
-/** @typedef {{ tipo: 'pacchetto'|'voce'|'risorsa', nome: string, risorsa: string|null, capacita: number, colore: string|null, pacchettoId: string, voceId: string|null, aperta: boolean, rientro: number, orfana?: boolean, estranea?: boolean }} Riga */
+/** @typedef {{ tipo: 'pacchetto'|'voce'|'risorsa', nome: string, risorsa: string|null, capacita: number, colore: string|null, pacchettoId: string, voceId: string|null, aperta: boolean, rientro: number, foglia: boolean, stimate: number, orfana?: boolean, estranea?: boolean }} Riga */
 
 const CHIAVE_DETTAGLIO = 'md_pg_matrice_dettaglio_v1';
+const CHIAVE_PERSONE = 'md_pg_matrice_persone_v1';
+
+/** Quanto misurano, alla densità comoda, le due colonne che non sono settimane. */
+const L_NOME = 220;
+const L_TOT = 88;
 
 const MESI = ['gen', 'feb', 'mar', 'apr', 'mag', 'giu', 'lug', 'ago', 'set', 'ott', 'nov', 'dic'];
 
@@ -169,11 +181,23 @@ export default function Matrice({
     const salvato = readPref(CHIAVE_DETTAGLIO, 0);
     return typeof salvato === 'number' && salvato >= 0 && salvato <= 2 ? salvato : 0;
   });
+  // E se sotto si scende fino alla persona. È il terzo gradino della stessa
+  // scala, e si spegne: chi guarda l'andamento della commessa vuole i pacchetti
+  // e le loro voci, non sei righe di nomi sotto ognuna. Spento insieme a
+  // «voci», il pacchetto non ha più niente sotto e la matrice torna a essere
+  // una riga per pacchetto — che è la vista da cui si guarda, e in cui si
+  // compila la riga del pacchetto.
+  const [mostraPersone, setMostraPersone] = useState(() => readPref(CHIAVE_PERSONE, true) !== false);
   const scorrevole = useRef(/** @type {HTMLDivElement|null} */ (null));
   const trascina = useRef(/** @type {'selezione'|'riempi'|null} */ (null));
 
+  // Un pacchetto si apre solo se qualcosa dei tre bottoni gli mette qualcosa
+  // sotto: spenti tutti e tre, il triangolino aprirebbe il nulla.
+  const apribile = dettaglio > 0 || mostraPersone;
+
   // Le righe visibili: pacchetto › voce › sotto-voce › persona, potato dai
-  // due bottoni «voci» e «sottovoci». Le celle stanno in fondo alla catena.
+  // tre bottoni «voci», «sottovoci» e «persone». Le celle stanno in fondo
+  // alla catena, cioè nell'ultimo livello che i bottoni lasciano vedere.
   const righe = useMemo(() => {
     /** @type {Riga[]} */
     const fila = [];
@@ -185,11 +209,19 @@ export default function Matrice({
     const persone = (/** @type {import('../programma.js').Risorsa[]} */ sue,
       /** @type {string} */ pacchettoId, /** @type {string|null} */ voceId,
       /** @type {number} */ rientro, /** @type {boolean} */ orfana = false) => {
+      // Le ore rimaste sul pacchetto restano visibili anche col bottone
+      // «persone» spento: nessuna voce le reclama, quindi spegnendo le persone
+      // sparirebbero da ogni riga della tabella e continuerebbero a pesare sui
+      // totali in fondo — che è la cosa che quelle ore non devono fare.
+      if (!mostraPersone && !orfana) return;
       for (const r of sue) {
         if (personaSola && r.nome !== personaSola) continue;
         fila.push({
           tipo: 'risorsa', nome: r.nome, risorsa: r.nome, capacita: r.oreSettimana,
-          colore: null, pacchettoId, voceId, aperta: false, rientro, orfana,
+          colore: null, pacchettoId, voceId, aperta: false, rientro, orfana, foglia: true,
+          // Una persona non ha una stima: le ore stimate stanno sulla voce,
+          // che dice quanto pesa il lavoro e non chi lo fa.
+          stimate: 0,
         });
       }
     };
@@ -207,18 +239,20 @@ export default function Matrice({
       : pacchetti;
 
     for (const p of inFila) {
-      const aperto = aperte.includes(p.id);
+      // Con «voci» e «persone» spenti sotto il pacchetto non c'è niente da
+      // mostrare: la riga non si apre, e resta la matrice per pacchetti.
+      const aperto = apribile && aperte.includes(p.id);
       const sue = personaSola
         ? doc.risorse.filter(r => r.nome === personaSola)
         : risorseDiPacchetto(doc, p.id);
       fila.push({
         tipo: 'pacchetto', nome: p.nome, estranea: estranea(p),
-        // La riga chiusa si scrive solo quando la destinazione è ovvia: una
-        // persona sola, e nessuna voce di mezzo a cui quelle ore potrebbero
-        // andare. Guardando per voci quella domanda c'è sempre.
-        risorsa: dettaglio === 0 ? unicaRisorsa(sue, personaSola) : null,
+        // Chi scrive in questa riga lo decide la passata qui sotto, che sa
+        // quali righe hanno davvero delle figlie a schermo.
+        risorsa: null,
         capacita: 0, colore: p.colore, pacchettoId: p.id, voceId: null,
-        aperta: aperto, rientro: 0,
+        aperta: aperto, rientro: 0, foglia: true,
+        stimate: oreVoci(doc, v => v.pacchettoId === p.id),
       });
       if (!aperto) continue;
 
@@ -231,23 +265,31 @@ export default function Matrice({
       // persona: le ore stanno in fondo, dove il lavoro è davvero descritto.
       const voci = vociDiPacchetto(doc, p.id, dettaglio);
       voci.forEach(({ voce, livello }, i) => {
-        // Una voce è l'ultimo livello **mostrato** se la riga dopo non è una
-        // sua figlia. È lì che si scrive: più in alto le ore sarebbero una
-        // somma, e una somma non si compila.
-        const foglia = !(voci[i + 1] && voci[i + 1].livello > livello);
+        // Una voce è l'ultimo livello **delle voci** se la riga dopo non è una
+        // sua figlia: solo lì la proposta di una persona vale una riga.
+        const ultima = !(voci[i + 1] && voci[i + 1].livello > livello);
+        const ramo = ramoVoce(doc, voce.id);
         fila.push({
           tipo: 'voce', nome: voce.titolo, risorsa: null, capacita: 0,
           colore: p.colore, pacchettoId: p.id, voceId: voce.id,
-          aperta: false, rientro: livello + 1,
+          aperta: false, rientro: livello + 1, foglia: true,
+          // La stima di una voce è quella del suo ramo: le sotto-voci sono il
+          // dettaglio della stessa stima, non un lavoro in più.
+          stimate: oreVoci(doc, v => ramo.has(v.id)),
         });
         // Su una voce con figlie mostrate compaiono solo le persone che ci
         // hanno già delle ore: la proposta lì sarebbe una riga vuota in mezzo,
         // cioè un invito a scrivere le stesse ore due volte.
-        const chi = risorseDiVoce(doc, voce.id, foglia);
-        const conFiltro = personaSola && foglia
-          ? doc.risorse.filter(r => r.nome === personaSola)
-          : chi;
-        persone(conFiltro, p.id, voce.id, livello + 2);
+        //
+        // Col filtro acceso la riga di quella persona compare dove la voce la
+        // propone o dove ha delle ore, e **non** sotto ogni voce del
+        // pacchetto: prima si forzava, e filtrando su Erika si vedeva la sua
+        // riga vuota sotto «Calcolo» — una voce che non la riguarda — accanto
+        // a quella vera sotto «Casseri». Un filtro che inventa righe è un
+        // filtro che non risponde alla domanda per cui lo si accende; la riga
+        // dove ancora non c'è niente la fa comparire l'attivazione della voce,
+        // che è il gesto con cui una persona entra in una lavorazione.
+        persone(risorseDiVoce(doc, voce.id, ultima), p.id, voce.id, livello + 2);
       });
 
       // Le ore date al pacchetto e basta: le celle di prima che ci fossero le
@@ -258,16 +300,45 @@ export default function Matrice({
       // a pesare sui totali.
       persone(risorseSenzaVoce(doc, p.id), p.id, null, 1, true);
     }
+
+    // L'ultimo livello mostrato, riga per riga: la riga dopo, se è più
+    // rientrata, è una sua figlia. È da qui che dipendono le due cose che
+    // questa tabella fa diversamente da prima — i numeri stanno solo nelle
+    // foglie, e nelle foglie si scrive — e si decide qui, guardando la fila
+    // già montata, perché una riga non sa da sola se qualcosa la seguirà: un
+    // pacchetto aperto su cui il filtro non lascia nessuna riga è una foglia
+    // quanto un pacchetto chiuso, ed è giusto che lo sia — è il solo posto in
+    // cui dare a quella persona la sua prima ora su quel pacchetto.
+    for (let i = 0; i < fila.length; i++) {
+      const riga = fila[i];
+      const dopo = fila[i + 1];
+      riga.foglia = !(dopo && dopo.rientro > riga.rientro);
+      // Col filtro su una persona la stima sparisce: è la stima del lavoro, di
+      // tutti, e affiancarla alle sole ore di Erika sarebbe un confronto fra
+      // due numeri che non parlano della stessa cosa — «12 su 886» detto di
+      // una persona è una frase falsa.
+      if (personaSola) riga.stimate = 0;
+      if (!riga.foglia || riga.tipo === 'risorsa') continue;
+      // Una foglia di somma si compila solo se la persona è ovvia: una sola su
+      // quel ramo, o quella del filtro. Altrimenti resta senza destinazione, e
+      // scrivere scende di un livello.
+      const chi = riga.voceId
+        ? risorseDiVoce(doc, riga.voceId, true)
+        : risorseDiPacchetto(doc, riga.pacchettoId);
+      riga.risorsa = unicaRisorsa(chi, personaSola);
+      riga.capacita = doc.risorse.find(r => r.nome === riga.risorsa)?.oreSettimana || 0;
+    }
     return fila;
-  }, [doc, aperte, pacchettoScelto, personaSola, inCoda, dettaglio]);
+  }, [doc, aperte, pacchettoScelto, personaSola, inCoda, dettaglio, mostraPersone, apribile]);
 
   // La matrice si mette con la settimana corrente a un terzo da sinistra: si
   // vuole vedere un po' di passato e molto futuro, e su cinquanta colonne
   // partire dall'inizio della commessa vuol dire scorrere ogni volta prima di
   // vedere qualcosa.
   //
-  // È anche il bottone «oggi», perché è lo stesso gesto: scorrendo la colonna
-  // di adesso si perde, ed è la linea che divide lo speso dalla previsione.
+  // Era anche un bottone «oggi» nella barra. Se n'è andato: la colonna di
+  // adesso è già segnata da una linea che si vede anche scorrendo, e un
+  // bottone in più nella barra costava più di quel che rimetteva a posto.
   const vaiAOggi = useCallback(() => {
     const box = scorrevole.current;
     const colonna = box?.querySelector('.pg-w-ora');
@@ -284,6 +355,34 @@ export default function Matrice({
 
   /** @param {number} livelli */
   const cambiaDettaglio = livelli => { setDettaglio(livelli); writePref(CHIAVE_DETTAGLIO, livelli); };
+  /** @param {boolean} acceso */
+  const cambiaPersone = acceso => { setMostraPersone(acceso); writePref(CHIAVE_PERSONE, acceso); };
+
+  // Quanto è larga la finestra, per la densità comoda. È l'unico posto in cui
+  // questa tabella misura sé stessa, e serve perché la larghezza giusta di una
+  // colonna dipende da quante ce ne sono: dodici settimane su un portatile
+  // stavano in metà schermo, e l'altra metà restava bianca.
+  const [larghezza, setLarghezza] = useState(0);
+  useEffect(() => {
+    const box = scorrevole.current;
+    if (!box || typeof ResizeObserver === 'undefined') return undefined;
+    setLarghezza(box.clientWidth);
+    const osserva = new ResizeObserver(righe => setLarghezza(righe[0].contentRect.width));
+    osserva.observe(box);
+    return () => osserva.disconnect();
+  }, []);
+
+  // «Comoda» si prende tutto lo spazio che c'è; «stretta» e «anno» no, perché
+  // sono le due densità che si scelgono *per* rimpicciolire — allargarle
+  // sarebbe disfare il gesto appena fatto. E si allarga soltanto: sotto la sua
+  // misura non scende mai, altrimenti stringendo la finestra le colonne
+  // diventerebbero illeggibili invece di far comparire la barra di scorrimento.
+  const larghezzaColonna = (() => {
+    const base = DENSITA[densita].w;
+    if (densita !== 'comoda' || !larghezza || !settimane.length) return base;
+    const disponibile = larghezza - L_NOME - L_TOT - 2;
+    return Math.max(base, Math.floor(disponibile / settimane.length));
+  })();
 
   const rettangolo = () => {
     const a = ancora || sel;
@@ -303,7 +402,7 @@ export default function Matrice({
     const elenco = [];
     for (let r = q.r1; r <= q.r2; r++) {
       const riga = righe[r];
-      if (!riga?.risorsa) continue;
+      if (!riga?.risorsa || !riga.foglia) continue;
       for (let c = q.c1; c <= q.c2; c++) elenco.push({ riga, colonna: c });
     }
     return elenco;
@@ -379,15 +478,21 @@ export default function Matrice({
     else if (somme && dettaglio < 2) cambiaDettaglio(dettaglio + 1);
   }
 
-  /** La riga su cui si sta scrivendo, o l'apertura che ci porta. @param {number} r */
+  /** La riga su cui si sta scrivendo, o il livello da scendere per arrivarci. @param {number} r */
   function apriSeServe(r) {
     const riga = righe[r];
     if (!riga || riga.risorsa) return true;
-    // Non un errore: scrivere in una riga di totale non ha una destinazione —
-    // a quale persona andrebbero quelle ore? — e l'apertura è la risposta.
-    // Su una riga di voce il pacchetto è già aperto e non c'è altro da fare:
-    // le sue persone sono lì sotto, ed è dove si scrive.
-    setAperte(p => (p.includes(riga.pacchettoId) ? p : [...p, riga.pacchettoId]));
+    // Non un errore: scrivere in una riga di somma non ha una destinazione — a
+    // quale persona andrebbero quelle ore? — e scendere di un livello è la
+    // risposta. Prima si poteva solo aprire il pacchetto; adesso che anche le
+    // persone si spengono, la risposta può essere riaccenderle: senza, la
+    // cella non avrebbe fatto niente e la matrice sembrerebbe rotta.
+    if (!aperte.includes(riga.pacchettoId) && apribile) {
+      setAperte(p => [...p, riga.pacchettoId]);
+    } else if (!mostraPersone) {
+      cambiaPersone(true);
+      setAperte(p => (p.includes(riga.pacchettoId) ? p : [...p, riga.pacchettoId]));
+    }
     return false;
   }
 
@@ -417,7 +522,7 @@ export default function Matrice({
     if (e.key === ' ') {
       e.preventDefault();
       const riga = righe[sel.r];
-      if (riga) setAperte(p => (p.includes(riga.pacchettoId) ? p.filter(n => n !== riga.pacchettoId) : [...p, riga.pacchettoId]));
+      if (riga && apribile) setAperte(p => (p.includes(riga.pacchettoId) ? p.filter(n => n !== riga.pacchettoId) : [...p, riga.pacchettoId]));
       return;
     }
     if (e.key === 'Escape') { setAncora(null); setSpalmatura(null); return; }
@@ -485,16 +590,17 @@ export default function Matrice({
   return (
     <div className="pg-matrice-guscio">
       <div className="pg-barra">
-        <button type="button" className="pg-barra-btn" onClick={vaiAOggi} title="Riporta a schermo la settimana di adesso">
-          oggi
-        </button>
-        <button
-          type="button"
-          className="pg-barra-btn"
-          onClick={() => setAperte(tutteAperte ? [] : doc.pacchetti.map(p => p.id))}
-        >
-          {tutteAperte ? 'chiudi tutte' : 'apri tutte'}
-        </button>
+        {/* Senza niente sotto il pacchetto non c'è niente da aprire, e un
+            bottone che non fa niente è peggio di un bottone che non c'è. */}
+        {apribile && (
+          <button
+            type="button"
+            className="pg-barra-btn"
+            onClick={() => setAperte(tutteAperte ? [] : doc.pacchetti.map(p => p.id))}
+          >
+            {tutteAperte ? 'chiudi tutte' : 'apri tutte'}
+          </button>
+        )}
 
         {/* Una persona sola. Con dieci pacchetti aperti le sotto-righe sono
             sessanta, e la domanda quasi sempre è su una persona: le altre nove
@@ -529,6 +635,18 @@ export default function Matrice({
         >
           sottovoci
         </button>
+        {/* Il terzo gradino. Spento, la matrice si ferma al lavoro e non
+            arriva alle persone: è la vista in cui si guarda come cade la
+            commessa, e i nomi sotto ogni voce sarebbero il triplo delle
+            righe per una domanda che in quel momento non si sta facendo. */}
+        <button
+          type="button"
+          className={`pg-barra-btn${mostraPersone ? ' scelto' : ''}`}
+          onClick={() => cambiaPersone(!mostraPersone)}
+          title="Sotto l'ultimo livello del lavoro, chi lo fa: è la riga in cui si scrivono le ore"
+        >
+          persone
+        </button>
 
         <span className="pg-barra-sp" />
 
@@ -558,7 +676,7 @@ export default function Matrice({
       >
         <div
           className="pg-griglia"
-          style={/** @type {import('react').CSSProperties} */ ({ '--pg-w': `${DENSITA[densita].w}px` })}
+          style={/** @type {import('react').CSSProperties} */ ({ '--pg-w': `${larghezzaColonna}px` })}
         >
           {/* La fascia dei mesi: con venticinque colonne è l'unico modo di
               sapere dove si è senza contare le settimane. */}
@@ -583,11 +701,16 @@ export default function Matrice({
                 <span className="pg-w-giorno">{lunediDellaSettimana(w).slice(8)}/{lunediDellaSettimana(w).slice(5, 7)}</span>
               </div>
             ))}
-            <div className="pg-tot pg-tot-testa">tot</div>
+            <div className="pg-tot pg-tot-testa" title="A piano, e dopo la barra le ore stimate della riga">
+              tot<span className="pg-tot-stima">/stim</span>
+            </div>
           </div>
 
           {righe.map((riga, r) => {
             let totale = 0;
+            // Una riga che ha delle figlie a schermo non porta numeri: le sue
+            // somme sono le righe qui sotto, e ripeterle in cima riempiva la
+            // schermata della stessa ora scritta a quattro altezze diverse.
             const celle = settimane.map((w, c) => {
               const v = valore(riga, c);
               totale += v;
@@ -614,6 +737,7 @@ export default function Matrice({
                   style={riga.rientro ? { paddingLeft: `calc(var(--sp-3) + ${riga.rientro * 16}px)` } : undefined}
                   onClick={() => {
                     if (riga.tipo === 'pacchetto') {
+                      if (!apribile) return;
                       setAperte(p => (p.includes(riga.pacchettoId)
                         ? p.filter(id => id !== riga.pacchettoId)
                         : [...p, riga.pacchettoId]));
@@ -629,7 +753,7 @@ export default function Matrice({
                 >
                   {riga.tipo === 'pacchetto' && (
                     <>
-                      <span className="pg-caret">{riga.aperta ? '▾' : '▸'}</span>
+                      <span className="pg-caret">{apribile ? (riga.aperta ? '▾' : '▸') : ''}</span>
                       <span className="pg-punto" style={riga.colore ? { background: riga.colore } : undefined} />
                       <span className="pg-nome-testo">{riga.nome}</span>
                     </>
@@ -658,8 +782,15 @@ export default function Matrice({
                   // questa settimana, è oltre la sua capacità in questa
                   // commessa», e conta tutto quello che ha addosso — non le
                   // sole ore di questo pacchetto, che direbbero sempre di sì.
-                  const sat = riga.tipo === 'risorsa'
-                    ? livelloSaturazione(oreRisorsaSettimana(doc, /** @type {string} */ (riga.risorsa), w), riga.capacita)
+                  //
+                  // E il passato non si colora: una settimana già andata è un
+                  // fatto, non un allarme. Quelle ore nessuno le può più
+                  // spostare, e il rosso su una colonna che non si può
+                  // cambiare toglie forza ai rossi che invece si possono
+                  // ancora risolvere — che sono l'unica ragione per cui la
+                  // tinta esiste.
+                  const sat = riga.risorsa && riga.foglia && w >= settimanaOra
+                    ? livelloSaturazione(oreRisorsaSettimana(doc, riga.risorsa, w), riga.capacita)
                     : 'vuota';
                   return (
                     <div
@@ -709,19 +840,19 @@ export default function Matrice({
                             const ore = leggiOre(bozza);
                             // Un valore che non si legge non svuota la cella:
                             // si resta dov'è, e chi ha sbagliato lo vede.
-                            if (ore !== null && riga.risorsa) scrivi([{ riga, colonna: c }], [ore]);
+                            if (ore !== null && riga.risorsa && riga.foglia) scrivi([{ riga, colonna: c }], [ore]);
                             setBozza(null);
                             scorrevole.current?.focus();
                             if (ore !== null) muovi(passo[0], ev.shiftKey ? -passo[1] : passo[1], false);
                           }}
                         />
-                      ) : scritte(v)}
+                      ) : (riga.foglia ? scritte(v) : '')}
 
                       {/* Il quadratino che ripete il valore. Solo in
                           orizzontale: verso il basso vorrebbe dire copiare le
                           ore di una persona su un'altra — o peggio, su un altro
                           pacchetto — che non è mai quello che si intende. */}
-                      {scelta && riga.risorsa && bozza === null && (
+                      {scelta && riga.risorsa && riga.foglia && bozza === null && (
                         <span
                           className="pg-maniglia"
                           onMouseDown={e => {
@@ -760,7 +891,28 @@ export default function Matrice({
                   );
                 })}
 
-                <div className="pg-tot">{scritte(totale)}</div>
+                {/* Le ore a piano e quelle stimate, una accanto all'altra. Sono
+                    i due numeri che questa tabella tiene insieme — «quanto
+                    pesa questo lavoro» e «quanto ne ho messo in calendario» —
+                    e il loro scarto è la domanda per cui si apre la matrice.
+                    Finora stava solo nella testata, per tutta la commessa: un
+                    solo numero per dodici pacchetti, cioè la media di dodici
+                    situazioni diverse. Qui sta su ogni riga che una stima ce
+                    l'ha, e le righe di somma la portano anche a schermo muto —
+                    è l'unica cosa che un'intestazione può dire senza ripetere
+                    quello che ha sotto, perché la stima non è una somma delle
+                    celle. */}
+                <div
+                  className="pg-tot"
+                  title={riga.stimate
+                    ? `${oreBrevi(totale)} h a piano su ${oreBrevi(riga.stimate)} h stimate — ne restano ${oreBrevi(Math.max(0, riga.stimate - totale))} da collocare`
+                    : undefined}
+                >
+                  {scritte(totale)}
+                  {riga.stimate > 0 && (
+                    <span className="pg-tot-stima">/{scritte(riga.stimate)}</span>
+                  )}
+                </div>
               </div>
             );
           })}
@@ -779,6 +931,16 @@ export default function Matrice({
             <div className="pg-tot">
               {scritte(settimane.reduce((s, w) => s + pacchettiVisti.reduce(
                 (q, p) => q + orePacchettoSettimana(doc, p.id, w, personaSola || null), 0), 0))}
+              {/* La stima è del lavoro, non di chi lo fa: col filtro su una
+                  persona il confronto non avrebbe senso — le sue ore contro la
+                  stima di tutti — e un numero che non risponde alla domanda è
+                  peggio di nessun numero. */}
+              {!personaSola && (
+                <span className="pg-tot-stima">
+                  /{scritte(pacchettiVisti.reduce(
+                    (s, p) => s + oreVoci(doc, v => v.pacchettoId === p.id), 0))}
+                </span>
+              )}
             </div>
           </div>
         </div>
@@ -812,11 +974,11 @@ export default function Matrice({
         <span className="pg-legenda-nota">
           la tinta è la persona nella settimana, su tutta la commessa — non le ore della cella
         </span>
-        {dettaglio > 0 && (
-          <span className="pg-legenda-nota">
-            le ore si scrivono nella riga della persona, sotto la voce più in basso
-          </span>
-        )}
+        <span className="pg-legenda-nota">
+          {mostraPersone
+            ? 'le ore si scrivono nella riga della persona, l\u2019ultima della catena'
+            : 'i numeri stanno nell\u2019ultimo livello aperto, ed \u00e8 l\u00ec che si scrivono'}
+        </span>
         {DENSITA[densita].intere && (
           <span className="pg-legenda-nota">ore arrotondate all&apos;intero: le mezze ore ci sono, si rivedono a densità «stretta»</span>
         )}
