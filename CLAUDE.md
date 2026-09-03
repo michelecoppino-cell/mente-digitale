@@ -40,7 +40,8 @@ secondi. La CI esegue tutti e quattro i comandi a ogni push e ogni PR.
 4. Se hai toccato uno degli strati provati (`graphCore.js`, `api.js`,
    `taskStore.js`, `taskMigrazione.js`, `paraConfig.js`, `poolAttivita.js`, `programma.js`,
    `programmaStore.js`, `captureParse.js`, `deadlineReminders.js`,
-   `calendarioLavoro.js`, `scripts/ics.mjs`),
+   `calendarioLavoro.js`, `scripts/ics.mjs`, `scripts/mente-mcp-nucleo.mjs`,
+   `worker/`),
    aggiungi la verifica che avrebbe
    intercettato quello che hai corretto. Le prove si sono rotte una volta e
    nessuno se n'è accorto per settimane: è successo perché nessuna misura
@@ -103,6 +104,22 @@ dentro, non in due posti.
 soltanto.** È una regola del CLI e del server MCP, non un'omissione: sono le
 cose che non si ricostruiscono da una cronologia.
 
+**Dal computer c'è tutto, dal connettore solo quello che si dice a voce.** I
+ventuno strumenti restano su stdio; dal Worker ne escono quattordici
+(`NOMI_DA_VOCE` in `mente-mcp-nucleo.mjs`), perché quello serve a parlare
+guidando: ogni strumento in più è una descrizione che il modello legge prima di
+rispondere, e a voce l'attesa si sente. Uno strumento nuovo nasce **fuori**
+dall'elenco, e ci entra solo se serve davvero con le mani sul volante. OneNote,
+il diario da rileggere e gli obiettivi da riscrivere non ci entrano: sono le
+cose che si fanno da seduti.
+
+**Il token del Worker non è il token del computer.** Ne va generato uno suo
+(`get-refresh-token.mjs --remoto`, scope ridotti), perché il refresh token ruota
+a ogni uso: due posti che si passano la stessa copia finiscono con uno dei due
+in mano a un token già rinnovato altrove. E perché quello del Worker vive su
+Cloudflare, cioè fuori casa — se un giorno quel posto venisse aperto, deve
+esserci dentro una chiave che apre meno porte.
+
 **Quello che si scrive con un token si deve poter fare anche con un dito.** La
 riga di cattura legge `@sezione`, `!domani`, `~45`, `9:30-11`: comodi su una
 tastiera, scomodi su un telefono, dove `@` e `~` stanno nella seconda schermata
@@ -162,7 +179,10 @@ che ha già smesso di funzionare.
 | `src/tokens.css` | colori, tipografia, spazi, raggi — la sola fonte |
 | `src/tempo.js` | il giorno locale, l'ora, le durate — scritti una volta sola |
 | `src/finanze/` | isola TypeScript, dati in IndexedDB, backup su OneDrive |
-| `scripts/mente-graph.mjs` | lo stesso nucleo fuori dal browser, con un refresh token invece di MSAL |
+| `scripts/mente-graph.mjs` | lo stesso nucleo fuori dal browser, con un refresh token invece di MSAL. Dove quel token sta custodito glielo si dice: `impostaArchivioToken` |
+| `scripts/mente-token-file.mjs` | il token su questa macchina: il file, il `.env`, la riscrittura quando ruota. È l'unico pezzo che tocca il disco |
+| `scripts/mente-mcp-nucleo.mjs` | gli strumenti MCP e il protocollo, senza trasporto: li usano sia `mente-mcp.mjs` (stdio) sia il Worker (HTTPS) |
+| `worker/` | il connettore remoto su Cloudflare: la mente digitale a voce, dall'auto. Router, OAuth scritto a mano, il token Microsoft in KV. Si mette in piedi con `docs/mente-remoto.md` |
 | `scripts/ics.mjs` | il lettore di un calendario ICS: righe, fusi, ricorrenze espanse. Puro — da stringa a occorrenze — ed è per questo che si prova |
 | `scripts/sync-calendario-lavoro.mjs` | lo specchio: legge l'ultima mail col `.ics` allegato (o un feed pubblicato) e riscrive tutta la finestra su OneDrive. Lo esegue una GitHub Action |
 | `scripts/calendario-lavoro/` | l'altra metà, e gira sul PC di lavoro: il PowerShell che ogni due ore si manda l'agenda per posta |

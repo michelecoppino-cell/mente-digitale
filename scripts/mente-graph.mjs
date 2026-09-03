@@ -7,16 +7,18 @@
  * solo l'autenticazione — qui non c'è MSAL, c'è un refresh token, come già fa
  * `sync-calendario-lavoro.mjs` da GitHub Actions.
  *
- * Nessuna dipendenza, Node 18+.
+ * Dove quel token sta custodito, invece, non lo sa: glielo si dice all'avvio
+ * con `impostaArchivioToken()`. Su una macchina è un file
+ * (`mente-token-file.mjs`), dentro il Cloudflare Worker del connettore remoto
+ * è una chiave in KV (`worker/archivio.js`). Prima era un `import ... from
+ * 'fs'` in testa a questo file, e quell'unica riga bastava a impedire al
+ * modulo di girare in un Worker, dove `fs` non c'è.
+ *
+ * Nessuna dipendenza, gira su Node 18+ e in un Worker: qui dentro non c'è
+ * niente che non sia `fetch`.
  */
 
-import { readFileSync, writeFileSync, existsSync } from 'fs';
 import { creaDrive } from '../src/graphCore.js';
-import { join, dirname } from 'path';
-import { fileURLToPath } from 'url';
-
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const ROOT = join(__dirname, '..');
 
 const GRAPH = 'https://graph.microsoft.com/v1.0';
 const TOKEN_URL = 'https://login.microsoftonline.com/consumers/oauth2/v2.0/token';
@@ -50,56 +52,72 @@ export const MENTE_SCOPE = [
   'Mail.Read',
 ].join(' ');
 
-// Il file dove il CLI tiene il proprio refresh token quando gira in locale.
-// È in .gitignore: non deve finire nel repo per nessun motivo.
-export const TOKEN_FILE = join(__dirname, '.mente-refresh-token');
+// Gli scope del connettore remoto, che sono di meno apposta. Quel token vive
+// fuori da questa macchina — in un Worker su Cloudflare — e da lì gli
+// strumenti esposti sono i quattordici che si usano parlando: nessuno legge la
+// posta e nessuno tocca OneNote. Un token che può fare solo quello che serve
+// è l'unica difesa che resta se il posto in cui è custodito viene aperto.
+//   node scripts/get-refresh-token.mjs --remoto
+export const MENTE_SCOPE_REMOTO = [
+  'offline_access',
+  'Files.ReadWrite',
+  'Calendars.ReadWrite',
+].join(' ');
 
 // ── Refresh token ────────────────────────────────────────────────────────────
+// Dove sta il token questo modulo non lo sa, e non deve saperlo: su una
+// macchina è un file accanto agli script (`mente-token-file.mjs`), dentro un
+// Cloudflare Worker è una chiave in KV. Qui c'era `fs` importato in testa, e
+// bastava quello a rendere il modulo non caricabile in un Worker — dove `fs`
+// non esiste — anche se ogni riga che conta è solo `fetch`.
 
-// Un .env minimale (KEY=valore, righe vuote e # ignorati): serve solo a non
-// costringere a esportare la variabile a ogni shell nuova. Non sovrascrive
-// mai una variabile già presente nell'ambiente.
-function loadDotEnv() {
-  const path = join(ROOT, '.env');
-  if (!existsSync(path)) return;
-  for (const line of readFileSync(path, 'utf8').split('\n')) {
-    const m = line.match(/^\s*([A-Z_][A-Z0-9_]*)\s*=\s*(.*)\s*$/i);
-    if (!m) continue;
-    const value = m[2].replace(/^["']|["']$/g, '');
-    if (!(m[1] in process.env)) process.env[m[1]] = value;
+/**
+ * @typedef {object} ArchivioToken
+ * @property {() => Promise<string>|string} leggi il refresh token in corso
+ * @property {(nuovo: string) => Promise<void>|void} scrivi quello ruotato
+ * @property {() => Promise<string|null>|string|null} [leggiPrecedente]
+ *   il token di prima, se l'archivio lo conserva: serve dove la scrittura non
+ *   è immediatamente visibile a chi legge (vedi worker/archivio.js)
+ * @property {() => Promise<{ token: string, scadenza: number }|null>} [leggiAccesso]
+ * @property {(token: string, scadenza: number) => Promise<void>} [scriviAccesso]
+ *   la cache dell'access token, per chi non ha un processo che resta acceso
+ * @property {string} [scope] gli scope con cui il token è stato preso. Nel
+ *   riscatto vanno chiesti quelli e non altri: un token remoto ne ha di meno
+ *   (MENTE_SCOPE_REMOTO), e chiederne di più lo farebbe rifiutare
+ */
+
+/** @type {ArchivioToken|null} */
+let archivio = null;
+
+/**
+ * Chi custodisce il refresh token. Si imposta una volta all'avvio, prima di
+ * qualunque chiamata.
+ * @param {ArchivioToken} nuovo
+ */
+export function impostaArchivioToken(nuovo) {
+  archivio = nuovo;
+  _access = null;
+}
+
+/** @returns {ArchivioToken} */
+function archivioToken() {
+  if (!archivio) {
+    throw new Error(
+      "Nessun archivio del token: chiama impostaArchivioToken() prima di parlare con Graph.\n" +
+      "Su Node:  import { archivioSuFile } from './mente-token-file.mjs'"
+    );
   }
+  return archivio;
 }
 
 /**
- * Da dove arriva il refresh token, in ordine: variabile dedicata, file locale,
- * e per ultima la variabile della vecchia sincronizzazione via mail — che non
- * esiste più, ma il segreto può essere ancora in giro e funziona se è stato
- * preso con gli scope del CLI.
- * @returns {{ token: string, source: 'env'|'file' }}
+ * Un riscatto: da refresh token ad access token. Separato perché si può dover
+ * fare due volte — vedi il recupero col token precedente in getAccessToken.
+ * @param {string} refreshToken
+ * @param {string} scope
+ * @returns {Promise<any>}
  */
-function resolveRefreshToken() {
-  loadDotEnv();
-  if (process.env.MENTE_REFRESH_TOKEN) return { token: process.env.MENTE_REFRESH_TOKEN, source: 'env' };
-  if (existsSync(TOKEN_FILE)) {
-    const t = readFileSync(TOKEN_FILE, 'utf8').trim();
-    if (t) return { token: t, source: 'file' };
-  }
-  if (process.env.MS_REFRESH_TOKEN) return { token: process.env.MS_REFRESH_TOKEN, source: 'env' };
-  throw new Error(
-    'Nessun refresh token. Prendine uno con:\n' +
-    '  node scripts/get-refresh-token.mjs\n' +
-    'e salvalo in scripts/.mente-refresh-token (o in MENTE_REFRESH_TOKEN).'
-  );
-}
-
-/** @type {{ token: string, exp: number }|null} */
-let _access = null;
-
-/** @returns {Promise<string>} */
-export async function getAccessToken() {
-  if (_access && Date.now() < _access.exp) return _access.token;
-
-  const { token: refreshToken, source } = resolveRefreshToken();
+async function riscatta(refreshToken, scope) {
   const res = await fetch(TOKEN_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -107,7 +125,7 @@ export async function getAccessToken() {
       grant_type: 'refresh_token',
       client_id: CLIENT_ID,
       refresh_token: refreshToken,
-      scope: MENTE_SCOPE,
+      scope,
     }),
   });
 
@@ -120,19 +138,55 @@ export async function getAccessToken() {
       '  node scripts/get-refresh-token.mjs'
     );
   }
+  return data;
+}
 
-  // Il refresh token ruota: se è arrivato dal file lo si riscrive, altrimenti
-  // fra qualche settimana quello vecchio smette di funzionare senza motivo
-  // apparente. Se arriva dall'ambiente non possiamo fare niente: lo diciamo.
-  if (data.refresh_token && data.refresh_token !== refreshToken) {
-    if (source === 'file') writeFileSync(TOKEN_FILE, data.refresh_token, 'utf8');
-    else writeFileSync(join(__dirname, '.new-refresh-token'), data.refresh_token, 'utf8');
+/** @type {{ token: string, exp: number }|null} */
+let _access = null;
+
+/** @returns {Promise<string>} */
+export async function getAccessToken() {
+  if (_access && Date.now() < _access.exp) return _access.token;
+
+  const arch = archivioToken();
+
+  // Una cache dell'access token fuori dal processo, dove serve: in un Worker
+  // ogni richiesta può trovare un'istanza nuova, e senza questa il refresh
+  // token verrebbe riscattato — cioè fatto ruotare — decine di volte al
+  // giorno. È il modo più veloce di perderlo.
+  if (arch.leggiAccesso) {
+    const salvato = await arch.leggiAccesso();
+    if (salvato && Date.now() < salvato.scadenza) {
+      _access = { token: salvato.token, exp: salvato.scadenza };
+      return _access.token;
+    }
+  }
+
+  const corrente = await arch.leggi();
+  const scope = arch.scope || MENTE_SCOPE;
+  let data;
+  try {
+    data = await riscatta(corrente, scope);
+  } catch (e) {
+    // Il token che abbiamo letto può essere già stato ruotato da un'altra
+    // istanza che ha scritto un attimo fa: dove l'archivio conserva il
+    // precedente si riprova con quello, che Microsoft accetta ancora per una
+    // breve finestra di grazia. Una sola volta: se non va nemmeno quello, il
+    // problema è un altro e nasconderlo non aiuta.
+    const prec = arch.leggiPrecedente ? await arch.leggiPrecedente() : null;
+    if (!prec || prec === corrente) throw e;
+    data = await riscatta(prec, scope);
+  }
+
+  if (data.refresh_token && data.refresh_token !== corrente) {
+    await arch.scrivi(data.refresh_token);
   }
 
   _access = {
     token: data.access_token,
     exp: Date.now() + (Number(data.expires_in) || 3600) * 1000 - 60_000,
   };
+  if (arch.scriviAccesso) await arch.scriviAccesso(_access.token, _access.exp);
   return _access.token;
 }
 

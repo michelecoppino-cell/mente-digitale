@@ -13,9 +13,14 @@
  * tenerne due. Gli scope sono quelli di MENTE_SCOPE, cuciti dentro il token.
  */
 
-import { CLIENT_ID, MENTE_SCOPE, TOKEN_FILE } from './mente-graph.mjs';
+import { CLIENT_ID, MENTE_SCOPE, MENTE_SCOPE_REMOTO } from './mente-graph.mjs';
+import { TOKEN_FILE } from './mente-token-file.mjs';
 
-const SCOPE = MENTE_SCOPE;
+// Con `--remoto` il token è per il connettore su Cloudflare, e porta meno
+// scope: là dentro nessuno strumento legge la posta, e un token che vive fuori
+// da questa macchina deve poter fare solo quello che gli serve davvero.
+const REMOTO = process.argv.includes('--remoto');
+const SCOPE = REMOTO ? MENTE_SCOPE_REMOTO : MENTE_SCOPE;
 
 async function main() {
   // 1 — Richiedi device code
@@ -56,10 +61,14 @@ async function main() {
     if (tok.refresh_token) {
       console.log('✓ Autenticato!\n');
       console.log('━'.repeat(60));
-      console.log(
-        `REFRESH TOKEN — salvalo in ${TOKEN_FILE} per usarlo da qui\n` +
-        '(oppure esportalo come MENTE_REFRESH_TOKEN), e mettilo come segreto\n' +
-        'GitHub MENTE_REFRESH_TOKEN per la Action del calendario di lavoro:\n');
+      console.log(REMOTO
+        ? 'REFRESH TOKEN PER IL CONNETTORE REMOTO — non salvarlo qui.\n' +
+          'Va nel Worker, e in nessun altro posto:\n' +
+          '  npx wrangler secret put MENTE_REFRESH_TOKEN\n' +
+          '(le istruzioni per esteso in docs/mente-remoto.md)\n'
+        : `REFRESH TOKEN — salvalo in ${TOKEN_FILE} per usarlo da qui\n` +
+          '(oppure esportalo come MENTE_REFRESH_TOKEN), e mettilo come segreto\n' +
+          'GitHub MENTE_REFRESH_TOKEN per la Action del calendario di lavoro:\n');
       console.log(tok.refresh_token);
       console.log('━'.repeat(60));
       return;

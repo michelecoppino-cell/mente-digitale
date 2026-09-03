@@ -83,8 +83,15 @@
 // Le istruzioni per esteso — e le altre strade, con il motivo per cui sono
 // state scartate — stanno in `docs/calendario-lavoro.md`.
 
-import { graph, putDriveJson } from './mente-graph.mjs';
+import { graph, putDriveJson, impostaArchivioToken } from './mente-graph.mjs';
+import { archivioSuFile } from './mente-token-file.mjs';
 import { occorrenzeIcs } from './ics.mjs';
+
+// Su Actions il token arriva dal segreto, cioè dall'ambiente: l'archivio su
+// file lo trova lì come lo troverebbe in un file, ed è lo stesso che usa il
+// CLI. Lo strato Graph non lo cerca da sé, perché gira anche dove un disco
+// non c'è (il Worker del connettore remoto).
+impostaArchivioToken(archivioSuFile());
 
 /** Dove finisce lo specchio, dentro la cartella dell'app. */
 export const FILE_CALENDARIO_LAVORO = 'calendario-lavoro.json';

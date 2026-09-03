@@ -911,10 +911,12 @@ Tre file, uno sopra l'altro:
 | File | Cosa fa |
 |---|---|
 | `scripts/mente-graph.mjs` | parla con Microsoft Graph: token e retry. I file su OneDrive — cartella, percorsi, ETag, migrazioni — vengono da `src/graphCore.js`, lo stesso nucleo dell'app |
+| `scripts/mente-token-file.mjs` | dove sta il refresh token su questa macchina. È l'unico pezzo che tocca il disco, e sta a parte perché lo stesso nucleo gira anche in un Worker, dove un disco non c'è |
 | `scripts/mente-comandi.mjs` | le operazioni, una funzione ciascuna, con le regole su cosa si può scrivere |
-| `scripts/mente.mjs` · `scripts/mente-mcp.mjs` | i due modi di chiamarle: un terminale, o una chat |
+| `scripts/mente-mcp-nucleo.mjs` | gli strumenti MCP e il protocollo, senza il trasporto |
+| `scripts/mente.mjs` · `scripts/mente-mcp.mjs` · `worker/` | i tre modi di chiamarle: un terminale, una chat sul computer, o un connettore raggiungibile dal telefono |
 
-Le regole stanno nel mezzo, una volta sola: le due strade non possono divergere.
+Le regole stanno nel mezzo, una volta sola: le tre strade non possono divergere.
 
 ### Da riga di comando
 
@@ -985,7 +987,9 @@ I ventuno strumenti sono gli stessi comandi. In lettura: `oggi`, `agenda`,
 `attivita_crea`, `attivita_stato`, `sezione_crea`, `piano_aggiungi`,
 `piano_togli`, `obiettivi_scrivi`, `evento_crea`, `note_crea`, `note_aggiungi`,
 `diario_scrivi`. Quelli in sola lettura sono marcati come tali (`readOnlyHint`),
-così un client che chiede conferma prima di scrivere sa quando chiederla.
+così un client che chiede conferma prima di scrivere sa quando chiederla. Dal
+connettore remoto ne escono quattordici — è una scelta, e sta due sezioni più
+sotto.
 
 Nessuno cancella niente, ed è una regola e non un'omissione: un'attività di prova
 si può spuntare, non eliminare; su OneNote si scrive solo in fondo a una pagina,
@@ -1007,15 +1011,18 @@ ritrovarsene nove a metà mese.
 
 #### Dove funziona e dove no
 
-Solo dove il client può avviare un processo **su questa macchina**:
+Il server su stdio funziona solo dove il client può avviare un processo **su
+questa macchina**. Dove non può, c'è l'altra strada — il connettore remoto,
+qui sotto:
 
-| Dove | Funziona |
-|---|---|
-| CLI `claude` in un terminale | sì |
-| App desktop, scheda **Code**, ambiente **Local** | sì |
-| App desktop, sessione **Cloud** (icona della nuvola in cima alla sessione) | no |
-| App desktop, schede **Chat** e **Cowork** | no |
-| claude.ai nel browser, app sul telefono | no |
+| Dove | stdio | connettore |
+|---|---|---|
+| CLI `claude` in un terminale | sì | — |
+| App desktop, scheda **Code**, ambiente **Local** | sì | — |
+| App desktop, sessione **Cloud** (icona della nuvola in cima alla sessione) | no | sì |
+| App desktop, schede **Chat** e **Cowork** | no | sì |
+| claude.ai nel browser, app sul telefono | no | sì |
+| App sul telefono, **in telefonata** | no | sì |
 
 Una sessione Cloud gira in un container remoto: non ha il file del token, e non
 è un difetto da aggirare — se lo avesse, vorrebbe dire che il token ha lasciato
@@ -1025,8 +1032,7 @@ nuvola accanto al titolo della sessione è il modo per accorgersene.
 Le schede Chat e Cowork prendono i connettori dall'account claude.ai, cioè server
 MCP **remoti**, raggiungibili via HTTPS. Un server stdio come questo vive sul
 disco e parla su una pipe: non è raggiungibile da lì, e non c'è percorso o
-configurazione che lo renda tale. Servirebbe la versione remota — il server
-esposto su internet con un'autenticazione propria, e la macchina sempre accesa.
+configurazione che lo renda tale.
 
 Per client MCP diversi da Claude Code — che leggono un `claude_desktop_config.json`
 o simile — l'entrata è la stessa in forma JSON:
@@ -1041,6 +1047,56 @@ o simile — l'entrata è la stessa in forma JSON:
   }
 }
 ```
+
+### Come connettore remoto: la mente digitale a voce
+
+Lo stesso server, in HTTPS, su un Cloudflare Worker (`worker/`). Serve a una
+cosa sola e vale la pena dirla per prima: **usare la mente digitale parlando,
+guidando**. La modalità telefonata dell'app usa i connettori dell'account —
+gli stessi strumenti della chat scritta, chiamati mentre parli — e i
+connettori sono server remoti. Il resto (telefono, browser, sessioni Cloud)
+viene dietro gratis.
+
+Non sostituisce quello sul computer: **convivono**, e non sono la stessa cosa.
+
+| | dal computer (stdio) | dal connettore |
+|---|---|---|
+| Strumenti | tutti e ventuno | quattordici |
+| OneNote | sì | no |
+| Diario | si legge e si scrive | si scrive soltanto |
+| Obiettivi del mese | si leggono e si riscrivono | si leggono soltanto |
+| Dove sta il token | sul tuo disco | in KV, su Cloudflare |
+| Con che scope | tutti | senza posta e senza OneNote |
+
+La riduzione è una scelta, e sta scritta accanto all'elenco (`NOMI_DA_VOCE` in
+`mente-mcp-nucleo.mjs`): ogni strumento in più è una descrizione in più che il
+modello legge prima di rispondere, e in telefonata l'attesa si sente; `note_leggi`
+può tirare dentro pagine intere di appunti, che a voce sono tempo speso per un
+risultato che non si può nemmeno guardare; e gli obiettivi del mese, come la
+Bussola, sono roba che si scrive pensandoci, non dettandola in tangenziale.
+
+Sotto il trasporto non cambia niente: `mente-mcp-nucleo.mjs` tiene gli
+strumenti e il protocollo, `mente-comandi.mjs` le operazioni e le regole. Le
+tre strade — terminale, stdio, HTTPS — sono involucri dello stesso codice, ed è
+la ragione per cui non possono divergere.
+
+La serratura è un OAuth 2.1 scritto a mano (`worker/oauth.js`): Claude si
+registra da sé, apre una pagina con un campo — la passphrase, una volta sola —
+e da lì porta un token a ogni chiamata. I token si salvano come hash, e il
+refresh token di Microsoft ha in KV anche il suo precedente, perché quell'archivio
+impiega un attimo a propagare una scrittura e quel token ruota a ogni uso: senza
+rete di sicurezza, due richieste ravvicinate costerebbero l'accesso.
+
+**Il prezzo, detto chiaro:** il refresh token del OneDrive personale lascia il
+tuo computer. È quello che si paga per avere un connettore che risponde anche a
+macchina spenta — cioè proprio quando serve. Le difese sono un token dedicato
+(mai copiare quello del computer: ruota, e due copie si invalidano a vicenda),
+con meno scope degli altri, dietro una passphrase.
+
+Come si mette in piedi, cosa fare se non aggancia e cosa guardare quando smette
+di funzionare: **`docs/mente-remoto.md`**. Le prove girano senza rete e senza
+account — `npm run prova-mcp-remoto` fa il giro OAuth per intero contro il
+OneDrive finto.
 
 ### Il token
 
@@ -1073,6 +1129,18 @@ password.
 — e si genera un token **nuovo** invece di copiare il file: il refresh token ruota
 a ogni uso, e due macchine che si passano la stessa copia finiscono prima o poi
 con una delle due che si ritrova in mano un token già rinnovato altrove.
+
+**Per il connettore remoto** vale la stessa regola, con una ragione in più:
+
+```bash
+node scripts/get-refresh-token.mjs --remoto
+```
+
+Un token suo, e con **meno scope** (`MENTE_SCOPE_REMOTO`: i file e il
+calendario, niente posta e niente OneNote — nessuno dei quattordici strumenti
+remoti ne ha bisogno). Quel token non sta sul tuo disco ma su Cloudflare: è la
+sola cosa che si può fare perché, se un giorno quel posto venisse aperto, ci si
+trovi dentro una chiave che apre meno porte.
 
 Il codice, invece, non si aggiorna da solo: il server esegue i file che stanno su
 quel disco. Dopo un `git pull` va riavviata la sessione, perché il client avvia il

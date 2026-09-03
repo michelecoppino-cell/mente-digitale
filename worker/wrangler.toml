@@ -1,0 +1,43 @@
+# Il connettore remoto della mente digitale.
+#
+#   npx wrangler kv namespace create MENTE     → l'id da incollare qui sotto
+#   npx wrangler secret put MENTE_REFRESH_TOKEN   (node scripts/get-refresh-token.mjs --remoto)
+#   npx wrangler secret put MENTE_PASSPHRASE
+#   npx wrangler secret put MENTE_BEARER          (facoltativo: la via di scampo)
+#   npx wrangler deploy
+#
+# Le istruzioni per esteso, e cosa fare quando qualcosa non aggancia, stanno in
+# docs/mente-remoto.md.
+
+name = "mente-digitale"
+main = "index.js"
+compatibility_date = "2026-09-01"
+
+# Il Worker non ha bisogno di stare su un dominio tuo: l'indirizzo
+# <nome>.<account>.workers.dev basta, ed è quello che si incolla in Claude.
+workers_dev = true
+
+# Niente nodejs_compat: qui dentro non c'è un solo modulo di Node. È il motivo
+# per cui la custodia del token è uscita da mente-graph.mjs — un `import` di
+# `fs` in testa a un file basterebbe a non far partire il bundle.
+
+# L'archivio: il refresh token di Microsoft, i client registrati, i codici e i
+# token del connettore. Un namespace solo, a prefissi.
+# L'id lo stampa `wrangler kv namespace create MENTE`: incollalo qui.
+[[kv_namespaces]]
+binding = "MENTE"
+id = "DA_RIEMPIRE"
+
+# I segreti non stanno qui e non stanno in git: si mettono con
+# `wrangler secret put`, e restano su Cloudflare.
+#   MENTE_REFRESH_TOKEN  il token Microsoft del connettore (scope ridotti)
+#   MENTE_PASSPHRASE     quella che si digita una volta sola, collegando
+#   MENTE_BEARER         facoltativo, per collegare il connettore senza OAuth
+
+# MSAL fuori dal pacchetto. Da `src/taskStore.js` parte un import a richiesta
+# (`./api.js`) che serve all'app nel browser e che qui non viene eseguito mai —
+# il trasporto lo inietta `mente-graph.mjs` appena importato — ma chi costruisce
+# il pacchetto lo segue lo stesso, e ci infilerebbe la libreria del login del
+# browser. Il perché per esteso è in worker/msal-assente.js.
+[alias]
+"@azure/msal-browser" = "./msal-assente.js"

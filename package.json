@@ -21,7 +21,8 @@
     "prova-programma": "node scripts/prova-programma.mjs",
     "prova-cattura": "node scripts/prova-cattura.mjs",
     "prova-ics": "node scripts/prova-ics.mjs",
-    "prova": "npm run prova-onedrive && npm run prova-nucleo && npm run prova-task && npm run prova-migrazione && npm run prova-flusso && npm run prova-pool && npm run prova-colori && npm run prova-programma && npm run prova-cattura && npm run prova-ics",
+    "prova-mcp-remoto": "node scripts/prova-mcp-remoto.mjs",
+    "prova": "npm run prova-onedrive && npm run prova-nucleo && npm run prova-task && npm run prova-migrazione && npm run prova-flusso && npm run prova-pool && npm run prova-colori && npm run prova-programma && npm run prova-cattura && npm run prova-ics && npm run prova-mcp-remoto",
     "test": "npm run prova",
     "preview": "vite preview"
   },

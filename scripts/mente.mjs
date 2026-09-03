@@ -15,6 +15,13 @@ import * as mente from './mente-comandi.mjs';
 import {
   TASK_STATUSES, CONTEXTS, STATI_SCRIVIBILI, STATI_CREABILI, TIPI_DIARIO, GRANULARITY_MEMO_LINE,
 } from './mente-comandi.mjs';
+import { impostaArchivioToken } from './mente-graph.mjs';
+import { archivioSuFile } from './mente-token-file.mjs';
+
+// Il token sta su questa macchina: un file accanto agli script, o l'ambiente.
+// Lo strato Graph non lo cerca da sé — gira anche in un Worker, dove un file
+// non c'è — quindi glielo dice chi lo avvia.
+impostaArchivioToken(archivioSuFile());
 
 // ── Argomenti ────────────────────────────────────────────────────────────────
 

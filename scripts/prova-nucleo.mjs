@@ -33,6 +33,8 @@ finto.aggiungiRotta((url, opt, risposta) => {
 });
 
 const cli = await import('./mente-graph.mjs');
+const { archivioSuFile } = await import('./mente-token-file.mjs');
+cli.impostaArchivioToken(archivioSuFile());
 const { getDriveJson, putDriveJson } = cli;
 
 function pulisci() {

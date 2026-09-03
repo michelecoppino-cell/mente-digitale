@@ -28,3 +28,5 @@ scripts/.new-refresh-token
 # sono credenziali del OneDrive personale, non devono entrare nel repo.
 scripts/.mente-refresh-token
 .env
+# La cartella di lavoro di wrangler (cache e stato locale del Worker).
+.wrangler
