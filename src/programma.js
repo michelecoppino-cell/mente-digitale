@@ -559,7 +559,9 @@ function oreScritte(v) {
 
 /**
  * Righe `pacchetto | titolo | ore | risorsa` (tabulazioni o barre verticali) in
- * righe strutturate.
+ * righe strutturate. Con `semplice` le colonne sono solo `titolo | ore` — la
+ * scomposizione, che non ha né pacchetto (è quello della madre) né risorsa (si
+ * decide attivando).
  *
  * È separata da `conVociDaRighe` perché **i modi di scrivere una voce sono
  * due**: incollare centocinquanta righe da un Excel, e compilare quattro campi
@@ -569,9 +571,11 @@ function oreScritte(v) {
  * arrivano allo stesso posto.
  *
  * @param {string} testo
+ * @param {{ semplice?: boolean }} [opts]
  * @returns {{ righe: RigaVoce[], scartate: string[] }}
  */
-export function leggiRigheVoci(testo) {
+export function leggiRigheVoci(testo, opts = {}) {
+  const semplice = !!opts.semplice;
   /** @type {RigaVoce[]} */
   const righe = [];
   /** @type {string[]} */
@@ -579,6 +583,12 @@ export function leggiRigheVoci(testo) {
   for (const riga of String(testo || '').split(/\r?\n/)) {
     if (!riga.trim()) continue;
     const campi = riga.split(/\t|\|/).map(c => c.trim());
+    if (semplice) {
+      const [titolo, ore] = campi;
+      if (!titolo) { scartate.push(riga); continue; }
+      righe.push({ pacchetto: '', titolo, ore: oreScritte(ore), risorsa: '' });
+      continue;
+    }
     // Una colonna sola è il caso più comune di tutti: un elenco di titoli
     // copiato da una mail. Non deve essere un errore.
     const [primo, secondo, terzo, quarto] = campi;
