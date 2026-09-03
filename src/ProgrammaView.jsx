@@ -788,6 +788,7 @@ export default function ProgrammaView({
             onCelle={scriviCelle}
             onAnnulla={annulla}
             onSceltaRiga={(_risorsa, pacchettoId) => setPacchettoScelto(pacchettoId)}
+            onSceltaVoce={id => { setVoceScelta(id); setAttivaAperta(false); }}
           />
         ) : (
           <div className="pg-corpo">{elenco}</div>

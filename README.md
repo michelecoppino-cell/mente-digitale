@@ -785,6 +785,18 @@ perde nel giro: **la tinta della cella resta la persona** — dice che quella
 settimana è oltre la sua capacità contando tutto quello che ha addosso, non le
 ore del pacchetto che si sta guardando, che direbbero sempre che va tutto bene.
 
+**Sotto un pacchetto si apre anche il lavoro, non solo chi lo fa.** Due bottoni
+nella barra — «voci» e «sottovoci» — aggiungono sotto ogni pacchetto aperto le
+sue lavorazioni, e a un altro clic le loro figlie. Sono righe che si leggono e
+basta: le ore vivono nella cella `persona × pacchetto × settimana`, una voce non
+ne ha di sue, e inventargliele vorrebbe dire un secondo posto in cui scrivere le
+stesse ore — e il primo dei due che si contraddice vince. Quello che la riga dice
+è l'altra metà della domanda: la **finestra** della voce disegnata come una barra
+sulle settimane, e le sue ore stimate nel totale. Da lì si vede in un colpo se le
+celle che si stanno riempiendo cadono dove il lavoro era previsto, che prima si
+poteva sapere solo tenendo aperte due schede. Una voce senza finestra lo dice
+invece di sembrare una riga vuota.
+
 **Il filtro dei pacchetti vale dappertutto.** Acceso, restano le ore di quel
 pacchetto: le righe, i totali di riga, la colonna «tot» e il piede — e vale anche
 nella scheda Persone, dove diventa «di questo pacchetto, chi fa cosa e quando».

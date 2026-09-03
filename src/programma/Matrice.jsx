@@ -23,6 +23,17 @@
 // pacchetto con una persona sola, dove la destinazione è ovvia. Negli altri
 // casi la cella non dà errore, **apre la riga**: l'apertura *è* la risposta.
 //
+// **Sotto un pacchetto c'è anche il lavoro, non solo chi lo fa.** Due bottoni
+// nella barra — «voci» e «sottovoci» — aggiungono sotto ogni pacchetto aperto le
+// sue lavorazioni, e a un altro clic le loro figlie. Sono righe che **si leggono
+// e basta**: le ore vivono nella cella `persona × pacchetto × settimana`, una
+// voce non ne ha di sue, e inventargliele vorrebbe dire un secondo posto in cui
+// scrivere le stesse ore. Quello che la riga dice è l'altra metà della domanda:
+// la **finestra** della voce disegnata sulle settimane, e le sue ore stimate nel
+// totale. Da lì si vede in un colpo se le celle che si stanno riempiendo cadono
+// dove il lavoro era previsto — che prima si poteva sapere solo tenendo aperte
+// due schede.
+//
 // **La tinta della saturazione resta quella della persona, non della cella.**
 // In una sotto-riga il numero sono le ore di quella persona *su questo
 // pacchetto*, ma il rosso continua a voler dire una cosa sola — quella persona,
@@ -73,13 +84,16 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { lunediDellaSettimana } from '../tempo.js';
 import {
   chiaveCarico, livelloSaturazione, oreCella, oreRisorsaSettimana, orePacchettoSettimana,
-  risorseDiPacchetto, perMese, spalma,
+  risorseDiPacchetto, vociDiPacchetto, perMese, spalma,
 } from '../programma.js';
+import { readPref, writePref } from '../viewPrefs.js';
 import { oreBrevi, leggiOre } from './formato.js';
 import { DENSITA, useDensita } from './densita.js';
 
 /** @typedef {import('../programma.js').DocProgramma} DocProgramma */
-/** @typedef {{ tipo: 'pacchetto'|'risorsa', nome: string, risorsa: string|null, capacita: number, colore: string|null, pacchettoId: string, aperta: boolean }} Riga */
+/** @typedef {{ tipo: 'pacchetto'|'risorsa'|'voce', nome: string, risorsa: string|null, capacita: number, colore: string|null, pacchettoId: string, aperta: boolean, voce?: import('../programma.js').Voce, rientro?: number }} Riga */
+
+const CHIAVE_DETTAGLIO = 'md_pg_matrice_dettaglio_v1';
 
 const MESI = ['gen', 'feb', 'mar', 'apr', 'mag', 'giu', 'lug', 'ago', 'set', 'ott', 'nov', 'dic'];
 
@@ -96,9 +110,10 @@ const nomeMese = mese => MESI[Number(mese.slice(5, 7)) - 1] || mese;
  * @param {(celle: Record<string, number>) => void} props.onCelle  le ore cambiate, tutte insieme
  * @param {() => void} props.onAnnulla
  * @param {(risorsa: string, pacchettoId: string) => void} [props.onSceltaRiga]
+ * @param {(voceId: string) => void} [props.onSceltaVoce]  il clic su una riga di voce apre il suo dettaglio
  */
 export default function Matrice({
-  doc, settimane, settimanaOra, pacchettoScelto, onCelle, onAnnulla, onSceltaRiga,
+  doc, settimane, settimanaOra, pacchettoScelto, onCelle, onAnnulla, onSceltaRiga, onSceltaVoce,
 }) {
   const [aperte, setAperte] = useState(/** @type {string[]} */ ([]));
   const [sel, setSel] = useState({ r: 0, c: 0 });
@@ -109,6 +124,13 @@ export default function Matrice({
   // stretta e l'altra no sarebbero due tabelle diverse a guardarsi.
   const [densita, cambiaDensita] = useDensita();
   const [personaSola, setPersonaSola] = useState('');
+  // Quanti livelli di lavoro si vedono sotto un pacchetto: 0 nessuno, 1 le
+  // lavorazioni, 2 anche le loro figlie. Si ricorda, perché è un modo di
+  // guardare e non un gesto: chi programma leggendo le voci le vuole sempre.
+  const [dettaglio, setDettaglio] = useState(() => {
+    const salvato = readPref(CHIAVE_DETTAGLIO, 0);
+    return typeof salvato === 'number' && salvato >= 0 && salvato <= 2 ? salvato : 0;
+  });
   const scorrevole = useRef(/** @type {HTMLDivElement|null} */ (null));
   const trascina = useRef(/** @type {'selezione'|'riempi'|null} */ (null));
 
@@ -139,9 +161,18 @@ export default function Matrice({
           colore: null, pacchettoId: p.id, aperta: false,
         });
       }
+      // Le voci vengono dopo le persone: lì si scrive, qui si legge, e la riga
+      // in cui si batte un numero deve restare la prima che si incontra.
+      if (!dettaglio) continue;
+      for (const { voce, livello } of vociDiPacchetto(doc, p.id, dettaglio)) {
+        fila.push({
+          tipo: 'voce', nome: voce.titolo, risorsa: null, capacita: 0,
+          colore: p.colore, pacchettoId: p.id, aperta: false, voce, rientro: livello,
+        });
+      }
     }
     return fila;
-  }, [doc, aperte, pacchettoScelto, personaSola]);
+  }, [doc, aperte, pacchettoScelto, personaSola, dettaglio]);
 
   // La matrice si mette con la settimana corrente a un terzo da sinistra: si
   // vuole vedere un po' di passato e molto futuro, e su cinquanta colonne
@@ -163,6 +194,9 @@ export default function Matrice({
   // colonna di oggi finisce fuori schermo proprio mentre si stringe per vedere
   // di più.
   useEffect(() => { vaiAOggi(); }, [densita, vaiAOggi]);
+
+  /** @param {number} livelli */
+  const cambiaDettaglio = livelli => { setDettaglio(livelli); writePref(CHIAVE_DETTAGLIO, livelli); };
 
   const rettangolo = () => {
     const a = ancora || sel;
@@ -193,7 +227,7 @@ export default function Matrice({
     DENSITA[densita].intere ? oreBrevi(Math.round(ore)) : oreBrevi(ore));
 
   /** @param {Riga} riga @param {number} colonna */
-  const valore = (riga, colonna) => (riga.tipo === 'risorsa'
+  const valore = (riga, colonna) => (riga.tipo === 'voce' ? 0 : riga.tipo === 'risorsa'
     ? oreCella(doc, /** @type {string} */ (riga.risorsa), riga.pacchettoId, settimane[colonna])
     // La riga chiusa somma le persone — tutte, o la sola scelta nel filtro.
     : orePacchettoSettimana(doc, riga.pacchettoId, settimane[colonna], personaSola || null));
@@ -338,6 +372,26 @@ export default function Matrice({
           {doc.risorse.map(r => <option key={r.nome} value={r.nome}>solo {r.nome}</option>)}
         </select>
 
+        {/* Il lavoro che c'è dentro il pacchetto, un livello per bottone.
+            «sottovoci» accende anche «voci»: sono due gradini della stessa
+            scala, non due interruttori indipendenti. */}
+        <button
+          type="button"
+          className={`pg-barra-btn${dettaglio >= 1 ? ' scelto' : ''}`}
+          onClick={() => cambiaDettaglio(dettaglio >= 1 ? 0 : 1)}
+          title="Sotto ogni pacchetto aperto, le sue lavorazioni: finestra e ore stimate, in sola lettura"
+        >
+          voci
+        </button>
+        <button
+          type="button"
+          className={`pg-barra-btn${dettaglio >= 2 ? ' scelto' : ''}`}
+          onClick={() => cambiaDettaglio(dettaglio >= 2 ? 1 : 2)}
+          title="Anche le figlie delle lavorazioni scomposte"
+        >
+          sottovoci
+        </button>
+
         <span className="pg-barra-sp" />
 
         <span className="eyebrow">densità</span>
@@ -405,7 +459,8 @@ export default function Matrice({
               <div
                 key={`${riga.pacchettoId}|${riga.risorsa || 'tot'}|${riga.tipo}`}
                 className={[
-                  'pg-riga', `pg-riga-${riga.tipo === 'pacchetto' ? 'risorsa' : 'pacchetto'}`,
+                  'pg-riga',
+                  riga.tipo === 'pacchetto' ? 'pg-riga-risorsa' : (riga.tipo === 'voce' ? 'pg-riga-voce' : 'pg-riga-pacchetto'),
                   riga.aperta ? 'pg-aperta' : '',
                   // A righe alterne, contando i **pacchetti** e non le righe:
                   // un pacchetto aperto resta un blocco solo con le sue
@@ -416,31 +471,67 @@ export default function Matrice({
               >
                 <div
                   className="pg-nome"
+                  style={riga.rientro ? { paddingLeft: `calc(26px + ${riga.rientro * 14}px)` } : undefined}
                   onClick={() => {
                     if (riga.tipo === 'pacchetto') {
                       setAperte(p => (p.includes(riga.pacchettoId)
                         ? p.filter(id => id !== riga.pacchettoId)
                         : [...p, riga.pacchettoId]));
+                    } else if (riga.tipo === 'voce' && riga.voce) {
+                      onSceltaVoce?.(riga.voce.id);
                     } else if (riga.risorsa) {
                       onSceltaRiga?.(riga.risorsa, riga.pacchettoId);
                     }
                   }}
+                  title={riga.tipo === 'voce' ? `${riga.nome} · ${oreBrevi(riga.voce?.ore || 0)} h stimate${riga.voce?.finestra ? ` · ${riga.voce.finestra.da} → ${riga.voce.finestra.a}` : ' · senza finestra'}` : undefined}
                 >
-                  {riga.tipo === 'pacchetto' ? (
+                  {riga.tipo === 'pacchetto' && (
                     <>
                       <span className="pg-caret">{riga.aperta ? '▾' : '▸'}</span>
                       <span className="pg-punto" style={riga.colore ? { background: riga.colore } : undefined} />
                       <span className="pg-nome-testo">{riga.nome}</span>
                     </>
-                  ) : (
+                  )}
+                  {riga.tipo === 'risorsa' && (
                     <>
                       <span className="pg-nome-testo">{riga.nome}</span>
                       <span className="pg-cap">{riga.capacita}h/s</span>
                     </>
                   )}
+                  {riga.tipo === 'voce' && (
+                    <>
+                      <span className="pg-voce-segno">·</span>
+                      <span className="pg-nome-testo">{riga.nome}</span>
+                      {/* Una voce senza finestra non ha una barra da disegnare,
+                          e la riga sembrerebbe un errore: lo dice invece di
+                          lasciarlo indovinare. */}
+                      {!riga.voce?.finestra && <span className="pg-cap">quando?</span>}
+                    </>
+                  )}
                 </div>
 
                 {celle.map(({ w, c, v }) => {
+                  // La riga di una voce non ha celle: ha una **finestra**. Un
+                  // numero lì dentro sarebbe un secondo posto in cui leggere le
+                  // ore, e il primo che si contraddice vince.
+                  if (riga.tipo === 'voce') {
+                    const f = riga.voce?.finestra;
+                    const dentro = !!f && w >= f.da && w <= f.a;
+                    return (
+                      <div
+                        key={w}
+                        className={[
+                          'pg-cella', 'pg-cella-voce',
+                          dentro ? 'pg-finestra' : '',
+                          dentro && w === f?.da ? 'pg-finestra-inizio' : '',
+                          dentro && w === f?.a ? 'pg-finestra-fine' : '',
+                          w === settimanaOra ? 'pg-w-ora' : '',
+                          inizioMese.has(w) ? 'pg-mese-inizio' : '',
+                          sel.c === c ? 'pg-colonna-scelta' : '',
+                        ].filter(Boolean).join(' ')}
+                      />
+                    );
+                  }
                   const scelta = sel.r === r && sel.c === c;
                   const dentro = nelRettangolo(r, c);
                   // La tinta è la persona, non la cella: dice «questa persona,
@@ -549,7 +640,9 @@ export default function Matrice({
                   );
                 })}
 
-                <div className="pg-tot">{scritte(totale)}</div>
+                <div className="pg-tot">
+                  {riga.tipo === 'voce' ? oreBrevi(riga.voce?.ore || 0) : scritte(totale)}
+                </div>
               </div>
             );
           })}
@@ -601,6 +694,11 @@ export default function Matrice({
         <span className="pg-legenda-nota">
           la tinta è la persona nella settimana, su tutta la commessa — non le ore della cella
         </span>
+        {dettaglio > 0 && (
+          <span className="pg-legenda-voce">
+            <span className="pg-campione pg-finestra" /> la finestra di una voce · si legge, non si scrive
+          </span>
+        )}
         {DENSITA[densita].intere && (
           <span className="pg-legenda-nota">ore arrotondate all&apos;intero: le mezze ore ci sono, si rivedono a densità «stretta»</span>
         )}
