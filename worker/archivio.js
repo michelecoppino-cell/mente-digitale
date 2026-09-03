@@ -69,8 +69,16 @@ export function archivioSuKv(env) {
       );
     },
 
-    leggiPrecedente() {
-      return env.MENTE.get(K_PRECEDENTE);
+    // Il token di prima, per quando quello in corso viene rifiutato. Se non
+    // c'è, si ripiega sul seme: è il caso di chi ha rigenerato il token da capo
+    // e ha rimesso il segreto, mentre in KV è rimasto quello vecchio ormai
+    // morto. Senza questo ripiego il connettore resterebbe fermo su una chiave
+    // scaduta con quella buona a due centimetri, e l'unico modo di ripartire
+    // sarebbe cancellare a mano una chiave che nessuno si ricorda come si
+    // chiama.
+    async leggiPrecedente() {
+      const prec = await env.MENTE.get(K_PRECEDENTE);
+      return prec || env.MENTE_REFRESH_TOKEN || null;
     },
 
     async scrivi(nuovo) {

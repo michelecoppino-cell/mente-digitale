@@ -331,6 +331,26 @@ verifica(Boolean(await kv.get('ms:access')), 'e l\'access token si tiene, per no
 }
 
 
+{
+  // Hai rigenerato il token da capo e rimesso il segreto, ma in KV è rimasto
+  // quello vecchio, che ormai è morto: il connettore deve ripartire da solo.
+  // Senza questo ripiego servirebbe cancellare a mano una chiave di cui
+  // nessuno ricorda il nome.
+  await kv.delete('ms:access');
+  await kv.delete('ms:refresh:prec');
+  await kv.put('ms:refresh', 'un-token-vecchio-e-morto');
+  env.MENTE_REFRESH_TOKEN = 'token-appena-rigenerato';
+  tokenBuoni = new Set(['token-appena-rigenerato']);
+  ruotatoIn = 'token-appena-rigenerato-2';
+  impostaArchivioToken(archivioSuKv(env));
+
+  const { result } = await (await rpc('/mcp', {
+    jsonrpc: '2.0', id: 7, method: 'tools/call', params: { name: 'sezioni', arguments: {} },
+  }, gettoni.access_token)).json();
+  verifica(!result.isError, 'un token rigenerato e rimesso nel segreto riparte da solo');
+  verifica(await kv.get('ms:refresh') === 'token-appena-rigenerato-2', 'e KV torna in pari senza toccare niente a mano');
+}
+
 // ── Quello che finirebbe nel pacchetto ───────────────────────────────────────
 // Il Worker non gira su Node: niente `fs`, niente `process`, e nessuna
 // libreria del browser. Sono cose che non si scoprono provando il codice — si
