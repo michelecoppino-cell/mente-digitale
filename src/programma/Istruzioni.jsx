@@ -133,13 +133,14 @@ export default function Istruzioni({ onChiudi }) {
               <li><b>⌘Z</b> annulla. Il quadratino in basso a destra della cella ripete il valore verso destra.</li>
               <li><b>Canc</b> svuota. Una cella vuota è vuota: non salva uno zero.</li>
               <li>
-                <b>voci</b> e <b>sottovoci</b>, nella barra, aggiungono sotto ogni pacchetto aperto
-                il lavoro che ci sta dentro: una riga per lavorazione, e a un altro clic le sue
-                figlie. Sono righe che si <b>leggono</b> — le ore vivono nella cella persona ×
-                pacchetto × settimana, una voce non ne ha di sue. Quello che dicono è la
-                <b> finestra</b> della voce disegnata sulle settimane, e le ore stimate nel totale:
-                serve a vedere se le celle che si stanno riempiendo cadono dove il lavoro era
-                previsto. Una voce senza finestra lo dice («quando?»).
+                <b>voci</b> e <b>sottovoci</b>, nella barra, dicono quanto scendere: spenti, sotto
+                il pacchetto ci sono le persone; accesi, la catena diventa pacchetto › voce ›
+                sotto-voce › persona, e le ore si scrivono in fondo. Una riga di voce è la somma
+                del suo ramo e non si compila. Le ore date al pacchetto e basta — un consuntivo, o
+                le celle di prima che ci fossero le voci — restano in coda al pacchetto, marcate
+                «sul pacchetto»: non si migrano da sole, perché nessuno può dire a quale voce
+                andassero. Gli stessi due bottoni ci sono nella scheda Persone, dove la stessa
+                catena si legge dall&apos;altro capo.
               </li>
             </ul>
           </section>

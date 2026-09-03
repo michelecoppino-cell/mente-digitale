@@ -785,17 +785,38 @@ perde nel giro: **la tinta della cella resta la persona** — dice che quella
 settimana è oltre la sua capacità contando tutto quello che ha addosso, non le
 ore del pacchetto che si sta guardando, che direbbero sempre che va tutto bene.
 
-**Sotto un pacchetto si apre anche il lavoro, non solo chi lo fa.** Due bottoni
-nella barra — «voci» e «sottovoci» — aggiungono sotto ogni pacchetto aperto le
-sue lavorazioni, e a un altro clic le loro figlie. Sono righe che si leggono e
-basta: le ore vivono nella cella `persona × pacchetto × settimana`, una voce non
-ne ha di sue, e inventargliele vorrebbe dire un secondo posto in cui scrivere le
-stesse ore — e il primo dei due che si contraddice vince. Quello che la riga dice
-è l'altra metà della domanda: la **finestra** della voce disegnata come una barra
-sulle settimane, e le sue ore stimate nel totale. Da lì si vede in un colpo se le
-celle che si stanno riempiendo cadono dove il lavoro era previsto, che prima si
-poteva sapere solo tenendo aperte due schede. Una voce senza finestra lo dice
-invece di sembrare una riga vuota.
+**La catena è pacchetto › voce › sotto-voce › persona**, e le ore stanno in
+fondo. Due bottoni nella barra — «voci» e «sottovoci» — dicono quanto scendere:
+spenti, sotto il pacchetto ci sono direttamente le persone. La cella porta la
+voce nella sua chiave, così si programma dove il lavoro è davvero descritto —
+«Calcolo plinti, Marco, W35: 34 ore» — invece che su un pacchetto da
+quattrocento ore in cui non si distingue più cosa è cosa. Gli stessi due bottoni
+sono nella scheda Persone, dove la stessa catena si legge dall'altro capo: là si
+parte dal lavoro e si arriva alla persona, qui si parte dalla persona e si
+arriva al lavoro.
+
+Tre cose che questo comporta, e che sono la parte interessante:
+
+- **Si scrive nell'ultimo livello mostrato, mai in una somma.** Una riga di voce
+  dice il totale del suo ramo, come le ore stimate: batterci dentro un numero
+  vorrebbe dire deciderne la ripartizione fra le figlie al posto di chi scrive.
+  Sotto una voce che ha figlie mostrate compaiono solo le persone che ci hanno
+  già delle ore — la risorsa *proposta* no, perché lì sarebbe una riga vuota in
+  mezzo, cioè un invito a scrivere le stesse ore due volte.
+- **La voce sta in coda alla chiave, e può non esserci.**
+  `risorsa|pacchetto|settimana` era la chiave, `risorsa|pacchetto|settimana|voce`
+  è quella nuova: le celle scritte prima restano valide e vogliono dire «ore del
+  pacchetto, senza voce». Non un file su OneDrive da riscrivere, nessuna
+  migrazione da sbagliare, e `const [r, p, s] = chiave.split('|')` continua a
+  dire quello che diceva.
+- **Quelle ore restano visibili.** Sono le celle di prima, e quelle che ci
+  arrivano ancora dal consuntivo — del passato si sa il totale, non su quale
+  voce sia caduto. Nessuno può dire al posto di chi le ha scritte dove
+  andassero, quindi non si migrano: stanno in coda al pacchetto, marcate «sul
+  pacchetto». Sparire da una schermata e continuare a pesare sui totali è
+  esattamente la cosa che non devono fare. Cancellando una voce le sue ore
+  risalgono alla madre, o al pacchetto: il totale della commessa non cambia mai
+  di nascosto.
 
 **Il filtro dei pacchetti vale dappertutto.** Acceso, restano le ore di quel
 pacchetto: le righe, i totali di riga, la colonna «tot» e il piede — e vale anche
