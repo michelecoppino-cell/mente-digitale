@@ -39,6 +39,9 @@ export const TIMEZONE = 'Europe/Rome';
 // refresh token va rifatto — gli scope sono cuciti dentro al token, non
 // chiesti a ogni chiamata:
 //   node scripts/get-refresh-token.mjs
+// Questo elenco è ripetuto in un solo altro posto, e va cambiato anche lì:
+// `scripts/calendario-lavoro/Prendi-Token.ps1`, che fa la stessa cosa in
+// PowerShell per chi non ha Node né una copia del progetto.
 // Di Microsoft To-Do non c'è più niente: le attività sono file su OneDrive, e
 // ci arrivano da Files.ReadWrite come tutto il resto.
 export const MENTE_SCOPE = [
