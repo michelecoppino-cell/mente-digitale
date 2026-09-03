@@ -275,6 +275,37 @@ verifica(pg.destinazioneOre(conVoci, 'Marco', a60.id, fondazioni.id, '2026-W40')
   === pg.chiaveCarico('Marco', a60.id, '2026-W40', plinti.id),
   'scrivendoci dentro, le ore restano sulla sotto-voce in cui stavano');
 
+// ── Una voce che è di due persone ────────────────────────────────────────────
+// Un calcolo lo fanno in due. Finché la proposta era una sola, la seconda riga
+// nella matrice non esisteva e per farla comparire bisognava sdoppiare la voce.
+const dueTeste = pg.conVoceAggiornata(conVoci, carpAdottiva.id, { risorse: ['Marco', 'Sara'] });
+verifica(pg.risorseDiVoce(dueTeste, carpAdottiva.id).map(r => r.nome).sort().join() === 'Marco,Sara',
+  'una voce che propone due persone ha due righe sotto di sé');
+verifica(pg.voceAdottiva(dueTeste, c10.id, 'Sara') === carpAdottiva.id
+  && pg.voceAdottiva(dueTeste, c10.id, 'Marco') === carpAdottiva.id,
+  'e adotta le ore lasciate sul pacchetto da tutt\'e due');
+// I file di ieri portano una stringa, quelli di oggi un elenco: si leggono
+// tutt'e due, e `risorsa` continua a uscire perché un dispositivo non ancora
+// aggiornato non butti via le altre riscrivendo il file.
+verifica(pg.normalizzaVoce({ titolo: 'x', risorsa: 'Marco' }).risorse.join() === 'Marco',
+  'una voce scritta ieri porta la sua proposta dentro l\'elenco');
+verifica(pg.normalizzaVoce({ titolo: 'x', risorse: ['Marco', 'Sara'] }).risorsa === 'Marco',
+  'e una scritta oggi lascia la prima anche nel campo di prima');
+verifica(pg.normalizzaVoce({ titolo: 'x', risorse: ['Marco', ' Marco ', '', null] }).risorse.join() === 'Marco',
+  'doppioni e vuoti non entrano: sarebbero due righe che si contendono la stessa cella');
+
+// Attivare sceglie **una** persona — un task ha un delegato solo — ma non
+// cancella le altre proposte: sarebbe la riga di Sara che sparisce dalla
+// matrice, e con lei il posto in cui stanno le sue ore.
+const attivataInDue = pg.conVoceAttivata(dueTeste, carpAdottiva.id,
+  { taskId: 't-1', listId: 'l-1', risorsa: 'Marco' });
+verifica(attivataInDue.voci.find(v => v.id === carpAdottiva.id).risorse.join() === 'Marco,Sara',
+  'attivare a una delle due non toglie l\'altra');
+const attivataAterzo = pg.conVoceAttivata(dueTeste, carpAdottiva.id,
+  { taskId: 't-2', listId: 'l-1', risorsa: 'Michele' });
+verifica(attivataAterzo.voci.find(v => v.id === carpAdottiva.id).risorse.join() === 'Marco,Sara,Michele',
+  'e attivare a qualcun altro lo aggiunge, invece di sostituire l\'elenco');
+
 // L'altro verso, ed è il difetto che si vedeva spegnendo i due bottoni: la riga
 // della persona sotto il pacchetto è l'ultimo livello mostrato, quindi dice
 // tutte le sue ore lì dentro — anche quelle finite su una voce.
@@ -330,18 +361,24 @@ console.log('\nL\'incolla in massa\n');
 
 const incollato = pg.conVociIncollate(doc, [
   'D20 Impianti | Schemi elettrici | 40 | Sara',
+  'D20 Impianti | Quadri | 30 | Sara, Nadia',
   'D20 Impianti | Schemi idraulici | 25',
   'A60 Fondazioni\tRelazione geotecnica\t16h',
   'Una riga di solo titolo',
   '',
 ].join('\n'));
-verifica(incollato.aggiunte === 4, 'quattro righe, quattro voci');
+verifica(incollato.aggiunte === 5, 'cinque righe, cinque voci');
 verifica(incollato.pacchettiNuovi.length === 1 && incollato.doc.pacchetti.length === 3,
   'il pacchetto nominato e non ancora esistente nasce, quello che c\'è già si riusa');
 verifica(incollato.doc.voci.find(v => v.titolo === 'Relazione geotecnica').ore === 16,
   '«16h» sono sedici ore');
-verifica(incollato.doc.voci.find(v => v.titolo === 'Schemi elettrici').risorsa === 'Sara'
+verifica(incollato.doc.voci.find(v => v.titolo === 'Schemi elettrici').risorse.join() === 'Sara'
   && incollato.doc.risorse.some(r => r.nome === 'Sara'), 'e la risorsa nominata entra fra le risorse');
+// Una voce può essere di due, e chi incolla un Excel le scrive nella stessa
+// cella: due colonne per la stessa cosa non esistono in nessun foglio.
+verifica(incollato.doc.voci.find(v => v.titolo === 'Quadri').risorse.join(',') === 'Sara,Nadia'
+  && incollato.doc.risorse.some(r => r.nome === 'Nadia'),
+  '«Sara, Nadia» sono due proposte, e tutt\'e due entrano fra le risorse');
 verifica(incollato.doc.voci.find(v => v.titolo === 'Una riga di solo titolo').ore === 0,
   'un elenco di soli titoli non è un errore');
 
@@ -437,13 +474,13 @@ const rinominato = pg.conRisorsaRinominata(d2, 'Marco', 'Marco Rossi');
 verifica(rinominato.risorse[0].nome === 'Marco Rossi'
   && pg.oreCella(rinominato, 'Marco Rossi', spalle.id, '2026-W10') === 10,
   'rinominando una persona si spostano anche le sue ore');
-verifica(rinominato.voci.find(v => v.titolo === 'Spalla ovest').risorsa === 'Marco Rossi',
+verifica(rinominato.voci.find(v => v.titolo === 'Spalla ovest').risorse.join() === 'Marco Rossi',
   'e le voci che la proponevano');
 
 const senzaMarco = pg.senzaRisorsa(d2, 'Marco');
 verifica(senzaMarco.risorse.length === 0 && pg.oreCarico(senzaMarco) === 0,
   'togliere una persona si porta via le sue ore');
-verifica(senzaMarco.voci.find(v => v.titolo === 'Spalla ovest').risorsa === null,
+verifica(senzaMarco.voci.find(v => v.titolo === 'Spalla ovest').risorse.length === 0,
   'ma non le voci che la proponevano: la risorsa di una voce è una previsione');
 
 console.log('\nLe ore già spese, per pacchetto\n');

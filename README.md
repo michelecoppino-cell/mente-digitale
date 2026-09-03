@@ -795,6 +795,18 @@ sono nella scheda Persone, dove la stessa catena si legge dall'altro capo: là s
 parte dal lavoro e si arriva alla persona, qui si parte dalla persona e si
 arriva al lavoro.
 
+Sotto una voce compaiono le persone che ci hanno già ore e **quelle che la voce
+propone**, che possono essere più d'una: un calcolo lo fanno in due, e finché la
+proposta era una sola l'unico modo di far comparire la seconda riga era
+sdoppiare la voce. Le proposte si scrivono nel pannello di destra, un campo per
+ognuna, e sotto l'ultimo pieno ce n'è sempre uno vuoto — aggiungere è scrivere,
+togliere è cancellare, e nessun bottone «+» per la cosa che si fa più spesso. Un
+nome scritto in minuscolo si appoggia alla persona che c'è già; uno nuovo entra
+fra le risorse della commessa, com'è sempre stato per l'incollato. Attivare, che
+sceglie **una** persona perché un task ha un delegato solo, aggiunge la sua alle
+proposte invece di sostituirle: cancellare l'elenco vorrebbe dire togliere dalla
+matrice la riga dell'altra, e con lei il posto in cui stanno le sue ore.
+
 Quattro cose che questo comporta, e che sono la parte interessante:
 
 - **Ogni riga dice la somma di quello che ha sotto.** La riga di una persona
@@ -900,7 +912,8 @@ Tre cose che vale la pena sapere prima di aprirlo:
   mai sotto zero: chi ha già speso più di quanto stimava non ha ore di credito da
   finire, ha un margine rosso, ed è lì che si legge.
 - **Una voce si scrive in due modi, e portano allo stesso posto.** Quattro campi
-  separati (`pacchetto`, `titolo`, `ore`, `risorsa`) per scriverne una, e una
+  separati (`pacchetto`, `titolo`, `ore`, `risorsa` — anche «Marco, Gaia», che è
+  come si scrivono in una cella di Excel) per scriverne una, e una
   casella da incollare per scriverne duecento. Servono tutti e due: senza
   l'incolla il caricamento iniziale si ferma alla seconda commessa, senza i
   campi si ferma alla prima, perché alla prima voce nessuno ha voglia di
@@ -951,6 +964,16 @@ pixel non ci sta, e un numero tagliato a metà è peggio di un numero arrotondat
 speso dalla previsione, e senza la quale i numeri della testata non si sanno più
 leggere; e **una persona sola**, perché dieci righe aperte sono sessanta
 sotto-righe e quasi sempre la domanda è su una persona.
+
+Su quel filtro c'è una scelta che sembra un dettaglio e non lo è: i pacchetti in
+cui quella persona non ha ancora niente **restano**, in coda e tenui, invece di
+sparire. Sceglierla è anche il modo di far comparire la sua riga sotto ogni voce,
+cioè di darle la prima ora su un pacchetto nuovo: finché quei pacchetti
+sparivano, il filtro toglieva di mezzo proprio l'unico posto in cui quel gesto si
+poteva fare. E l'ordine si decide **quando si sceglie la persona**, non a ogni
+modifica: ricalcolarlo farebbe saltare in cima il pacchetto in cui si è appena
+scritta la prima ora, proprio mentre ci si sta scrivendo dentro, e la cella dopo
+sarebbe di un'altra riga.
 
 Poi tre cose che si vedono e non si toccano: la riga e la colonna in cui si sta
 restano segnate mentre si scorre, le righe si alternano di fondo **per persona**

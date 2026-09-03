@@ -38,7 +38,7 @@ import {
 } from './programmaStore';
 import {
   totali, settimaneDellaMatrice, settimaneDellePersone, oreVoci, statoVoce,
-  conVoceAggiornata, conVoci,
+  conVoceAggiornata, conVoci, conRisorsa,
   conVociDaRighe, conVoceAttivata, conPacchettoAggiornato, conCommessa, conCarico,
   senzaVoce, pacchettiCheSforano, daCollocarePerPacchetto, esportazione,
 } from './programma';
@@ -803,10 +803,19 @@ export default function ProgrammaView({
           stato={statoDellaVoce}
           task={tasks.find(t => t.id === voce.taskId) || null}
           settimane={settimane}
-          onPatch={patch => cambia(d => conVoceAggiornata(d, voce.id, patch))}
+          onPatch={patch => cambia(d => {
+            // Un nome nuovo scritto fra le proposte entra anche fra le risorse
+            // della commessa: è la stessa regola dell'incollato — chi nomina
+            // una persona non deve doverla aggiungere due volte, e una proposta
+            // che non combacia con nessuna risorsa non farebbe comparire
+            // nessuna riga, in silenzio.
+            const conPersone = (patch.risorse || []).reduce(
+              (x, nome) => conRisorsa(x, nome), d);
+            return conVoceAggiornata(conPersone, voce.id, patch);
+          })}
           onScomponi={figlie => cambia(d => conVoci(d, figlie.map(f => ({
             titolo: f.titolo, ore: f.ore, oreIniziali: f.ore,
-            padreId: voce.id, pacchettoId: voce.pacchettoId, risorsa: voce.risorsa,
+            padreId: voce.id, pacchettoId: voce.pacchettoId, risorse: voce.risorse,
           }))))}
           onChiudi={() => { setVoceScelta(null); setAttivaAperta(false); }}
           onCancella={() => {

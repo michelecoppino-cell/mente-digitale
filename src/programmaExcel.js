@@ -149,7 +149,9 @@ function righeVoci(doc, attivitaAperte) {
       { v: voce.ore || '', s: contenitore ? STILE.totale : STILE.ore },
       { v: voce.oreIniziali || '', s: STILE.ore },
       { v: voce.ore - voce.oreIniziali || '', s: STILE.ore },
-      voce.risorsa || '',
+      // Più persone nella stessa cella, separate da virgola: è la forma in cui
+      // l'incollato le rilegge.
+      voce.risorse.join(', '),
       voce.finestra?.da || '',
       voce.finestra?.a || '',
       contenitore ? `${doc.voci.filter(v => v.padreId === voce.id).length} sotto-voci` : ETICHETTE_STATO[stato],

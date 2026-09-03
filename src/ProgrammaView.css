@@ -302,6 +302,10 @@
 /* Le ore rimaste sul pacchetto, da prima che ci fossero le voci: si vedono, e
    si vede che sono un'altra cosa. */
 .pg-riga-orfana .pg-nome { color: var(--text-3); font-style: italic; }
+/* Col filtro su una persona, i pacchetti in cui non ha niente: restano — sono
+   il posto in cui dargliene la prima ora — ma tenui, perché la risposta alla
+   domanda «cosa fa» sono quelli sopra. */
+.pg-riga-estranea .pg-nome { color: var(--disabled); }
 
 .pg-mese {
   height: 20px;
@@ -704,6 +708,12 @@
 }
 .pg-scheda-fisso { font-size: var(--fs-meta); color: var(--disabled); font-variant-numeric: tabular-nums; }
 .pg-scheda-somma { font-size: var(--fs-meta); color: var(--text-3); font-variant-numeric: tabular-nums; }
+/* Le persone che una voce propone: un campo per ognuna, incolonnati, e in coda
+   quello vuoto con cui se ne aggiunge un'altra. La riga della griglia si allinea
+   in alto — con tre campi, un'etichetta centrata verticalmente finirebbe in
+   mezzo al secondo. */
+.pg-scheda-risorse { display: flex; flex-direction: column; gap: var(--sp-2); align-self: start; }
+.pg-scheda-et-alto { align-self: start; padding-top: 10px; }
 .pg-finestra { display: flex; align-items: center; gap: var(--sp-2); }
 .pg-freccia { color: var(--disabled); font-size: var(--fs-chip); }
 

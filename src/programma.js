@@ -98,7 +98,13 @@ export const ORE_SETTIMANA_DEFAULT = 35;
  * @property {string|null} padreId          la scomposizione: una voce dentro un'altra
  * @property {number} ore                   la stima corrente
  * @property {number} oreIniziali           quella del primo giorno: non si riscrive mai
- * @property {string|null} risorsa          a chi la daresti: una previsione, non un impegno
+ * @property {string[]} risorse            a chi la daresti: una previsione, non un
+ *   impegno, e possono essere in più d'uno — un calcolo lo fanno in due, e
+ *   fingere che sia di uno solo obbliga a sdoppiare la voce per far comparire
+ *   la seconda riga nella matrice
+ * @property {string|null} risorsa          la prima di `risorse`, scritta solo perché un
+ *   dispositivo con la versione di prima non butti via le altre riscrivendo il
+ *   file: si legge da `risorse`, mai da qui
  * @property {{ da: string, a: string }|null} finestra  settimane, grossolane
  * @property {boolean} scartata
  * @property {string|null} taskId           il legame, dopo l'attivazione
@@ -195,12 +201,32 @@ function normalizzaRisorsa(raw) {
   };
 }
 
+/**
+ * Le persone che una voce propone, da qualunque forma arrivi il file: `risorse`
+ * (l'elenco di adesso), o `risorsa` (la stringa di prima). Nomi ripuliti, senza
+ * doppioni e senza vuoti — un elenco che contiene due volte la stessa persona
+ * sarebbe due righe che si contendono la stessa cella.
+ * @param {any} raw
+ * @returns {string[]}
+ */
+function leggiRisorseProposte(raw) {
+  const grezze = Array.isArray(raw?.risorse) ? raw.risorse : [raw?.risorsa];
+  /** @type {string[]} */
+  const nomi = [];
+  for (const g of grezze) {
+    const nome = testoONull(g);
+    if (nome && !nomi.includes(nome)) nomi.push(nome);
+  }
+  return nomi;
+}
+
 /** @param {any} raw @returns {Voce} */
 export function normalizzaVoce(raw) {
   const ore = Math.max(0, numero(raw?.ore, 0));
   const finestra = raw?.finestra?.da && raw?.finestra?.a
     ? { da: String(raw.finestra.da), a: String(raw.finestra.a) }
     : null;
+  const risorse = leggiRisorseProposte(raw);
   return {
     id: String(raw?.id || nuovoId()),
     titolo: String(raw?.titolo ?? ''),
@@ -211,7 +237,12 @@ export function normalizzaVoce(raw) {
     // La stima del primo giorno vale quella corrente solo la prima volta: da lì
     // in poi resta ferma, perché la differenza fra le due è la baseline.
     oreIniziali: Math.max(0, numero(raw?.oreIniziali, ore)),
-    risorsa: testoONull(raw?.risorsa),
+    // Le proposte sono un elenco, e prima erano una stringa: un file scritto
+    // ieri porta `risorsa`, uno di oggi `risorse`, e tutt'e due si leggono.
+    // `risorsa` continua a uscire, la prima dell'elenco, finché tutti i
+    // dispositivi non hanno la versione nuova — vedi il debito in CLAUDE.md.
+    risorse,
+    risorsa: risorse[0] ?? null,
     finestra,
     scartata: !!raw?.scartata,
     taskId: testoONull(raw?.taskId),
@@ -379,7 +410,7 @@ export function conRisorsaAggiornata(doc, nome, patch) {
 
 /**
  * Cambiare nome a una persona **non è** una patch al suo nome: il nome sta
- * dentro le chiavi del carico e dentro il campo `risorsa` delle voci, e
+ * dentro le chiavi del carico e dentro le proposte delle voci, e
  * riscriverlo in un posto solo lascerebbe un mese di ore appese a una persona
  * che non esiste più. Qui si sposta tutto insieme, o niente.
  * @param {DocProgramma} doc
@@ -405,15 +436,20 @@ export function conRisorsaRinominata(doc, da, a) {
     risorse: doc.risorse
       .map(r => (r.nome === da ? { ...r, nome: nuovo } : r))
       .filter((r, i, tutte) => tutte.findIndex(x => x.nome === r.nome) === i),
-    voci: doc.voci.map(v => (v.risorsa === da ? { ...v, risorsa: nuovo } : v)),
+    voci: doc.voci.map(v => (v.risorse.includes(da)
+      // Il nome nuovo può già essere fra le proposte: allora quella vecchia
+      // sparisce e basta, invece di comparire due volte.
+      ? normalizzaVoce({ ...v, risorse: v.risorse.map(n => (n === da ? nuovo : n)) })
+      : v)),
     carico,
   };
 }
 
 /**
  * Toglie una persona dalla commessa, con le sue ore. Le voci che la
- * *proponevano* restano — la risorsa di una voce è una previsione, non un
- * impegno, e perdere la voce per aver tolto una riga sarebbe sproporzionato.
+ * *proponevano* restano, senza di lei — le proposte di una voce sono una
+ * previsione, non un impegno, e perdere la voce per aver tolto una riga sarebbe
+ * sproporzionato.
  * @param {DocProgramma} doc
  * @param {string} nome
  * @returns {DocProgramma}
@@ -427,7 +463,9 @@ export function senzaRisorsa(doc, nome) {
   return {
     ...doc,
     risorse: doc.risorse.filter(r => r.nome !== nome),
-    voci: doc.voci.map(v => (v.risorsa === nome ? { ...v, risorsa: null } : v)),
+    voci: doc.voci.map(v => (v.risorse.includes(nome)
+      ? normalizzaVoce({ ...v, risorse: v.risorse.filter(n => n !== nome) })
+      : v)),
     carico,
   };
 }
@@ -549,16 +587,25 @@ export function risommaContenitori(doc) {
  *
  * Il task lo crea chi ha in mano `taskStore` — qui si scrive solo il legame,
  * che è l'unica cosa che il Programma sappia di quella attività.
+ *
+ * **La persona a cui si attiva si aggiunge alle proposte, non le sostituisce.**
+ * Un task ha un delegato solo, una voce può essere di due: se attivare
+ * riscrivesse l'elenco, dare a Marco la sua metà del calcolo cancellerebbe la
+ * riga di Gaia dalla matrice — e con lei il posto in cui stanno le sue ore.
  * @param {DocProgramma} doc
  * @param {string} voceId
  * @param {{ taskId: string, listId: string, risorsa?: string|null }} legame
  * @returns {DocProgramma}
  */
 export function conVoceAttivata(doc, voceId, legame) {
+  const voce = doc.voci.find(v => v.id === voceId);
+  const scelta = testoONull(legame.risorsa);
   return conVoceAggiornata(doc, voceId, {
     taskId: legame.taskId,
     listId: legame.listId,
-    ...(legame.risorsa !== undefined ? { risorsa: legame.risorsa } : {}),
+    ...(scelta && voce && !voce.risorse.includes(scelta)
+      ? { risorse: [...voce.risorse, scelta] }
+      : {}),
     attivataIl: adesso(),
   });
 }
@@ -578,7 +625,7 @@ export function conVoceAttivata(doc, voceId, legame) {
  * @property {string} pacchetto  il **nome**, non l'id: chi scrive non conosce gli id
  * @property {string} titolo
  * @property {number} ore
- * @property {string} risorsa
+ * @property {string} risorsa  una persona, o più d'una separate da virgola
  */
 
 /** «120», «120h», «120,5»: le ore si scrivono come vengono in mente. @param {any} v */
@@ -669,9 +716,12 @@ export function conVociDaRighe(doc, righe, opts = {}) {
     }
 
     const ore = Math.max(0, numero(riga?.ore, 0));
-    const risorsa = testoONull(riga?.risorsa);
-    if (risorsa) risultato = conRisorsa(risultato, risorsa);
-    voci.push({ titolo, ore, oreIniziali: ore, pacchettoId, risorsa });
+    // «Marco, Gaia»: una voce può essere di due, e chi incolla un Excel le
+    // scrive nella stessa cella, non in due colonne che non esistono.
+    const risorse = String(riga?.risorsa || '').split(/[,;]/)
+      .map(n => n.trim()).filter((n, i, tutti) => n && tutti.indexOf(n) === i);
+    for (const nome of risorse) risultato = conRisorsa(risultato, nome);
+    voci.push({ titolo, ore, oreIniziali: ore, pacchettoId, risorse });
   }
 
   return { doc: conVoci(risultato, voci), aggiunte: voci.length, pacchettiNuovi };
@@ -1164,8 +1214,8 @@ export function oreVoceSettimana(doc, voceId, settimana, risorsa = null) {
  * Da **ultimo livello mostrato** (`conProposta`): chi ha ore in tutto il ramo —
  * le sotto-voci nascoste ci sono sommate, e una riga di totale senza le righe
  * che la fanno è un numero che non si può seguire — più la persona che la voce
- * *propone* nel suo campo `risorsa`, così la riga in cui mettere la prima ora
- * esiste già e non bisogna aggiungerla a mano. Tutte e tredici le risorse sotto ogni sotto-voce
+ * *propone* — una, o più d'una — così la riga in cui mettere la prima ora esiste
+ * già e non bisogna aggiungerla a mano. Tutte e tredici le risorse sotto ogni sotto-voce
  * sarebbero invece una tabella che non si legge.
  * Su una voce che ha sotto di sé altre righe la proposta non si conta: lì le
  * ore si scrivono nelle figlie, e una riga vuota in mezzo sarebbe un invito a
@@ -1190,7 +1240,7 @@ export function risorseDiVoce(doc, voceId, conProposta = true) {
     if (c.voceId && (ramo ? ramo.has(c.voceId) : c.voceId === voceId)) con.add(c.risorsa);
   }
   const voce = doc.voci.find(v => v.id === voceId);
-  if (conProposta && voce?.risorsa) con.add(voce.risorsa);
+  if (conProposta) for (const nome of voce?.risorse || []) con.add(nome);
   // Chi ha ore lasciate sul pacchetto che una voce di questo ramo adotta ha una
   // riga anche qui: sono ore vere, il totale della voce le conta già, e senza
   // la loro riga si vedrebbe un numero di cui sotto non c'è traccia.
@@ -1271,7 +1321,7 @@ export function risorseSenzaVoce(doc, pacchettoId) {
 export function voceAdottiva(doc, pacchettoId, risorsa) {
   if (!pacchettoId || !risorsa) return null;
   const candidate = doc.voci.filter(v => (
-    !v.scartata && v.risorsa === risorsa && pacchettoDelRamo(doc, v) === pacchettoId));
+    !v.scartata && v.risorse.includes(risorsa) && pacchettoDelRamo(doc, v) === pacchettoId));
   return candidate.length === 1 ? candidate[0].id : null;
 }
 
@@ -1458,7 +1508,9 @@ export function risorseDiPacchetto(doc, pacchettoId) {
     .map(k => k.split('|'))
     .filter(([, p]) => p === pacchettoId)
     .map(([r]) => r));
-  for (const v of doc.voci) if (v.pacchettoId === pacchettoId && v.risorsa) con.add(v.risorsa);
+  for (const v of doc.voci) {
+    if (v.pacchettoId === pacchettoId) for (const nome of v.risorse) con.add(nome);
+  }
   return doc.risorse.filter(r => con.has(r.nome));
 }
 
@@ -1695,7 +1747,7 @@ export function pacchettiDiRisorsa(doc, risorsa) {
   // Anche i pacchetti in cui la persona è solo *proposta* su una voce: è lì che
   // si va a scrivere la prima ora, e non trovare la riga vorrebbe dire
   // aprirla a mano ogni volta.
-  for (const v of doc.voci) if (v.risorsa === risorsa && v.pacchettoId) con.add(v.pacchettoId);
+  for (const v of doc.voci) if (v.risorse.includes(risorsa) && v.pacchettoId) con.add(v.pacchettoId);
   return doc.pacchetti.filter(p => con.has(p.id));
 }
 

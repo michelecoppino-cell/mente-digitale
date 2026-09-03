@@ -73,6 +73,15 @@ valide e vogliono dire «ore del pacchetto, senza voce», nessun file su OneDriv
 da riscrivere, e `const [r, p, s] = chiave.split('|')` continua a dire quello
 che diceva.
 
+**Una voce può proporre più persone, e la proposta è un elenco.** `Voce.risorse`
+è un array: un calcolo lo fanno in due, e con una proposta sola l'unico modo di
+far comparire la seconda riga nella matrice era sdoppiare la voce. Si legge
+sempre da `risorse` — mai da `risorsa`, che resta scritto solo per i dispositivi
+non ancora aggiornati (vedi il debito in fondo). Attivare **aggiunge** la persona
+scelta all'elenco invece di sostituirlo: un task ha un delegato solo, una voce
+no, e riscrivere l'elenco toglierebbe dalla matrice la riga dell'altra insieme al
+posto in cui stanno le sue ore.
+
 **Le ore lasciate sul pacchetto le adotta la voce che propone quella persona.**
 Sono le celle di prima che le voci ci fossero, e quelle che arrivano dal
 consuntivo. Restavano in coda al pacchetto perché nessuno poteva dire a quale
@@ -248,6 +257,12 @@ Cose note, già decise, da non riscoprire:
   griglia e i quattro componenti in `src/planner/`: la vista Giorno, il
   trascinamento, il ridimensionamento, i filtri e i salvataggi. Il prossimo
   pezzo è lo stato del trascinamento in un hook suo.
+- **`Voce.risorsa` è lo specchio di `risorse[0]`, e si toglierà.** Le proposte
+  sono un elenco da adesso; il campo singolo continua a uscire nel file perché
+  un dispositivo con la versione di prima, riscrivendo il documento, butterebbe
+  via un campo che non conosce — e con lui le altre proposte. Si legge solo da
+  `risorse`: l'unico posto che nomina `risorsa` è `normalizzaVoce`. Si toglie
+  quando tutti i dispositivi hanno ricaricato l'app.
 - **Il PIN delle Finanze non è cifratura, ed è giusto così.** SHA-256 senza
   sale di sei cifre, e l'hash viaggia dentro il backup su OneDrive. Non è una
   svista da correggere: serve a coprire lo schermo da chi passa vicino alla

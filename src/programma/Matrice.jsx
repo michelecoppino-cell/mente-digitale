@@ -114,7 +114,7 @@ import { oreBrevi, leggiOre } from './formato.js';
 import { DENSITA, useDensita } from './densita.js';
 
 /** @typedef {import('../programma.js').DocProgramma} DocProgramma */
-/** @typedef {{ tipo: 'pacchetto'|'voce'|'risorsa', nome: string, risorsa: string|null, capacita: number, colore: string|null, pacchettoId: string, voceId: string|null, aperta: boolean, rientro: number, orfana?: boolean }} Riga */
+/** @typedef {{ tipo: 'pacchetto'|'voce'|'risorsa', nome: string, risorsa: string|null, capacita: number, colore: string|null, pacchettoId: string, voceId: string|null, aperta: boolean, rientro: number, orfana?: boolean, estranea?: boolean }} Riga */
 
 const CHIAVE_DETTAGLIO = 'md_pg_matrice_dettaglio_v1';
 
@@ -147,6 +147,21 @@ export default function Matrice({
   // stretta e l'altra no sarebbero due tabelle diverse a guardarsi.
   const [densita, cambiaDensita] = useDensita();
   const [personaSola, setPersonaSola] = useState('');
+  // I pacchetti che vanno in coda perché quella persona non ci ha ancora
+  // niente. Si decidono **quando si sceglie la persona**, e da lì non si
+  // muovono più: ricalcolarli a ogni modifica farebbe saltare in cima il
+  // pacchetto in cui si è appena scritta la prima ora — proprio mentre ci si
+  // sta scrivendo dentro — e la cella dopo sarebbe di un'altra riga.
+  const [inCoda, setInCoda] = useState(/** @type {string[]} */ ([]));
+
+  /** @param {string} nome */
+  const scegliPersona = nome => {
+    setPersonaSola(nome);
+    setInCoda(nome
+      ? doc.pacchetti.filter(p => !risorseDiPacchetto(doc, p.id).some(r => r.nome === nome))
+        .map(p => p.id)
+      : []);
+  };
   // Quanti livelli di lavoro si vedono sotto un pacchetto: 0 nessuno, 1 le
   // lavorazioni, 2 anche le loro figlie. Si ricorda, perché è un modo di
   // guardare e non un gesto: chi programma leggendo le voci le vuole sempre.
@@ -179,14 +194,25 @@ export default function Matrice({
       }
     };
 
-    for (const p of pacchetti) {
+    // Col filtro su una persona, i pacchetti in cui non ha ancora niente
+    // **restano**, in coda e tenui. Prima sparivano, ed era il filtro a
+    // togliere di mezzo l'unico posto in cui dargliene: scegliere una persona è
+    // il modo di far comparire la sua riga sotto una voce, e su un pacchetto
+    // nuovo quella riga non c'era da nessuna parte. In cima resta comunque
+    // quello che fa davvero, che è la domanda per cui si accende il filtro.
+    const estranea = (/** @type {import('../programma.js').Pacchetto} */ p) => (
+      !!personaSola && inCoda.includes(p.id));
+    const inFila = personaSola
+      ? [...pacchetti].sort((a, b) => Number(estranea(a)) - Number(estranea(b)))
+      : pacchetti;
+
+    for (const p of inFila) {
       const aperto = aperte.includes(p.id);
       const sue = personaSola
         ? doc.risorse.filter(r => r.nome === personaSola)
         : risorseDiPacchetto(doc, p.id);
-      if (personaSola && !risorseDiPacchetto(doc, p.id).some(r => r.nome === personaSola)) continue;
       fila.push({
-        tipo: 'pacchetto', nome: p.nome,
+        tipo: 'pacchetto', nome: p.nome, estranea: estranea(p),
         // La riga chiusa si scrive solo quando la destinazione è ovvia: una
         // persona sola, e nessuna voce di mezzo a cui quelle ore potrebbero
         // andare. Guardando per voci quella domanda c'è sempre.
@@ -233,7 +259,7 @@ export default function Matrice({
       persone(risorseSenzaVoce(doc, p.id), p.id, null, 1, true);
     }
     return fila;
-  }, [doc, aperte, pacchettoScelto, personaSola, dettaglio]);
+  }, [doc, aperte, pacchettoScelto, personaSola, inCoda, dettaglio]);
 
   // La matrice si mette con la settimana corrente a un terzo da sinistra: si
   // vuole vedere un po' di passato e molto futuro, e su cinquanta colonne
@@ -477,7 +503,7 @@ export default function Matrice({
         <select
           className="pg-filtro"
           value={personaSola}
-          onChange={e => setPersonaSola(e.target.value)}
+          onChange={e => scegliPersona(e.target.value)}
           title="Restringi la matrice a una persona sola"
         >
           <option value="">tutte le persone</option>
@@ -574,6 +600,7 @@ export default function Matrice({
                   'pg-riga',
                   riga.tipo === 'pacchetto' ? 'pg-riga-risorsa' : (riga.tipo === 'voce' ? 'pg-riga-voce' : 'pg-riga-pacchetto'),
                   riga.orfana ? 'pg-riga-orfana' : '',
+                  riga.estranea ? 'pg-riga-estranea' : '',
                   riga.aperta ? 'pg-aperta' : '',
                   // A righe alterne, contando i **pacchetti** e non le righe:
                   // un pacchetto aperto resta un blocco solo con le sue
