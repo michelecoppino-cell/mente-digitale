@@ -32,7 +32,7 @@
 import { xlsx, STILE } from './xlsx.js';
 import {
   celleConsuntivo, settimaneDellaMatrice, oreSottoRiga, oreRisorsaSettimana, riepilogoPacchetti,
-  alberoVoci, vociDiPacchetto, eFoglia, statoVoce, ETICHETTE_STATO, slug,
+  alberoVoci, vociDiPacchetto, figlieDi, eFoglia, statoVoce, ETICHETTE_STATO, slug,
 } from './programma.js';
 import { lunediDellaSettimana, meseDellaSettimana, settimanaIso, ymd } from './tempo.js';
 
@@ -56,6 +56,32 @@ const giornoBreve = settimana => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
+ * Le celle delle settimane di una riga della matrice, più il totale in coda.
+ *
+ * Vuote quando le righe qui sotto dicono già le stesse ore: i numeri stanno
+ * nell'ultima riga del ramo, e una riga che ha delle figlie a schermo è la loro
+ * eco. «Già le stesse» settimana per settimana e non solo in totale — se le
+ * figlie non coprono tutto (delle ore lasciate sul pacchetto che nessuna voce
+ * reclama, per esempio) la riga i suoi numeri li tiene, altrimenti quelle ore
+ * sparirebbero dal foglio in silenzio.
+ *
+ * Lo stile resta anche sulle celle vuote: è la griglia, e a colonne alterne un
+ * buco senza bordi si legge come la fine della tabella.
+ *
+ * @param {number[]} ore                       le ore della riga, settimana per settimana
+ * @param {{ ore: number[] }[]} figlie         le righe che le stanno sotto, se ce ne sono
+ * @returns {import('./xlsx.js').Cella[]}
+ */
+function celleOre(ore, figlie) {
+  const eco = figlie.length > 0
+    && ore.every((o, i) => o === figlie.reduce((somma, f) => somma + f.ore[i], 0));
+  return [
+    ...ore.map(o => ({ v: eco ? '' : (o || ''), s: STILE.ore })),
+    { v: eco ? '' : (ore.reduce((s, o) => s + o, 0) || ''), s: STILE.ore },
+  ];
+}
+
+/**
  * Le righe del foglio «Matrice»: la stessa forma che ha a schermo — una riga di
  * totale per persona, sotto una riga per ogni pacchetto in cui ha ore, e sotto
  * ancora il lavoro descritto: l'**Oggetto** (la lavorazione di primo livello) e
@@ -65,11 +91,24 @@ const giornoBreve = settimana => {
  *
  * **Le righe di totale restano vuote nella colonna del pacchetto**, ed è quello
  * che le rende riconoscibili rientrando: una riga senza pacchetto è una somma,
- * e una somma non si reimporta — si ricalcola. Le righe di Oggetto e Attività
- * seguono la stessa regola e per la stessa ragione: dicono le ore del loro ramo,
- * cioè le stesse ore che la riga del pacchetto qui sopra ha già contato, e
- * rileggerle vorrebbe dire scrivere la settimana tre volte. Si corregge la riga
- * del pacchetto; il dettaglio è lì per essere letto.
+ * e una somma non si reimporta — si ricalcola.
+ *
+ * **I numeri stanno solo nell'ultima riga del ramo.** È la stessa regola della
+ * matrice a schermo: pacchetto, Oggetto e Attività dicono le ore dello stesso
+ * lavoro viste da tre altezze, e scritte tutte e tre diventavano tre righe
+ * identiche incolonnate su venti settimane — il dato e le sue due eco, senza un
+ * modo di distinguerli. Quindi una riga che ha sotto di sé delle figlie lascia
+ * vuote le settimane e il totale, e le ore si leggono dove il lavoro è
+ * descritto per esteso.
+ *
+ * L'eco si spegne solo quando è davvero un'eco: se le figlie mostrate non
+ * coprono tutte le ore della riga — succede quando una persona ha delle ore
+ * lasciate sul pacchetto che nessuna voce reclama — la riga i suoi numeri li
+ * tiene, altrimenti quelle ore sparirebbero dal foglio senza che niente lo
+ * dica.
+ *
+ * È anche la riga che rientra: chi corregge una settimana corregge il numero
+ * che vede, e `leggiOreRegistrate` legge la riga più profonda di ogni ramo.
  *
  * @param {DocProgramma} doc
  * @param {string[]} settimane
@@ -112,33 +151,49 @@ export function righeMatrice(doc, settimane, settimanaOra) {
     ]);
     for (const p of suoi) {
       const ore = settimane.map(w => oreSottoRiga(doc, risorsa.nome, p.id, null, w));
+      // Il dettaglio si calcola prima delle righe che lo mostrano: per sapere se
+      // la riga del pacchetto è ancora un dato o solo l'eco di quelle sotto,
+      // bisogna già sapere quali sotto ci saranno.
+      //
+      // Due livelli e non di più: sotto l'Attività non c'è una terza colonna, e
+      // una sotto-sotto-voce resta contata dentro la sua — `oreSottoRiga` dà
+      // sempre il totale del ramo, quindi la somma torna comunque.
+      const dettaglio = vociDiPacchetto(doc, p.id, 2)
+        .map(({ voce, livello }) => ({
+          voce,
+          livello,
+          ore: settimane.map(w => oreSottoRiga(doc, risorsa.nome, p.id, voce.id, w)),
+        }))
+        // Solo il lavoro in cui questa persona ha davvero delle ore: l'elenco
+        // completo delle voci è il foglio Voci, e ripeterlo sotto ogni persona
+        // farebbe dieci volte le righe con dentro delle colonne vuote.
+        .filter(d => d.ore.some(o => o > 0));
+
       righe.push([
         '',
         p.nome,
         '', '',
-        ...ore.map(o => ({ v: o || '', s: STILE.ore })),
-        { v: ore.reduce((s, o) => s + o, 0) || '', s: STILE.ore },
+        ...celleOre(ore, dettaglio.filter(d => d.livello === 0)),
       ]);
-      // Due livelli e non di più: sotto l'Attività non c'è una terza colonna, e
-      // una sotto-sotto-voce resta contata dentro la sua — `oreSottoRiga` dà
-      // sempre il totale del ramo, quindi la somma torna comunque.
-      for (const { voce, livello } of vociDiPacchetto(doc, p.id, 2)) {
-        const sue = settimane.map(w => oreSottoRiga(doc, risorsa.nome, p.id, voce.id, w));
-        // Solo il lavoro in cui questa persona ha davvero delle ore: l'elenco
-        // completo delle voci è il foglio Voci, e ripeterlo sotto ogni persona
-        // farebbe dieci volte le righe con dentro delle colonne vuote.
-        if (!sue.some(o => o > 0)) continue;
+      dettaglio.forEach(({ voce, livello, ore: sue }, i) => {
+        // Le figlie di una lavorazione sono le righe di secondo livello che la
+        // seguono, fino alla prossima di primo: `vociDiPacchetto` dà l'albero in
+        // ordine, madre e poi figlie, ed è l'ordine in cui il foglio le scrive.
+        const figlie = [];
+        if (livello === 0) {
+          for (let j = i + 1; j < dettaglio.length && dettaglio[j].livello > 0; j++) figlie.push(dettaglio[j]);
+        }
         righe.push([
           '',
           // Il pacchetto resta vuoto come il nome della persona: si eredita da
-          // sopra, ed è anche quello che tiene queste righe fuori dal rientro.
+          // sopra, ed è anche quello che tiene queste righe fuori dal rientro
+          // quando sono una somma.
           '',
           livello === 0 ? voce.titolo : '',
           livello === 0 ? '' : voce.titolo,
-          ...sue.map(o => ({ v: o || '', s: STILE.ore })),
-          { v: sue.reduce((s, o) => s + o, 0) || '', s: STILE.ore },
+          ...celleOre(sue, figlie),
         ]);
-      }
+      });
     }
   }
 
@@ -402,39 +457,108 @@ export function leggiOreRegistrate(doc, testo, opts = {}) {
     if (sicure >= 2 || quante >= 3) { intestazione = i; colonne = /** @type {string[]} */ (lette); }
   });
 
-  /** @param {string} persona @param {string} pacchetto @param {string} settimana @param {number} ore @param {string} riga */
-  const metti = (persona, pacchetto, settimana, ore, riga) => {
+  /**
+   * @param {string} persona @param {string} pacchetto @param {string} settimana
+   * @param {number} ore @param {string} riga @param {string|null} [voceId]
+   */
+  const metti = (persona, pacchetto, settimana, ore, riga, voceId = null) => {
     const r = doc.risorse.find(x => uguale(x.nome, persona));
     const p = doc.pacchetti.find(x => uguale(x.nome, pacchetto));
     if (!r || !p) { ignorate.push(riga); return; }
     // Un consuntivo sostituisce: se quelle ore stanno su una voce si riscrive
     // quella cella, invece di aggiungerne una sul pacchetto — due celle per la
-    // stessa settimana sarebbero la settimana contata due volte.
-    Object.assign(celle, celleConsuntivo(doc, r.nome, p.id, settimana, ore));
+    // stessa settimana sarebbero la settimana contata due volte. Con una voce
+    // la sostituzione è ristretta al suo ramo: le altre voci del pacchetto sono
+    // un altro lavoro, e non le riguarda.
+    Object.assign(celle, celleConsuntivo(doc, r.nome, p.id, settimana, ore, voceId));
     persone.add(r.nome);
     settimaneViste.add(settimana);
+  };
+
+  /**
+   * La voce descritta da una catena di titoli — `['Fondazioni corpo A',
+   * 'Plinti']` — dentro un pacchetto. Si scende un livello per volta invece di
+   * cercare il titolo ovunque: due pacchetti possono avere tutti e due una
+   * lavorazione «Casseri», e indovinare quale è esattamente quello che qui non
+   * si fa.
+   * @param {string} pacchettoId @param {string[]} titoli
+   * @returns {import('./programma.js').Voce|null}
+   */
+  const voceDescritta = (pacchettoId, titoli) => {
+    /** @type {import('./programma.js').Voce|null} */
+    let corrente = null;
+    for (const titolo of titoli) {
+      /** @type {import('./programma.js').Voce[]} */
+      const candidate = corrente
+        ? figlieDi(doc, corrente.id)
+        : vociDiPacchetto(doc, pacchettoId, 1).map(x => x.voce);
+      const trovata = candidate.find(v => uguale(v.titolo, titolo));
+      if (!trovata) return null;
+      corrente = trovata;
+    }
+    return corrente;
   };
 
   if (intestazione >= 0) {
     // Dove cominciano le settimane: nel foglio che esce sono la quinta colonna
     // (persona, pacchetto, oggetto, attività), ma un rettangolo selezionato a
     // mano — o esportato da una versione di prima — ne ha davanti due o tre.
-    // Quello che sta **fra il pacchetto e la prima settimana** descrive il
-    // lavoro, e una riga che lo riempie è una riga di dettaglio: dice le ore
-    // del suo ramo, cioè le stesse che la riga del pacchetto sopra ha già
-    // contato, e rileggerla scriverebbe la settimana due volte.
     const primaSettimana = colonne.findIndex(Boolean);
+    const corpo = righe.slice(intestazione + 1).filter(r => r.some(c => c));
+
+    // Quanto è profonda una riga: 0 la somma di una persona, 1 il pacchetto, 2
+    // l'Oggetto, 3 l'Attività. È l'ultima colonna descrittiva che ha riempito.
+    /** @param {string[]} riga */
+    const profondita = (riga) => {
+      let quanto = 0;
+      for (let c = 1; c < Math.max(primaSettimana, 2); c++) if (riga[c]) quanto = c;
+      return quanto;
+    };
+
     let persona = '';
-    for (let i = intestazione + 1; i < righe.length; i++) {
-      const riga = righe[i];
-      if (!riga.some(c => c)) continue;
-      if (riga[0]) persona = riga[0];
-      if (primaSettimana > 2 && riga.slice(2, primaSettimana).some(c => c)) continue;
-      const pacchetto = riga[1] || '';
+    let pacchetto = '';
+    /** i titoli delle colonne descrittive, uno per livello, ereditati come la persona
+     * @type {string[]} */
+    let titoli = [];
+
+    corpo.forEach((riga, i) => {
+      // La persona e il pacchetto si scrivono una volta sola, in cima al loro
+      // gruppo: le righe sotto li ereditano, ed è così che escono dal foglio.
+      if (riga[0]) { persona = riga[0]; pacchetto = ''; titoli = []; }
+      if (riga[1]) { pacchetto = riga[1]; titoli = []; }
+      const prof = profondita(riga);
+      for (let c = 2; c < primaSettimana; c++) {
+        if (!riga[c]) continue;
+        titoli = titoli.slice(0, c - 2);
+        titoli.push(riga[c]);
+      }
+
+      // Le ore stanno nell'ultima riga di ogni ramo — è come le scrive il
+      // foglio che esce. Una riga che ne ha sotto una più profonda è la loro
+      // somma: rileggerla scriverebbe la stessa settimana due o tre volte, che
+      // è il margine sbagliato che si scopre tre settimane dopo. Vale anche per
+      // i fogli esportati da una versione di prima, dove la somma i numeri li
+      // portava: si legge il dettaglio, che dice le stesse ore più a fondo.
+      const sotto = corpo[i + 1];
+      if (sotto && profondita(sotto) > prof) return;
       // Una riga senza pacchetto è la somma di una persona: si ricalcola, non
       // si reimporta. Reimportarla scriverebbe il totale dentro un pacchetto.
-      if (!pacchetto) continue;
-      if (/^totale/i.test(persona) || /^totale/i.test(pacchetto)) continue;
+      if (!prof || !pacchetto) return;
+      if (/^totale/i.test(persona) || /^totale/i.test(pacchetto)) return;
+
+      // Sotto il pacchetto, la voce di cui la riga parla. Se il titolo non si
+      // riconosce le ore non si scaricano sul pacchetto: sarebbero attribuite a
+      // un lavoro che nessuno ha scelto, e in un consuntivo è peggio di una
+      // riga mancante — che almeno si vede.
+      const p = doc.pacchetti.find(x => uguale(x.nome, pacchetto));
+      /** @type {string|null} */
+      let voceId = null;
+      if (prof > 1) {
+        const voce = p ? voceDescritta(p.id, titoli) : null;
+        if (!voce) { ignorate.push(riga.join(' | ')); return; }
+        voceId = voce.id;
+      }
+
       let scritta = false;
       for (let c = 2; c < riga.length; c++) {
         const settimana = colonne[c];
@@ -444,11 +568,11 @@ export function leggiOreRegistrate(doc, testo, opts = {}) {
         // seleziona tutto il rettangolo, e le altre colonne sono vuote perché
         // non le ha toccate, non perché quelle ore non ci siano più.
         if (ore === null) continue;
-        metti(persona, pacchetto, settimana, ore, riga.join(' | '));
+        metti(persona, pacchetto, settimana, ore, riga.join(' | '), voceId);
         scritta = true;
       }
       if (!scritta) ignorate.push(riga.join(' | '));
-    }
+    });
   } else {
     // Forma 2: righe sciolte, quattro colonne. Anche con le barre verticali,
     // come tutto il resto di questo progetto.

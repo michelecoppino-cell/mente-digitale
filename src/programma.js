@@ -1453,24 +1453,31 @@ export function destinazioneOre(doc, risorsa, pacchettoId, voceId, settimana) {
  * settimana e va sul pacchetto: del passato si sa il totale, non su quale voce
  * sia caduto. Le celle di voce si azzerano — sono le stesse ore, appena
  * corrette.
+ *
+ * `voceId` restringe tutto questo a un ramo: sono le ore di *quella* riga della
+ * matrice, e si sostituiscono solo le celle che le stanno sotto. Serve al foglio
+ * che rientra, dove le ore adesso sono scritte nell'ultima riga del ramo e non
+ * più su quella del pacchetto; con `null` la riga è il pacchetto intero, che è
+ * come si chiamava prima e come la chiama il campo del riepilogo.
  * @param {DocProgramma} doc
  * @param {string} risorsa
  * @param {string} pacchettoId
  * @param {string} settimana
  * @param {number} ore
+ * @param {string|null} [voceId]
  * @returns {Record<string, number>}
  */
-export function celleConsuntivo(doc, risorsa, pacchettoId, settimana, ore) {
+export function celleConsuntivo(doc, risorsa, pacchettoId, settimana, ore, voceId = null) {
   /** @type {Record<string, number>} */
   const celle = {};
-  const dove = destinazioneOre(doc, risorsa, pacchettoId, null, settimana);
+  const dove = destinazioneOre(doc, risorsa, pacchettoId, voceId, settimana);
   if (dove) {
     for (const k of dove.assorbe) celle[k] = 0;
     celle[dove.chiave] = ore;
     return celle;
   }
-  for (const k of celleSottoRiga(doc, risorsa, pacchettoId, null, settimana)) celle[k] = 0;
-  celle[chiaveCarico(risorsa, pacchettoId, settimana)] = ore;
+  for (const k of celleSottoRiga(doc, risorsa, pacchettoId, voceId, settimana)) celle[k] = 0;
+  celle[chiaveCarico(risorsa, pacchettoId, settimana, voceId)] = ore;
   return celle;
 }
 

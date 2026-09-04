@@ -107,6 +107,13 @@ un'eco. Nella matrice i tre bottoni — «voci», «sottovoci», «persone» —
 fin dove si scende; spenti tutti e tre resta una riga per pacchetto, e la si
 compila. Il perché per esteso sta in `programma/Matrice.jsx`.
 
+Vale anche per il foglio che esce (`righeMatrice`), dove le righe sono
+pacchetto › Oggetto › Attività: i numeri stanno nell'ultima, ed è quella che
+rientra incollata. Lì la regola ha un'eccezione, perché il foglio non ha la riga
+«sul pacchetto» che la matrice mostra: se le figlie non coprono tutte le ore
+della riga, la riga i suoi numeri li tiene — meglio un'eco che delle ore sparite
+in silenzio.
+
 **Il rosso è per le settimane che si possono ancora cambiare.** Prima di quella
 corrente la saturazione non si colora, in tutt'e due le matrici: una settimana
 andata è un fatto, non un allarme, e il rosso su una colonna che nessuno può
