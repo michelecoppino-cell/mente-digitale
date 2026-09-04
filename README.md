@@ -1017,12 +1017,29 @@ colonne, *Oggetto* (la lavorazione) e *Attività* (la sua sotto-voce), perché c
 guarda il foglio in riunione chiede «venti ore su B10 a fare cosa?» e finché le
 colonne erano due la risposta stava nel foglio Voci, cioè su un'altra pagina e
 senza le settimane. Sono due colonne e non un rientro per la stessa ragione del
-foglio Voci: in Excel un rientro non si filtra e non si ordina. Quelle righe
-dicono le ore del loro ramo — le stesse del pacchetto, viste più a fondo —
-quindi **escono e non rientrano**: lasciano vuota la colonna del pacchetto, che
-è quello che le tiene fuori dall'incollato, esattamente come per la riga di
-somma di una persona. Rileggerle vorrebbe dire scrivere la stessa settimana tre
-volte. Si corregge la riga del pacchetto; il dettaglio è lì per essere letto.
+foglio Voci: in Excel un rientro non si filtra e non si ordina.
+
+Quelle righe dicono le ore del loro ramo — le stesse del pacchetto, viste più a
+fondo — e finché le scrivevano tutte e tre erano tre righe identiche
+incolonnate su venti settimane: il dato e le sue due eco, senza un modo di
+distinguerli. Adesso vale la stessa regola della matrice a schermo: **i numeri
+stanno solo nell'ultima riga del ramo**, e chi ha delle figlie sotto di sé
+lascia vuote le settimane. Con un'eccezione, che è il motivo per cui la regola
+non è «tacere e basta»: se le figlie mostrate non coprono tutte le ore della
+riga — succede con delle ore lasciate sul pacchetto che nessuna voce reclama —
+la riga i suoi numeri li tiene, altrimenti quelle ore sparirebbero dal foglio
+senza che niente lo dica.
+
+Ed è anche la riga che rientra: si corregge il numero che si vede, e
+l'incollato legge la riga più profonda di ogni ramo, scrivendo le ore nella
+cella di quella voce. Le righe di somma sopra — il pacchetto, la lavorazione,
+il totale della persona — si saltano, perché rileggerle vorrebbe dire scrivere
+la stessa settimana due o tre volte. Vale anche per un foglio esportato da una
+versione di prima, dove i numeri ci sono a ogni livello: conta la riga più
+profonda. Una lavorazione il cui titolo non si riconosce finisce fra le righe
+ignorate invece di scaricare le sue ore sul pacchetto: sarebbero ore attribuite
+a un lavoro che nessuno ha scelto, e in un consuntivo è peggio di una riga
+mancante — che almeno si vede.
 
 Si **incolla** e non si carica un file: leggere un `.xlsx` vorrebbe dire
 scrivere anche il decompressore, cioè la metà difficile del formato, per far
