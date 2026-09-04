@@ -166,6 +166,7 @@ export {};
  * @property {string} [bodyPreview]
  * @property {string} [receivedDateTime]
  * @property {boolean} [isRead]
+ * @property {string} [webLink]  dove sta l'originale su Outlook Web
  */
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -187,6 +188,10 @@ export {};
  * @property {string} title
  * @property {string} [meta]
  * @property {string} extractedAction
+ * @property {string[]} [motivi]        perché è emersa: si legge nella riga
+ * @property {string} [mittente]        solo source 'email': chi l'ha mandata
+ * @property {string} [quando]          ISO: quando è arrivata / quando la pagina è stata toccata
+ * @property {string} [link]            solo source 'email': dove sta l'originale
  * @property {number} [score]
  * @property {string} [pageId]           solo source 'onenote'
  * @property {string|null} [elementId]   solo source 'onenote'
@@ -199,6 +204,22 @@ export {};
  * @property {string} listName
  * @property {string} title
  * @property {number} anticipoGiorni  quanti giorni prima l'attività deve comparire
+ */
+
+/**
+ * Una scadenza ricorrente vista dalla scheda «Scadenze» della campanella: non
+ * quello che si crea, ma quello che c'è scritto sul calendario e quando
+ * diventerà un'attività.
+ * @typedef {Object} ScadenzaInArrivo
+ * @property {string} listId
+ * @property {string} listName
+ * @property {string} titolo
+ * @property {string} giorno              quando scade, 'YYYY-MM-DD'
+ * @property {number} anticipoGiorni
+ * @property {string} entraIl             il giorno in cui diventa un'attività
+ * @property {number} giorniAllaScadenza  negativo se è già passata
+ * @property {boolean} giaEntrata         l'anticipo è cominciato: l'attività c'è
+ * @property {string} origine             la firma scritta in `origineScadenza`
  */
 
 /**

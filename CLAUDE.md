@@ -40,7 +40,7 @@ secondi. La CI esegue tutti e quattro i comandi a ogni push e ogni PR.
 4. Se hai toccato uno degli strati provati (`graphCore.js`, `api.js`,
    `taskStore.js`, `taskMigrazione.js`, `paraConfig.js`, `poolAttivita.js`, `programma.js`,
    `programmaStore.js`, `programmaExcel.js`, `xlsx.js`, `captureParse.js`,
-   `deadlineReminders.js`, `calendarioLavoro.js`, `scripts/ics.mjs`),
+   `deadlineReminders.js`, `dailyReview.js`, `calendarioLavoro.js`, `scripts/ics.mjs`),
    aggiungi la verifica che avrebbe
    intercettato quello che hai corretto. Le prove si sono rotte una volta e
    nessuno se n'è accorto per settimane: è successo perché nessuna misura
@@ -225,7 +225,9 @@ che ha già smesso di funzionare.
 | `src/queryClient.js` | TanStack Query, le chiavi, la persistenza col suo tetto |
 | `src/poolAttivita.js` | il serbatoio delle attività: una lettura della cache, non uno stato |
 | `src/use*.js` | i pezzi che stavano in `App.jsx` e non c'entravano con lui: la campanella, le scadenze ricorrenti, i colori, le sveglie |
-| `src/deadlineReminders.js` | le scadenze che tornano ogni anno: come si scrive un evento `[LISTA +30g] Titolo`, quali occorrenze sono dovute oggi, e come si sa che ci sono già |
+| `src/deadlineReminders.js` | le scadenze che tornano ogni anno: come si scrive un evento `[LISTA +30g] Titolo`, quali occorrenze sono dovute oggi, come si sa che ci sono già, e — per la scheda «Scadenze» della campanella — cosa sta arrivando (`prossimeScadenze`) e cosa non arriverà mai perché il prefisso non aggancia nessuna lista (`scadenzeOrfane`) |
+| `src/dailyReview.js` | le proposte della campanella: quali email chiedono qualcosa e perché (`motivi`), quali sono un flusso di servizio che si ripete, e le righe «Da fare» di OneNote |
+| `src/PannelloReview.jsx` | il pannello della campanella: «Da valutare» e «Scadenze», le due metà del giro quotidiano |
 | `src/calendarioLavoro.js` | lo specchio del calendario aziendale: cosa c'è nel file su OneDrive e come diventa un evento nella forma di Graph |
 | `src/programma.js` | il Programma di commessa: i conti, le chiavi del carico (`risorsa\|pacchetto\|settimana` più, in coda e facoltativa, la voce), lo stato derivato di una voce, e il carico di una persona su tutte le commesse. Niente rete, niente React: è il file su cui girano le prove |
 | `src/programmaStore.js` | gli stessi programmi su OneDrive: registro, un documento per commessa, `reapply` che unisce per chiave |

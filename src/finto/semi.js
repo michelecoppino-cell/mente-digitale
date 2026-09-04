@@ -167,6 +167,38 @@ export const CALENDARIO_LAVORO = {
   ],
 };
 
+// ── La posta, per la Revisione quotidiana ───────────────────────────────────
+//
+// Prima il finto rispondeva alla casella con un elenco vuoto, e la scheda «Da
+// valutare» della campanella restava una cosa che si poteva guardare solo in
+// produzione — cioè l'unico posto in cui non si può provare niente. Qui ci
+// sono i tre casi che contano: una richiesta vera, una che non chiede niente,
+// e il flusso di servizio che si ripete a ogni invio (lo specchio del
+// calendario di lavoro, che si manda una mail ogni due ore). Solo la prima
+// deve comparire.
+
+/** @param {string} subject @param {object} extra */
+const mail = (subject, extra = {}) => ({
+  subject,
+  from: { emailAddress: { name: 'Elena Rossi', address: 'elena.rossi@studio.it' } },
+  bodyPreview: '',
+  receivedDateTime: oreFa(3),
+  isRead: false,
+  webLink: '#',
+  ...extra,
+});
+
+export const POSTA = [
+  mail('Puoi confermare le quote di fondazione entro il 10?', {
+    bodyPreview: 'Ciao, servirebbe la conferma prima di mandare in stampa.' }),
+  mail('Verbale della riunione di ieri', { isRead: true,
+    bodyPreview: 'In allegato il verbale, per archivio.' }),
+  ...['08:00', '10:00', '12:00'].map((ora, i) => mail(`calendario ${oggi} ${ora}`, {
+    from: { emailAddress: { name: 'PC studio', address: 'michele@studio.it' } },
+    receivedDateTime: oreFa(2 * (i + 1)),
+  })),
+];
+
 // ── I file dell'app su OneDrive ─────────────────────────────────────────────
 
 export const PIANI = {

@@ -196,13 +196,19 @@
   line-height: 1;
 }
 
+/* Ancorato a destra e non a sinistra: la campanella sta nell'angolo destro
+   della topbar, e un pannello largo 300px che parte dal suo bordo sinistro
+   finisce fuori dallo schermo — è quello che si vedeva, mezzo pannello
+   tagliato dal bordo della finestra. `max-width` da sola non bastava: teneva
+   la larghezza entro il viewport ma non riportava dentro l'origine. */
 .bell-dropdown {
   position: absolute;
   top: 34px;
-  left: 0;
-  width: 300px;
+  right: 0;
+  left: auto;
+  width: 340px;
   max-width: calc(100vw - 24px);
-  max-height: 400px;
+  max-height: min(70vh, 520px);
   overflow-y: auto;
   background: var(--surface);
   border: 1px solid var(--border2);
@@ -303,6 +309,132 @@
 @media (hover: hover) {
   .bell-dismiss-btn:hover { background: rgba(255,255,255,0.06); color: var(--text); }
 }
+
+/* Le due schede: «Da valutare» chiede una decisione, «Scadenze» mostra il
+   meccanismo che lavora da solo. Stanno una accanto all'altra e non in due
+   pannelli perché sono due metà dello stesso giro quotidiano. */
+.bell-schede {
+  display: flex;
+  gap: 4px;
+  padding: 8px 10px 0;
+  border-bottom: 1px solid var(--border);
+}
+.bell-schede button {
+  flex: 1;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--muted);
+  font-family: var(--font-ui);
+  font-size: 11px;
+  padding: 6px 4px;
+  cursor: pointer;
+  transition: color 0.12s, border-color 0.12s;
+}
+.bell-schede button.attiva { color: var(--accent); border-bottom-color: var(--accent); }
+@media (hover: hover) {
+  .bell-schede button:hover { color: var(--text); }
+}
+
+/* Il punto d'avviso sulla scheda: un prefisso che non aggancia nessuna lista
+   è l'unica cosa qui dentro che nessun altro schermo dirà mai. */
+.bell-avviso-punto {
+  display: inline-flex;
+  align-items: center; justify-content: center;
+  width: 13px; height: 13px;
+  margin-left: 4px;
+  border-radius: 7px;
+  background: var(--danger);
+  color: #fff;
+  font-size: 9px; font-weight: 700;
+  vertical-align: middle;
+}
+
+.bell-spiega {
+  margin: 0;
+  padding: 9px 14px;
+  border-bottom: 1px solid var(--border);
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+.bell-spiega strong { color: var(--text); font-weight: 600; }
+.bell-spiega code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 10px;
+  background: rgba(255,255,255,0.06);
+  border-radius: 3px;
+  padding: 0 3px;
+}
+
+/* I motivi per cui una riga è emersa: pastiglie, non una frase, perché sono
+   un elenco e si leggono in un colpo d'occhio. */
+.bell-item-motivi {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 6px;
+}
+.bell-motivo {
+  font-size: 10px;
+  line-height: 1.5;
+  color: var(--accent);
+  border: 1px solid var(--border2);
+  border-radius: 9px;
+  padding: 0 6px;
+  white-space: nowrap;
+}
+
+/* La provenienza va a capo invece di essere troncata: il mittente e l'ora
+   sono la seconda cosa che si guarda, e «Mario Ros…» non è un mittente. */
+.bell-item-meta { white-space: normal; }
+.bell-item-meta a { color: var(--accent); }
+
+.bell-scadenza {
+  padding: 9px 14px;
+  border-bottom: 1px solid var(--border);
+}
+.bell-scadenza:last-child { border-bottom: none; }
+.bell-scadenza-titolo {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text);
+  margin-bottom: 3px;
+}
+.bell-scadenza-stato {
+  font-size: 10px;
+  color: var(--muted);
+  margin-top: 3px;
+  font-style: italic;
+}
+/* Pieno = l'attività c'è già nel pool, vuoto = deve ancora entrare. */
+.bell-pallino {
+  width: 7px; height: 7px;
+  border-radius: 4px;
+  border: 1px solid var(--accent);
+  flex: none;
+}
+.bell-pallino.entrata { background: var(--accent); }
+
+.bell-orfane {
+  padding: 9px 14px;
+  border-bottom: 1px solid var(--border);
+  background: rgba(192,122,122,0.10);
+}
+.bell-orfane-titolo {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--danger);
+  margin-bottom: 5px;
+}
+.bell-orfana {
+  font-size: 11px;
+  color: var(--text);
+  line-height: 1.5;
+}
+.bell-orfana .bell-item-meta { display: inline; font-size: 10px; }
 
 .search-overlay {
   position: fixed;
