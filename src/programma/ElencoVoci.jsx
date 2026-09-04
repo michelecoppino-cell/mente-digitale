@@ -61,7 +61,7 @@ function raccontoDelTask(voce, attivita) {
  * @param {import('../taskStore.js').Task[]} props.attivita
  * @param {boolean} props.poolPronto
  * @param {string|null} props.voceScelta
- * @param {string|null} props.pacchettoScelto
+ * @param {string[]} props.pacchettiScelti  le pastiglie accese in testata; vuoto = tutti
  * @param {string[]} props.selezione
  * @param {(ids: string[]) => void} props.onSelezione
  * @param {(id: string) => void} props.onScegli
@@ -70,10 +70,9 @@ function raccontoDelTask(voce, attivita) {
  * @param {import('react').ReactNode} [props.incolla]
  */
 export default function ElencoVoci({
-  doc, attivita, poolPronto, voceScelta, pacchettoScelto, selezione,
+  doc, attivita, poolPronto, voceScelta, pacchettiScelti, selezione,
   onSelezione, onScegli, onAttivaBlocco, soloScoperte = false, incolla,
 }) {
-  const [filtroPacchetto, setFiltroPacchetto] = useState(/** @type {string} */ (pacchettoScelto || ''));
   const [filtroRisorsa, setFiltroRisorsa] = useState('');
   const [filtroStato, setFiltroStato] = useState('');
   const [scoperte, setScoperte] = useState(soloScoperte);
@@ -113,7 +112,11 @@ export default function ElencoVoci({
     }
     const stato = statoVoce(v, aperte, poolPronto);
     if (stato === 'scartata' && !conScartate) return false;
-    if (filtroPacchetto && v.pacchettoId !== filtroPacchetto) return false;
+    // Il pacchetto lo filtrano le pastiglie della barra, e solo quelle: qui
+    // c'era un secondo menù a tendina che diceva la stessa cosa senza sentirle,
+    // e con due filtri sullo stesso dato quello spento nascondeva le voci che
+    // l'altro mostrava.
+    if (pacchettiScelti.length && !(v.pacchettoId && pacchettiScelti.includes(v.pacchettoId))) return false;
     if (filtroRisorsa && !v.risorse.includes(filtroRisorsa)) return false;
     if (filtroStato && stato !== filtroStato) return false;
     if (scoperte && !(v.pacchettoId && pacchettiScoperti.has(v.pacchettoId))) return false;
@@ -146,10 +149,6 @@ export default function ElencoVoci({
   return (
     <div className="pg-voci">
       <div className="pg-filtri">
-        <select className="pg-filtro" value={filtroPacchetto} onChange={e => setFiltroPacchetto(e.target.value)}>
-          <option value="">pacchetto: tutti</option>
-          {doc.pacchetti.map(p => <option key={p.id} value={p.id}>{p.nome}</option>)}
-        </select>
         <select className="pg-filtro" value={filtroRisorsa} onChange={e => setFiltroRisorsa(e.target.value)}>
           <option value="">risorsa: tutte</option>
           {doc.risorse.map(r => <option key={r.nome} value={r.nome}>{r.nome}</option>)}

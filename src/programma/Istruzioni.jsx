@@ -81,8 +81,9 @@ export default function Istruzioni({ onChiudi }) {
                 non ha risposta — «a questa persona ho già dato quella settimana?» —, perché dieci
                 ore qui e trenta là stanno sotto la capacità in tutte e due le matrici e sopra nella
                 realtà. Si legge e basta: le ore si cambiano nella matrice della commessa, e un clic
-                sul suo nome ci porta. Il filtro dei pacchetti in testata vale in tutt&apos;e due:
-                acceso, si vedono solo le ore di quel pacchetto — righe, totali e piede compresi.
+                sul suo nome ci porta. Le pastiglie dei pacchetti in testata valgono in
+                tutt&apos;e due, e si accendono in più d&apos;una: restano le ore dei pacchetti
+                accesi — righe, totali e piede compresi — e «tutti ✕» le spegne tutte.
               </li>
               <li>
                 <b>Chi la fa.</b> Nel pannello di destra, sotto «risorse», c&apos;è un campo per
