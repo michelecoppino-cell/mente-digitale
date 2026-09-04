@@ -1012,6 +1012,18 @@ Il foglio Matrice esce apposta nella stessa forma in cui rientra, e la persona
 scritta una volta sola sulla riga del totale si trascina in giù sulle righe dei
 pacchetti sotto.
 
+Sotto il pacchetto il foglio dice anche **di che lavoro** sono quelle ore: due
+colonne, *Oggetto* (la lavorazione) e *Attività* (la sua sotto-voce), perché chi
+guarda il foglio in riunione chiede «venti ore su B10 a fare cosa?» e finché le
+colonne erano due la risposta stava nel foglio Voci, cioè su un'altra pagina e
+senza le settimane. Sono due colonne e non un rientro per la stessa ragione del
+foglio Voci: in Excel un rientro non si filtra e non si ordina. Quelle righe
+dicono le ore del loro ramo — le stesse del pacchetto, viste più a fondo —
+quindi **escono e non rientrano**: lasciano vuota la colonna del pacchetto, che
+è quello che le tiene fuori dall'incollato, esattamente come per la riga di
+somma di una persona. Rileggerle vorrebbe dire scrivere la stessa settimana tre
+volte. Si corregge la riga del pacchetto; il dettaglio è lì per essere letto.
+
 Si **incolla** e non si carica un file: leggere un `.xlsx` vorrebbe dire
 scrivere anche il decompressore, cioè la metà difficile del formato, per far
 arrivare qui gli stessi numeri che il sistema operativo mette negli appunti

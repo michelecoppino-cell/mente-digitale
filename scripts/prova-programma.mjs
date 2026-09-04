@@ -722,12 +722,29 @@ verifica(dentro.includes('state="frozen"'),
 verifica(!dentro.includes(']]>') && !/<t[^>]*>[^<]*</.test('') , 'niente resta appeso a metà');
 
 const matrice = excel.righeMatrice(big, ['2026-W12', '2026-W13'], '2026-W13');
+// Quattro colonne davanti alle settimane: persona, pacchetto, oggetto, attività.
+const intestazioneMatrice = matrice[1].map(c => c.v);
+verifica(intestazioneMatrice.slice(0, 4).join('|') === 'Persona|Pacchetto|Oggetto|Attività'
+  && intestazioneMatrice[4] === '2026-W12',
+  'la matrice dice anche di che lavoro sono le ore: le settimane cominciano alla quinta colonna');
 const rigaMarco = matrice.find(r => r[0]?.v === 'Marco');
 verifica(rigaMarco && rigaMarco[1] === '', 'la riga di totale di una persona non porta un pacchetto');
-verifica(rigaMarco[2].v === 26, 'e somma i suoi pacchetti: venti su B10 più sei su C10');
+verifica(rigaMarco[4].v === 26, 'e somma i suoi pacchetti: venti su B10 più sei su C10');
 const rigaB10 = matrice[matrice.indexOf(rigaMarco) + 1];
-verifica(rigaB10[1] === 'B10 Fondazioni' && rigaB10[2].v === 20,
+verifica(rigaB10[1] === 'B10 Fondazioni' && rigaB10[4].v === 20,
   'sotto, una riga per pacchetto con le ore di quella settimana');
+// E sotto ancora il lavoro: la lavorazione, poi la sua sotto-voce. Dicono le
+// ore del loro ramo — le stesse del pacchetto, viste più a fondo — e per questo
+// lasciano vuota la colonna del pacchetto: è quello che le tiene fuori dal
+// rientro, dove sarebbero la settimana contata tre volte.
+const rigaOggetto = matrice[matrice.indexOf(rigaMarco) + 2];
+const rigaAttivita = matrice[matrice.indexOf(rigaMarco) + 3];
+verifica(rigaOggetto[1] === '' && rigaOggetto[2] === 'Fondazioni corpo A' && rigaOggetto[4].v === 20,
+  'la lavorazione sta nella colonna Oggetto, e dice le ore di tutto il suo ramo');
+verifica(rigaAttivita[2] === '' && rigaAttivita[3] === 'Plinti' && rigaAttivita[4].v === 20,
+  'la sotto-voce sta nella colonna Attività: due colonne invece di un rientro, che in Excel non si filtra');
+verifica(matrice[matrice.indexOf(rigaMarco) + 4][1] === 'C10 Carpenterie',
+  'e sotto una persona compare solo il lavoro in cui ha delle ore: Travi rovesce è di Luca e qui non c\'è');
 
 // ── Le ore che rientrano ─────────────────────────────────────────────────────
 verifica(excel.interpretaSettimana('2026-W12', []) === '2026-W12', 'la settimana com\'esce si rilegge');
@@ -800,6 +817,26 @@ verifica(conW18.celle[pg.chiaveCarico('Marco', bigB10.id, '2026-W12', plintiBig.
 // non c'era.
 verifica(Object.keys(conW18.celle).every(k => k.includes('|2026-W12')),
   'e non ne nasce una seconda cella dal nulla');
+
+// Il rettangolo come esce adesso: quattro colonne davanti alle settimane, e le
+// righe di dettaglio in mezzo. Quelle non rientrano — sono le stesse ore della
+// riga del pacchetto, lette più a fondo — e leggerle scriverebbe la settimana
+// tre volte, che è il margine sbagliato che si scopre tre settimane dopo.
+const conDettaglio = [
+  'Persona\tPacchetto\tOggetto\tAttività\t2026-W12\t2026-W13',
+  'Marco\t\t\t\t26\t',
+  '\tB10 Fondazioni\t\t\t31\t',
+  '\t\tFondazioni corpo A\t\t99\t',
+  '\t\t\tPlinti\t99\t',
+  '\tC10 Carpenterie\t\t\t4\t',
+].join('\n');
+const letturaDettaglio = excel.leggiOreRegistrate(big, conDettaglio, { settimane: ['2026-W12', '2026-W13'] });
+verifica(letturaDettaglio.celle[pg.chiaveCarico('Marco', bigB10.id, '2026-W12', plintiBig.id)] === 31
+  && !Object.values(letturaDettaglio.celle).includes(99),
+  'del rettangolo con Oggetto e Attività rientra la riga del pacchetto, non l\'eco del suo dettaglio');
+verifica(letturaDettaglio.celle[pg.chiaveCarico('Marco', bigC10.id, '2026-W12')] === 4
+  && letturaDettaglio.ignorate.length === 0,
+  'e le colonne in più non fanno perdere le righe che vengono dopo');
 
 const delta = excel.differenza(big, lettura.celle);
 verifica(delta.prima === 40.5 && delta.dopo === 47,

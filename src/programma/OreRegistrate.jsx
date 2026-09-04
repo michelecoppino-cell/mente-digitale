@@ -49,8 +49,9 @@ export default function OreRegistrate({ doc, settimane, onApplica, onChiudi }) {
         <div className="pg-modale-corpo">
           <p className="pg-memo">
             Incolla dal foglio ore. Vanno bene tutte e due le forme: il
-            <b> rettangolo della Matrice</b> come esce dall&apos;esportazione — persona, pacchetto e
-            una colonna per settimana, intestazione compresa — oppure righe sciolte
+            <b> rettangolo della Matrice</b> come esce dall&apos;esportazione — persona, pacchetto,
+            oggetto, attività e una colonna per settimana, intestazione compresa — oppure righe
+            sciolte
             <code> persona | pacchetto | settimana | ore</code>.
           </p>
           <p className="pg-memo">
@@ -64,7 +65,7 @@ export default function OreRegistrate({ doc, settimane, onApplica, onChiudi }) {
             autoFocus
             value={testo}
             onChange={e => setTesto(e.target.value)}
-            placeholder={`Persona\tPacchetto\t${settimane[0] || '2026-W36'}\n${doc.risorse[0]?.nome || 'Marco'}\n\t${doc.pacchetti[0]?.nome || 'B10 Fondazioni'}\t31`}
+            placeholder={`Persona\tPacchetto\tOggetto\tAttività\t${settimane[0] || '2026-W36'}\n${doc.risorse[0]?.nome || 'Marco'}\n\t${doc.pacchetti[0]?.nome || 'B10 Fondazioni'}\t\t\t31`}
           />
 
           {lettura && (
