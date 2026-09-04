@@ -32,7 +32,7 @@
 import { xlsx, STILE } from './xlsx.js';
 import {
   celleConsuntivo, settimaneDellaMatrice, oreSottoRiga, oreRisorsaSettimana, riepilogoPacchetti,
-  alberoVoci, eFoglia, statoVoce, ETICHETTE_STATO, slug,
+  alberoVoci, vociDiPacchetto, eFoglia, statoVoce, ETICHETTE_STATO, slug,
 } from './programma.js';
 import { lunediDellaSettimana, meseDellaSettimana, settimanaIso, ymd } from './tempo.js';
 
@@ -57,11 +57,19 @@ const giornoBreve = settimana => {
 
 /**
  * Le righe del foglio «Matrice»: la stessa forma che ha a schermo — una riga di
- * totale per persona, sotto una riga per ogni pacchetto in cui ha ore.
+ * totale per persona, sotto una riga per ogni pacchetto in cui ha ore, e sotto
+ * ancora il lavoro descritto: l'**Oggetto** (la lavorazione di primo livello) e
+ * l'**Attività** (la sua sotto-voce). Chi guarda il foglio in riunione chiede
+ * «venti ore su B10 a fare cosa?», e finché le colonne erano due la risposta
+ * stava solo nel foglio Voci, cioè su un'altra pagina e senza le settimane.
  *
  * **Le righe di totale restano vuote nella colonna del pacchetto**, ed è quello
  * che le rende riconoscibili rientrando: una riga senza pacchetto è una somma,
- * e una somma non si reimporta — si ricalcola.
+ * e una somma non si reimporta — si ricalcola. Le righe di Oggetto e Attività
+ * seguono la stessa regola e per la stessa ragione: dicono le ore del loro ramo,
+ * cioè le stesse ore che la riga del pacchetto qui sopra ha già contato, e
+ * rileggerle vorrebbe dire scrivere la settimana tre volte. Si corregge la riga
+ * del pacchetto; il dettaglio è lì per essere letto.
  *
  * @param {DocProgramma} doc
  * @param {string[]} settimane
@@ -76,16 +84,18 @@ export function righeMatrice(doc, settimane, settimanaOra) {
   // schermo), la settimana ISO — che è **la chiave**, e per questo si scrive
   // per esteso invece che «W36» — e il lunedì, che è come le settimane si
   // nominano parlando.
-  righe.push(['', '', ...settimane.map((w, i) => (
+  righe.push(['', '', '', '', ...settimane.map((w, i) => (
     i === 0 || nomeMese(w) !== nomeMese(settimane[i - 1]) ? { v: nomeMese(w), s: STILE.tenue } : ''
   )), '']);
   righe.push([
     { v: 'Persona', s: STILE.intestazione },
     { v: 'Pacchetto', s: STILE.intestazione },
+    { v: 'Oggetto', s: STILE.intestazione },
+    { v: 'Attività', s: STILE.intestazione },
     ...settimane.map(w => ({ v: w, s: STILE.intestazione })),
     { v: 'Totale', s: STILE.intestazione },
   ]);
-  righe.push(['', { v: 'lunedì', s: STILE.tenue },
+  righe.push(['', { v: 'lunedì', s: STILE.tenue }, '', '',
     ...settimane.map(w => ({ v: giornoBreve(w) + (w === settimanaOra ? ' ◂' : ''), s: STILE.tenue })), '']);
 
   for (const risorsa of doc.risorse) {
@@ -96,7 +106,7 @@ export function righeMatrice(doc, settimane, settimanaOra) {
     const totali = settimane.map(w => oreRisorsaSettimana(doc, risorsa.nome, w));
     righe.push([
       { v: risorsa.nome, s: STILE.totale },
-      '',
+      '', '', '',
       ...totali.map(o => ({ v: o || '', s: STILE.totale })),
       { v: totali.reduce((s, o) => s + o, 0) || '', s: STILE.totale },
     ]);
@@ -105,16 +115,37 @@ export function righeMatrice(doc, settimane, settimanaOra) {
       righe.push([
         '',
         p.nome,
+        '', '',
         ...ore.map(o => ({ v: o || '', s: STILE.ore })),
         { v: ore.reduce((s, o) => s + o, 0) || '', s: STILE.ore },
       ]);
+      // Due livelli e non di più: sotto l'Attività non c'è una terza colonna, e
+      // una sotto-sotto-voce resta contata dentro la sua — `oreSottoRiga` dà
+      // sempre il totale del ramo, quindi la somma torna comunque.
+      for (const { voce, livello } of vociDiPacchetto(doc, p.id, 2)) {
+        const sue = settimane.map(w => oreSottoRiga(doc, risorsa.nome, p.id, voce.id, w));
+        // Solo il lavoro in cui questa persona ha davvero delle ore: l'elenco
+        // completo delle voci è il foglio Voci, e ripeterlo sotto ogni persona
+        // farebbe dieci volte le righe con dentro delle colonne vuote.
+        if (!sue.some(o => o > 0)) continue;
+        righe.push([
+          '',
+          // Il pacchetto resta vuoto come il nome della persona: si eredita da
+          // sopra, ed è anche quello che tiene queste righe fuori dal rientro.
+          '',
+          livello === 0 ? voce.titolo : '',
+          livello === 0 ? '' : voce.titolo,
+          ...sue.map(o => ({ v: o || '', s: STILE.ore })),
+          { v: sue.reduce((s, o) => s + o, 0) || '', s: STILE.ore },
+        ]);
+      }
     }
   }
 
   const perSettimana = settimane.map(w => doc.risorse.reduce((s, r) => s + oreRisorsaSettimana(doc, r.nome, w), 0));
   righe.push([
     { v: 'Totale settimana', s: STILE.totale },
-    '',
+    '', '', '',
     ...perSettimana.map(o => ({ v: o || '', s: STILE.totale })),
     { v: perSettimana.reduce((s, o) => s + o, 0) || '', s: STILE.totale },
   ]);
@@ -203,7 +234,7 @@ function righeRiepilogo(doc, settimanaOra) {
   righe.push([{ v: 'Speso + a finire', s: STILE.intestazione }, { v: totale.previsione, s: STILE.ore }]);
   righe.push([{ v: 'Margine', s: STILE.totale }, { v: totale.margine, s: STILE.totale }]);
   righe.push([]);
-  righe.push([{ v: 'Per rimandare indietro le ore vere: nel foglio Matrice correggi le celle della settimana finita, poi selezionale con le due colonne di sinistra e la riga delle settimane, copia e incolla in Programma › Matrice › Ore registrate.', s: STILE.tenue }]);
+  righe.push([{ v: 'Per rimandare indietro le ore vere: nel foglio Matrice correggi le celle della settimana finita, poi selezionale con le colonne di sinistra e la riga delle settimane, copia e incolla in Programma › Matrice › Ore registrate.', s: STILE.tenue }]);
   return righe;
 }
 
@@ -230,12 +261,13 @@ export function libroProgramma(doc, opts = {}) {
     {
       nome: 'Matrice',
       righe: righeMatrice(doc, settimane, ora),
-      // Le due colonne di sinistra larghe, le settimane strette: è la stessa
+      // Le colonne di sinistra larghe, le settimane strette: è la stessa
       // proporzione che rende leggibile la matrice a schermo.
-      larghezze: [22, 26, ...settimane.map(() => 7.5), 9],
-      // Sotto le tre righe di intestazione e a destra di persona e pacchetto:
-      // scorrendo su cinquanta colonne restano fermi il nome e la settimana.
-      blocca: { riga: 3, colonna: 2 },
+      larghezze: [22, 26, 26, 24, ...settimane.map(() => 7.5), 9],
+      // Sotto le tre righe di intestazione e a destra delle quattro colonne che
+      // dicono di chi è la riga: scorrendo su cinquanta colonne restano fermi il
+      // nome, il pacchetto e la settimana.
+      blocca: { riga: 3, colonna: 4 },
     },
     {
       nome: 'Voci',
@@ -384,14 +416,20 @@ export function leggiOreRegistrate(doc, testo, opts = {}) {
   };
 
   if (intestazione >= 0) {
-    // Forma 1: il rettangolo. La persona sta nella prima colonna e **si
-    // trascina in giù** — nel foglio che esce è scritta una volta sola, sulla
-    // riga del totale, e le righe dei pacchetti sotto la ereditano.
+    // Dove cominciano le settimane: nel foglio che esce sono la quinta colonna
+    // (persona, pacchetto, oggetto, attività), ma un rettangolo selezionato a
+    // mano — o esportato da una versione di prima — ne ha davanti due o tre.
+    // Quello che sta **fra il pacchetto e la prima settimana** descrive il
+    // lavoro, e una riga che lo riempie è una riga di dettaglio: dice le ore
+    // del suo ramo, cioè le stesse che la riga del pacchetto sopra ha già
+    // contato, e rileggerla scriverebbe la settimana due volte.
+    const primaSettimana = colonne.findIndex(Boolean);
     let persona = '';
     for (let i = intestazione + 1; i < righe.length; i++) {
       const riga = righe[i];
       if (!riga.some(c => c)) continue;
       if (riga[0]) persona = riga[0];
+      if (primaSettimana > 2 && riga.slice(2, primaSettimana).some(c => c)) continue;
       const pacchetto = riga[1] || '';
       // Una riga senza pacchetto è la somma di una persona: si ricalcola, non
       // si reimporta. Reimportarla scriverebbe il totale dentro un pacchetto.

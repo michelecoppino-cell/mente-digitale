@@ -197,8 +197,11 @@ export default function Istruzioni({ onChiudi }) {
             </p>
             <p>
               <b>↑ Ore registrate</b> è il giro all&apos;indietro. Nel foglio Matrice si corregge la
-              colonna della settimana appena chiusa con le ore davvero fatte, si seleziona il
-              rettangolo — <i>intestazione compresa</i> — e si incolla lì. Prima di applicare, il
+              colonna della settimana appena chiusa con le ore davvero fatte <i>sulle righe dei
+              pacchetti</i>, si seleziona il rettangolo — <i>intestazione compresa</i> — e si
+              incolla lì. Le righe di <b>Oggetto</b> e <b>Attività</b> dicono lo stesso lavoro visto
+              più a fondo: si leggono, non rientrano, perché sarebbero la settimana contata due
+              volte. Prima di applicare, il
               riquadro dice quante celle cambiano, di chi, quante ore c&apos;erano e quante ce ne
               saranno, ed elenca le righe che non ha capito. Vanno bene anche righe sciolte
               <code> persona | pacchetto | settimana | ore</code>.
