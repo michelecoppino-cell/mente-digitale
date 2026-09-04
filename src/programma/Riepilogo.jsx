@@ -27,11 +27,11 @@ const conSegno = n => `${n < 0 ? '−' : '+'}${Math.round(Math.abs(n))}`;
  * @param {object} props
  * @param {DocProgramma} props.doc
  * @param {string} props.settimanaOra
- * @param {string|null} props.pacchettoScelto
- * @param {(id: string|null) => void} props.onScegliPacchetto
+ * @param {string[]} props.pacchettiScelti
+ * @param {(id: string) => void} props.onScegliPacchetto  accende o spegne quel pacchetto, lasciando gli altri
  * @param {(muta: (doc: DocProgramma) => DocProgramma) => void} props.onCambia
  */
-export default function Riepilogo({ doc, settimanaOra, pacchettoScelto, onScegliPacchetto, onCambia }) {
+export default function Riepilogo({ doc, settimanaOra, pacchettiScelti, onScegliPacchetto, onCambia }) {
   const [consuntivo, setConsuntivo] = useState(/** @type {string|null} */ (null));
   const { righe, totale } = useMemo(
     () => riepilogoPacchetti(doc, { settimanaOra }), [doc, settimanaOra]);
@@ -61,8 +61,8 @@ export default function Riepilogo({ doc, settimanaOra, pacchettoScelto, onScegli
       {righe.map(r => (
         <div key={r.pacchettoId || 'senza'}>
           <div
-            className={`pg-riep-riga${pacchettoScelto === r.pacchettoId ? ' scelta' : ''}`}
-            onClick={() => onScegliPacchetto(pacchettoScelto === r.pacchettoId ? null : r.pacchettoId)}
+            className={`pg-riep-riga${r.pacchettoId && pacchettiScelti.includes(r.pacchettoId) ? ' scelta' : ''}`}
+            onClick={() => { if (r.pacchettoId) onScegliPacchetto(r.pacchettoId); }}
           >
             <span className="pg-riep-nome">
               <span className="pg-punto" style={r.colore ? { background: r.colore } : undefined} />

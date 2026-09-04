@@ -141,14 +141,14 @@ const nomeMese = mese => MESI[Number(mese.slice(5, 7)) - 1] || mese;
  * @param {DocProgramma} props.doc
  * @param {string[]} props.settimane
  * @param {string} props.settimanaOra
- * @param {string|null} props.pacchettoScelto  quando c'è, resta solo la sua riga — totali compresi
+ * @param {string[]} props.pacchettiScelti  quando ce n'è, restano solo le loro righe — totali compresi
  * @param {(celle: Record<string, number>) => void} props.onCelle  le ore cambiate, tutte insieme
  * @param {() => void} props.onAnnulla
  * @param {(risorsa: string, pacchettoId: string) => void} [props.onSceltaRiga]
  * @param {(voceId: string) => void} [props.onSceltaVoce]  il clic su una riga di voce apre il suo dettaglio
  */
 export default function Matrice({
-  doc, settimane, settimanaOra, pacchettoScelto, onCelle, onAnnulla, onSceltaRiga, onSceltaVoce,
+  doc, settimane, settimanaOra, pacchettiScelti, onCelle, onAnnulla, onSceltaRiga, onSceltaVoce,
 }) {
   const [aperte, setAperte] = useState(/** @type {string[]} */ ([]));
   const [sel, setSel] = useState({ r: 0, c: 0 });
@@ -201,8 +201,8 @@ export default function Matrice({
   const righe = useMemo(() => {
     /** @type {Riga[]} */
     const fila = [];
-    const pacchetti = pacchettoScelto
-      ? doc.pacchetti.filter(p => p.id === pacchettoScelto)
+    const pacchetti = pacchettiScelti.length
+      ? doc.pacchetti.filter(p => pacchettiScelti.includes(p.id))
       : doc.pacchetti;
 
     /** Le righe di persona sotto una voce (o sotto il pacchetto, senza voce). */
@@ -329,7 +329,7 @@ export default function Matrice({
       riga.capacita = doc.risorse.find(r => r.nome === riga.risorsa)?.oreSettimana || 0;
     }
     return fila;
-  }, [doc, aperte, pacchettoScelto, personaSola, inCoda, dettaglio, mostraPersone, apribile]);
+  }, [doc, aperte, pacchettiScelti, personaSola, inCoda, dettaglio, mostraPersone, apribile]);
 
   // La matrice si mette con la settimana corrente a un terzo da sinistra: si
   // vuole vedere un po' di passato e molto futuro, e su cinquanta colonne
@@ -662,7 +662,7 @@ export default function Matrice({
           </button>
         ))}
         <span className="pg-barra-conto">
-          {settimane.length} settimane · {pacchettoScelto ? '1' : doc.pacchetti.length} pacchetti
+          {settimane.length} settimane · {pacchettiScelti.length || doc.pacchetti.length} pacchetti
         </span>
       </div>
 

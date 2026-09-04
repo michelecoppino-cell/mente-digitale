@@ -146,6 +146,20 @@ verifica(pg.totali(sforato, { pacchettoId: c10.id, settimanaOra: '2026-W40' }).a
 verifica(pg.totali(sforato, { pacchettoId: c10.id, settimanaOra: '2026-W40' }).margine === 200 - 540,
   'il rosso si legge tutto nel margine');
 
+// Le pastiglie della barra si accendono in più d'una: il filtro è un elenco, e
+// due pacchetti accesi devono dire la somma dei due — non il primo, e non la
+// commessa intera.
+const dueInsieme = pg.totali(doc, { pacchettoId: [a60.id, c10.id], settimanaOra: '2026-W40' });
+const soloA60 = pg.totali(doc, { pacchettoId: a60.id, settimanaOra: '2026-W40' });
+verifica(dueInsieme.stimate === soloA60.stimate + perPacchetto.stimate
+  && dueInsieme.aPiano === soloA60.aPiano + perPacchetto.aPiano,
+  'due pacchetti accesi insieme sommano i due, uno per uno');
+verifica(pg.totali(doc, { pacchettoId: [], settimanaOra: '2026-W40' }).vendute === 1200,
+  'e un elenco vuoto vuol dire tutti: il metro torna a essere il venduto');
+verifica(pg.oreCarico(doc, { pacchettoId: [a60.id, c10.id] })
+  === pg.oreCarico(doc, { pacchettoId: a60.id }) + pg.oreCarico(doc, { pacchettoId: c10.id }),
+  'anche le ore a piano si sommano sui pacchetti accesi');
+
 console.log('\nLa saturazione\n');
 
 // Nella prima versione la saturazione si legge sul solo programma aperto: è
@@ -613,6 +627,14 @@ verifica(!filtrate.some(r => r.totale === 0),
 // poter spegnere l'unica cosa che questa vista esiste per dire.
 verifica(marcoFiltrato.sovrapposte.includes('2026-W10'),
   'ma le settimane sopra la capacità restano quelle vere, contate sul carico intero');
+
+// Lo stesso filtro, acceso su più pacchetti: è quello che fanno le pastiglie.
+const tuttiIPacchetti = pg.caricoPersone(
+  [{ id: 'a', nome: '2600 Ponte', doc: corretto }, { id: 'b', nome: '2601 Muro', doc: docAltra }],
+  settimanePersone, { pacchettoId: corretto.pacchetti.map(p => p.id) });
+const marcoTutti = tuttiIPacchetti.find(r => r.nome === 'Marco');
+verifica(!!marcoTutti && marcoTutti.totale >= (marcoFiltrato?.totale || 0),
+  'accendendo anche l\'altro pacchetto le ore di Marco non calano');
 verifica(marcoFiltrato.oreIntere['2026-W10'] === marco.ore['2026-W10'],
   'ed è il carico intero a restare a disposizione della vista, per il rosso della cella');
 

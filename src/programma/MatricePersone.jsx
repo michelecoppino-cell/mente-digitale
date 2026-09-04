@@ -86,13 +86,13 @@ function appiattisci(nodi, livello = 0) {
  * @param {string[]} props.settimane
  * @param {string} props.settimanaOra
  * @param {boolean} [props.inCaricamento]  qualche documento sta ancora arrivando
- * @param {string|null} [props.pacchettoScelto]  il filtro della testata, se acceso
- * @param {string} [props.nomePacchetto]  come si chiama, per scriverlo in legenda
+ * @param {string[]} [props.pacchettiScelti]  il filtro della testata, se acceso
+ * @param {string} [props.nomiPacchetti]  come si chiamano, per scriverlo in legenda
  * @param {(programmaId: string) => void} [props.onApriCommessa]
  */
 export default function MatricePersone({
   programmi, settimane, settimanaOra, inCaricamento = false,
-  pacchettoScelto = null, nomePacchetto = '', onApriCommessa,
+  pacchettiScelti = [], nomiPacchetti = '', onApriCommessa,
 }) {
   const [aperte, setAperte] = useState(/** @type {string[]} */ ([]));
   const [densita, cambiaDensita] = useDensita();
@@ -103,8 +103,8 @@ export default function MatricePersone({
   const scorrevole = useRef(/** @type {HTMLDivElement|null} */ (null));
 
   const persone = useMemo(
-    () => caricoPersone(programmi, settimane, { pacchettoId: pacchettoScelto, dettaglio }),
-    [programmi, settimane, pacchettoScelto, dettaglio]);
+    () => caricoPersone(programmi, settimane, { pacchettoId: pacchettiScelti, dettaglio }),
+    [programmi, settimane, pacchettiScelti, dettaglio]);
 
   /** @param {number} livelli */
   const cambiaDettaglio = livelli => { setDettaglio(livelli); writePref(CHIAVE_DETTAGLIO, livelli); };
@@ -135,8 +135,8 @@ export default function MatricePersone({
         <p className="pg-empty">
           {inCaricamento
             ? 'Sto leggendo i programmi accesi…'
-            : (pacchettoScelto
-              ? `Nessuno ha ore su ${nomePacchetto || 'questo pacchetto'}: il filtro è ancora acceso in testata.`
+            : (pacchettiScelti.length
+              ? `Nessuno ha ore su ${nomiPacchetti || 'questi pacchetti'}: il filtro è ancora acceso in testata.`
               : 'Nessuna persona nei programmi accesi: le persone si aggiungono nelle Impostazioni di una commessa.')}
         </p>
       </div>
@@ -187,7 +187,7 @@ export default function MatricePersone({
         ))}
         <span className="pg-barra-conto">
           {settimane.length} settimane · {persone.length} persone
-          {pacchettoScelto ? ` · solo ${nomePacchetto || 'un pacchetto'}` : ''}
+          {pacchettiScelti.length ? ` · solo ${nomiPacchetti || 'una parte dei pacchetti'}` : ''}
         </span>
       </div>
 
@@ -319,8 +319,8 @@ export default function MatricePersone({
           dire. Un elenco e non un contatore: «tre sovrapposizioni» obbliga a
           cercarle, i nomi no. */}
       <div className="pg-legenda">
-        <span>{pacchettoScelto
-          ? `solo le ore di ${nomePacchetto || 'un pacchetto'}`
+        <span>{pacchettiScelti.length
+          ? `solo le ore di ${nomiPacchetti || 'una parte dei pacchetti'}`
           : (programmi.length === 1
             ? 'un solo programma acceso'
             : `somma di ${programmi.length} programmi accesi`)}</span>

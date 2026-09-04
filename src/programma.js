@@ -907,22 +907,38 @@ export function oreVoci(doc, tieni) {
 }
 
 /**
+ * Il filtro sui pacchetti: uno, più d'uno, o nessuno — e «nessuno» vuol dire
+ * *tutti*. Sta qui e non nelle viste perché lo leggono in tre (le ore a piano,
+ * i numeri della testata, il carico per persona) e devono intenderlo allo
+ * stesso modo: la pastiglia della barra si accende in due, e un filtro che
+ * tiene un pacchetto solo direbbe metà della risposta.
+ * @param {string|string[]|null|undefined} p
+ * @returns {Set<string>|null}
+ */
+function insiemePacchetti(p) {
+  if (!p) return null;
+  const elenco = (Array.isArray(p) ? p : [p]).filter(Boolean);
+  return elenco.length ? new Set(elenco) : null;
+}
+
+/**
  * Le ore a piano — le celle del carico — filtrabili per pacchetto, risorsa e
  * finestra di settimane.
  * @param {DocProgramma} doc
  * `voceId` prende il **ramo**: la voce e la sua discendenza, perché le ore di
  * una lavorazione sono quelle delle sue sotto-voci, come le stime.
  *
- * @param {{ pacchettoId?: string|null, risorsa?: string|null, voceId?: string|null, da?: string|null, a?: string|null }} [filtro]
+ * @param {{ pacchettoId?: string|string[]|null, risorsa?: string|null, voceId?: string|null, da?: string|null, a?: string|null }} [filtro]
  * @returns {number}
  */
 export function oreCarico(doc, filtro = {}) {
   const ramo = filtro.voceId ? ramoVoce(doc, filtro.voceId) : null;
+  const pacchetti = insiemePacchetti(filtro.pacchettoId);
   let somma = 0;
   for (const [chiave, ore] of Object.entries(doc.carico)) {
     const [risorsa, pacchettoId, settimana, voceId] = chiave.split('|');
     if (ramo && !(voceId && ramo.has(voceId))) continue;
-    if (filtro.pacchettoId && pacchettoId !== filtro.pacchettoId) continue;
+    if (pacchetti && !pacchetti.has(pacchettoId)) continue;
     if (filtro.risorsa && risorsa !== filtro.risorsa) continue;
     if (filtro.da && settimana < filtro.da) continue;
     if (filtro.a && settimana > filtro.a) continue;
@@ -960,12 +976,15 @@ export function oreCarico(doc, filtro = {}) {
  * il loro delta, sempre a schermo.
  *
  * @param {DocProgramma} doc
- * @param {{ pacchettoId?: string|null, settimanaOra?: string }} [opts]
+ * @param {{ pacchettoId?: string|string[]|null, settimanaOra?: string }} [opts]
  */
 export function totali(doc, opts = {}) {
   const pacchettoId = opts.pacchettoId || null;
+  const pacchetti = insiemePacchetti(pacchettoId);
   const ora = opts.settimanaOra || settimanaIso();
-  const tieni = pacchettoId ? (/** @type {Voce} */ v) => v.pacchettoId === pacchettoId : undefined;
+  const tieni = pacchetti
+    ? (/** @type {Voce} */ v) => !!v.pacchettoId && pacchetti.has(v.pacchettoId)
+    : undefined;
 
   const stimate = oreVoci(doc, tieni);
   const speso = oreCarico(doc, { pacchettoId, a: spostaSettimane(ora, -1) });
@@ -978,7 +997,7 @@ export function totali(doc, opts = {}) {
   const previsione = speso + aFinire;
   // Il metro è il numero contrattuale. Per un pacchetto non esiste un venduto
   // suo: lì il metro sono le sue voci, ed è il delta con le celle a contare.
-  const vendute = pacchettoId ? stimate : doc.commessa.oreVendute;
+  const vendute = pacchetti ? stimate : doc.commessa.oreVendute;
 
   return {
     vendute,
@@ -1607,14 +1626,15 @@ export function settimaneDellePersone(docs, settimanaOra) {
  * generoso che qualcuno gli ha dato, e un falso allarme in questa tabella
  * varrebbe quanto nessun allarme.
  *
- * **Il filtro sul pacchetto vale anche qui.** Un pacchetto sta dentro una
- * commessa sola, quindi filtrando resta il carico che quel pacchetto dà a ogni
- * persona: è la stessa domanda della matrice, letta per riga invece che per
- * colonna. Con un filtro acceso spariscono le persone che su quel pacchetto non
- * hanno niente — un elenco di righe a zero non è una risposta — e le
- * sovrapposizioni restano quelle vere, calcolate sul carico **intero** della
- * persona: sarebbe una bugia dire che è scarica solo perché si sta guardando un
- * pacchetto per volta.
+ * **Il filtro sui pacchetti vale anche qui.** Un pacchetto sta dentro una
+ * commessa sola, quindi filtrando resta il carico che quei pacchetti danno a
+ * ogni persona: è la stessa domanda della matrice, letta per riga invece che
+ * per colonna. Ed è un elenco, come le pastiglie della barra: due accesi
+ * dicono la somma dei due. Col filtro acceso spariscono le persone che su
+ * quei pacchetti non hanno niente — un elenco di righe a zero non è una
+ * risposta — e le sovrapposizioni restano quelle vere, calcolate sul carico
+ * **intero** della persona: sarebbe una bugia dire che è scarica solo perché
+ * si sta guardando una parte del lavoro.
  *
  * @param {{ id: string, nome: string, doc: DocProgramma }[]} programmi
  * @param {string[]} settimane
@@ -1623,11 +1643,11 @@ export function settimaneDellePersone(docs, settimanaOra) {
  * matrice, e la stessa catena letta dall'altro capo — là si parte dal lavoro e
  * si arriva alla persona, qui si parte dalla persona e si arriva al lavoro.
  *
- * @param {{ pacchettoId?: string|null, dettaglio?: number }} [filtro]
+ * @param {{ pacchettoId?: string|string[]|null, dettaglio?: number }} [filtro]
  * @returns {RigaPersona[]}
  */
 export function caricoPersone(programmi, settimane, filtro = {}) {
-  const soloPacchetto = filtro.pacchettoId || null;
+  const soloPacchetto = insiemePacchetti(filtro.pacchettoId);
   const dettaglio = filtro.dettaglio || 0;
   const finestra = new Set(settimane);
   // Con una commessa sola il suo nome è una riga che ripete il titolo della
@@ -1668,7 +1688,7 @@ export function caricoPersone(programmi, settimane, filtro = {}) {
       const tutte = intero.get(risorsa) || {};
       tutte[settimana] = (tutte[settimana] || 0) + ore;
       intero.set(risorsa, tutte);
-      if (soloPacchetto && pacchettoId !== soloPacchetto) continue;
+      if (soloPacchetto && !soloPacchetto.has(pacchettoId)) continue;
       const p = riga(risorsa);
       p.ore[settimana] = (p.ore[settimana] || 0) + ore;
       p.totale += ore;
