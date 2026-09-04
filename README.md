@@ -14,10 +14,13 @@ su OneDrive, nostri.
   per la sezione selezionata.
 - **Pianificatore giornaliero** — drag & drop dei task su una timeline a slot di 30 minuti,
   vista giorno/settimana, eventi del calendario in sola lettura, sottostep ridimensionabili,
-  piani salvati su OneDrive. Candidati task estratti da email ed email OneNote con euristiche
-  locali (`src/dailyReview.js`), senza chiamate AI. Da telefono il Piano si legge e basta: il
+  piani salvati su OneDrive. Da telefono il Piano si legge e basta: il
   trascinamento è il gesto di uno schermo largo, e pianificare col pollice vorrebbe dire un
   gesto diverso — la proposta sta in `docs/proposta-piano-da-telefono.md`, non è costruita.
+- **Revisione quotidiana** — la campanella in testata, due schede: le proposte di attività
+  ricavate da email e righe «Da fare» di OneNote con euristiche locali (`src/dailyReview.js`),
+  ognuna col motivo per cui è emersa, e le scadenze ricorrenti scritte sul calendario con il
+  giorno in cui diventeranno attività. Nessuna chiamata AI.
 - **Oggi** — la home, divisa in due metà. A sinistra la **giornata operativa**: «Oggi · agenda e
   azioni», cioè appuntamenti del calendario e azioni programmate in un elenco solo ordinato per
   ora, e sotto «In arrivo»: i sei giorni che vengono, uno per colonna (oggi no — sta già nel
@@ -534,6 +537,51 @@ non è più un avviso, è un rimprovero. Di aver già suonato ci si ricorda su
 quella sul fisso. Vedi `sveglie.js` (la logica), `useSveglie.js` (il ciclo) e
 `SvegliaAlert.jsx` (il pannello).
 
+### La revisione quotidiana
+
+La campanella in testata. Due schede, che sono le due metà dello stesso giro:
+**Da valutare**, quello che chiede una decisione, e **Scadenze**, il
+meccanismo che lavora da solo (la sezione qui sotto).
+
+Le proposte nascono da euristiche locali — niente AI, niente costi — su due
+fonti: le email recenti e le righe segnate «Da fare» (Ctrl+1) nelle pagine
+OneNote toccate dall'ultimo controllo. Il lavoro dell'euristica è scegliere
+**quali** email meritano attenzione, non riscriverle: senza un modello a
+ripulire il testo, l'oggetto originale resta il titolo proposto, modificabile
+prima di portarselo dietro.
+
+Ogni riga dice **perché è lì**. I segnali che l'hanno fatta emergere — «non
+letta», «parla di una scadenza», «chiede una revisione», «è una domanda» —
+si leggono come pastiglie sotto il testo, insieme a chi ha mandato l'email,
+quando, e un collegamento all'originale. Prima c'era solo l'oggetto: un
+punteggio calcolato e mai mostrato, e chi guardava doveva indovinare cosa ci
+facesse lì quella riga. Un elenco di proposte senza i motivi non è un elenco
+di proposte, è un elenco.
+
+Due filtri tengono fuori il rumore, e il secondo è nato da un caso vero. Il
+primo è quello di sempre: mittenti automatici e oggetti da newsletter. Il
+secondo guarda la **forma** del filo — stesso mittente, stesso oggetto ridotto
+alla sua firma (senza date, ore, numeri, `Re:`) — e se lo stesso filo torna tre
+volte o più nella finestra lo scarta: è un flusso di servizio, non una
+richiesta. Sotto quella soglia ne resta comunque **uno solo**, perché due righe
+identiche non sono due decisioni. È così che spariscono le mail dello specchio
+del calendario di lavoro, che il PC di lavoro si manda ogni due ore e che
+riempivano il pannello di righe intitolate «calendario» — nessuna delle quali
+era una cosa da fare.
+
+«Chiarisci →» non crea niente: apre il diagramma GTD col testo già dentro, e la
+decisione — se è un'azione, se sta in meno di due minuti, in quale sezione va —
+resta a chi guarda. Il diagramma adesso lo dice: in cima mostra la frase su cui
+si sta decidendo, da dove viene, e cosa fa una foglia dell'uno o dell'altro
+ramo. Prima il bottone diceva «Crea task» e apriva sette foglie senza una
+parola di spiegazione — la promessa e quello che succedeva non coincidevano.
+
+Una proposta si mostra una volta sola: accettata o scartata, la sua firma resta
+nei marker per una settimana. Le righe OneNote si spuntano anche nella pagina
+d'origine, in tutti e due i casi — sono state guardate. Le euristiche stanno in
+`src/dailyReview.js`, provate (`npm run prova-cattura`); il giro attorno in
+`src/useDailyReview.js`, il pannello in `src/PannelloReview.jsx`.
+
 ### Le scadenze che tornano ogni anno
 
 Bollo, assicurazione, revisione, tasse, visite: cose che non si vogliono
@@ -580,6 +628,19 @@ quest'ultima riconosce anche le attività nate dal meccanismo di prima, che il
 marker ce l'hanno in un altro formato. I conti stanno in
 `src/deadlineReminders.js`, provati (`npm run prova-cattura`); il giro attorno
 in `src/useScadenzeRicorrenti.js`.
+
+E dalla campanella si **vede** il meccanismo mentre lavora: la scheda
+«Scadenze» elenca le occorrenze scritte sul calendario da qui a quattro mesi,
+ciascuna col giorno in cui diventa un'attività e un pallino che dice se è già
+entrata. Sopra c'è la sintassi, che prima non era scritta in nessun punto
+dell'app. E in cima, quando c'è, l'unica cosa che nessun altro schermo direbbe
+mai: le scadenze il cui prefisso **non aggancia nessuna lista** — un
+`[AREA-AUTO]` scritto `[AREA AUTO]`, una lista rinominata dopo. `scadenzeDovute`
+le salta in silenzio, ed è giusto, non c'è nessun posto dove metterle; ma il
+silenzio era il difetto, perché un evento che non diventerà mai un'attività si
+scopriva a scadenza passata. Le due letture (`prossimeScadenze`,
+`scadenzeOrfane`) sono pure e provate come il resto, e girano sugli eventi già
+scaricati: nessuna chiamata in più.
 
 ### Il calendario di lavoro
 

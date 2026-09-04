@@ -103,10 +103,14 @@ export function useDailyReview() {
       }
 
       const viste = getMarker('review_seen') || [];
+      // Le due fonti si mescolano e si riordinano per punteggio invece di
+      // restare in due blocchi: una riga segnata a mano con Ctrl+1 è un
+      // segnale vero, e in coda a sei email indovinate finiva sotto la piega
+      // del pannello proprio la sola proposta di cui si è già certi.
       const candidate = [
         ...extractEmailCandidates(email, 6),
         ...extractOneNoteCandidates(conHtml, 8),
-      ];
+      ].sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
       setProposte(candidate
         .map(a => ({
           ...a,

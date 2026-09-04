@@ -43,6 +43,22 @@ export function spostaGiorni(giorno, quanti) {
 }
 
 /**
+ * Quanti giorni di calendario ci sono da `da` ad `a`: negativo se `a` è
+ * passato. Stessa ragione di `spostaGiorni` per non contare millisecondi — a
+ * cavallo del cambio d'ora una differenza divisa per 86 400 000 dà 29,96
+ * giorni, e arrotondata al ribasso diventa un giorno in meno.
+ * @param {string} da  'YYYY-MM-DD'
+ * @param {string} a   'YYYY-MM-DD'
+ * @returns {number}
+ */
+export function giorniFra(da, a) {
+  const [ad, md, gd] = da.split('-').map(Number);
+  const [aa, ma, ga] = a.split('-').map(Number);
+  const MS = 24 * 60 * 60 * 1000;
+  return Math.round((Date.UTC(aa, ma - 1, ga) - Date.UTC(ad, md - 1, gd)) / MS);
+}
+
+/**
  * Il mese 'YYYY-MM' di una data 'YYYY-MM-DD' (o di un istante).
  * @param {string|Date} [data]
  * @returns {string}

@@ -1436,7 +1436,10 @@ export async function getRecentEmails() {
   const iso = yesterday.toISOString();
   const params = [
     `$filter=receivedDateTime ge ${iso}`,
-    `$select=subject,from,bodyPreview,receivedDateTime,isRead`,
+    // `webLink` in più: una proposta della Daily Review deve poter riportare
+    // all'email da cui è nata — senza, l'unica cosa che si può fare di una
+    // riga è fidarsi dell'oggetto.
+    `$select=subject,from,bodyPreview,receivedDateTime,isRead,webLink`,
     `$top=50`,
     `$orderby=receivedDateTime desc`,
   ].join('&');

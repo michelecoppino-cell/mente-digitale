@@ -12,7 +12,7 @@
 import {
   TACCUINI, SEZIONI, PAGINE, CALENDARI, EVENTI,
   LISTE, TASK, PIANI, OBIETTIVI, CODA, DIARIO_MESE, MOVIMENTO_MESE, MOVIMENTO_INDICE, BUSSOLA,
-  PROGRAMMI, PROGRAMMA, CALENDARIO_LAVORO,
+  PROGRAMMI, PROGRAMMA, CALENDARIO_LAVORO, POSTA,
 } from './semi.js';
 import { ymd } from '../tempo.js';
 
@@ -101,7 +101,7 @@ export function montaFintoGraph(finto) {
     }
 
     // ── Promemoria e posta ────────────────────────────────────────────────
-    if (nudo.startsWith('/me/messages')) return risposta(200, { value: [] });
+    if (nudo.startsWith('/me/messages')) return risposta(200, { value: POSTA });
 
     return null;   // non è roba nostra: se ne occupa il drive
   });
