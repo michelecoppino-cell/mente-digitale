@@ -286,7 +286,20 @@ gli obiettivi prendono i numeri; nel file del rituale resta solo quello che il
 registro non sa dire, cioè il perché di un no. I giorni saltati si recuperano
 fino a tre indietro, compilati come «non fatto» e **dichiarati** in cima al
 pannello: un registro che si compila da solo in silenzio è un registro di cui non
-ci si fida più. Vedi `rituale.js` e `RitualeMattino.jsx`.
+ci si fida più.
+
+E si chiede **una volta al giorno**, non ogni volta che si passa da «Oggi». A
+dire «l'ho già chiesto» era rimasta a lungo una sola riga di `localStorage`, e
+non bastava: quel cassetto si riempie (è lo stesso in cui sta l'account, vedi
+più avanti) e allora `setItem` non passa, in silenzio; il segno non attraversa
+i dispositivi; e non viene scritto affatto se «Oggi» si lascia senza chiudere
+il pannello. Adesso la domanda si guarda a **stato**: se nel documento c'è la
+riga di oggi, la risposta c'è già — data qui, dal portatile, o stamattina prima
+di ricaricare — ed è `giaRisposto` a dirlo. Il segno locale resta per il solo
+caso in cui una risposta non c'è, cioè «Più tardi». È la stessa regola delle
+scadenze ricorrenti: un meccanismo che dipende da essere svegli nell'istante
+giusto, in un'app che sta su un telefono, è un meccanismo che ha già smesso di
+funzionare. Vedi `rituale.js` e `RitualeMattino.jsx`.
 
 Il pannello di dettaglio del Piano porta a `#/sezioni/:id` con «Apri il
 workbook»: è il passaggio che lega la programmazione al posto di lavoro.
@@ -1380,6 +1393,7 @@ davvero, non una copia che può divergere.
 | `prova-nucleo` | lo stesso nucleo dei file visto dalla parte del CLI |
 | `prova-pool` | il serbatoio delle attività come lettura della cache di query |
 | `prova-colori` | il colore di un calendario: la scelta fatta nell'app, l'enum di Outlook sotto |
+| `prova-cache` | cosa sopravvive alla chiusura dell'app: la potatura delle finestre di eventi entro il tetto di `localStorage`, e la domanda del mattino che si fa una volta sola |
 
 Girano in CI insieme a tipi, lint e build. Prima non ci giravano, e tre suite
 su quattro si erano rotte in silenzio quando `api.js` ha cambiato il modo di
@@ -1537,8 +1551,8 @@ c'è. Perché i casi sono due, e si somigliano solo da fuori:
 `localStorage` è uno solo per origine, e su Safari è piccolo — qualche mega,
 meno ancora per un'app aperta dall'icona sulla Home. Dentro ci finiscono due
 cose che non hanno niente a che vedere fra loro: la cache di TanStack Query
-(`md_rq_cache_v1` — pagine OneNote, task, eventi di calendario a ±3 mesi,
-tenuti 24 ore, riscritta a ogni cambiamento) e la cache di MSAL, cioè
+(`md_rq_cache_v2` — pagine OneNote, task, eventi di calendario,
+tenuti sette giorni, riscritta a ogni cambiamento) e la cache di MSAL, cioè
 l'account e il refresh token.
 
 Quando lo spazio finisce, `setItem` smette di funzionare **per tutti**. La
@@ -1550,11 +1564,30 @@ si vede dal fatto che la sessione muore *dopo* un po' di navigazione, non a
 un'ora tonda dall'accesso.
 
 Per questo la persistenza della cache ha un tetto (`PERSIST_BUDGET`, un mega di
-JSON): se lo supera, `serializzaEntroIlBudget` butta le query più grosse finché
-non ci sta. Perdere gli eventi di tre mesi vuol dire riscaricarli, perdere
-l'account vuol dire rifare l'accesso: non è lo stesso prezzo. Se lo spazio
-finisce lo stesso, la chiave `md_storage_full` lo registra e la schermata di
-login lo dice.
+JSON). Perdere gli eventi di tre mesi vuol dire riscaricarli, perdere l'account
+vuol dire rifare l'accesso: non è lo stesso prezzo. Se lo spazio finisce lo
+stesso, la chiave `md_storage_full` lo registra e la schermata di login lo dice.
+
+Come ci si sta dentro, però, era sbagliato, e si vedeva solo dal telefono. Il
+tetto si difendeva buttando via le query più grosse — e le più grosse sono
+**sempre** le due finestre di eventi del calendario: ±3 mesi per il Piano,
+−1/+18 mesi per i pannelli di sezione e le scadenze. Un evento porta con sé un
+id di Graph, un `webLink` e l'id del calendario, cioè stringhe da centinaia di
+caratteri: mille eventi fanno mezzo megabyte, e si mangiavano il tetto da soli.
+Risultato: di tutta l'app il calendario era l'unica cosa che alla riapertura
+non c'era mai — cioè proprio quella che si guarda per prima la mattina. Tutto
+il resto sembrava funzionare, e questo no, senza che niente lo dicesse.
+
+Adesso `serializzaEntroIlBudget` (in `cachePersistenza.js`, puro e provato)
+prima **pota**: della finestra di eventi si conservano i giorni attorno a oggi
+— quattordici indietro e sessanta avanti, che è quanto copre la settimana, il
+mese e quello dopo — e la copia ridotta si marca come vecchia
+(`dataUpdatedAt = 0`), così nessuno la scambia per la finestra intera: si vede
+subito riaprendo l'app, e la lettura vera parte comunque e la sostituisce. È la
+stessa idea di `fresco` in `useDatoPersistito`: una copia vecchia si mostra,
+non ci si scrive sopra. In memoria la finestra resta intera — si pota solo
+quello che va su `localStorage`. Se anche così non ci si sta, si torna a
+buttare via query intere, dalla più grossa in giù.
 
 ### Il riscatto a ogni avvio (e perché costava l'accesso)
 
