@@ -63,6 +63,7 @@ import { useRegistroMovimento } from './registroMovimento';
 import ObiettiviModal from './ObiettiviModal';
 import CodaModal from './CodaModal';
 import RitualeMattino from './RitualeMattino';
+import { giaRisposto } from './rituale';
 import { useRiservatiVisibili } from './riservati';
 import { readPref, writePref } from './viewPrefs';
 import { qk, STALE } from './queryClient';
@@ -237,6 +238,15 @@ function useDiarioDate() {
 /** Il giorno in cui il rituale del mattino è già stato proposto. */
 const PREF_RITUALE = 'oggi.rituale.propostoIl.v1';
 
+// Lo stesso giorno, ma qui dentro invece che su `localStorage`. Non è una
+// cache della preferenza: è la copia che regge quando `localStorage` non
+// scrive (cassetto pieno, e succede — vedi cachePersistenza.js). «Oggi» si
+// smonta ogni volta che si passa al Piano e si torna indietro, e senza questa
+// riga la domanda si ripresentava a ogni rientro. Vive quanto la pagina: chi
+// ricarica davvero se la ritrova davanti, ed è il comportamento voluto per una
+// domanda a cui non si è ancora risposto.
+let propostoInMemoria = /** @type {string|null} */ (null);
+
 /**
  * Il rituale del mattino.
  *
@@ -321,7 +331,7 @@ export default function TodayView({
   // Si aspettano davvero: aprirlo con il registro ancora in volo vorrebbe dire
   // caselle despuntate su sessioni già registrate, cioè chiedere di rispondere
   // a una domanda a cui si è già risposto.
-  const [propostoIl, setPropostoIl] = useState(() => readPref(PREF_RITUALE, null));
+  const [propostoIl, setPropostoIl] = useState(() => propostoInMemoria || readPref(PREF_RITUALE, null));
   // `auto` distingue il pannello che si apre da solo la mattina da quello
   // riaperto a mano: cambia la frase in cima, non il resto.
   const [ritualeAMano, setRitualeAMano] = useState(false);
@@ -332,15 +342,26 @@ export default function TodayView({
   // altrove. Tutto il resto della scheda, intanto, la copia vecchia la mostra
   // eccome — lì non si scrive niente.
   const ritualePronto = rituale !== null && registro.fresco;
+  // Due cose dicono che oggi la domanda è già stata fatta, e la prima è quella
+  // che conta: la **risposta scritta nel documento** (`giaRisposto`), che sta
+  // su OneDrive e vale su tutti i dispositivi. Il segno su `localStorage` resta
+  // per il solo caso in cui una risposta non c'è — «Più tardi» —, e da solo non
+  // bastava: `localStorage` è pieno più spesso di quanto sembri (è il cassetto
+  // in cui sta anche l'account, vedi queryClient.js), e quando `setItem` non
+  // passa il segno non viene scritto, in silenzio. Da lì il pannello che si
+  // ripresentava più volte al giorno, con la domanda a cui si era già risposto.
   const ritualeAperto = ritualeAMano
     ? { auto: false }
-    : (ritualePronto && propostoIl !== today ? { auto: true } : null);
+    : (ritualePronto && propostoIl !== today && !giaRisposto(rituale, today)
+        ? { auto: true }
+        : null);
 
   function chiudiRituale() {
     // La giornata si segna alla chiusura e non all'apertura: chi ricarica la
     // pagina prima di rispondere se lo ritrova davanti, che è il
     // comportamento giusto per una domanda che va fatta una volta al giorno.
     writePref(PREF_RITUALE, today);
+    propostoInMemoria = today;
     setPropostoIl(today);
     setRitualeAMano(false);
   }

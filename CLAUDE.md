@@ -40,7 +40,8 @@ secondi. La CI esegue tutti e quattro i comandi a ogni push e ogni PR.
 4. Se hai toccato uno degli strati provati (`graphCore.js`, `api.js`,
    `taskStore.js`, `taskMigrazione.js`, `paraConfig.js`, `poolAttivita.js`, `programma.js`,
    `programmaStore.js`, `programmaExcel.js`, `xlsx.js`, `captureParse.js`,
-   `deadlineReminders.js`, `dailyReview.js`, `calendarioLavoro.js`, `scripts/ics.mjs`),
+   `deadlineReminders.js`, `dailyReview.js`, `calendarioLavoro.js`,
+   `cachePersistenza.js`, `rituale.js`, `scripts/ics.mjs`),
    aggiungi la verifica che avrebbe
    intercettato quello che hai corretto. Le prove si sono rotte una volta e
    nessuno se n'è accorto per settimane: è successo perché nessuna misura
@@ -223,6 +224,7 @@ che ha già smesso di funzionare.
 | `src/paraConfig.js` | i nomi PARA e le consegne annidate (`2573.A60-260831`) |
 | `src/auth.js` | MSAL, la coda dei token, il rinnovo programmato, la scatola nera |
 | `src/queryClient.js` | TanStack Query, le chiavi, la persistenza col suo tetto |
+| `src/cachePersistenza.js` | cosa della cache finisce su `localStorage`: le finestre di eventi potate ai giorni attorno a oggi, e il tetto. Puro, e ci girano le prove |
 | `src/poolAttivita.js` | il serbatoio delle attività: una lettura della cache, non uno stato |
 | `src/use*.js` | i pezzi che stavano in `App.jsx` e non c'entravano con lui: la campanella, le scadenze ricorrenti, i colori, le sveglie |
 | `src/deadlineReminders.js` | le scadenze che tornano ogni anno: come si scrive un evento `[LISTA +30g] Titolo`, quali occorrenze sono dovute oggi, come si sa che ci sono già, e — per la scheda «Scadenze» della campanella — cosa sta arrivando (`prossimeScadenze`) e cosa non arriverà mai perché il prefisso non aggancia nessuna lista (`scadenzeOrfane`) |
