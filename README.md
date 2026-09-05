@@ -181,7 +181,7 @@ Sette destinazioni, ognuna con un indirizzo proprio. Il menù è il rail a sinis
 | `#/piano` | Il Piano: serbatoio, giornata a blocchi, capacità della giornata, pannello di dettaglio |
 | `#/attivita` | Le cinque colonne del flusso, con la lente Scadenza (`?vista=`, `?ctx=`) |
 | `#/sezioni/:id` | Plancia della sezione: OneNote, percorsi, attività, dettaglio, oggi |
-| `#/programma/:id?` | Il Programma di commessa: ore vendute, pacchetti, matrice risorsa × settimana, voci, riepilogo |
+| `#/programma/:id?` | Il Programma di commessa: ore vendute, pacchetti, matrice risorsa × settimana, Gantt, voci, riepilogo |
 | `#/diario` | Diario |
 | `#/mappa` | La mappa mentale |
 
@@ -839,7 +839,7 @@ dell'attivazione una voce non esiste da nessuna parte tranne che qui: non nel
 pool, non nel Piano, non suona, non scade. Zero rumore per costruzione, non per
 un filtro che qualcuno si ricorda di applicare.
 
-Il pannello ha **cinque schede, ed è l'ordine in cui si lavora**: Matrice,
+Il pannello ha **sei schede, ed è l'ordine in cui si lavora**: Matrice, Gantt,
 Persone ed Elenco voci sono il lavoro di tutti i giorni, Riepilogo è la domanda
 del coordinatore — come sta messa tutta la commessa, non un pacchetto alla volta
 — e Impostazioni è la mezz'ora in cui si mette in piedi il programma e poi quasi
@@ -946,6 +946,36 @@ Perché qui **si legge e basta**: una cella è la somma di celle che stanno in
 documenti diversi, e scriverci vorrebbe dire decidere al posto di chi scrive da
 quale commessa togliere le ore. I conti stanno in `caricoPersone()`
 (`src/programma.js`), provati; la vista in `src/programma/MatricePersone.jsx`.
+
+**Gantt** è la terza lettura dello stesso carico, e risponde alla domanda che
+nelle altre due c'è ma sparsa: **cosa finisce quando**. Una riga per attività,
+una colonna per settimana, e nella cella una barra del colore del suo pacchetto.
+Le righe stanno in ordine di quando finiscono — la prima è la cosa che si chiude
+prima, le ultime sono la coda della commessa — ed è l'ordine che la rende una
+vista invece di un altro elenco di voci: nella Matrice le righe sono raccolte
+per pacchetto, e per sapere cosa si chiude prima bisogna leggerne venti e tenere
+a mente venti date.
+
+Ogni cella del carico finisce **in una riga e in una sola**: quella della sua
+voce, oppure — per le ore lasciate sul pacchetto — quella della voce che le
+adotta, e se nessuna le reclama la riga del pacchetto, marcata «sul pacchetto».
+Non è la regola dell'ultimo livello mostrato che governa la Matrice, ed è voluto:
+lì le righe si aprono, e sommare i rami serve a non far vedere un totale senza le
+righe che lo fanno; qui non si apre niente, quindi non c'è nessuna eco da
+evitare — c'è invece da non disegnare la stessa barra su due righe incolonnate.
+Il totale del Gantt è il carico della finestra, ed è una delle prove.
+
+Chi ci lavora sta scritto in una colonna, non solo nel passaggio del mouse: il
+mouse dà il dettaglio della settimana — chi, e quante ore — ma un'informazione
+che esiste *solo* al passaggio del mouse non esiste stampata e non esiste per chi
+sta guardando la tabella insieme a qualcun altro. Un bottone «non programmate»
+mette in coda le voci che in quelle settimane non hanno nemmeno un'ora, con la
+loro stima e la persona che la voce propone: senza di loro il Gantt racconta una
+commessa che finisce prima di quanto finirà. **Qui si legge e basta** — le celle
+si scrivono nella Matrice, e due posti in cui scrivere la stessa cella sarebbero
+due modi di sbagliarla — e cliccando una riga si apre il dettaglio della voce,
+che è dove quelle ore si cambiano davvero. I conti stanno in `gantt()`
+(`src/programma.js`), provati; la vista in `src/programma/Gantt.jsx`.
 
 **Un programma si collega alla sua sezione**, scelta da una tendina. Non è un
 campo in più da compilare: è quello che decide come si chiamano le liste che
@@ -1067,7 +1097,8 @@ si vedono.
 Il programma esce dallo studio: si discute in riunione, si manda al
 capocommessa. Finché l'unica uscita era il JSON, l'unico modo di farlo vedere a
 un collega era fargli guardare lo schermo. **↓ Excel** scarica un `.xlsx` con
-tre fogli — Riepilogo, Persone, Voci — col giorno nel nome come la fotografia.
+quattro fogli — Riepilogo, Gantt, Persone, Voci — col giorno nel nome come la
+fotografia.
 
 Senza librerie: `xlsx` e `exceljs` pesano fra i 400 kB e il megabyte, cioè
 sarebbero il pacchetto più grosso del progetto per una cosa che si fa due volte
@@ -1156,8 +1187,27 @@ Anche qui una fascia ocra stacca una lavorazione dall'altra: con le sotto-voci
 sotto la loro madre, senza una riga piena in mezzo l'elenco è una colonna sola
 di titoli in cui non si vede dove finisce un lavoro.
 
+Il quarto foglio, **Gantt**, è lo stesso di quello a schermo: una riga per
+attività in ordine di quando finiscono, e nella cella della settimana **il nome
+di chi ci lavora**, su fondo del colore del pacchetto — schiarito, perché nero su
+un colore pieno non si legge. Il nome e non le ore, perché le ore ci sono già nel
+foglio Persone, che è quello fatto per contarle e per rientrare corretto: qui la
+domanda è un'altra, e la risposta si legge scorrendo in orizzontale — una fascia
+colorata con dentro dei nomi si segue con l'occhio, una fascia di numeri no. Il
+totale della riga resta in coda, e le voci non programmate stanno sotto una fascia
+ocra con la loro stima. È l'unica uscita che **non rientra**: le celle si scrivono
+nella matrice, e un secondo foglio da cui reimportare le stesse ore sarebbe un
+secondo modo di sbagliarle.
+
+I colori sono la ragione per cui `src/xlsx.js` sa dichiarare dei fondi: i sette
+stili fissi bastano per una tabella di numeri e non per un Gantt, dove il colore
+*è* il dato — e i colori sono quelli dei pacchetti, che la commessa sceglie e che
+quel file non può conoscere. Si passano al libro (`xlsx(fogli, { fondi })`), e lo
+stile di una cella è la posizione in quell'elenco.
+
 Fuori dalla prima versione, deciso adesso: niente timesheet automatico, niente
-dipendenze o percorso critico, niente costi in euro.
+dipendenze o percorso critico (il Gantt disegna quando si lavora a cosa, non cosa
+aspetta cosa), niente costi in euro.
 
 ## Design token
 

@@ -156,6 +156,38 @@ export const STILE = {
   separatore: 6,     // fondo ocra, senza testo: la riga che stacca due gruppi
 };
 
+/**
+ * Il primo stile libero dopo quelli fissi: i fondi che un foglio si porta.
+ *
+ * Gli stili di `STILE` bastano per una tabella di numeri, e non per un Gantt —
+ * lì il colore *è* il dato, e i colori sono quelli dei pacchetti, che la
+ * commessa sceglie e questo file non può conoscere. Quindi si dichiarano
+ * passandoli a `xlsx()`, e il loro stile è `stileFondo(i)`.
+ */
+const PRIMO_FONDO = 7;
+
+/**
+ * Lo stile dell'i-esimo fondo passato a `xlsx()`.
+ * @param {number} i
+ * @returns {number}
+ */
+export function stileFondo(i) {
+  return PRIMO_FONDO + i;
+}
+
+/**
+ * «#f047ea» come Excel lo vuole: `FFRRGGBB`, in maiuscolo e senza cancelletto.
+ * Un colore che non si capisce diventa bianco invece di far rifiutare il file:
+ * un `.xlsx` che non si apre non dice quale cella l'ha rotto.
+ * @param {string|null|undefined} colore
+ * @returns {string}
+ */
+export function argb(colore) {
+  const pulito = String(colore || '').replace('#', '').trim();
+  const pieno = pulito.length === 3 ? pulito.split('').map(c => c + c).join('') : pulito;
+  return /^[0-9a-fA-F]{6}$/.test(pieno) ? `FF${pieno.toUpperCase()}` : 'FFFFFFFF';
+}
+
 /** @param {string} s @returns {string} */
 function xml(s) {
   return String(s ?? '')
@@ -225,7 +257,13 @@ function foglioXml(foglio) {
 <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">${vista}${colonne}<sheetData>${righe}</sheetData></worksheet>`;
 }
 
-const STILI_XML = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+/**
+ * `styles.xml`: i sette stili fissi, e in coda un fondo pieno per ognuno dei
+ * colori che il libro si porta dietro.
+ * @param {string[]} fondi  colori esadecimali, nell'ordine di `stileFondo`
+ * @returns {string}
+ */
+const stiliXml = (fondi = []) => `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
 <numFmts count="1"><numFmt numFmtId="164" formatCode="0.##"/></numFmts>
 <fonts count="4">
@@ -234,18 +272,19 @@ const STILI_XML = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <font><sz val="9"/><color rgb="FF808080"/><name val="Calibri"/></font>
 <font><b/><sz val="14"/><name val="Calibri"/></font>
 </fonts>
-<fills count="4">
+<fills count="${4 + fondi.length}">
 <fill><patternFill patternType="none"/></fill>
 <fill><patternFill patternType="gray125"/></fill>
 <fill><patternFill patternType="solid"><fgColor rgb="FFEFEDE7"/><bgColor indexed="64"/></patternFill></fill>
 <fill><patternFill patternType="solid"><fgColor rgb="FFD4A44A"/><bgColor indexed="64"/></patternFill></fill>
+${fondi.map(c => `<fill><patternFill patternType="solid"><fgColor rgb="${argb(c)}"/><bgColor indexed="64"/></patternFill></fill>`).join('')}
 </fills>
 <borders count="2">
 <border><left/><right/><top/><bottom/><diagonal/></border>
 <border><left/><right/><top style="thin"><color rgb="FFBBBBBB"/></top><bottom/><diagonal/></border>
 </borders>
 <cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>
-<cellXfs count="7">
+<cellXfs count="${7 + fondi.length}">
 <xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>
 <xf numFmtId="0" fontId="1" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1"/>
 <xf numFmtId="164" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/>
@@ -253,6 +292,7 @@ const STILI_XML = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <xf numFmtId="0" fontId="2" fillId="0" borderId="0" xfId="0" applyFont="1"/>
 <xf numFmtId="0" fontId="3" fillId="0" borderId="0" xfId="0" applyFont="1"/>
 <xf numFmtId="0" fontId="0" fillId="3" borderId="0" xfId="0" applyFill="1"/>
+${fondi.map((_, i) => `<xf numFmtId="0" fontId="0" fillId="${4 + i}" borderId="0" xfId="0" applyFill="1" applyAlignment="1"><alignment horizontal="center"/></xf>`).join('')}
 </cellXfs>
 <cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>
 </styleSheet>`;
@@ -260,9 +300,10 @@ const STILI_XML = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 /**
  * I fogli in un file `.xlsx`.
  * @param {Foglio[]} fogli
+ * @param {{ fondi?: string[] }} [opts]  i colori di fondo che i fogli usano, per `stileFondo`
  * @returns {Uint8Array}
  */
-export function xlsx(fogli) {
+export function xlsx(fogli, opts = {}) {
   const nomi = fogli.map((f, i) => nomeFoglio(f.nome, i));
   const b = (/** @type {string} */ s) => codifica.encode(s);
 
@@ -288,7 +329,7 @@ ${fogli.map((_, i) => `<Override PartName="/xl/worksheets/sheet${i + 1}.xml" Con
 ${fogli.map((_, i) => `<Relationship Id="rId${i + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${i + 1}.xml"/>`).join('')}
 <Relationship Id="rId${fogli.length + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>
 </Relationships>`) },
-    { nome: 'xl/styles.xml', dati: b(STILI_XML) },
+    { nome: 'xl/styles.xml', dati: b(stiliXml(opts.fondi || [])) },
     ...fogli.map((f, i) => ({ nome: `xl/worksheets/sheet${i + 1}.xml`, dati: b(foglioXml(f)) })),
   ]);
 }
