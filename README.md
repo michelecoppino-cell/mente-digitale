@@ -1067,7 +1067,7 @@ si vedono.
 Il programma esce dallo studio: si discute in riunione, si manda al
 capocommessa. Finché l'unica uscita era il JSON, l'unico modo di farlo vedere a
 un collega era fargli guardare lo schermo. **↓ Excel** scarica un `.xlsx` con
-tre fogli — Riepilogo, Matrice, Voci — col giorno nel nome come la fotografia.
+tre fogli — Riepilogo, Persone, Voci — col giorno nel nome come la fotografia.
 
 Senza librerie: `xlsx` e `exceljs` pesano fra i 400 kB e il megabyte, cioè
 sarebbero il pacchetto più grosso del progetto per una cosa che si fa due volte
@@ -1082,35 +1082,40 @@ celle per volta è il passaggio che fa smettere di aggiornare il programma, e un
 programma non aggiornato è peggio di nessun programma — dice un margine che non
 c'è. Quindi il foglio che esce rientra: si corregge la colonna della settimana
 appena chiusa, si seleziona il rettangolo (intestazione compresa) e si incolla.
-Il foglio Matrice esce apposta nella stessa forma in cui rientra, e la persona
-scritta una volta sola sulla riga del totale si trascina in giù sulle righe dei
-pacchetti sotto.
+Il foglio **Persone** esce apposta nella stessa forma in cui rientra, e la
+persona scritta una volta sola sulla riga del totale si trascina in giù sulle
+righe sotto.
 
-Sotto il pacchetto il foglio dice anche **di che lavoro** sono quelle ore: due
-colonne, *Oggetto* (la lavorazione) e *Attività* (la sua sotto-voce), perché chi
-guarda il foglio in riunione chiede «venti ore su B10 a fare cosa?» e finché le
-colonne erano due la risposta stava nel foglio Voci, cioè su un'altra pagina e
-senza le settimane. Sono due colonne e non un rientro per la stessa ragione del
-foglio Voci: in Excel un rientro non si filtra e non si ordina.
+Sotto quel totale c'è **una riga per ogni lavoro in cui la persona ha delle
+ore**, con pacchetto, *Oggetto* (la lavorazione) e *Attività* (la sua
+sotto-voce) scritti per esteso sulla stessa riga: chi guarda il foglio in
+riunione chiede «venti ore su B10 a fare cosa?», e la risposta deve stare
+accanto al numero, non tre righe più su. Prima il foglio ricalcava l'albero —
+una riga per il pacchetto, una per l'Oggetto, una per l'Attività — e le prime
+due erano quasi sempre vuote da parte a parte, perché i numeri stanno solo
+nell'ultimo livello: tre righe per dire un dato. Adesso le colonne si ripetono
+(due Attività dello stesso pacchetto scrivono due volte pacchetto e Oggetto), ed
+è quello che rende la tabella ordinabile e filtrabile in Excel — la cosa che con
+l'albero, e per la stessa ragione con un rientro, non si poteva fare.
 
-Quelle righe dicono le ore del loro ramo — le stesse del pacchetto, viste più a
-fondo — e finché le scrivevano tutte e tre erano tre righe identiche
-incolonnate su venti settimane: il dato e le sue due eco, senza un modo di
-distinguerli. Adesso vale la stessa regola della matrice a schermo: **i numeri
-stanno solo nell'ultima riga del ramo**, e chi ha delle figlie sotto di sé
-lascia vuote le settimane. Con un'eccezione, che è il motivo per cui la regola
-non è «tacere e basta»: se le figlie mostrate non coprono tutte le ore della
-riga — succede con delle ore lasciate sul pacchetto che nessuna voce reclama —
-la riga i suoi numeri li tiene, altrimenti quelle ore sparirebbero dal foglio
-senza che niente lo dica.
+Quello che non è sceso fino in fondo tiene la sua riga: delle ore lasciate sul
+pacchetto che nessuna voce reclama sono una riga col solo pacchetto, delle ore
+su un Oggetto senza scendere su un'Attività sono una riga senza l'ultima
+colonna. Non si spalmano su una voce scelta a caso — indovinare è quello che qui
+non si fa — e lasciarle fuori sarebbe peggio, sparirebbero dal foglio in
+silenzio.
 
-Ed è anche la riga che rientra: si corregge il numero che si vede, e
-l'incollato legge la riga più profonda di ogni ramo, scrivendo le ore nella
-cella di quella voce. Le righe di somma sopra — il pacchetto, la lavorazione,
-il totale della persona — si saltano, perché rileggerle vorrebbe dire scrivere
-la stessa settimana due o tre volte. Vale anche per un foglio esportato da una
-versione di prima, dove i numeri ci sono a ogni livello: conta la riga più
-profonda. Una lavorazione il cui titolo non si riconosce finisce fra le righe
+Una fascia ocra stacca una persona dall'altra: su cinquanta colonne si legge
+scorrendo in orizzontale, e senza una riga piena il punto in cui finisce un
+gruppo si perde fra righe che si somigliano tutte.
+
+Ed è anche la riga che rientra: si corregge il numero che si vede, e l'incollato
+scrive le ore nella cella della voce che quella riga descrive. Le righe di somma
+— il totale della persona, il «Totale settimana» in coda — si saltano, perché
+rileggerle vorrebbe dire scrivere la stessa settimana due volte. Vale anche per
+un foglio esportato da una versione di prima, dove le stesse ore comparivano a
+ogni livello dell'albero: lì conta la riga più profonda, e una riga è una somma
+quando quella sotto è più profonda **e** non ripete il pacchetto. Una lavorazione il cui titolo non si riconosce finisce fra le righe
 ignorate invece di scaricare le sue ore sul pacchetto: sarebbero ore attribuite
 a un lavoro che nessuno ha scelto, e in un consuntivo è peggio di una riga
 mancante — che almeno si vede.
@@ -1139,6 +1144,17 @@ ce ne saranno, e l'elenco delle righe che non si sono capite — una riga persa 
 silenzio, in un consuntivo, è un margine sbagliato che poi nessuno sa da dove
 venga. Le celle passano dalla stessa strada di una cifra battuta a mano, quindi
 `⌘Z` annulla tutto l'incollato in un colpo.
+
+Il terzo foglio, **Voci**, è l'elenco di cosa c'è da fare, in cinque colonne che
+si chiamano come quelle del foglio Persone — Pacchetto, Oggetto, Attività, Ore,
+Persona — così che passando da un foglio all'altro la stessa cosa abbia lo
+stesso nome. Ore iniziali, Δ, la finestra e lo stato non ci sono più: sono la
+storia di una voce e il suo avanzamento, si guardano nell'app dove si cambiano,
+e qui erano quattro colonne che nessuno ordinava e che spingevano fuori schermo
+l'unica domanda che si fa aprendo questo foglio — chi fa cosa, per quante ore.
+Anche qui una fascia ocra stacca una lavorazione dall'altra: con le sotto-voci
+sotto la loro madre, senza una riga piena in mezzo l'elenco è una colonna sola
+di titoli in cui non si vede dove finisce un lavoro.
 
 Fuori dalla prima versione, deciso adesso: niente timesheet automatico, niente
 dipendenze o percorso critico, niente costi in euro.

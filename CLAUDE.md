@@ -233,7 +233,7 @@ che ha già smesso di funzionare.
 | `src/calendarioLavoro.js` | lo specchio del calendario aziendale: cosa c'è nel file su OneDrive e come diventa un evento nella forma di Graph |
 | `src/programma.js` | il Programma di commessa: i conti, le chiavi del carico (`risorsa\|pacchetto\|settimana` più, in coda e facoltativa, la voce), lo stato derivato di una voce, e il carico di una persona su tutte le commesse. Niente rete, niente React: è il file su cui girano le prove |
 | `src/programmaStore.js` | gli stessi programmi su OneDrive: registro, un documento per commessa, `reapply` che unisce per chiave |
-| `src/programmaExcel.js` | il foglio che esce (tre fogli: riepilogo, matrice, voci) e le ore vere che rientrano incollate. Puro, e il foglio Matrice esce nella stessa forma in cui rientra |
+| `src/programmaExcel.js` | il foglio che esce (tre fogli: riepilogo, persone, voci) e le ore vere che rientrano incollate. Puro, e il foglio Persone esce nella stessa forma in cui rientra |
 | `src/xlsx.js` | un `.xlsx` vero senza librerie: lo zip «store» e i fogli con le celle in chiaro. Duecento righe invece di mezzo megabyte di JavaScript |
 | `src/programma/` | la vista: la matrice (pacchetto › voce › sotto-voce › persona, potata da due bottoni) e la sua tastiera, la matrice per persona (in sola lettura, su tutti i programmi accesi), l'elenco voci, il dettaglio, attiva, le voci nuove (a campi o incollate), il riepilogo, la scheda della commessa, la guida |
 | `src/planner/` | la griglia del Piano (misure, colori, conti) e i suoi componenti: settimana, mese, capacità, modale evento |

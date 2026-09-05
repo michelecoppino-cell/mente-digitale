@@ -303,12 +303,12 @@ export default function ProgrammaView({
    *
    * È l'altra metà del giro delle ore vere — si esporta, si corregge la colonna
    * della settimana finita, si rimanda indietro da «Ore registrate» — e per
-   * questo il foglio Matrice esce nella stessa forma in cui rientra. Il perché
+   * questo il foglio Persone esce nella stessa forma in cui rientra. Il perché
    * per esteso è in `programmaExcel.js`.
    */
   function esportaExcel() {
     if (!doc) return;
-    const { nomeFile, byte } = libroProgramma(doc, { settimanaOra, settimane, attivitaAperte });
+    const { nomeFile, byte } = libroProgramma(doc, { settimanaOra, settimane });
     scaricaFile(nomeFile, new Blob([/** @type {BlobPart} */ (/** @type {unknown} */ (byte))], {
       type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     }));

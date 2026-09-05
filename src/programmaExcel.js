@@ -31,8 +31,8 @@
 
 import { xlsx, STILE } from './xlsx.js';
 import {
-  celleConsuntivo, settimaneDellaMatrice, oreSottoRiga, oreRisorsaSettimana, riepilogoPacchetti,
-  alberoVoci, vociDiPacchetto, figlieDi, eFoglia, statoVoce, ETICHETTE_STATO, slug,
+  celleConsuntivo, chiaveCarico, settimaneDellaMatrice, oreSottoRiga, oreRisorsaSettimana, riepilogoPacchetti,
+  alberoVoci, vociDiPacchetto, figlieDi, eFoglia, slug,
 } from './programma.js';
 import { lunediDellaSettimana, meseDellaSettimana, settimanaIso, ymd } from './tempo.js';
 
@@ -56,59 +56,59 @@ const giornoBreve = settimana => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Le celle delle settimane di una riga della matrice, più il totale in coda.
- *
- * Vuote quando le righe qui sotto dicono già le stesse ore: i numeri stanno
- * nell'ultima riga del ramo, e una riga che ha delle figlie a schermo è la loro
- * eco. «Già le stesse» settimana per settimana e non solo in totale — se le
- * figlie non coprono tutto (delle ore lasciate sul pacchetto che nessuna voce
- * reclama, per esempio) la riga i suoi numeri li tiene, altrimenti quelle ore
- * sparirebbero dal foglio in silenzio.
+ * Le celle delle settimane di una riga, più il totale in coda.
  *
  * Lo stile resta anche sulle celle vuote: è la griglia, e a colonne alterne un
  * buco senza bordi si legge come la fine della tabella.
  *
- * @param {number[]} ore                       le ore della riga, settimana per settimana
- * @param {{ ore: number[] }[]} figlie         le righe che le stanno sotto, se ce ne sono
+ * @param {number[]} ore   le ore della riga, settimana per settimana
  * @returns {import('./xlsx.js').Cella[]}
  */
-function celleOre(ore, figlie) {
-  const eco = figlie.length > 0
-    && ore.every((o, i) => o === figlie.reduce((somma, f) => somma + f.ore[i], 0));
+function celleOre(ore) {
   return [
-    ...ore.map(o => ({ v: eco ? '' : (o || ''), s: STILE.ore })),
-    { v: eco ? '' : (ore.reduce((s, o) => s + o, 0) || ''), s: STILE.ore },
+    ...ore.map(o => ({ v: o || '', s: STILE.ore })),
+    { v: ore.reduce((s, o) => s + o, 0) || '', s: STILE.ore },
   ];
 }
 
 /**
- * Le righe del foglio «Matrice»: la stessa forma che ha a schermo — una riga di
- * totale per persona, sotto una riga per ogni pacchetto in cui ha ore, e sotto
- * ancora il lavoro descritto: l'**Oggetto** (la lavorazione di primo livello) e
- * l'**Attività** (la sua sotto-voce). Chi guarda il foglio in riunione chiede
- * «venti ore su B10 a fare cosa?», e finché le colonne erano due la risposta
- * stava solo nel foglio Voci, cioè su un'altra pagina e senza le settimane.
+ * Una riga tutta ocra e senza testo, larga quanto la tabella: è quello che
+ * stacca una persona dalla successiva, o una lavorazione dall'altra. Serve
+ * perché un foglio da cinquanta colonne si legge scorrendo in orizzontale, e
+ * senza una fascia piena il punto in cui finisce un gruppo si perde fra righe
+ * che si somigliano tutte.
+ * @param {number} quante  quante colonne ha la tabella
+ * @returns {import('./xlsx.js').Riga}
+ */
+const separatore = quante => Array.from({ length: quante }, () => ({ v: '', s: STILE.separatore }));
+
+/**
+ * Le righe del foglio «Persone»: per ognuna una riga di totale, e sotto **una
+ * riga per ogni lavoro in cui ha delle ore**, con pacchetto, Oggetto e Attività
+ * scritti per esteso su quella stessa riga.
+ *
+ * **Perché una riga sola e non tre.** Prima il foglio ricalcava l'albero — una
+ * riga per il pacchetto, una per l'Oggetto, una per l'Attività — e le prime due
+ * erano quasi sempre vuote da parte a parte, perché i numeri stanno solo
+ * nell'ultimo livello: tre righe per dire un dato, e su cinquanta settimane il
+ * dato finiva a schermate di distanza dal nome del pacchetto che lo descrive.
+ * Adesso le colonne si ripetono — due Attività dello stesso pacchetto scrivono
+ * due volte pacchetto e Oggetto — ed è esattamente quello che rende la tabella
+ * ordinabile e filtrabile in Excel, che è la cosa che con l'albero non si
+ * poteva fare.
+ *
+ * **Quello che non è sceso fino in fondo tiene la sua riga.** Ore date al
+ * pacchetto e che nessuna voce reclama, oppure date a un Oggetto senza scendere
+ * su un'Attività: sono righe con le colonne di destra vuote, non ore da
+ * spalmare su una voce scelta a caso. Indovinare è quello che qui non si fa, e
+ * lasciarle fuori sarebbe peggio — sparirebbero dal foglio in silenzio.
  *
  * **Le righe di totale restano vuote nella colonna del pacchetto**, ed è quello
  * che le rende riconoscibili rientrando: una riga senza pacchetto è una somma,
  * e una somma non si reimporta — si ricalcola.
  *
- * **I numeri stanno solo nell'ultima riga del ramo.** È la stessa regola della
- * matrice a schermo: pacchetto, Oggetto e Attività dicono le ore dello stesso
- * lavoro viste da tre altezze, e scritte tutte e tre diventavano tre righe
- * identiche incolonnate su venti settimane — il dato e le sue due eco, senza un
- * modo di distinguerli. Quindi una riga che ha sotto di sé delle figlie lascia
- * vuote le settimane e il totale, e le ore si leggono dove il lavoro è
- * descritto per esteso.
- *
- * L'eco si spegne solo quando è davvero un'eco: se le figlie mostrate non
- * coprono tutte le ore della riga — succede quando una persona ha delle ore
- * lasciate sul pacchetto che nessuna voce reclama — la riga i suoi numeri li
- * tiene, altrimenti quelle ore sparirebbero dal foglio senza che niente lo
- * dica.
- *
- * È anche la riga che rientra: chi corregge una settimana corregge il numero
- * che vede, e `leggiOreRegistrate` legge la riga più profonda di ogni ramo.
+ * È anche il foglio che rientra: chi corregge una settimana corregge il numero
+ * che vede, e `leggiOreRegistrate` rilegge queste stesse righe.
  *
  * @param {DocProgramma} doc
  * @param {string[]} settimane
@@ -118,6 +118,7 @@ function celleOre(ore, figlie) {
 export function righeMatrice(doc, settimane, settimanaOra) {
   /** @type {import('./xlsx.js').Riga[]} */
   const righe = [];
+  const larghezza = 4 + settimane.length + 1;
 
   // Tre righe di intestazione: il mese solo quando cambia (una fascia, come a
   // schermo), la settimana ISO — che è **la chiave**, e per questo si scrive
@@ -137,11 +138,19 @@ export function righeMatrice(doc, settimane, settimanaOra) {
   righe.push(['', { v: 'lunedì', s: STILE.tenue }, '', '',
     ...settimane.map(w => ({ v: giornoBreve(w) + (w === settimanaOra ? ' ◂' : ''), s: STILE.tenue })), '']);
 
+  // Chi non ha ore non compare, e il separatore lo sa: contare sull'indice
+  // avrebbe messo una fascia ocra subito sotto l'intestazione ogni volta che la
+  // prima persona dell'elenco non ha niente in queste settimane.
+  let gia = false;
   for (const risorsa of doc.risorse) {
     // Le ore del pacchetto sono tutte le sue: quelle date al pacchetto e quelle
     // finite su una voce. Leggere la sola cella a tre segmenti faceva un foglio
     // in cui la riga di totale non era la somma di quelle sotto.
     const suoi = doc.pacchetti.filter(p => settimane.some(w => oreSottoRiga(doc, risorsa.nome, p.id, null, w) > 0));
+    if (!suoi.length) continue;
+    if (gia) righe.push(separatore(larghezza));
+    gia = true;
+
     const totali = settimane.map(w => oreRisorsaSettimana(doc, risorsa.nome, w));
     righe.push([
       { v: risorsa.nome, s: STILE.totale },
@@ -149,55 +158,54 @@ export function righeMatrice(doc, settimane, settimanaOra) {
       ...totali.map(o => ({ v: o || '', s: STILE.totale })),
       { v: totali.reduce((s, o) => s + o, 0) || '', s: STILE.totale },
     ]);
+
     for (const p of suoi) {
-      const ore = settimane.map(w => oreSottoRiga(doc, risorsa.nome, p.id, null, w));
-      // Il dettaglio si calcola prima delle righe che lo mostrano: per sapere se
-      // la riga del pacchetto è ancora un dato o solo l'eco di quelle sotto,
-      // bisogna già sapere quali sotto ci saranno.
-      //
-      // Due livelli e non di più: sotto l'Attività non c'è una terza colonna, e
+      // Due livelli e non di più: sotto l'Attività non c'è una quarta colonna, e
       // una sotto-sotto-voce resta contata dentro la sua — `oreSottoRiga` dà
       // sempre il totale del ramo, quindi la somma torna comunque.
+      //
+      // Solo il lavoro in cui questa persona ha davvero delle ore: l'elenco
+      // completo delle voci è il foglio Voci, e ripeterlo sotto ogni persona
+      // farebbe dieci volte le righe con dentro delle colonne vuote.
       const dettaglio = vociDiPacchetto(doc, p.id, 2)
         .map(({ voce, livello }) => ({
           voce,
           livello,
           ore: settimane.map(w => oreSottoRiga(doc, risorsa.nome, p.id, voce.id, w)),
         }))
-        // Solo il lavoro in cui questa persona ha davvero delle ore: l'elenco
-        // completo delle voci è il foglio Voci, e ripeterlo sotto ogni persona
-        // farebbe dieci volte le righe con dentro delle colonne vuote.
         .filter(d => d.ore.some(o => o > 0));
 
-      righe.push([
-        '',
-        p.nome,
-        '', '',
-        ...celleOre(ore, dettaglio.filter(d => d.livello === 0)),
-      ]);
-      dettaglio.forEach(({ voce, livello, ore: sue }, i) => {
+      /** Quello che alla riga resta dopo le sue figlie, settimana per settimana.
+       * @param {number[]} ore @param {{ ore: number[] }[]} figlie */
+      const resto = (ore, figlie) => ore.map((o, i) => o - figlie.reduce((s, f) => s + f.ore[i], 0));
+
+      const madri = dettaglio.filter(d => d.livello === 0);
+      const orePacchetto = settimane.map(w => oreSottoRiga(doc, risorsa.nome, p.id, null, w));
+      const restoPacchetto = resto(orePacchetto, madri);
+      // Le ore rimaste sul pacchetto vengono per prime: sono il lavoro non
+      // ancora descritto, e leggerle in cima dice subito quanto ne manca.
+      if (restoPacchetto.some(o => o > 0)) righe.push(['', p.nome, '', '', ...celleOre(restoPacchetto)]);
+
+      for (const madre of madri) {
         // Le figlie di una lavorazione sono le righe di secondo livello che la
-        // seguono, fino alla prossima di primo: `vociDiPacchetto` dà l'albero in
-        // ordine, madre e poi figlie, ed è l'ordine in cui il foglio le scrive.
+        // seguono nell'albero: `vociDiPacchetto` le dà in ordine, madre e poi
+        // figlie, ed è l'ordine in cui il foglio le scrive.
+        const dopo = dettaglio.indexOf(madre) + 1;
         const figlie = [];
-        if (livello === 0) {
-          for (let j = i + 1; j < dettaglio.length && dettaglio[j].livello > 0; j++) figlie.push(dettaglio[j]);
+        for (let j = dopo; j < dettaglio.length && dettaglio[j].livello > 0; j++) figlie.push(dettaglio[j]);
+        const restoMadre = resto(madre.ore, figlie);
+        if (!figlie.length || restoMadre.some(o => o > 0)) {
+          righe.push(['', p.nome, madre.voce.titolo, '', ...celleOre(figlie.length ? restoMadre : madre.ore)]);
         }
-        righe.push([
-          '',
-          // Il pacchetto resta vuoto come il nome della persona: si eredita da
-          // sopra, ed è anche quello che tiene queste righe fuori dal rientro
-          // quando sono una somma.
-          '',
-          livello === 0 ? voce.titolo : '',
-          livello === 0 ? '' : voce.titolo,
-          ...celleOre(sue, figlie),
-        ]);
-      });
+        for (const figlia of figlie) {
+          righe.push(['', p.nome, madre.voce.titolo, figlia.voce.titolo, ...celleOre(figlia.ore)]);
+        }
+      }
     }
   }
 
   const perSettimana = settimane.map(w => doc.risorse.reduce((s, r) => s + oreRisorsaSettimana(doc, r.nome, w), 0));
+  righe.push(separatore(larghezza));
   righe.push([
     { v: 'Totale settimana', s: STILE.totale },
     '', '', '',
@@ -207,25 +215,41 @@ export function righeMatrice(doc, settimane, settimanaOra) {
   return righe;
 }
 
-/** @param {DocProgramma} doc @param {Set<string>} attivitaAperte @returns {import('./xlsx.js').Riga[]} */
-function righeVoci(doc, attivitaAperte) {
+/**
+ * Le righe del foglio «Voci»: l'elenco di cosa c'è da fare, in colonne che si
+ * chiamano come quelle del foglio Persone — Pacchetto, Oggetto, Attività — così
+ * che passando da un foglio all'altro la stessa cosa abbia lo stesso nome.
+ *
+ * **Cinque colonne e non dieci.** Ore iniziali, Δ, finestra e stato sono la
+ * storia di una voce e il suo avanzamento: si guardano nell'app, dove si
+ * cambiano. Qui erano quattro colonne che nessuno ordinava e che spingevano
+ * fuori schermo l'unica domanda che si fa aprendo questo foglio — chi fa cosa,
+ * per quante ore.
+ *
+ * Una fascia ocra stacca una lavorazione dall'altra: con le sotto-voci sotto la
+ * loro madre, senza una riga piena in mezzo l'elenco è una colonna sola di
+ * titoli in cui non si vede dove finisce un lavoro.
+ *
+ * @param {DocProgramma} doc
+ * @returns {import('./xlsx.js').Riga[]}
+ */
+export function righeVoci(doc) {
   /** @type {import('./xlsx.js').Riga[]} */
   const righe = [[
     { v: 'Pacchetto', s: STILE.intestazione },
-    { v: 'Lavorazione', s: STILE.intestazione },
-    { v: 'Sotto-voce', s: STILE.intestazione },
+    { v: 'Oggetto', s: STILE.intestazione },
+    { v: 'Attività', s: STILE.intestazione },
     { v: 'Ore', s: STILE.intestazione },
-    { v: 'Ore iniziali', s: STILE.intestazione },
-    { v: 'Δ', s: STILE.intestazione },
     { v: 'Persona', s: STILE.intestazione },
-    { v: 'Da', s: STILE.intestazione },
-    { v: 'A', s: STILE.intestazione },
-    { v: 'Stato', s: STILE.intestazione },
   ]];
+  let gia = false;
   for (const { voce, livello } of alberoVoci(doc)) {
     const pacchetto = doc.pacchetti.find(p => p.id === voce.pacchettoId);
     const contenitore = !eFoglia(doc, voce.id);
-    const stato = statoVoce(voce, attivitaAperte);
+    if (livello === 0) {
+      if (gia) righe.push(separatore(5));
+      gia = true;
+    }
     righe.push([
       pacchetto?.nome || '',
       // Due colonne invece del rientro: in Excel un rientro non si filtra e non
@@ -233,14 +257,9 @@ function righeVoci(doc, attivitaAperte) {
       livello === 0 ? voce.titolo : '',
       livello === 0 ? '' : voce.titolo,
       { v: voce.ore || '', s: contenitore ? STILE.totale : STILE.ore },
-      { v: voce.oreIniziali || '', s: STILE.ore },
-      { v: voce.ore - voce.oreIniziali || '', s: STILE.ore },
       // Più persone nella stessa cella, separate da virgola: è la forma in cui
       // l'incollato le rilegge.
       voce.risorse.join(', '),
-      voce.finestra?.da || '',
-      voce.finestra?.a || '',
-      contenitore ? `${doc.voci.filter(v => v.padreId === voce.id).length} sotto-voci` : ETICHETTE_STATO[stato],
     ]);
   }
   return righe;
@@ -289,23 +308,22 @@ function righeRiepilogo(doc, settimanaOra) {
   righe.push([{ v: 'Speso + a finire', s: STILE.intestazione }, { v: totale.previsione, s: STILE.ore }]);
   righe.push([{ v: 'Margine', s: STILE.totale }, { v: totale.margine, s: STILE.totale }]);
   righe.push([]);
-  righe.push([{ v: 'Per rimandare indietro le ore vere: nel foglio Matrice correggi le celle della settimana finita, poi selezionale con le colonne di sinistra e la riga delle settimane, copia e incolla in Programma › Matrice › Ore registrate.', s: STILE.tenue }]);
+  righe.push([{ v: 'Per rimandare indietro le ore vere: nel foglio Persone correggi le celle della settimana finita, poi selezionale con le colonne di sinistra e la riga delle settimane, copia e incolla in Programma › Matrice › Ore registrate.', s: STILE.tenue }]);
   return righe;
 }
 
 /**
  * Il libro intero. Tre fogli, in ordine di chi li apre: il Riepilogo è la
- * pagina che si guarda in riunione, la Matrice è quella che torna indietro con
- * le ore vere, le Voci sono l'elenco di cosa c'è da fare.
+ * pagina che si guarda in riunione, le Persone sono quelle che tornano indietro
+ * con le ore vere, le Voci sono l'elenco di cosa c'è da fare.
  *
  * @param {DocProgramma} doc
- * @param {{ settimanaOra?: string, settimane?: string[], attivitaAperte?: Set<string> }} [opts]
+ * @param {{ settimanaOra?: string, settimane?: string[] }} [opts]
  * @returns {{ nomeFile: string, byte: Uint8Array }}
  */
 export function libroProgramma(doc, opts = {}) {
   const ora = opts.settimanaOra || settimanaIso();
   const settimane = opts.settimane?.length ? opts.settimane : settimaneDellaMatrice(doc, ora);
-  const aperte = opts.attivitaAperte || new Set();
 
   const byte = xlsx([
     {
@@ -314,7 +332,10 @@ export function libroProgramma(doc, opts = {}) {
       larghezze: [30, 8, 10, 10, 10, 10, 13],
     },
     {
-      nome: 'Matrice',
+      // «Persone» e non «Matrice»: il foglio è una riga per persona e per
+      // lavoro, e la matrice — pacchetto per settimana — è un'altra cosa, che
+      // sta a schermo.
+      nome: 'Persone',
       righe: righeMatrice(doc, settimane, ora),
       // Le colonne di sinistra larghe, le settimane strette: è la stessa
       // proporzione che rende leggibile la matrice a schermo.
@@ -326,8 +347,8 @@ export function libroProgramma(doc, opts = {}) {
     },
     {
       nome: 'Voci',
-      righe: righeVoci(doc, aperte),
-      larghezze: [24, 34, 34, 8, 10, 7, 12, 10, 10, 14],
+      righe: righeVoci(doc),
+      larghezze: [24, 34, 34, 8, 16],
       blocca: { riga: 1, colonna: 0 },
     },
   ]);
@@ -406,9 +427,10 @@ export function interpretaSettimana(testo, note) {
 /**
  * Le ore vere, incollate. Due forme, e si riconoscono da sole:
  *
- * 1. **Il rettangolo della matrice** — persona, pacchetto, e una colonna per
- *    settimana. È quello che esce dall'esportazione, quindi è il giro che si fa
- *    davvero: si esporta, si corregge una colonna, si rimanda indietro.
+ * 1. **Il rettangolo del foglio Persone** — persona, pacchetto, Oggetto,
+ *    Attività, e una colonna per settimana. È quello che esce
+ *    dall'esportazione, quindi è il giro che si fa davvero: si esporta, si
+ *    corregge una colonna, si rimanda indietro.
  * 2. **Righe sciolte** `persona | pacchetto | settimana | ore` — quello che
  *    esce da un gestionale, o che si scrive a mano per tre correzioni.
  *
@@ -460,17 +482,29 @@ export function leggiOreRegistrate(doc, testo, opts = {}) {
   /**
    * @param {string} persona @param {string} pacchetto @param {string} settimana
    * @param {number} ore @param {string} riga @param {string|null} [voceId]
+   * @param {boolean} [letterale]  la riga è già una cella sola, e non ne assorbe altre
    */
-  const metti = (persona, pacchetto, settimana, ore, riga, voceId = null) => {
+  const metti = (persona, pacchetto, settimana, ore, riga, voceId = null, letterale = false) => {
     const r = doc.risorse.find(x => uguale(x.nome, persona));
     const p = doc.pacchetti.find(x => uguale(x.nome, pacchetto));
     if (!r || !p) { ignorate.push(riga); return; }
-    // Un consuntivo sostituisce: se quelle ore stanno su una voce si riscrive
-    // quella cella, invece di aggiungerne una sul pacchetto — due celle per la
-    // stessa settimana sarebbero la settimana contata due volte. Con una voce
-    // la sostituzione è ristretta al suo ramo: le altre voci del pacchetto sono
-    // un altro lavoro, e non le riguarda.
-    Object.assign(celle, celleConsuntivo(doc, r.nome, p.id, settimana, ore, voceId));
+    if (letterale) {
+      // Nel foglio piatto ogni riga è **una cella e basta**: le ore non
+      // attribuite a nessuna voce hanno la loro riga, e quelle di ogni voce la
+      // loro. Farle assorbire — che è quello che serve quando la riga è il
+      // totale del pacchetto — vorrebbe dire che la riga del solo pacchetto
+      // butta via le ore delle righe di voce che le stanno accanto nello stesso
+      // incollato, e viceversa: due righe dello stesso rettangolo che si
+      // cancellano a vicenda, con l'ultima che vince.
+      celle[chiaveCarico(r.nome, p.id, settimana, voceId)] = ore;
+    } else {
+      // Un consuntivo sostituisce: se quelle ore stanno su una voce si riscrive
+      // quella cella, invece di aggiungerne una sul pacchetto — due celle per la
+      // stessa settimana sarebbero la settimana contata due volte. Con una voce
+      // la sostituzione è ristretta al suo ramo: le altre voci del pacchetto sono
+      // un altro lavoro, e non le riguarda.
+      Object.assign(celle, celleConsuntivo(doc, r.nome, p.id, settimana, ore, voceId));
+    }
     persone.add(r.nome);
     settimaneViste.add(settimana);
   };
@@ -506,6 +540,17 @@ export function leggiOreRegistrate(doc, testo, opts = {}) {
     const primaSettimana = colonne.findIndex(Boolean);
     const corpo = righe.slice(intestazione + 1).filter(r => r.some(c => c));
 
+    // Le due forme del foglio, e si distinguono da una cosa sola: nel foglio
+    // piatto di adesso pacchetto e Oggetto stanno **sulla stessa riga**, in
+    // quello a scalini di prima non capitava mai. Serve saperlo perché nel
+    // primo ogni riga è una cella e nel secondo le righe di sopra sono il
+    // totale di quelle di sotto — e trattare le prime come le seconde vuol dire
+    // che due righe dello stesso incollato si cancellano a vicenda.
+    // `primaSettimana > 2` prima di tutto: in un rettangolo con le sole persona
+    // e pacchetto davanti, la terza colonna è già una settimana, e senza questa
+    // guardia ogni riga con delle ore passava per una riga piatta.
+    const piatto = primaSettimana > 2 && corpo.some(r => r[1] && r[2]);
+
     // Quanto è profonda una riga: 0 la somma di una persona, 1 il pacchetto, 2
     // l'Oggetto, 3 l'Attività. È l'ultima colonna descrittiva che ha riempito.
     /** @param {string[]} riga */
@@ -533,14 +578,20 @@ export function leggiOreRegistrate(doc, testo, opts = {}) {
         titoli.push(riga[c]);
       }
 
-      // Le ore stanno nell'ultima riga di ogni ramo — è come le scrive il
-      // foglio che esce. Una riga che ne ha sotto una più profonda è la loro
-      // somma: rileggerla scriverebbe la stessa settimana due o tre volte, che
-      // è il margine sbagliato che si scopre tre settimane dopo. Vale anche per
-      // i fogli esportati da una versione di prima, dove la somma i numeri li
-      // portava: si legge il dettaglio, che dice le stesse ore più a fondo.
+      // Una riga di somma non si rilegge: scriverebbe la stessa settimana due o
+      // tre volte, che è il margine sbagliato che si scopre tre settimane dopo.
+      //
+      // Si riconosce da due cose insieme: la riga sotto è più profonda **e**
+      // non ripete il pacchetto. Il secondo pezzo è quello che distingue le due
+      // forme del foglio. In quella di prima l'albero si scriveva a scalini —
+      // pacchetto, poi Oggetto, poi Attività, ognuno con le colonne di sinistra
+      // vuote — e le righe di sopra erano l'eco di quelle sotto. In quella di
+      // adesso ogni riga è già una foglia e ripete pacchetto e Oggetto per
+      // esteso: guardare solo la profondità avrebbe buttato via la riga delle
+      // ore lasciate sul pacchetto ogni volta che dopo di lei ne veniva una
+      // descritta più a fondo, cioè quasi sempre.
       const sotto = corpo[i + 1];
-      if (sotto && profondita(sotto) > prof) return;
+      if (sotto && profondita(sotto) > prof && !sotto[1]) return;
       // Una riga senza pacchetto è la somma di una persona: si ricalcola, non
       // si reimporta. Reimportarla scriverebbe il totale dentro un pacchetto.
       if (!prof || !pacchetto) return;
@@ -568,7 +619,10 @@ export function leggiOreRegistrate(doc, testo, opts = {}) {
         // seleziona tutto il rettangolo, e le altre colonne sono vuote perché
         // non le ha toccate, non perché quelle ore non ci siano più.
         if (ore === null) continue;
-        metti(persona, pacchetto, settimana, ore, riga.join(' | '), voceId);
+        // Nel foglio piatto solo la riga dell'Attività è il totale di un ramo
+        // (sotto di lei possono esserci sotto-voci che il foglio non mostra):
+        // quelle sopra sono già la loro cella, e non devono assorbire niente.
+        metti(persona, pacchetto, settimana, ore, riga.join(' | '), voceId, piatto && prof < 3);
         scritta = true;
       }
       if (!scritta) ignorate.push(riga.join(' | '));

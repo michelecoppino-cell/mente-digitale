@@ -153,6 +153,7 @@ export const STILE = {
   totale: 3,         // grassetto e numero: le righe e le colonne di somma
   tenue: 4,          // grigio piccolo: la fascia dei mesi, le note
   titolo: 5,         // il nome della commessa in cima
+  separatore: 6,     // fondo ocra, senza testo: la riga che stacca due gruppi
 };
 
 /** @param {string} s @returns {string} */
@@ -192,9 +193,14 @@ function rigaXml(righe, r) {
     const { v, s } = (cella && typeof cella === 'object' && 'v' in cella)
       ? cella
       : { v: /** @type {Valore} */ (cella), s: undefined };
-    if (v === null || v === undefined || v === '') return '';
     const rif = `${lettera(c)}${r + 1}`;
     const stile = s ? ` s="${s}"` : '';
+    // Una cella vuota con uno stile si scrive lo stesso: è come si disegna una
+    // riga di separazione — nessun testo, solo il fondo — e senza questo ramo
+    // sparivano tutte insieme al loro contenuto, cioè la riga ocra non esisteva.
+    // Senza stile invece non si scrive niente: un foglio pieno di celle vuote
+    // dichiarate è solo peso.
+    if (v === null || v === undefined || v === '') return s ? `<c r="${rif}"${stile}/>` : '';
     return typeof v === 'number' && Number.isFinite(v)
       ? `<c r="${rif}"${stile}><v>${v}</v></c>`
       : `<c r="${rif}"${stile} t="inlineStr"><is><t xml:space="preserve">${xml(String(v))}</t></is></c>`;
@@ -228,23 +234,25 @@ const STILI_XML = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <font><sz val="9"/><color rgb="FF808080"/><name val="Calibri"/></font>
 <font><b/><sz val="14"/><name val="Calibri"/></font>
 </fonts>
-<fills count="3">
+<fills count="4">
 <fill><patternFill patternType="none"/></fill>
 <fill><patternFill patternType="gray125"/></fill>
 <fill><patternFill patternType="solid"><fgColor rgb="FFEFEDE7"/><bgColor indexed="64"/></patternFill></fill>
+<fill><patternFill patternType="solid"><fgColor rgb="FFD4A44A"/><bgColor indexed="64"/></patternFill></fill>
 </fills>
 <borders count="2">
 <border><left/><right/><top/><bottom/><diagonal/></border>
 <border><left/><right/><top style="thin"><color rgb="FFBBBBBB"/></top><bottom/><diagonal/></border>
 </borders>
 <cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>
-<cellXfs count="6">
+<cellXfs count="7">
 <xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>
 <xf numFmtId="0" fontId="1" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1"/>
 <xf numFmtId="164" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/>
 <xf numFmtId="164" fontId="1" fillId="0" borderId="1" xfId="0" applyNumberFormat="1" applyFont="1" applyBorder="1"/>
 <xf numFmtId="0" fontId="2" fillId="0" borderId="0" xfId="0" applyFont="1"/>
 <xf numFmtId="0" fontId="3" fillId="0" borderId="0" xfId="0" applyFont="1"/>
+<xf numFmtId="0" fontId="0" fillId="3" borderId="0" xfId="0" applyFill="1"/>
 </cellXfs>
 <cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>
 </styleSheet>`;
