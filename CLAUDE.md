@@ -115,6 +115,15 @@ rientra incollata. Lì la regola ha un'eccezione, perché il foglio non ha la ri
 della riga, la riga i suoi numeri li tiene — meglio un'eco che delle ore sparite
 in silenzio.
 
+**Il Gantt disegna dove le ore stanno, non i rami.** È l'eccezione dichiarata
+alla regola qui sopra, e vale solo lì: nella matrice una riga somma il suo ramo
+perché le righe si aprono, e un totale senza le righe che lo fanno è un numero
+che non si può seguire. Nel Gantt non si apre niente, quindi non c'è nessuna eco
+da evitare — c'è invece da non disegnare la stessa barra su due righe
+incolonnate. Ogni cella del carico finisce in una riga e in una sola: la sua
+voce, o la voce che la adotta, o — se nessuna la reclama — il pacchetto, marcato
+«sul pacchetto». La somma delle righe è il carico della finestra, ed è una prova.
+
 **Il rosso è per le settimane che si possono ancora cambiare.** Prima di quella
 corrente la saturazione non si colora, in tutt'e due le matrici: una settimana
 andata è un fatto, non un allarme, e il rosso su una colonna che nessuno può
@@ -235,7 +244,7 @@ che ha già smesso di funzionare.
 | `src/programmaStore.js` | gli stessi programmi su OneDrive: registro, un documento per commessa, `reapply` che unisce per chiave |
 | `src/programmaExcel.js` | il foglio che esce (tre fogli: riepilogo, persone, voci) e le ore vere che rientrano incollate. Puro, e il foglio Persone esce nella stessa forma in cui rientra |
 | `src/xlsx.js` | un `.xlsx` vero senza librerie: lo zip «store» e i fogli con le celle in chiaro. Duecento righe invece di mezzo megabyte di JavaScript |
-| `src/programma/` | la vista: la matrice (pacchetto › voce › sotto-voce › persona, potata da due bottoni) e la sua tastiera, la matrice per persona (in sola lettura, su tutti i programmi accesi), l'elenco voci, il dettaglio, attiva, le voci nuove (a campi o incollate), il riepilogo, la scheda della commessa, la guida |
+| `src/programma/` | la vista: la matrice (pacchetto › voce › sotto-voce › persona, potata da due bottoni) e la sua tastiera, il Gantt (una riga per attività, in ordine di quando finiscono, in sola lettura), la matrice per persona (in sola lettura, su tutti i programmi accesi), l'elenco voci, il dettaglio, attiva, le voci nuove (a campi o incollate), il riepilogo, la scheda della commessa, la guida |
 | `src/planner/` | la griglia del Piano (misure, colori, conti) e i suoi componenti: settimana, mese, capacità, modale evento |
 | `src/tokens.css` | colori, tipografia, spazi, raggi — la sola fonte |
 | `src/tempo.js` | il giorno locale, l'ora, le durate — scritti una volta sola |

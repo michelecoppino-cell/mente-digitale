@@ -713,7 +713,7 @@ verifica(byte[0] === 0x50 && byte[1] === 0x4b && byte[2] === 0x03 && byte[3] ===
 // La coda dell'indice va trovata dove Excel la cerca: negli ultimi 22 byte.
 const coda = new DataView(byte.buffer, byte.byteLength - 22);
 verifica(coda.getUint32(0, true) === 0x06054b50, 'lo zip si chiude con la fine dell\'indice');
-verifica(coda.getUint16(8, true) === 8, 'e dentro ci sono otto pezzi: le quattro parti fisse, gli stili, tre fogli');
+verifica(coda.getUint16(8, true) === 9, 'e dentro ci sono nove pezzi: le quattro parti fisse, gli stili, quattro fogli');
 const dentro = new TextDecoder().decode(byte);
 verifica(dentro.includes('2026-W12') && dentro.includes('Marco') && dentro.includes('B10 Fondazioni'),
   'le settimane, le persone e i pacchetti sono scritti in chiaro nelle celle');
@@ -954,6 +954,83 @@ const dopoGiro = Object.entries(rientrato.celle).reduce((d, [k, o]) => pg.conCar
 verifica(pg.oreRisorsaSettimana(dopoGiro, 'Marco', '2026-W12') === 26
   && pg.oreRisorsaSettimana(dopoGiro, 'Luca', '2026-W13') === 14.5,
   'il foglio esce e rientra senza spostare niente: è il giro che si fa davvero');
+
+console.log('\nIl Gantt: cosa finisce quando\n');
+
+// Le stesse settimane della matrice, sulla commessa grande: Marco ha venti ore
+// lasciate su B10 — che Plinti adotta, perché è l'unica voce del pacchetto che
+// lo propone — sei su C10, dove nessuna voce lo nomina, e Luca quattordici e
+// mezza su B10, adottate da Travi rovesce.
+const settimaneG = ['2026-W12', '2026-W13'];
+const fila = pg.gantt(big, settimaneG);
+
+// La prova che conta: ogni cella del carico finisce in una riga e in una sola.
+// Sommare i rami invece delle celle avrebbe disegnato la stessa barra su due
+// righe incolonnate, e il totale del foglio sarebbe stato il doppio del vero.
+verifica(fila.reduce((s, r) => s + r.totale, 0)
+  === pg.oreCarico(big, { da: settimaneG[0], a: settimaneG[1] }),
+  'il Gantt conta le ore una volta sola: la somma delle righe è il carico della finestra');
+
+const rigaGPlinti = fila.find(r => r.attivita === 'Plinti');
+verifica(rigaGPlinti && rigaGPlinti.ore[0] === 20 && rigaGPlinti.chiSettimana[0].join() === 'Marco',
+  'le ore lasciate sul pacchetto le disegna la voce che le adotta, con dentro il nome di chi le fa');
+verifica(rigaGPlinti.oggetto === 'Fondazioni corpo A' && rigaGPlinti.pacchetto === 'B10 Fondazioni',
+  'e la riga si sa da dove viene: due voci si chiamano «Calcolo» in due pacchetti diversi');
+
+// Chi nessuna voce reclama tiene la sua riga, marcata dal fatto che di voce non
+// ne ha nessuna: sparire da una schermata e continuare a pesare sui totali è la
+// cosa che quelle ore non devono fare.
+const suC10 = fila.find(r => r.pacchetto === 'C10 Carpenterie');
+verifica(suC10 && suC10.voceId === null && suC10.oggetto === '' && suC10.totale === 6,
+  'le ore che nessuna voce reclama restano sulla riga del pacchetto invece di sparire');
+
+// L'ordine *è* la vista: la riga più in alto è la cosa che si chiude prima.
+verifica(fila.map(r => r.a).every((a, i) => i === 0 || a >= fila[i - 1].a),
+  'le righe stanno in ordine di quando finiscono');
+const rigaGTravi = fila.find(r => r.attivita === 'Travi rovesce');
+verifica(fila.indexOf(rigaGPlinti) < fila.indexOf(rigaGTravi),
+  'e Plinti, che finisce in W12, viene prima di Travi rovesce, che finisce in W13');
+
+// Quello che non è programmato non ha barre, e senza di lui il Gantt racconta
+// una commessa che finisce prima di quanto finirà.
+const conCoda = pg.gantt(pg.conVoci(big, [
+  { titolo: 'Muri di sostegno', pacchettoId: bigB10.id, ore: 60, risorse: ['Sara'] },
+]), settimaneG, { conNonProgrammate: true });
+const muri = conCoda.find(r => r.attivita === '' && r.oggetto === 'Muri di sostegno');
+verifica(muri && muri.totale === 0 && muri.stimate === 60 && muri.chi.join() === 'Sara',
+  'una voce senza nemmeno un\'ora resta in coda, con la sua stima e chi la voce propone');
+verifica(conCoda.indexOf(muri) === conCoda.length - 1,
+  'e sta in fondo: in mezzo alle altre sarebbe una tabella per metà vuota');
+verifica(pg.gantt(big, settimaneG, { pacchetti: [bigC10.id] }).every(r => r.pacchetto === 'C10 Carpenterie'),
+  'il filtro dei pacchetti vale anche qui: è la stessa barra di tutte le altre schede');
+
+// ── Il foglio «Gantt» ────────────────────────────────────────────────────────
+// La cella porta il nome di chi ci lavora, su fondo del colore del pacchetto:
+// le ore stanno nel foglio Persone, che è quello fatto per contarle. Qui la
+// domanda è un'altra, e si legge scorrendo in orizzontale.
+const conColore = pg.conPacchettoAggiornato(big, bigB10.id, { colore: '#3366cc' });
+const foglioGantt = excel.righeGantt(conColore, settimaneG, '2026-W13');
+verifica(foglioGantt[1].map(c => c.v).slice(0, 4).join('|') === 'Pacchetto|Oggetto|Attività|Chi'
+  && foglioGantt[1][4].v === '2026-W12',
+  'il foglio Gantt si apre con le stesse colonne degli altri due, più «Chi»');
+const cellaPlinti = foglioGantt.find(r => r[2] === 'Plinti');
+verifica(cellaPlinti && cellaPlinti[4].v === 'Marco' && cellaPlinti[5] === '',
+  'e nella cella della settimana c\'è il nome, non il numero: il numero sta nel foglio Persone');
+verifica(cellaPlinti[4].s === foglio.stileFondo(0) && cellaPlinti[cellaPlinti.length - 1].v === 20,
+  'la cella ha il fondo del suo pacchetto, e il totale della riga resta in coda');
+
+// I fondi sono uno per pacchetto più un neutro in coda, e l'ordine è quello dei
+// pacchetti: costruirlo in due posti vorrebbe dire due ordini diversi, cioè le
+// barre del colore sbagliato.
+const fondi = excel.fondiGantt(conColore);
+verifica(fondi.length === conColore.pacchetti.length + 1 && fondi[0] !== fondi[fondi.length - 1],
+  'il libro dichiara un fondo per pacchetto, più il neutro di chi un colore non ce l\'ha');
+verifica(foglio.argb(fondi[0]) === 'FFB1C5EC' && foglio.argb('#gg0011') === 'FFFFFFFF',
+  'il colore del pacchetto esce schiarito — nero su blu pieno non si legge — e uno che non si capisce non rompe il file');
+
+const conGantt = new TextDecoder().decode(excel.libroProgramma(conColore, { settimanaOra: '2026-W13' }).byte);
+verifica(conGantt.includes('name="Gantt"') && conGantt.includes('fgColor rgb="FFB1C5EC"'),
+  'e il libro ha la sua linguetta, col colore dichiarato negli stili: senza, le celle sarebbero bianche e non lo direbbe nessun errore');
 
 const delta = excel.differenza(big, lettura.celle);
 verifica(delta.prima === 40.5 && delta.dopo === 47,

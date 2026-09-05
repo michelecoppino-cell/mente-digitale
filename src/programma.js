@@ -1794,6 +1794,154 @@ export function daCollocarePerPacchetto(doc) {
 }
 
 /**
+ * @typedef {object} RigaGantt
+ * @property {string} chiave        la riga, per React e per le prove
+ * @property {string|null} voceId   `null` sulla riga delle ore lasciate al pacchetto
+ * @property {string|null} pacchettoId
+ * @property {string} pacchetto     il nome del pacchetto, o '' se la voce non ne ha
+ * @property {string|null} colore
+ * @property {string} oggetto       la lavorazione: il primo livello del ramo
+ * @property {string} attivita      la sotto-voce, o '' se la riga è la lavorazione stessa
+ * @property {number[]} ore         settimana per settimana
+ * @property {string[][]} chiSettimana  chi ci lavora, settimana per settimana
+ * @property {string[]} chi         chi ci lavora in tutta la riga, in ordine di ore
+ * @property {number} totale
+ * @property {number} stimate       le ore della voce; 0 sulla riga del pacchetto
+ * @property {number} da            l'indice della prima settimana con ore, -1 se non ce ne sono
+ * @property {number} a             l'indice dell'ultima
+ */
+
+/**
+ * Il Gantt: una riga per **attività**, una colonna per settimana, e nella cella
+ * chi ci lavora.
+ *
+ * **Perché non basta la matrice.** La matrice risponde a «questa settimana chi
+ * è pieno» — è la vista in cui si compila, e per farlo tiene le righe raccolte
+ * per pacchetto e per persona. La domanda che resta senza vista è l'altra, ed è
+ * quella che si fa in riunione: *cosa finisce quando*. Con le righe raggruppate
+ * per pacchetto quella risposta si ricava solo leggendo venti righe e tenendo a
+ * mente venti date, che è il modo in cui non si risponde.
+ *
+ * **Una riga per dove le ore stanno davvero.** Ogni cella del carico finisce in
+ * una riga e una sola: quella della sua voce, oppure — per le celle a tre
+ * segmenti, lasciate sul pacchetto — quella della voce che le adotta
+ * (`voceAdottiva`), e se nessuna le reclama la riga del pacchetto, marcata
+ * «sul pacchetto». Non è la regola dell'ultimo livello mostrato ed è voluto:
+ * qui non ci sono righe che si aprono, quindi non c'è nessuna eco da evitare —
+ * c'è invece da non far sparire delle ore, e sommare i rami avrebbe disegnato
+ * la stessa barra su due righe incolonnate.
+ *
+ * **In ordine di quando finiscono.** È il senso stesso della vista: la riga più
+ * in alto è la cosa che si chiude prima, e le ultime righe sono la coda della
+ * commessa. A parità di fine viene prima chi comincia prima; a parità di tutto
+ * resta l'ordine del file, che è quello in cui le voci sono state scritte.
+ *
+ * **Quello che non è programmato non ha barre, e si vede lo stesso.** Con
+ * `conNonProgrammate` le voci foglia senza nemmeno un'ora in queste settimane
+ * restano in coda, in ordine d'albero: sono il lavoro che c'è ma che non è
+ * ancora caduto da nessuna parte, ed è esattamente quello che un Gantt deve
+ * mostrare invece di lasciar credere che la commessa finisca prima.
+ *
+ * @param {DocProgramma} doc
+ * @param {string[]} settimane
+ * @param {{ pacchetti?: string[]|null, conNonProgrammate?: boolean }} [opts]
+ * @returns {RigaGantt[]}
+ */
+export function gantt(doc, settimane, opts = {}) {
+  const tieni = insiemePacchetti(opts.pacchetti);
+  const posto = new Map(settimane.map((w, i) => [w, i]));
+  const vuote = () => settimane.map(() => 0);
+
+  /** @type {Map<string, RigaGantt>} */
+  const righe = new Map();
+  /** Le ore per persona di una riga, per l'ordine di `chi`. @type {Map<string, Map<string, number>>} */
+  const perPersona = new Map();
+
+  /** La riga in cui una cella va a finire, creata alla prima ora che ci cade.
+   * @param {string|null} voceId @param {string|null} pacchettoId */
+  const riga = (voceId, pacchettoId) => {
+    const chiave = voceId ? `v:${voceId}` : `p:${pacchettoId}`;
+    const gia = righe.get(chiave);
+    if (gia) return gia;
+    const catena = voceId ? catenaVoce(doc, voceId) : [];
+    const voce = catena[catena.length - 1] || null;
+    const suo = voce ? pacchettoDelRamo(doc, voce) : pacchettoId;
+    const pacchetto = doc.pacchetti.find(p => p.id === suo) || null;
+    const nuova = {
+      chiave,
+      voceId,
+      pacchettoId: suo,
+      pacchetto: pacchetto?.nome || '',
+      colore: pacchetto?.colore || null,
+      // Oggetto e Attività come nei fogli che escono: il primo livello del ramo
+      // e la voce vera, così la stessa cosa si chiama allo stesso modo dovunque.
+      oggetto: catena[0]?.titolo || '',
+      attivita: catena.length > 1 ? catena[catena.length - 1].titolo : '',
+      ore: vuote(),
+      chiSettimana: settimane.map(() => /** @type {string[]} */ ([])),
+      chi: [],
+      totale: 0,
+      stimate: voce ? voce.ore : 0,
+      da: -1,
+      a: -1,
+    };
+    righe.set(chiave, nuova);
+    perPersona.set(chiave, new Map());
+    return nuova;
+  };
+
+  for (const [chiave, ore] of Object.entries(doc.carico)) {
+    if (!ore) continue;
+    const c = leggiChiaveCarico(chiave);
+    const i = posto.get(c.settimana);
+    if (i === undefined) continue;
+    if (tieni && !tieni.has(c.pacchettoId)) continue;
+    // Una voce cancellata o scartata non ha più una riga: le sue ore tornano
+    // sul pacchetto, che è dove si vedono invece di sparire.
+    const voce = c.voceId ? doc.voci.find(v => v.id === c.voceId && !v.scartata) : null;
+    const destinazione = voce ? voce.id : (c.voceId ? null : voceAdottiva(doc, c.pacchettoId, c.risorsa));
+    const r = riga(destinazione, c.pacchettoId);
+    r.ore[i] += ore;
+    r.totale += ore;
+    if (!r.chiSettimana[i].includes(c.risorsa)) r.chiSettimana[i].push(c.risorsa);
+    const suo = perPersona.get(r.chiave);
+    if (suo) suo.set(c.risorsa, (suo.get(c.risorsa) || 0) + ore);
+  }
+
+  for (const r of righe.values()) {
+    r.da = r.ore.findIndex(o => o > 0);
+    for (let i = r.ore.length - 1; i >= 0; i--) if (r.ore[i] > 0) { r.a = i; break; }
+    // Chi ci lavora, in ordine di ore: il primo nome è quello che sulla riga
+    // conta, ed è l'unico che si legge quando la colonna è stretta.
+    r.chi = [...(perPersona.get(r.chiave) || new Map())]
+      .sort((x, y) => y[1] - x[1] || x[0].localeCompare(y[0]))
+      .map(([nome]) => nome);
+  }
+
+  const ordine = new Map(doc.voci.map((v, i) => [v.id, i]));
+  const fila = [...righe.values()].sort((x, y) => (
+    x.a - y.a || x.da - y.da
+    || (ordine.get(x.voceId || '') ?? Number.MAX_SAFE_INTEGER) - (ordine.get(y.voceId || '') ?? Number.MAX_SAFE_INTEGER)
+  ));
+
+  if (opts.conNonProgrammate) {
+    for (const { voce } of alberoVoci(doc, undefined, { ordine: 'pacchetto' })) {
+      if (voce.scartata || !eFoglia(doc, voce.id) || righe.has(`v:${voce.id}`)) continue;
+      const suo = pacchettoDelRamo(doc, voce);
+      if (tieni && !tieni.has(suo || '')) continue;
+      const r = riga(voce.id, suo);
+      // `riga()` l'ha appena creata: le sue celle sono tutte a zero, e `chi`
+      // resta la proposta della voce — è chi *dovrebbe* farla, ed è la sola
+      // cosa che di una riga non programmata si sa.
+      r.chi = [...voce.risorse];
+      fila.push(r);
+    }
+  }
+
+  return fila;
+}
+
+/**
  * Le voci che stanno per aprirsi e non sono ancora attive. Il Programma
  * **segnala, non crea**: il momento in cui una cosa entra nel pool è una
  * decisione.

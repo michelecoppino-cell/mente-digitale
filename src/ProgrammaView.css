@@ -479,6 +479,66 @@
 .pg-riga-mesi .pg-tot { height: 20px; }
 .pg-riga-testa .pg-tot { height: 36px; font-size: var(--fs-micro); color: var(--muted); }
 
+/* ── Il Gantt ───────────────────────────────────────────────────────────────
+   Le stesse colonne della matrice — stessa griglia, stessa densità, stesse
+   settimane — con in mezzo una colonna in più per i nomi, e nelle celle una
+   barra invece di un numero da scrivere. Riusa `pg-griglia`, `pg-riga`,
+   `pg-nome`, `pg-cella` e `pg-w`: sono due letture dello stesso carico, e due
+   griglie scritte due volte si sarebbero disallineate al primo ritocco. */
+.pg-gantt .pg-nome { flex-direction: column; align-items: flex-start; justify-content: center; gap: 0; }
+.pg-gantt .pg-riga-mesi .pg-nome,
+.pg-gantt .pg-riga-testa .pg-nome { flex-direction: row; align-items: center; }
+.pg-riga-gantt .pg-nome { cursor: pointer; }
+.pg-riga-gantt .pg-nome:hover { background-image: linear-gradient(var(--surface-2), var(--surface-2)); }
+/* Il punto del pacchetto sta sulla riga del titolo, non sopra di essa. */
+.pg-riga-gantt .pg-nome .pg-punto { position: absolute; left: 6px; top: 50%; margin-top: -3px; }
+.pg-riga-gantt .pg-nome { position: relative; padding-left: 18px; }
+.pg-riga-gantt .pg-nome-testo { flex: 0 0 auto; width: 100%; }
+/* Il ramo sopra la riga: due voci si chiamano «Calcolo» in due pacchetti
+   diversi, e senza questa riga in grigio la tabella ha due righe gemelle. */
+.pg-gantt-ramo {
+  width: 100%;
+  font-size: var(--fs-micro);
+  color: var(--disabled);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pg-gantt-chi {
+  flex: 0 0 112px;
+  width: 112px;
+  display: flex;
+  align-items: center;
+  padding: 0 var(--sp-3);
+  border-bottom: 1px solid var(--line-soft);
+  font-size: var(--fs-micro);
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pg-densita-anno .pg-gantt-chi { flex-basis: 84px; width: 84px; }
+.pg-gantt .pg-riga-mesi .pg-gantt-chi { height: 20px; border-bottom: 0; }
+.pg-gantt .pg-riga-testa .pg-gantt-chi { height: 36px; }
+/* La barra: riempie la cella da bordo a bordo, così due settimane di fila
+   fanno una fascia continua, e si arrotonda solo dove il lavoro comincia e
+   dove finisce — che è quello che rende leggibile la durata da lontano. */
+.pg-barra-gantt {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 15px;
+  overflow: hidden;
+  color: var(--text);
+  font-size: var(--fs-micro);
+  font-variant-numeric: tabular-nums;
+}
+.pg-barra-inizio { border-top-left-radius: var(--r-sm); border-bottom-left-radius: var(--r-sm); }
+.pg-barra-fine { border-top-right-radius: var(--r-sm); border-bottom-right-radius: var(--r-sm); }
+.pg-densita-anno .pg-barra-ore { display: none; }
+.pg-riga-gantt .pg-cella { padding: 0; }
+
 .pg-legenda {
   flex: 0 0 auto;
   display: flex;

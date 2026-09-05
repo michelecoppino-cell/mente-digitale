@@ -46,6 +46,7 @@ import { creaTask, eliminaTask } from './taskStore';
 import { settimanaIso } from './tempo.js';
 import Matrice from './programma/Matrice.jsx';
 import MatricePersone from './programma/MatricePersone.jsx';
+import Gantt from './programma/Gantt.jsx';
 import { oreBrevi } from './programma/formato.js';
 import ElencoVoci from './programma/ElencoVoci.jsx';
 import DettaglioVoce from './programma/DettaglioVoce.jsx';
@@ -115,7 +116,7 @@ export default function ProgrammaView({
   // numeri andavano sommati a mente. Vuoto vuol dire tutti, ed è il bottone
   // «tutti ✕».
   const [pacchettiScelti, setPacchettiScelti] = useState(/** @type {string[]} */ ([]));
-  const [scheda, setScheda] = useState(/** @type {'matrice'|'persone'|'voci'|'riepilogo'|'impostazioni'} */ ('matrice'));
+  const [scheda, setScheda] = useState(/** @type {'matrice'|'gantt'|'persone'|'voci'|'riepilogo'|'impostazioni'} */ ('matrice'));
   const [voceScelta, setVoceScelta] = useState(/** @type {string|null} */ (null));
   const [selezione, setSelezione] = useState(/** @type {string[]} */ ([]));
   const [attivaAperta, setAttivaAperta] = useState(false);
@@ -667,6 +668,21 @@ export default function ProgrammaView({
                 Matrice
               </button>
             )}
+            {/* La terza lettura dello stesso carico: non «chi è pieno» e non
+                «a chi ho dato cosa», ma **cosa finisce quando**. Sta accanto
+                alla matrice perché è la sua lettura da riunione, e in sola
+                lettura perché le celle si scrivono in un posto solo. Vedi
+                programma/Gantt.jsx. */}
+            {!stretto && (
+              <button
+                type="button"
+                className={`pg-scheda${scheda === 'gantt' ? ' scelta' : ''}`}
+                onClick={() => setScheda('gantt')}
+                title="Le attività in ordine di quando finiscono, una barra per settimana"
+              >
+                Gantt
+              </button>
+            )}
             {/* La stessa matrice letta per persona invece che per commessa:
                 accanto a Matrice perché è la sua altra metà, non una quinta
                 pagina. Vedi programma/MatricePersone.jsx. */}
@@ -786,6 +802,14 @@ export default function ProgrammaView({
             <p className="pg-empty pg-solo-portatile">La matrice si apre da portatile.</p>
             {elenco}
           </div>
+        ) : scheda === 'gantt' ? (
+          <Gantt
+            doc={doc}
+            settimane={settimane}
+            settimanaOra={settimanaOra}
+            pacchettiScelti={pacchettiScelti}
+            onSceltaVoce={id => { setVoceScelta(id); setAttivaAperta(false); }}
+          />
         ) : scheda === 'persone' ? (
           <MatricePersone
             programmi={programmiLetti}

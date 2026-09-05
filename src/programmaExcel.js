@@ -29,10 +29,10 @@
 // Puro: da un documento a delle righe, e da del testo a delle celle. Nessuna
 // rete, nessun React — è il file su cui girano le prove.
 
-import { xlsx, STILE } from './xlsx.js';
+import { xlsx, STILE, stileFondo } from './xlsx.js';
 import {
   celleConsuntivo, chiaveCarico, settimaneDellaMatrice, oreSottoRiga, oreRisorsaSettimana, riepilogoPacchetti,
-  alberoVoci, vociDiPacchetto, figlieDi, eFoglia, slug,
+  alberoVoci, vociDiPacchetto, figlieDi, eFoglia, gantt, slug,
 } from './programma.js';
 import { lunediDellaSettimana, meseDellaSettimana, settimanaIso, ymd } from './tempo.js';
 
@@ -216,6 +216,125 @@ export function righeMatrice(doc, settimane, settimanaOra) {
 }
 
 /**
+ * Un colore mescolato al bianco. I colori dei pacchetti sono quelli del punto
+ * nella barra dei filtri — vivi, perché lì sono un tondo da otto pixel; stesi
+ * su una cella con dentro un nome diventano un fondo su cui il nome non si
+ * legge. A poco più di un terzo restano riconoscibili uno dall'altro e il testo
+ * sopra si legge nero.
+ * @param {string|null|undefined} colore
+ * @param {number} [quota]  quanto del colore resta, da 0 a 1
+ * @returns {string}
+ */
+function schiarisci(colore, quota = 0.38) {
+  const pulito = String(colore || '').replace('#', '').trim();
+  const pieno = pulito.length === 3 ? pulito.split('').map(c => c + c).join('') : pulito;
+  if (!/^[0-9a-fA-F]{6}$/.test(pieno)) return 'E8E8E8';
+  const canale = (/** @type {number} */ i) => {
+    const v = parseInt(pieno.slice(i * 2, i * 2 + 2), 16);
+    return Math.round(v * quota + 255 * (1 - quota)).toString(16).padStart(2, '0');
+  };
+  return `${canale(0)}${canale(1)}${canale(2)}`;
+}
+
+/**
+ * I fondi che il foglio «Gantt» si porta dietro: uno per pacchetto, nell'ordine
+ * in cui i pacchetti stanno nella commessa, più uno neutro in coda per le righe
+ * che un pacchetto non ce l'hanno.
+ *
+ * Sta qui e non dentro `righeGantt` perché i fondi si dichiarano una volta sola
+ * per tutto il libro (`xlsx(fogli, { fondi })`) e lo stile di una cella è la
+ * *posizione* in questo elenco: costruirlo in due posti vorrebbe dire due
+ * ordini diversi, cioè le barre del colore sbagliato.
+ * @param {DocProgramma} doc
+ * @returns {string[]}
+ */
+export function fondiGantt(doc) {
+  return [...doc.pacchetti.map(p => schiarisci(p.colore)), 'E8E8E8'];
+}
+
+/**
+ * Le righe del foglio «Gantt»: una per attività, una colonna per settimana, e
+ * nella cella **chi ci lavora** su fondo del colore del pacchetto.
+ *
+ * **Perché il nome e non le ore.** Le ore ci sono già, nel foglio Persone, che
+ * è quello fatto per contarle e per rientrare corretto. Questo foglio risponde
+ * a un'altra domanda — cosa finisce quando, e chi ci sta sopra — e la risposta
+ * si legge scorrendo in orizzontale: una fascia colorata con dentro dei nomi si
+ * segue con l'occhio, una fascia di numeri no. Il totale della riga resta in
+ * coda, che è dove serve per capire quanto pesa quello che si sta guardando.
+ *
+ * **In ordine di quando finiscono**, come a schermo: la prima riga è la cosa
+ * che si chiude prima. È l'ordine che rende il foglio un Gantt e non un altro
+ * elenco di voci.
+ *
+ * **Anche quello che non è programmato.** Le voci senza nemmeno un'ora in
+ * queste settimane stanno in coda, con la loro stima e la persona che la voce
+ * propone: su un foglio stampato sono la parte di commessa che non è ancora
+ * caduta da nessuna parte, e lasciarle fuori direbbe che la commessa finisce
+ * prima di quanto finirà.
+ *
+ * **Non rientra.** È l'unica uscita del Programma che non ha una strada di
+ * ritorno, ed è voluto: le celle si scrivono nella matrice, e un secondo foglio
+ * da cui reimportare le stesse ore sarebbe un secondo modo di sbagliarle.
+ *
+ * @param {DocProgramma} doc
+ * @param {string[]} settimane
+ * @param {string} settimanaOra
+ * @returns {import('./xlsx.js').Riga[]}
+ */
+export function righeGantt(doc, settimane, settimanaOra) {
+  const posto = new Map(doc.pacchetti.map((p, i) => [p.id, i]));
+  /** Lo stile della barra: il fondo del pacchetto, o il neutro in coda.
+   * @param {string|null} pacchettoId */
+  const stile = pacchettoId => stileFondo(posto.get(pacchettoId || '') ?? doc.pacchetti.length);
+
+  /** @type {import('./xlsx.js').Riga[]} */
+  const righe = [];
+  righe.push(['', '', '', '', ...settimane.map((w, i) => (
+    i === 0 || nomeMese(w) !== nomeMese(settimane[i - 1]) ? { v: nomeMese(w), s: STILE.tenue } : ''
+  )), '']);
+  righe.push([
+    { v: 'Pacchetto', s: STILE.intestazione },
+    { v: 'Oggetto', s: STILE.intestazione },
+    { v: 'Attività', s: STILE.intestazione },
+    { v: 'Chi', s: STILE.intestazione },
+    ...settimane.map(w => ({ v: w, s: STILE.intestazione })),
+    { v: 'Ore', s: STILE.intestazione },
+  ]);
+  righe.push(['', { v: 'lunedì', s: STILE.tenue }, '', '',
+    ...settimane.map(w => ({ v: giornoBreve(w) + (w === settimanaOra ? ' ◂' : ''), s: STILE.tenue })), '']);
+
+  const fila = gantt(doc, settimane, { conNonProgrammate: true });
+  let programmate = true;
+  for (const r of fila) {
+    // La fascia ocra dove finisce il programmato e comincia quello che non è
+    // ancora caduto in nessuna settimana: sono due elenchi diversi, e senza una
+    // riga piena in mezzo la coda si legge come la continuazione del Gantt.
+    if (programmate && !r.totale) {
+      righe.push(separatore(4 + settimane.length + 1));
+      programmate = false;
+    }
+    righe.push([
+      r.pacchetto,
+      // Il ramo in due colonne e non col rientro: in Excel un rientro non si
+      // filtra e non si ordina, due colonne sì. Sono le stesse colonne degli
+      // altri due fogli, così la stessa cosa si chiama allo stesso modo.
+      r.oggetto,
+      r.attivita,
+      r.chi.join(', '),
+      ...settimane.map((_, i) => (r.ore[i] > 0
+        ? { v: r.chiSettimana[i].join(', '), s: stile(r.pacchettoId) }
+        : '')),
+      // Sulle righe non programmate il totale a piano è zero, e il numero che
+      // dice qualcosa è la stima: scriverla qui è quello che rende leggibile la
+      // coda del foglio invece di una colonna di celle vuote.
+      { v: (r.totale || r.stimate) || '', s: r.totale ? STILE.ore : STILE.tenue },
+    ]);
+  }
+  return righe;
+}
+
+/**
  * Le righe del foglio «Voci»: l'elenco di cosa c'è da fare, in colonne che si
  * chiamano come quelle del foglio Persone — Pacchetto, Oggetto, Attività — così
  * che passando da un foglio all'altro la stessa cosa abbia lo stesso nome.
@@ -313,9 +432,10 @@ function righeRiepilogo(doc, settimanaOra) {
 }
 
 /**
- * Il libro intero. Tre fogli, in ordine di chi li apre: il Riepilogo è la
- * pagina che si guarda in riunione, le Persone sono quelle che tornano indietro
- * con le ore vere, le Voci sono l'elenco di cosa c'è da fare.
+ * Il libro intero. Quattro fogli, in ordine di chi li apre: il Riepilogo è la
+ * pagina che si guarda in riunione, il Gantt è quella che si stampa e si manda,
+ * le Persone sono quelle che tornano indietro con le ore vere, le Voci sono
+ * l'elenco di cosa c'è da fare.
  *
  * @param {DocProgramma} doc
  * @param {{ settimanaOra?: string, settimane?: string[] }} [opts]
@@ -330,6 +450,16 @@ export function libroProgramma(doc, opts = {}) {
       nome: 'Riepilogo',
       righe: righeRiepilogo(doc, ora),
       larghezze: [30, 8, 10, 10, 10, 10, 13],
+    },
+    {
+      // Subito dopo il Riepilogo: sono le due pagine da riunione, e il Gantt è
+      // quella che si guarda per seconda — «quanto manca» e poi «cosa quando».
+      nome: 'Gantt',
+      righe: righeGantt(doc, settimane, ora),
+      // Le colonne delle settimane più larghe che nel foglio Persone: qui ci
+      // sta dentro un nome, non un numero di due cifre.
+      larghezze: [22, 28, 26, 22, ...settimane.map(() => 13), 8],
+      blocca: { riga: 3, colonna: 4 },
     },
     {
       // «Persone» e non «Matrice»: il foglio è una riga per persona e per
@@ -351,7 +481,7 @@ export function libroProgramma(doc, opts = {}) {
       larghezze: [24, 34, 34, 8, 16],
       blocca: { riga: 1, colonna: 0 },
     },
-  ]);
+  ], { fondi: fondiGantt(doc) });
 
   return { nomeFile: `${slug(doc.commessa.nome || 'programma')}-${ymd()}.xlsx`, byte };
 }
