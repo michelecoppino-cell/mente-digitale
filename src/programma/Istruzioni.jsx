@@ -191,17 +191,17 @@ export default function Istruzioni({ onChiudi }) {
           <section>
             <h3>Excel: come esce e come rientra</h3>
             <p>
-              <b>↓ Excel</b>, in cima, scarica un file con tre fogli — Riepilogo, Matrice, Voci —
+              <b>↓ Excel</b>, in cima, scarica un file con tre fogli — Riepilogo, Persone, Voci —
               da mandare ai colleghi. È una fotografia col giorno nel nome: due esportazioni non si
               coprono a vicenda.
             </p>
             <p>
-              <b>↑ Ore registrate</b> è il giro all&apos;indietro. Nel foglio Matrice si corregge la
-              colonna della settimana appena chiusa con le ore davvero fatte <i>sulle righe dei
-              pacchetti</i>, si seleziona il rettangolo — <i>intestazione compresa</i> — e si
-              incolla lì. Le righe di <b>Oggetto</b> e <b>Attività</b> dicono lo stesso lavoro visto
-              più a fondo: si leggono, non rientrano, perché sarebbero la settimana contata due
-              volte. Prima di applicare, il
+              <b>↑ Ore registrate</b> è il giro all&apos;indietro. Nel foglio Persone c&apos;è
+              una riga per ogni lavoro — pacchetto, <b>Oggetto</b> e <b>Attività</b> sulla stessa
+              riga — e si corregge la colonna della settimana appena chiusa con le ore davvero
+              fatte, poi si seleziona il rettangolo — <i>intestazione compresa</i> — e si incolla
+              lì. Rientrano quelle righe: le somme in cima a ogni persona si leggono e basta,
+              perché sarebbero la settimana contata due volte. Prima di applicare, il
               riquadro dice quante celle cambiano, di chi, quante ore c&apos;erano e quante ce ne
               saranno, ed elenca le righe che non ha capito. Vanno bene anche righe sciolte
               <code> persona | pacchetto | settimana | ore</code>.

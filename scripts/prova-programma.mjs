@@ -719,6 +719,33 @@ verifica(dentro.includes('2026-W12') && dentro.includes('Marco') && dentro.inclu
   'le settimane, le persone e i pacchetti sono scritti in chiaro nelle celle');
 verifica(dentro.includes('state="frozen"'),
   'i riquadri sono bloccati: su cinquanta colonne, senza, non si sa più di chi sia la riga');
+verifica(dentro.includes('name="Persone"') && !dentro.includes('name="Matrice"'),
+  'la linguetta si chiama Persone: il foglio è una riga per persona e per lavoro, la matrice è un\'altra cosa');
+// La riga di separazione non ha testo: se le celle vuote con uno stile non si
+// scrivessero, la fascia ocra non esisterebbe nel file — e non lo direbbe
+// nessun errore, perché il foglio si aprirebbe lo stesso.
+verifica((dentro.match(new RegExp(`<c r="[A-Z]+\\d+" s="${foglio.STILE.separatore}"/>`, 'g')) || []).length > 5,
+  'e le celle vuote della fascia ocra sono scritte davvero: uno stile senza testo è comunque una cella');
+
+// ── Il foglio Voci ───────────────────────────────────────────────────────────
+// Le colonne si chiamano come quelle del foglio Persone: passando da un foglio
+// all'altro la stessa cosa deve avere lo stesso nome. Ore iniziali, Δ, la
+// finestra e lo stato sono la storia di una voce e si guardano nell'app: qui
+// erano quattro colonne che spingevano fuori schermo l'unica domanda che si fa
+// aprendo questo foglio, cioè chi fa cosa per quante ore.
+const voci = excel.righeVoci(big);
+verifica(voci[0].map(c => c.v).join('|') === 'Pacchetto|Oggetto|Attività|Ore|Persona',
+  'il foglio Voci ha cinque colonne, e si chiamano come quelle del foglio Persone');
+const madre = voci.findIndex(r => r[1] === 'Fondazioni corpo A');
+verifica(madre > 0 && voci[madre + 1][2] === 'Plinti',
+  'le sotto-voci stanno nella colonna Attività, sotto la loro madre');
+const dueLavorazioni = excel.righeVoci(pg.conVoci(big, [
+  { titolo: 'Carpenterie metalliche', pacchettoId: bigC10.id, ore: 40, risorsa: 'Marco' },
+]));
+const fascia = dueLavorazioni.findIndex(r => r.every(c => c && typeof c === 'object' && c.v === ''
+  && c.s === foglio.STILE.separatore));
+verifica(fascia > 0 && dueLavorazioni[fascia + 1][1] === 'Carpenterie metalliche',
+  'e una fascia ocra stacca una lavorazione dall\'altra: senza, l\'elenco è una colonna sola di titoli');
 verifica(!dentro.includes(']]>') && !/<t[^>]*>[^<]*</.test('') , 'niente resta appeso a metà');
 
 const matrice = excel.righeMatrice(big, ['2026-W12', '2026-W13'], '2026-W13');
@@ -730,33 +757,28 @@ verifica(intestazioneMatrice.slice(0, 4).join('|') === 'Persona|Pacchetto|Oggett
 const rigaMarco = matrice.find(r => r[0]?.v === 'Marco');
 verifica(rigaMarco && rigaMarco[1] === '', 'la riga di totale di una persona non porta un pacchetto');
 verifica(rigaMarco[4].v === 26, 'e somma i suoi pacchetti: venti su B10 più sei su C10');
+// Sotto il totale, **una riga per ogni lavoro in cui la persona ha delle ore**,
+// col pacchetto e l'Oggetto ripetuti per esteso. Prima erano tre righe a
+// scalini — pacchetto, Oggetto, Attività — e le prime due erano vuote da parte
+// a parte, perché i numeri stanno solo nell'ultimo livello: tre righe per dire
+// un dato, e su cinquanta settimane il dato a schermate di distanza dal nome
+// che lo descrive.
 const rigaB10 = matrice[matrice.indexOf(rigaMarco) + 1];
-// E sotto ancora il lavoro: la lavorazione, poi la sua sotto-voce. Dicono le
-// ore del loro ramo — le stesse del pacchetto, viste più a fondo — e per questo
-// lasciano vuota la colonna del pacchetto: è quello che le tiene fuori dal
-// rientro, dove sarebbero la settimana contata tre volte.
-const rigaOggetto = matrice[matrice.indexOf(rigaMarco) + 2];
-const rigaAttivita = matrice[matrice.indexOf(rigaMarco) + 3];
-// I numeri stanno **solo nell'ultima riga del ramo**: scritti a tutti e tre i
-// livelli erano tre righe identiche incolonnate su venti settimane, cioè il
-// dato e le sue due eco senza un modo di distinguerli.
-verifica(rigaB10[1] === 'B10 Fondazioni' && rigaB10[4].v === '' && rigaB10[6].v === '',
-  'la riga del pacchetto c\'è, ma le ore no: le dicono già le righe qui sotto');
-verifica(rigaOggetto[1] === '' && rigaOggetto[2] === 'Fondazioni corpo A' && rigaOggetto[4].v === '',
-  'la lavorazione sta nella colonna Oggetto, e nemmeno lei ripete le ore della sua sotto-voce');
-verifica(rigaAttivita[2] === '' && rigaAttivita[3] === 'Plinti' && rigaAttivita[4].v === 20
-  && rigaAttivita[6].v === 20,
-  'le ore si leggono in fondo, dove il lavoro è descritto per esteso — e col loro totale');
-verifica(matrice[matrice.indexOf(rigaMarco) + 4][1] === 'C10 Carpenterie'
-  && matrice[matrice.indexOf(rigaMarco) + 4][4].v === 6,
-  'un pacchetto senza voci sotto le sue ore le tiene: non c\'è nessuno che le ridica');
-verifica(matrice[matrice.indexOf(rigaMarco) + 5][1] !== 'C10 Carpenterie',
-  'e sotto una persona compare solo il lavoro in cui ha delle ore: Travi rovesce è di Luca e qui non c\'è');
+verifica(rigaB10[1] === 'B10 Fondazioni' && rigaB10[2] === 'Fondazioni corpo A' && rigaB10[3] === 'Plinti'
+  && rigaB10[4].v === 20 && rigaB10[6].v === 20,
+  'pacchetto, Oggetto, Attività e le ore stanno sulla stessa riga: una riga per lavoro, non tre');
+const rigaC10 = matrice[matrice.indexOf(rigaMarco) + 2];
+verifica(rigaC10[1] === 'C10 Carpenterie' && rigaC10[2] === '' && rigaC10[4].v === 6,
+  'un pacchetto che nessuna voce descrive tiene la sua riga, con le colonne di destra vuote');
+verifica(matrice[matrice.indexOf(rigaMarco) + 3].every(c => c.v === '' && c.s === foglio.STILE.separatore),
+  'e fra una persona e l\'altra c\'è una fascia ocra: su cinquanta colonne, senza, non si vede dove finisce un gruppo');
+verifica(matrice[matrice.indexOf(rigaMarco) + 4][0].v === 'Luca',
+  'poi ricomincia la persona dopo');
 
-// L'eco si spegne solo quando è davvero un'eco. Marco su due voci: le ore
-// lasciate sul pacchetto non le adotta nessuno — indovinare è quello che qui
-// non si fa — e se la riga del pacchetto tacesse comunque, quelle dieci ore
-// sparirebbero dal foglio senza che niente lo dica.
+// Quello che non è sceso fino in fondo tiene la sua riga, con le colonne di
+// destra vuote: le ore lasciate sul pacchetto non le adotta nessuno — indovinare
+// è quello che qui non si fa — e senza quella riga sparirebbero dal foglio senza
+// che niente lo dica.
 const conResto = pg.conCarico(
   pg.conVoceAggiornata(big, big.voci.find(v => v.titolo === 'Travi rovesce').id, { risorse: ['Marco'] }),
   pg.chiaveCarico('Marco', bigB10.id, '2026-W12'), 10);
@@ -764,8 +786,21 @@ const conVoce = pg.conCarico(conResto,
   pg.chiaveCarico('Marco', bigB10.id, '2026-W12', big.voci.find(v => v.titolo === 'Plinti').id), 30);
 const matriceResto = excel.righeMatrice(conVoce, ['2026-W12', '2026-W13'], '2026-W13');
 const rigaB10Resto = matriceResto[matriceResto.findIndex(r => r[0]?.v === 'Marco') + 1];
-verifica(rigaB10Resto[1] === 'B10 Fondazioni' && rigaB10Resto[4].v === 40,
-  'ma se le figlie non coprono tutto, la riga i suoi numeri li tiene: le ore sul pacchetto non spariscono');
+verifica(rigaB10Resto[1] === 'B10 Fondazioni' && rigaB10Resto[2] === '' && rigaB10Resto[4].v === 10,
+  'le ore lasciate sul pacchetto sono una riga col solo pacchetto, e non spariscono');
+const rigaPlinti = matriceResto[matriceResto.findIndex(r => r[0]?.v === 'Marco') + 2];
+verifica(rigaPlinti[2] === 'Fondazioni corpo A' && rigaPlinti[3] === 'Plinti' && rigaPlinti[4].v === 30,
+  'e sotto, sempre nello stesso pacchetto, la riga dell\'Attività con le sue');
+// Due Attività dello stesso pacchetto fanno due righe, con pacchetto e Oggetto
+// scritti in tutt'e due: è la ripetizione che rende la tabella ordinabile e
+// filtrabile in Excel, che è la cosa che con l'albero a scalini non si poteva
+// fare.
+const dueAttivita = pg.conCarico(conVoce,
+  pg.chiaveCarico('Marco', bigB10.id, '2026-W12', big.voci.find(v => v.titolo === 'Travi rovesce').id), 5);
+const righeDiMarco = excel.righeMatrice(dueAttivita, ['2026-W12', '2026-W13'], '2026-W13')
+  .filter(r => r[1] === 'B10 Fondazioni' && r[2] === 'Fondazioni corpo A');
+verifica(righeDiMarco.length === 2 && righeDiMarco.map(r => r[3]).sort().join('|') === 'Plinti|Travi rovesce',
+  'due Attività dello stesso pacchetto fanno due righe, e le colonne di sinistra si ripetono');
 
 // ── Le ore che rientrano ─────────────────────────────────────────────────────
 verifica(excel.interpretaSettimana('2026-W12', []) === '2026-W12', 'la settimana com\'esce si rilegge');
@@ -859,6 +894,29 @@ verifica(letturaDettaglio.celle[pg.chiaveCarico('Marco', bigB10.id, '2026-W12', 
 verifica(letturaDettaglio.celle[pg.chiaveCarico('Marco', bigC10.id, '2026-W12')] === 4
   && letturaDettaglio.ignorate.length === 0,
   'e le colonne in più non fanno perdere le righe che vengono dopo');
+
+// La forma piatta di adesso, dove ogni riga ripete pacchetto e Oggetto e ogni
+// riga è **una cella e basta**. Il giro si fa su `conVoce`, che è il documento
+// in cui la riga del solo pacchetto esiste davvero: Marco ha dieci ore lasciate
+// lì che nessuna voce reclama, e trenta su Plinti.
+//
+// Il difetto che questa prova avrebbe intercettato è doppio, e sono le due
+// facce della stessa cosa. Guardando solo la profondità, la riga del solo
+// pacchetto passava per una somma — ha sotto di sé una riga più profonda — e
+// spariva. Trattandola poi come il totale del pacchetto, le sue ore venivano
+// dirottate sulla voce sotto e la riga di Plinti, subito dopo, le sovrascriveva:
+// due righe dello stesso incollato che si cancellano a vicenda, e dieci ore
+// perse in silenzio.
+const piatto = excel.righeMatrice(conVoce, ['2026-W12', '2026-W13'], '2026-W13')
+  .map(r => r.map(c => (c && typeof c === 'object' ? c.v : c)).join('\t')).join('\n');
+const letturaPiatta = excel.leggiOreRegistrate(conVoce, piatto, { settimane: ['2026-W12', '2026-W13'] });
+verifica(letturaPiatta.celle[pg.chiaveCarico('Marco', bigB10.id, '2026-W12')] === 10
+  && letturaPiatta.celle[pg.chiaveCarico('Marco', bigB10.id, '2026-W12', plintiBig.id)] === 30,
+  'nel foglio piatto la riga del solo pacchetto non è una somma: le sue ore rientrano accanto a quelle dell\'Attività');
+const dopoPiatto = Object.entries(letturaPiatta.celle).reduce((d, [k, o]) => pg.conCarico(d, k, o), conVoce);
+verifica(pg.oreRisorsaSettimana(dopoPiatto, 'Marco', '2026-W12') === 46
+  && pg.oreRisorsaSettimana(dopoPiatto, 'Luca', '2026-W13') === 14.5,
+  'e il foglio nuovo esce e rientra senza spostare niente, fasce ocra e righe di somma comprese');
 
 // Un foglio esportato da una versione di prima porta i numeri a tutti e tre i
 // livelli. Vale la stessa regola: conta la riga più profonda, e le due sopra
