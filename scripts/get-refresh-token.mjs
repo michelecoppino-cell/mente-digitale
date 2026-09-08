@@ -60,6 +60,7 @@ async function main() {
 
     if (tok.refresh_token) {
       console.log('✓ Autenticato!\n');
+      await diChiSei(tok.access_token);
       console.log('━'.repeat(60));
       console.log(REMOTO
         ? 'REFRESH TOKEN PER IL CONNETTORE REMOTO — non salvarlo qui.\n' +
@@ -79,6 +80,53 @@ async function main() {
   }
 
   throw new Error('Timeout — riprova da capo.');
+}
+
+/**
+ * Con quale identità è andata: si stampa, e non è un lusso.
+ *
+ * Lo stesso indirizzo può esistere due volte — una come account Microsoft
+ * personale e una dentro un tenant di lavoro — e la pagina del login sceglie
+ * da sé, tanto più se ad aprire è una passkey. Fin qui non se ne accorge
+ * nessuno: il token esce, si incolla, e l'errore arriva giorni dopo, dal
+ * telefono, come «AADSTS7000012: the grant was obtained for a different
+ * tenant» — cioè dove non si può fare niente. Qui invece si vede subito, con
+ * la stringa ancora sullo schermo.
+ *
+ * `9188040d-…` è il tenant degli account personali, l'unico che questa app
+ * accetta: `/consumers` è dove va a rinnovare. Un tid diverso vuol dire
+ * account sbagliato, e il token appena preso non servirà a niente.
+ * @param {string} [accessToken]
+ */
+async function diChiSei(accessToken) {
+  const MSA = '9188040d-6c67-4c5b-b112-36a304b66dad';
+  if (!accessToken) return;
+
+  let tid = '';
+  try {
+    const [, carico] = accessToken.split('.');
+    ({ tid } = JSON.parse(Buffer.from(carico, 'base64url').toString()));
+  } catch { /* non è un JWT leggibile: resta il nome, che basta */ }
+
+  let chi = '';
+  try {
+    const r = await fetch('https://graph.microsoft.com/v1.0/me', {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    const me = await r.json();
+    chi = me.userPrincipalName || me.mail || '';
+  } catch { /* senza rete si vive lo stesso */ }
+
+  if (chi) console.log(`Account: ${chi}`);
+  if (tid && tid !== MSA) {
+    console.log(
+      '\n⚠  Questo NON è un account Microsoft personale (tenant ' + tid + ').\n' +
+      '   L\'app rinnova su /consumers, quindi questo token verrà rifiutato con\n' +
+      '   «the grant was obtained for a different tenant». Rifai il login e, se\n' +
+      '   la pagina chiede quale account usare, scegli quello personale — con la\n' +
+      '   password, non con la passkey, che tende a riportare all\'altro.\n'
+    );
+  }
 }
 
 main().catch(e => { console.error('Errore:', e.message); process.exit(1); });

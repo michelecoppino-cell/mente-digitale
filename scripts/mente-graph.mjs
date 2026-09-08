@@ -134,12 +134,18 @@ async function riscatta(refreshToken, scope) {
 
   const data = await res.json();
   if (!res.ok || !data.access_token) {
-    const detail = data.error_description || data.error || `HTTP ${res.status}`;
-    throw new Error(
-      `Token rifiutato — ${String(detail).split('\n')[0]}\n` +
-      'Se parla di consenso o di scope mancanti, rifai:\n' +
-      '  node scripts/get-refresh-token.mjs'
-    );
+    const detail = String(data.error_description || data.error || `HTTP ${res.status}`);
+    // Il comando da rifare non è sempre lo stesso: il token del connettore ha
+    // scope suoi, e rifarlo senza `--remoto` ne fabbrica uno che gli sta
+    // largo. E «different tenant» non è una questione di consenso — è
+    // l'account sbagliato, il che è una cosa da leggere lì, non da indovinare
+    // dal telefono in autostrada.
+    const rifai = `  node scripts/get-refresh-token.mjs${scope === MENTE_SCOPE_REMOTO ? ' --remoto' : ''}`;
+    const perche = /different tenant/i.test(detail)
+      ? 'Il token è di un account che non è quello personale: rifai il login\n' +
+        'scegliendo l\'account Microsoft personale, e rifai\n'
+      : 'Se parla di consenso o di scope mancanti, rifai:\n';
+    throw new Error(`Token rifiutato — ${detail.split('\n')[0]}\n${perche}${rifai}`);
   }
   return data;
 }
