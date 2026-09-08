@@ -370,6 +370,28 @@ verifica(Boolean(await kv.get('ms:access')), 'e l\'access token si tiene, per no
   verifica(await kv.get('ms:refresh') === 'token-appena-rigenerato-2', 'e KV torna in pari senza toccare niente a mano');
 }
 
+{
+  // Lo stesso, ma con KV pieno: *due* chiavi morte, la corrente e la
+  // precedente. È il caso vero — chi rigenera il token perché il primo era di
+  // un account sbagliato ne ha lasciate due per strada — e finché il seme si
+  // leggeva solo in mancanza del precedente restava fermo lì, a rimettere un
+  // segreto che nessuno andava a leggere.
+  await kv.delete('ms:access');
+  await kv.put('ms:refresh', 'un-token-morto');
+  await kv.put('ms:refresh:prec', 'un-altro-token-morto');
+  env.MENTE_REFRESH_TOKEN = 'il-token-buono';
+  tokenBuoni = new Set(['il-token-buono']);
+  ruotatoIn = 'il-token-buono-2';
+  impostaArchivioToken(archivioSuKv(env));
+
+  const { result } = await (await rpc('/mcp', {
+    jsonrpc: '2.0', id: 8, method: 'tools/call', params: { name: 'sezioni', arguments: {} },
+  }, gettoni.access_token)).json();
+  verifica(!result.isError, 'e riparte anche con due chiavi morte in KV, non solo una');
+  verifica(await kv.get('ms:refresh') === 'il-token-buono-2', 'e da lì in poi KV riparte dal seme');
+}
+
+
 // ── Quello che finirebbe nel pacchetto ───────────────────────────────────────
 // Il Worker non gira su Node: niente `fs`, niente `process`, e nessuna
 // libreria del browser. Sono cose che non si scoprono provando il codice — si

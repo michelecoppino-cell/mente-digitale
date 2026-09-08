@@ -69,16 +69,21 @@ export function archivioSuKv(env) {
       );
     },
 
-    // Il token di prima, per quando quello in corso viene rifiutato. Se non
-    // c'è, si ripiega sul seme: è il caso di chi ha rigenerato il token da capo
-    // e ha rimesso il segreto, mentre in KV è rimasto quello vecchio ormai
-    // morto. Senza questo ripiego il connettore resterebbe fermo su una chiave
-    // scaduta con quella buona a due centimetri, e l'unico modo di ripartire
-    // sarebbe cancellare a mano una chiave che nessuno si ricorda come si
-    // chiama.
+    // Il token di prima, per quando quello in corso viene rifiutato: KV ci
+    // mette un attimo a propagare, e Microsoft accetta il precedente per una
+    // breve finestra di grazia.
     async leggiPrecedente() {
-      const prec = await env.MENTE.get(K_PRECEDENTE);
-      return prec || env.MENTE_REFRESH_TOKEN || null;
+      return await env.MENTE.get(K_PRECEDENTE);
+    },
+
+    // Il segreto, che è la chiave messa a mano. Va provato *dopo* le due che
+    // KV si è scritto da sé, e va provato anche quando quelle ci sono: è il
+    // caso di chi ha rigenerato il token e rimesso il segreto mentre in KV
+    // restavano due chiavi ormai morte. Finché il seme si leggeva solo in
+    // mancanza del precedente, quel caso restava fermo con la chiave buona a
+    // due centimetri.
+    async leggiSeme() {
+      return env.MENTE_REFRESH_TOKEN || null;
     },
 
     async scrivi(nuovo) {

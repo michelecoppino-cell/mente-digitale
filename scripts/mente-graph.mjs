@@ -81,6 +81,10 @@ export const MENTE_SCOPE_REMOTO = [
  * @property {() => Promise<string|null>|string|null} [leggiPrecedente]
  *   il token di prima, se l'archivio lo conserva: serve dove la scrittura non
  *   è immediatamente visibile a chi legge (vedi worker/archivio.js)
+ * @property {() => Promise<string|null>|string|null} [leggiSeme]
+ *   la chiave messa a mano, quella da cui l'archivio è partito: è l'ultima
+ *   spiaggia quando tutto quello che l'archivio si è scritto da sé non vale
+ *   più niente
  * @property {() => Promise<{ token: string, scadenza: number }|null>} [leggiAccesso]
  * @property {(token: string, scadenza: number) => Promise<void>} [scriviAccesso]
  *   la cache dell'access token, per chi non ha un processo che resta acceso
@@ -171,21 +175,45 @@ export async function getAccessToken() {
     }
   }
 
-  const corrente = await arch.leggi();
   const scope = arch.scope || MENTE_SCOPE;
-  let data;
-  try {
-    data = await riscatta(corrente, scope);
-  } catch (e) {
-    // Il token che abbiamo letto può essere già stato ruotato da un'altra
-    // istanza che ha scritto un attimo fa: dove l'archivio conserva il
-    // precedente si riprova con quello, che Microsoft accetta ancora per una
-    // breve finestra di grazia. Una sola volta: se non va nemmeno quello, il
-    // problema è un altro e nasconderlo non aiuta.
-    const prec = arch.leggiPrecedente ? await arch.leggiPrecedente() : null;
-    if (!prec || prec === corrente) throw e;
-    data = await riscatta(prec, scope);
+
+  // Le chiavi da provare, nell'ordine in cui hanno senso.
+  //
+  // La prima è quella in corso. La seconda è quella di prima, perché il token
+  // che abbiamo letto può essere già stato ruotato da un'altra istanza che ha
+  // scritto un attimo fa, e Microsoft accetta ancora il precedente per una
+  // breve finestra di grazia.
+  //
+  // La terza è il seme — la chiave messa a mano — ed è arrivata dopo, da una
+  // giornata passata a girare in tondo: chi rigenera il token perché quello di
+  // prima era sbagliato rimette il segreto, ma in KV restano *due* chiavi
+  // morte, e con il precedente presente il seme non veniva mai letto. Il
+  // connettore continuava a farsi rifiutare da entrambe con la chiave buona a
+  // due centimetri, e l'unico modo di ripartire era cancellare a mano voci di
+  // cui nessuno ricorda il nome.
+  //
+  // Ognuna si prova una volta sola: se non va nessuna delle tre il problema è
+  // un altro — l'account sbagliato, per dirne uno — e nasconderlo non aiuta.
+  const chiavi = [await arch.leggi()];
+  for (const altra of [
+    arch.leggiPrecedente ? await arch.leggiPrecedente() : null,
+    arch.leggiSeme ? await arch.leggiSeme() : null,
+  ]) {
+    if (altra && !chiavi.includes(altra)) chiavi.push(altra);
   }
+
+  const corrente = chiavi[0];
+  let data;
+  let rifiuto;
+  for (const chiave of chiavi) {
+    try {
+      data = await riscatta(chiave, scope);
+      break;
+    } catch (e) {
+      rifiuto = e;
+    }
+  }
+  if (!data) throw rifiuto;
 
   if (data.refresh_token && data.refresh_token !== corrente) {
     await arch.scrivi(data.refresh_token);
