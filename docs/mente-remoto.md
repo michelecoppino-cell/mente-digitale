@@ -103,9 +103,19 @@ codici usa-e-getta e i token del connettore.
 ### 3. I segreti
 
 ```bash
-npx wrangler secret put MENTE_REFRESH_TOKEN   # quello del punto 1
 npx wrangler secret put MENTE_PASSPHRASE      # lunga: è la chiave di casa
 npx wrangler secret put MENTE_BEARER          # facoltativo, vedi «se non aggancia»
+```
+
+Il token di Microsoft **non** si incolla a mano. È lungo un paio di migliaia di
+caratteri, e un campo nascosto che ne prende mezzo dice «Success» come se
+niente fosse: l'errore arriva giorni dopo, dal telefono, sotto forma di
+`AADSTS9002313: request is malformed`, che sembra tutto fuorché una stringa
+tagliata. Si fa passare da un comando all'altro senza toccarlo — il login
+resta a schermo, perché va sull'uscita degli errori:
+
+```bash
+node ../scripts/get-refresh-token.mjs --remoto --solo-token | npx wrangler secret put MENTE_REFRESH_TOKEN
 ```
 
 La passphrase si digita **una volta sola**, collegando il connettore. Falla

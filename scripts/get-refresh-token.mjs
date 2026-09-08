@@ -22,6 +22,21 @@ import { TOKEN_FILE } from './mente-token-file.mjs';
 const REMOTO = process.argv.includes('--remoto');
 const SCOPE = REMOTO ? MENTE_SCOPE_REMOTO : MENTE_SCOPE;
 
+// `--solo-token` manda sull'uscita **solo** la chiave, e tutto il resto —
+// istruzioni, avvisi, il codice da digitare — sull'uscita degli errori, che
+// resta a schermo. Serve per infilare il token dentro a un altro comando senza
+// che passi da occhi, appunti e tastiera:
+//
+//   node scripts/get-refresh-token.mjs --remoto --solo-token | npx wrangler secret put MENTE_REFRESH_TOKEN
+//
+// Non è un vezzo: un refresh token è lungo un paio di migliaia di caratteri, e
+// incollarlo a mano in un campo nascosto è il modo più facile di consegnarne
+// mezzo. Chi lo fa non se ne accorge — il comando dice «Success» lo stesso — e
+// si ritrova un «AADSTS9002313: request is malformed» giorni dopo, che sembra
+// tutto fuorché una stringa tagliata.
+const SOLO_TOKEN = process.argv.includes('--solo-token');
+const dì = SOLO_TOKEN ? console.error : console.log;
+
 async function main() {
   // 1 — Richiedi device code
   const dcRes = await fetch(
@@ -35,7 +50,7 @@ async function main() {
   const dc = await dcRes.json();
   if (!dc.device_code) throw new Error(dc.error_description || JSON.stringify(dc));
 
-  console.log('\n' + dc.message + '\n');
+  dì('\n' + dc.message + '\n');
 
   // 2 — Polling finché l'utente non accede
   const interval = (dc.interval || 5) * 1000;
@@ -59,10 +74,10 @@ async function main() {
     const tok = await tokRes.json();
 
     if (tok.refresh_token) {
-      console.log('✓ Autenticato!\n');
+      dì('✓ Autenticato!\n');
       await diChiSei(tok.access_token);
-      console.log('━'.repeat(60));
-      console.log(REMOTO
+      dì('━'.repeat(60));
+      dì(REMOTO
         ? 'REFRESH TOKEN PER IL CONNETTORE REMOTO — non salvarlo qui.\n' +
           'Va nel Worker, e in nessun altro posto:\n' +
           '  npx wrangler secret put MENTE_REFRESH_TOKEN\n' +
@@ -70,8 +85,11 @@ async function main() {
         : `REFRESH TOKEN — salvalo in ${TOKEN_FILE} per usarlo da qui\n` +
           '(oppure esportalo come MENTE_REFRESH_TOKEN), e mettilo come segreto\n' +
           'GitHub MENTE_REFRESH_TOKEN per la Action del calendario di lavoro:\n');
-      console.log(tok.refresh_token);
-      console.log('━'.repeat(60));
+      // Senza newline in coda: `wrangler secret put` prende quello che arriva
+      // così com'è, e uno spazio bianco in fondo è un segreto diverso.
+      if (SOLO_TOKEN) process.stdout.write(tok.refresh_token);
+      else console.log(tok.refresh_token);
+      dì('\n' + '━'.repeat(60));
       return;
     }
     if (tok.error && tok.error !== 'authorization_pending') {
@@ -129,9 +147,9 @@ async function diChiSei(accessToken) {
     : tid === MSA ? 'account Microsoft personale'
     : `account di lavoro o scuola (tenant ${tid})`;
 
-  console.log(`Account: ${nome || '(nome non leggibile con questi scope)'} — ${tipo}\n`);
+  dì(`Account: ${nome || '(nome non leggibile con questi scope)'} — ${tipo}\n`);
   if (tid && tid !== MSA) {
-    console.log(
+    dì(
       '⚠  Questo non è l\'account personale. Il token funzionerà lo stesso, ma\n' +
       '   leggerà e scriverà sul OneDrive di *quell\'account*: se non è dove\n' +
       '   sta la mente digitale, rifai il login scegliendo l\'altro — e se il\n' +
