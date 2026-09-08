@@ -21,7 +21,17 @@
 import { creaDrive } from '../src/graphCore.js';
 
 const GRAPH = 'https://graph.microsoft.com/v1.0';
-const TOKEN_URL = 'https://login.microsoftonline.com/consumers/oauth2/v2.0/token';
+// `/common` e non `/consumers`, come già fa MSAL nel browser (`src/auth.js`).
+// `/consumers` accetta solo gli account Microsoft personali, ed è una
+// restrizione che sembra innocua finché lo stesso indirizzo non esiste due
+// volte — una come account personale, una dentro un tenant di lavoro. Lì il
+// login lo sceglie chi firma (su un telefono: la passkey nel portachiavi), il
+// token esce lo stesso, e a rinnovarlo si scopre «AADSTS7000012: the grant was
+// obtained for a different tenant» — giorni dopo, dall'auto, dove non si può
+// fare niente. `/common` rinnova nel tenant che ha emesso il token, qualunque
+// sia: chi comanda resta l'account con cui si è acceduto, non l'indirizzo che
+// si è digitato.
+const TOKEN_URL = 'https://login.microsoftonline.com/common/oauth2/v2.0/token';
 export const CLIENT_ID = 'b639e8ea-2c30-4beb-8226-46e342721a50';
 export const TIMEZONE = 'Europe/Rome';
 

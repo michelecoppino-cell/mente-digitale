@@ -38,7 +38,11 @@ $ErrorActionPreference = 'Stop'
 
 $CLIENT_ID = 'b639e8ea-2c30-4beb-8226-46e342721a50'
 $SCOPE = 'offline_access Files.ReadWrite Notes.ReadWrite Notes.ReadWrite.All Calendars.ReadWrite Mail.Read'
-$BASE = 'https://login.microsoftonline.com/consumers/oauth2/v2.0'
+# /common come gli script Node e come l'app: /consumers accetta solo gli
+# account personali, e quando lo stesso indirizzo esiste anche dentro un tenant
+# di lavoro il login sceglie da sé — il token esce lo stesso e viene rifiutato
+# al primo rinnovo.
+$BASE = 'https://login.microsoftonline.com/common/oauth2/v2.0'
 
 Write-Host ''
 Write-Host 'Chiedo a Microsoft un codice di accesso...' -ForegroundColor Cyan
