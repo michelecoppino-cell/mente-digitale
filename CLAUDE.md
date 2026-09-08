@@ -39,9 +39,10 @@ secondi. La CI esegue tutti e quattro i comandi a ogni push e ogni PR.
 3. Niente push diretto su `main`: branch, PR, merge.
 4. Se hai toccato uno degli strati provati (`graphCore.js`, `api.js`,
    `taskStore.js`, `taskMigrazione.js`, `paraConfig.js`, `poolAttivita.js`, `programma.js`,
-   `programmaStore.js`, `captureParse.js`, `deadlineReminders.js`,
-   `calendarioLavoro.js`, `scripts/ics.mjs`, `scripts/mente-mcp-nucleo.mjs`,
-   `worker/`),
+   `programmaStore.js`, `programmaExcel.js`, `xlsx.js`, `captureParse.js`,
+   `deadlineReminders.js`, `dailyReview.js`, `calendarioLavoro.js`,
+   `cachePersistenza.js`, `rituale.js`, `scripts/ics.mjs`,
+   `scripts/mente-mcp-nucleo.mjs`, `worker/`),
    aggiungi la verifica che avrebbe
    intercettato quello che hai corretto. Le prove si sono rotte una volta e
    nessuno se n'è accorto per settimane: è successo perché nessuna misura
@@ -66,6 +67,77 @@ nascevano le schermate che mostravano la versione di prima.
 campo, e non devono diventarlo: `inbox` è *la lista in cui il task sta*,
 `scheduled` è *avere un blocco nel piano del giorno*. La mappatura sta in
 `taskModel.js`, i campi in `taskStore.js`.
+
+**La voce sta in coda alla chiave del carico, e può non esserci.** La chiave era
+`risorsa|pacchetto|settimana`, adesso è `risorsa|pacchetto|settimana|voce` — con
+la voce **facoltativa**, e in coda apposta: le celle scritte prima restano
+valide e vogliono dire «ore del pacchetto, senza voce», nessun file su OneDrive
+da riscrivere, e `const [r, p, s] = chiave.split('|')` continua a dire quello
+che diceva.
+
+**Una voce può proporre più persone, e la proposta è un elenco.** `Voce.risorse`
+è un array: un calcolo lo fanno in due, e con una proposta sola l'unico modo di
+far comparire la seconda riga nella matrice era sdoppiare la voce. Si legge
+sempre da `risorse` — mai da `risorsa`, che resta scritto solo per i dispositivi
+non ancora aggiornati (vedi il debito in fondo). Attivare **aggiunge** la persona
+scelta all'elenco invece di sostituirlo: un task ha un delegato solo, una voce
+no, e riscrivere l'elenco toglierebbe dalla matrice la riga dell'altra insieme al
+posto in cui stanno le sue ore.
+
+**Le ore lasciate sul pacchetto le adotta la voce che propone quella persona.**
+Sono le celle di prima che le voci ci fossero, e quelle che arrivano dal
+consuntivo. Restavano in coda al pacchetto perché nessuno poteva dire a quale
+voce andassero — ma la voce lo dice: se dentro un pacchetto una sola voce
+propone Riccardo, «Riccardo, A10, W39» e «Riccardo, Calcolo, W39» sono la stessa
+frase. Adottare non riscrive niente sul file: la chiave resta a tre segmenti
+finché qualcuno non scrive in quella riga, e allora la cella della voce prende il
+valore e quella del pacchetto si azzera. Due voci che propongono la stessa
+persona non adottano niente — indovinare è quello che qui non si fa — e chi
+nessuna voce reclama tiene la sua riga in coda, marcata «sul pacchetto». La
+regola sta in `voceAdottiva`, e le tre letture che la rispettano
+(`oreSottoRiga`, `destinazioneOre`, `celleConsuntivo`) sono l'unico posto da cui
+la matrice, la scheda Persone e il consuntivo la leggono.
+
+**A schermo i numeri stanno solo nell'ultimo livello mostrato.** La riga li
+*conta* sempre — è la regola qui sotto, ed è come si scrive e come si fa il
+totale in coda — ma se ha delle figlie a schermo non li *mostra*: aprendo tutto,
+la stessa ora compariva quattro volte incolonnata (pacchetto, voce, sotto-voce,
+persona) su venti colonne, e non si distingueva più il dato dalla sua eco. La
+sola cosa che un'intestazione dice comunque è la colonna in coda,
+`programmate/stimate`: la stima non è una somma delle celle, quindi non è
+un'eco. Nella matrice i tre bottoni — «voci», «sottovoci», «persone» — dicono
+fin dove si scende; spenti tutti e tre resta una riga per pacchetto, e la si
+compila. Il perché per esteso sta in `programma/Matrice.jsx`.
+
+Vale anche per il foglio che esce (`righeMatrice`), dove le righe sono
+pacchetto › Oggetto › Attività: i numeri stanno nell'ultima, ed è quella che
+rientra incollata. Lì la regola ha un'eccezione, perché il foglio non ha la riga
+«sul pacchetto» che la matrice mostra: se le figlie non coprono tutte le ore
+della riga, la riga i suoi numeri li tiene — meglio un'eco che delle ore sparite
+in silenzio.
+
+**Il Gantt disegna dove le ore stanno, non i rami.** È l'eccezione dichiarata
+alla regola qui sopra, e vale solo lì: nella matrice una riga somma il suo ramo
+perché le righe si aprono, e un totale senza le righe che lo fanno è un numero
+che non si può seguire. Nel Gantt non si apre niente, quindi non c'è nessuna eco
+da evitare — c'è invece da non disegnare la stessa barra su due righe
+incolonnate. Ogni cella del carico finisce in una riga e in una sola: la sua
+voce, o la voce che la adotta, o — se nessuna la reclama — il pacchetto, marcato
+«sul pacchetto». La somma delle righe è il carico della finestra, ed è una prova.
+
+**Il rosso è per le settimane che si possono ancora cambiare.** Prima di quella
+corrente la saturazione non si colora, in tutt'e due le matrici: una settimana
+andata è un fatto, non un allarme, e il rosso su una colonna che nessuno può
+più spostare toglie forza ai rossi che invece si risolvono.
+
+**Una riga dice la somma di quello che ha sotto, e si scrive in una cella
+sola.** Vale per le persone come per le voci: la riga di una persona conta le
+sotto-voci nascoste e le ore adottate, e scrivendoci dentro le ore vanno nella
+cella più profonda in cui stanno già, mentre quelle che sostituiscono si
+azzerano — sono le stesse ore, e tenerle in due posti raddoppia la settimana.
+Con ore su due voci diverse la destinazione non esiste: si scende di un livello
+invece di sceglierne una. Prima ogni riga leggeva la sua sola cella, e bastava
+spegnere «voci» per vedere il pacchetto dire quaranta e la persona sotto zero.
 
 **Gli id delle attività non si rigenerano mai.** I blocchi in `daily-plans`, le
 sveglie già suonate e la deduplica delle scadenze ricorrenti citano i task per
@@ -131,6 +203,16 @@ stata fatta). Vale anche il contrario: da telefono, dopo una scelta, il fuoco
 appena aperto. È `useMediaQuery('(pointer: coarse)')` in `QuickCapture.jsx`, e
 sta in JS e non nel CSS perché è un comportamento, non un aspetto.
 
+**Un consuntivo sostituisce, non somma.** Le ore vere di una settimana —
+incollate da «Ore registrate», o ripartite da `conSpesoRipartito` — sono la
+risposta definitiva su quel tratto: si scrivono *sopra* le celle previste. Se si
+sommassero, reincollare lo stesso foglio raddoppierebbe il mese, e sarebbe una
+cosa che si scopre dal margine sbagliato tre settimane dopo. Da qui anche il
+resto: una cella lasciata vuota nell'incollato **non azzera** (chi corregge una
+settimana seleziona tutto il rettangolo, e le altre colonne sono vuote perché
+non le ha toccate), e le righe che non si capiscono si mostrano invece di
+sparire.
+
 **Il calendario di lavoro è uno specchio, e si legge soltanto.** Il file su
 OneDrive lo riscrive intero una GitHub Action ogni paio d'ore: qualunque cosa si
 scrivesse da qui sopravviverebbe fino al giro dopo e poi sparirebbe in silenzio.
@@ -168,13 +250,18 @@ che ha già smesso di funzionare.
 | `src/paraConfig.js` | i nomi PARA e le consegne annidate (`2573.A60-260831`) |
 | `src/auth.js` | MSAL, la coda dei token, il rinnovo programmato, la scatola nera |
 | `src/queryClient.js` | TanStack Query, le chiavi, la persistenza col suo tetto |
+| `src/cachePersistenza.js` | cosa della cache finisce su `localStorage`: le finestre di eventi potate ai giorni attorno a oggi, e il tetto. Puro, e ci girano le prove |
 | `src/poolAttivita.js` | il serbatoio delle attività: una lettura della cache, non uno stato |
 | `src/use*.js` | i pezzi che stavano in `App.jsx` e non c'entravano con lui: la campanella, le scadenze ricorrenti, i colori, le sveglie |
-| `src/deadlineReminders.js` | le scadenze che tornano ogni anno: come si scrive un evento `[LISTA +30g] Titolo`, quali occorrenze sono dovute oggi, e come si sa che ci sono già |
+| `src/deadlineReminders.js` | le scadenze che tornano ogni anno: come si scrive un evento `[LISTA +30g] Titolo`, quali occorrenze sono dovute oggi, come si sa che ci sono già, e — per la scheda «Scadenze» della campanella — cosa sta arrivando (`prossimeScadenze`) e cosa non arriverà mai perché il prefisso non aggancia nessuna lista (`scadenzeOrfane`) |
+| `src/dailyReview.js` | le proposte della campanella: quali email chiedono qualcosa e perché (`motivi`), quali sono un flusso di servizio che si ripete, e le righe «Da fare» di OneNote |
+| `src/PannelloReview.jsx` | il pannello della campanella: «Da valutare» e «Scadenze», le due metà del giro quotidiano |
 | `src/calendarioLavoro.js` | lo specchio del calendario aziendale: cosa c'è nel file su OneDrive e come diventa un evento nella forma di Graph |
-| `src/programma.js` | il Programma di commessa: i conti, le chiavi del carico, lo stato derivato di una voce, e il carico di una persona su tutte le commesse. Niente rete, niente React: è il file su cui girano le prove |
+| `src/programma.js` | il Programma di commessa: i conti, le chiavi del carico (`risorsa\|pacchetto\|settimana` più, in coda e facoltativa, la voce), lo stato derivato di una voce, e il carico di una persona su tutte le commesse. Niente rete, niente React: è il file su cui girano le prove |
 | `src/programmaStore.js` | gli stessi programmi su OneDrive: registro, un documento per commessa, `reapply` che unisce per chiave |
-| `src/programma/` | la vista: la matrice e la sua tastiera, la matrice per persona (in sola lettura, su tutti i programmi accesi), l'elenco voci, il dettaglio, attiva, le voci nuove (a campi o incollate), il riepilogo, la scheda della commessa, la guida |
+| `src/programmaExcel.js` | il foglio che esce (tre fogli: riepilogo, persone, voci) e le ore vere che rientrano incollate. Puro, e il foglio Persone esce nella stessa forma in cui rientra |
+| `src/xlsx.js` | un `.xlsx` vero senza librerie: lo zip «store» e i fogli con le celle in chiaro. Duecento righe invece di mezzo megabyte di JavaScript |
+| `src/programma/` | la vista: la matrice (pacchetto › voce › sotto-voce › persona, potata da due bottoni) e la sua tastiera, il Gantt (una riga per attività, in ordine di quando finiscono, in sola lettura), la matrice per persona (in sola lettura, su tutti i programmi accesi), l'elenco voci, il dettaglio, attiva, le voci nuove (a campi o incollate), il riepilogo, la scheda della commessa, la guida |
 | `src/planner/` | la griglia del Piano (misure, colori, conti) e i suoi componenti: settimana, mese, capacità, modale evento |
 | `src/tokens.css` | colori, tipografia, spazi, raggi — la sola fonte |
 | `src/tempo.js` | il giorno locale, l'ora, le durate — scritti una volta sola |
@@ -226,6 +313,12 @@ Cose note, già decise, da non riscoprire:
   griglia e i quattro componenti in `src/planner/`: la vista Giorno, il
   trascinamento, il ridimensionamento, i filtri e i salvataggi. Il prossimo
   pezzo è lo stato del trascinamento in un hook suo.
+- **`Voce.risorsa` è lo specchio di `risorse[0]`, e si toglierà.** Le proposte
+  sono un elenco da adesso; il campo singolo continua a uscire nel file perché
+  un dispositivo con la versione di prima, riscrivendo il documento, butterebbe
+  via un campo che non conosce — e con lui le altre proposte. Si legge solo da
+  `risorse`: l'unico posto che nomina `risorsa` è `normalizzaVoce`. Si toglie
+  quando tutti i dispositivi hanno ricaricato l'app.
 - **Il PIN delle Finanze non è cifratura, ed è giusto così.** SHA-256 senza
   sale di sei cifre, e l'hash viaggia dentro il backup su OneDrive. Non è una
   svista da correggere: serve a coprire lo schermo da chi passa vicino alla

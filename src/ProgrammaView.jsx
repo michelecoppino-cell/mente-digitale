@@ -38,7 +38,7 @@ import {
 } from './programmaStore';
 import {
   totali, settimaneDellaMatrice, settimaneDellePersone, oreVoci, statoVoce,
-  conVoceAggiornata, conVoci,
+  conVoceAggiornata, conVoci, conRisorsa,
   conVociDaRighe, conVoceAttivata, conPacchettoAggiornato, conCommessa, conCarico,
   senzaVoce, pacchettiCheSforano, daCollocarePerPacchetto, esportazione,
 } from './programma';
@@ -46,6 +46,7 @@ import { creaTask, eliminaTask } from './taskStore';
 import { settimanaIso } from './tempo.js';
 import Matrice from './programma/Matrice.jsx';
 import MatricePersone from './programma/MatricePersone.jsx';
+import Gantt from './programma/Gantt.jsx';
 import { oreBrevi } from './programma/formato.js';
 import ElencoVoci from './programma/ElencoVoci.jsx';
 import DettaglioVoce from './programma/DettaglioVoce.jsx';
@@ -55,6 +56,8 @@ import NuovaCommessa from './programma/NuovaCommessa.jsx';
 import SchedaCommessa from './programma/SchedaCommessa.jsx';
 import Riepilogo from './programma/Riepilogo.jsx';
 import Istruzioni from './programma/Istruzioni.jsx';
+import OreRegistrate from './programma/OreRegistrate.jsx';
+import { libroProgramma } from './programmaExcel.js';
 import { useMediaQuery } from './useMediaQuery';
 import Skeleton from './Skeleton';
 import './ProgrammaView.css';
@@ -107,16 +110,27 @@ export default function ProgrammaView({
   const doc = documento.data || null;
 
   const [railChiuso, setRailChiuso] = useState(true);
-  const [pacchettoScelto, setPacchettoScelto] = useState(/** @type {string|null} */ (null));
-  const [scheda, setScheda] = useState(/** @type {'matrice'|'persone'|'voci'|'riepilogo'|'impostazioni'} */ ('matrice'));
+  // Il filtro dei pacchetti è un **elenco**, non uno: le pastiglie della barra
+  // si accendono in due, e la domanda «come stanno messi Calcolo e Disegni
+  // insieme» non si poteva fare — si vedeva un pacchetto per volta, e i due
+  // numeri andavano sommati a mente. Vuoto vuol dire tutti, ed è il bottone
+  // «tutti ✕».
+  const [pacchettiScelti, setPacchettiScelti] = useState(/** @type {string[]} */ ([]));
+  const [scheda, setScheda] = useState(/** @type {'matrice'|'gantt'|'persone'|'voci'|'riepilogo'|'impostazioni'} */ ('matrice'));
   const [voceScelta, setVoceScelta] = useState(/** @type {string|null} */ (null));
   const [selezione, setSelezione] = useState(/** @type {string[]} */ ([]));
   const [attivaAperta, setAttivaAperta] = useState(false);
   const [soloScoperte, setSoloScoperte] = useState(false);
   const [nuovaAperta, setNuovaAperta] = useState(false);
   const [guidaAperta, setGuidaAperta] = useState(false);
+  const [oreAperte, setOreAperte] = useState(false);
   const [salvataggio, setSalvataggio] = useState(/** @type {'fermo'|'salvo'|'salvato'|'errore'} */ ('fermo'));
   const [toast, setToast] = useState(/** @type {{ testo: string, annulla?: () => void, apri?: () => void }|null} */ (null));
+
+  /** Accende o spegne una pastiglia, tenendo accese le altre. */
+  const alternaPacchetto = useCallback(/** @param {string} id */ id => {
+    setPacchettiScelti(x => (x.includes(id) ? x.filter(y => y !== id) : [...x, id]));
+  }, []);
 
   const settimanaOra = settimanaIso();
   const settimane = useMemo(() => (doc ? settimaneDellaMatrice(doc, settimanaOra) : []), [doc, settimanaOra]);
@@ -242,7 +256,7 @@ export default function ProgrammaView({
     const creata = await creaProgramma(nome, commessa);
     await registro.refetch();
     setNuovaAperta(false);
-    setPacchettoScelto(null);
+    setPacchettiScelti([]);
     setVoceScelta(null);
     // Si arriva in Impostazioni: una commessa appena nata non ha né persone né
     // pacchetti, e la matrice sarebbe una griglia vuota senza righe.
@@ -281,7 +295,29 @@ export default function ProgrammaView({
   function esporta() {
     if (!doc) return;
     const { nomeFile, dati } = esportazione(doc);
-    const url = URL.createObjectURL(new Blob([JSON.stringify(dati, null, 2)], { type: 'application/json' }));
+    scaricaFile(nomeFile, new Blob([JSON.stringify(dati, null, 2)], { type: 'application/json' }));
+  }
+
+  /**
+   * Lo stesso programma in un foglio di calcolo: tre fogli, e il primo è quello
+   * che si guarda in riunione.
+   *
+   * È l'altra metà del giro delle ore vere — si esporta, si corregge la colonna
+   * della settimana finita, si rimanda indietro da «Ore registrate» — e per
+   * questo il foglio Persone esce nella stessa forma in cui rientra. Il perché
+   * per esteso è in `programmaExcel.js`.
+   */
+  function esportaExcel() {
+    if (!doc) return;
+    const { nomeFile, byte } = libroProgramma(doc, { settimanaOra, settimane });
+    scaricaFile(nomeFile, new Blob([/** @type {BlobPart} */ (/** @type {unknown} */ (byte))], {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    }));
+  }
+
+  /** @param {string} nomeFile @param {Blob} blob */
+  function scaricaFile(nomeFile, blob) {
+    const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
     a.download = nomeFile;
@@ -386,6 +422,22 @@ export default function ProgrammaView({
         />
       )}
       {guidaAperta && <Istruzioni onChiudi={() => setGuidaAperta(false)} />}
+      {oreAperte && doc && (
+        <OreRegistrate
+          doc={doc}
+          settimane={settimane}
+          onChiudi={() => setOreAperte(false)}
+          onApplica={celle => {
+            // Passano dalla stessa strada di una cella battuta a mano: la coda
+            // che scrive a raffiche, e la pila dell'annulla che le riprende
+            // tutte insieme con ⌘Z.
+            scriviCelle(celle);
+            setOreAperte(false);
+            setScheda('matrice');
+            setToast({ testo: `${Object.keys(celle).length} celle aggiornate con le ore vere — ⌘Z annulla` });
+          }}
+        />
+      )}
     </>
   );
 
@@ -428,8 +480,14 @@ export default function ProgrammaView({
     );
   }
 
-  const numeri = doc ? totali(doc, { pacchettoId: pacchettoScelto, settimanaOra }) : null;
-  const pacchetto = doc?.pacchetti.find(p => p.id === pacchettoScelto) || null;
+  const numeri = doc ? totali(doc, { pacchettoId: pacchettiScelti, settimanaOra }) : null;
+  // I pacchetti accesi, nell'ordine del documento: serve per dirne i nomi.
+  const pacchettiFiltro = doc ? doc.pacchetti.filter(p => pacchettiScelti.includes(p.id)) : [];
+  const nomiPacchetti = pacchettiFiltro.map(p => p.nome).join(' + ');
+  // Il pacchetto in cui finisce quello che si scrive nuovo: esiste solo se ce
+  // n'è uno acceso: con due accesi indovinare quale sia il suo è quello che qui
+  // non si fa.
+  const pacchettoUnico = pacchettiScelti.length === 1 ? pacchettiScelti[0] : null;
   const voce = doc?.voci.find(v => v.id === voceScelta) || null;
   const statoDellaVoce = voce ? statoVoce(voce, attivitaAperte, poolPronto) : null;
   const sfori = doc && numeri && numeri.margine < 0 ? pacchettiCheSforano(doc) : [];
@@ -452,7 +510,7 @@ export default function ProgrammaView({
       attivita={tasks}
       poolPronto={poolPronto}
       voceScelta={voceScelta}
-      pacchettoScelto={pacchettoScelto}
+      pacchettiScelti={pacchettiScelti}
       selezione={selezione}
       onSelezione={setSelezione}
       onScegli={id => { setVoceScelta(id); setAttivaAperta(false); }}
@@ -461,10 +519,10 @@ export default function ProgrammaView({
       incolla={(
         <NuoveVoci
           doc={doc}
-          pacchettoScelto={pacchettoScelto}
+          pacchettoScelto={pacchettoUnico}
           titolo="Voci nuove"
           etichetta="Aggiungi"
-          onAggiungi={righe => cambia(d => conVociDaRighe(d, righe, { pacchettoId: pacchettoScelto }).doc)}
+          onAggiungi={righe => cambia(d => conVociDaRighe(d, righe, { pacchettoId: pacchettoUnico }).doc)}
         />
       )}
     />
@@ -489,7 +547,7 @@ export default function ProgrammaView({
                 <button
                   type="button"
                   className={`pg-rail-voce${p.id === scelto.id ? ' scelta' : ''}`}
-                  onClick={() => { navigate(`/programma/${p.id}`); setPacchettoScelto(null); setVoceScelta(null); setRailChiuso(true); }}
+                  onClick={() => { navigate(`/programma/${p.id}`); setPacchettiScelti([]); setVoceScelta(null); setRailChiuso(true); }}
                 >
                   <span className="pg-rail-nome">{p.nome}</span>
                   {p.id === scelto.id && doc && <span className="pg-rail-ore">{conMigliaia(doc.commessa.oreVendute)} h</span>}
@@ -498,8 +556,8 @@ export default function ProgrammaView({
                   <button
                     type="button"
                     key={pk.id}
-                    className={`pg-rail-pacchetto${pacchettoScelto === pk.id ? ' scelto' : ''}`}
-                    onClick={() => { setPacchettoScelto(x => (x === pk.id ? null : pk.id)); setRailChiuso(true); }}
+                    className={`pg-rail-pacchetto${pacchettiScelti.includes(pk.id) ? ' scelto' : ''}`}
+                    onClick={() => { alternaPacchetto(pk.id); setRailChiuso(true); }}
                   >
                     <span className="pg-punto" style={pk.colore ? { background: pk.colore } : undefined} />
                     <span className="pg-rail-nome">{pk.nome}</span>
@@ -553,13 +611,20 @@ export default function ProgrammaView({
               <div className="pg-numeri">
                 <div className="pg-margine-blocco">
                   <div className={`pg-margine${numeri.margine < 0 ? ' negativo' : ''}`}>{conSegno(numeri.margine)}</div>
-                  <div className="eyebrow">margine{pacchetto ? ` ${pacchetto.nome}` : ''}</div>
+                  <div className="eyebrow">margine{nomiPacchetti ? ` ${nomiPacchetti}` : ''}</div>
                 </div>
                 <div className="pg-controllo">
                   <span>vendute <b>{conMigliaia(numeri.vendute)}</b></span>
                   <span>stimate <b>{conMigliaia(numeri.stimate)}</b></span>
                   <span>speso <b>{conMigliaia(numeri.speso)}</b></span>
+                  {/* «A finire» sono le stime meno lo speso, non le celle
+                      future: la programmazione qui non si fa mai completa, e
+                      contare quella direbbe sempre meno lavoro di quanto ne
+                      resta. Le celle future restano a schermo accanto, come
+                      «programmate», perché sono l'altra domanda — quanto di
+                      quel lavoro è già in calendario. */}
                   <span>a finire <b>{conMigliaia(numeri.aFinire)}</b></span>
+                  <span className="muted">programmate <b>{conMigliaia(numeri.programmate)}</b></span>
                 </div>
               </div>
             )}
@@ -578,16 +643,17 @@ export default function ProgrammaView({
                 <button
                   type="button"
                   key={p.id}
-                  className={`pg-chip${pacchettoScelto === p.id ? ' scelto' : ''}`}
-                  onClick={() => setPacchettoScelto(x => (x === p.id ? null : p.id))}
+                  className={`pg-chip${pacchettiScelti.includes(p.id) ? ' scelto' : ''}`}
+                  aria-pressed={pacchettiScelti.includes(p.id)}
+                  onClick={() => alternaPacchetto(p.id)}
                 >
                   <span className="pg-punto" style={p.colore ? { background: p.colore } : undefined} />
                   {p.nome}
                   {(daCollocare.get(p.id) || 0) > 0 && <span className="pg-chip-resto">{oreBrevi(daCollocare.get(p.id) || 0)}</span>}
                 </button>
               ))}
-              {pacchettoScelto && (
-                <button type="button" className="pg-chip" onClick={() => setPacchettoScelto(null)}>tutti ✕</button>
+              {pacchettiScelti.length > 0 && (
+                <button type="button" className="pg-chip" onClick={() => setPacchettiScelti([])}>tutti ✕</button>
               )}
             </div>
           )}
@@ -600,6 +666,21 @@ export default function ProgrammaView({
                 onClick={() => setScheda('matrice')}
               >
                 Matrice
+              </button>
+            )}
+            {/* La terza lettura dello stesso carico: non «chi è pieno» e non
+                «a chi ho dato cosa», ma **cosa finisce quando**. Sta accanto
+                alla matrice perché è la sua lettura da riunione, e in sola
+                lettura perché le celle si scrivono in un posto solo. Vedi
+                programma/Gantt.jsx. */}
+            {!stretto && (
+              <button
+                type="button"
+                className={`pg-scheda${scheda === 'gantt' ? ' scelta' : ''}`}
+                onClick={() => setScheda('gantt')}
+                title="Le attività in ordine di quando finiscono, una barra per settimana"
+              >
+                Gantt
               </button>
             )}
             {/* La stessa matrice letta per persona invece che per commessa:
@@ -637,6 +718,21 @@ export default function ProgrammaView({
               Impostazioni
             </button>
             <span className="pg-testata-sp" />
+            {/* Il programma esce e rientra. Stanno qui e non in Impostazioni
+                perché non sono la mezz'ora in cui si mette in piedi il
+                programma: l'esportazione si fa prima di ogni riunione, e le ore
+                vere rientrano ogni lunedì. */}
+            <button type="button" className="pg-guida" onClick={esportaExcel} title="Tre fogli: riepilogo, matrice, voci">
+              ↓ Excel
+            </button>
+            <button
+              type="button"
+              className="pg-guida"
+              onClick={() => setOreAperte(true)}
+              title="Incolla le ore davvero fatte: sostituiscono quelle previste"
+            >
+              ↑ Ore registrate
+            </button>
             <span className="pg-salvataggio">
               {salvataggio === 'salvo' && 'salvo…'}
               {salvataggio === 'salvato' && 'salvato'}
@@ -696,8 +792,8 @@ export default function ProgrammaView({
             <Riepilogo
               doc={doc}
               settimanaOra={settimanaOra}
-              pacchettoScelto={pacchettoScelto}
-              onScegliPacchetto={setPacchettoScelto}
+              pacchettiScelti={pacchettiScelti}
+              onScegliPacchetto={alternaPacchetto}
               onCambia={cambia}
             />
           </div>
@@ -706,23 +802,34 @@ export default function ProgrammaView({
             <p className="pg-empty pg-solo-portatile">La matrice si apre da portatile.</p>
             {elenco}
           </div>
+        ) : scheda === 'gantt' ? (
+          <Gantt
+            doc={doc}
+            settimane={settimane}
+            settimanaOra={settimanaOra}
+            pacchettiScelti={pacchettiScelti}
+            onSceltaVoce={id => { setVoceScelta(id); setAttivaAperta(false); }}
+          />
         ) : scheda === 'persone' ? (
           <MatricePersone
             programmi={programmiLetti}
             settimane={settimanePersone}
             settimanaOra={settimanaOra}
             inCaricamento={personeInCaricamento}
-            onApriCommessa={id => { navigate(`/programma/${id}`); setScheda('matrice'); setPacchettoScelto(null); }}
+            pacchettiScelti={pacchettiScelti}
+            nomiPacchetti={nomiPacchetti}
+            onApriCommessa={id => { navigate(`/programma/${id}`); setScheda('matrice'); setPacchettiScelti([]); }}
           />
         ) : scheda === 'matrice' ? (
           <Matrice
             doc={doc}
             settimane={settimane}
             settimanaOra={settimanaOra}
-            pacchettoScelto={pacchettoScelto}
+            pacchettiScelti={pacchettiScelti}
             onCelle={scriviCelle}
             onAnnulla={annulla}
-            onSceltaRiga={(_risorsa, pacchettoId) => setPacchettoScelto(pacchettoId)}
+            onSceltaRiga={(_risorsa, pacchettoId) => setPacchettiScelti(pacchettoId ? [pacchettoId] : [])}
+            onSceltaVoce={id => { setVoceScelta(id); setAttivaAperta(false); }}
           />
         ) : (
           <div className="pg-corpo">{elenco}</div>
@@ -737,10 +844,19 @@ export default function ProgrammaView({
           stato={statoDellaVoce}
           task={tasks.find(t => t.id === voce.taskId) || null}
           settimane={settimane}
-          onPatch={patch => cambia(d => conVoceAggiornata(d, voce.id, patch))}
+          onPatch={patch => cambia(d => {
+            // Un nome nuovo scritto fra le proposte entra anche fra le risorse
+            // della commessa: è la stessa regola dell'incollato — chi nomina
+            // una persona non deve doverla aggiungere due volte, e una proposta
+            // che non combacia con nessuna risorsa non farebbe comparire
+            // nessuna riga, in silenzio.
+            const conPersone = (patch.risorse || []).reduce(
+              (x, nome) => conRisorsa(x, nome), d);
+            return conVoceAggiornata(conPersone, voce.id, patch);
+          })}
           onScomponi={figlie => cambia(d => conVoci(d, figlie.map(f => ({
             titolo: f.titolo, ore: f.ore, oreIniziali: f.ore,
-            padreId: voce.id, pacchettoId: voce.pacchettoId, risorsa: voce.risorsa,
+            padreId: voce.id, pacchettoId: voce.pacchettoId, risorse: voce.risorse,
           }))))}
           onChiudi={() => { setVoceScelta(null); setAttivaAperta(false); }}
           onCancella={() => {

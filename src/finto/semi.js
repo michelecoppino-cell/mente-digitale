@@ -167,6 +167,38 @@ export const CALENDARIO_LAVORO = {
   ],
 };
 
+// ── La posta, per la Revisione quotidiana ───────────────────────────────────
+//
+// Prima il finto rispondeva alla casella con un elenco vuoto, e la scheda «Da
+// valutare» della campanella restava una cosa che si poteva guardare solo in
+// produzione — cioè l'unico posto in cui non si può provare niente. Qui ci
+// sono i tre casi che contano: una richiesta vera, una che non chiede niente,
+// e il flusso di servizio che si ripete a ogni invio (lo specchio del
+// calendario di lavoro, che si manda una mail ogni due ore). Solo la prima
+// deve comparire.
+
+/** @param {string} subject @param {object} extra */
+const mail = (subject, extra = {}) => ({
+  subject,
+  from: { emailAddress: { name: 'Elena Rossi', address: 'elena.rossi@studio.it' } },
+  bodyPreview: '',
+  receivedDateTime: oreFa(3),
+  isRead: false,
+  webLink: '#',
+  ...extra,
+});
+
+export const POSTA = [
+  mail('Puoi confermare le quote di fondazione entro il 10?', {
+    bodyPreview: 'Ciao, servirebbe la conferma prima di mandare in stampa.' }),
+  mail('Verbale della riunione di ieri', { isRead: true,
+    bodyPreview: 'In allegato il verbale, per archivio.' }),
+  ...['08:00', '10:00', '12:00'].map((ora, i) => mail(`calendario ${oggi} ${ora}`, {
+    from: { emailAddress: { name: 'PC studio', address: 'michele@studio.it' } },
+    receivedDateTime: oreFa(2 * (i + 1)),
+  })),
+];
+
 // ── I file dell'app su OneDrive ─────────────────────────────────────────────
 
 export const PIANI = {
@@ -280,19 +312,34 @@ const PACCHETTI = [
 ];
 
 /** @type {Record<string, number>} */
+// Le prime tre colonne sono la cella; la quarta, quando c'è, è la **voce** su
+// cui cadono quelle ore. Senza, sono ore date al pacchetto e basta — che è
+// quello che scrive il consuntivo del passato, e quello che c'era nei file
+// prima che le voci esistessero. Il seme tiene apposta tutti e due i casi, e
+// anche i due modi in cui le ore senza voce finiscono a schermo: quelle di
+// Marco su A30 e di Sara su A20 le **adotta** la voce che li propone e
+// compaiono nella sua riga, quelle di Michele su A30 — che nessuna voce
+// reclama — restano in coda al pacchetto. È l'unico modo di vederlo provando.
 const CARICO = {};
-for (const [risorsa, pacchetto, da, ore] of /** @type {[string, string, number, number][]} */ ([
-  ['Michele', 'pk-a30', -6, 8], ['Michele', 'pk-a30', -3, 12], ['Michele', 'pk-a30', 0, 10],
-  ['Michele', 'pk-a40', 1, 14], ['Michele', 'pk-a40', 2, 16],
-  ['Marco', 'pk-a30', -4, 30], ['Marco', 'pk-a30', -1, 34], ['Marco', 'pk-a40', 0, 36],
-  ['Marco', 'pk-a40', 1, 28], ['Marco', 'pk-a40', 3, 20],
-  ['Sara', 'pk-a20', -5, 18], ['Sara', 'pk-a20', -2, 16], ['Sara', 'pk-a50', 2, 12],
+for (const [risorsa, pacchetto, da, ore, voce] of /** @type {[string, string, number, number, string?][]} */ ([
+  ['Michele', 'pk-a30', -6, 8], ['Michele', 'pk-a30', -3, 12],
+  ['Michele', 'pk-a30', 0, 10, 'vc-4'],
+  ['Michele', 'pk-a40', 1, 14, 'vc-5'], ['Michele', 'pk-a40', 2, 16, 'vc-5'],
+  ['Marco', 'pk-a30', -4, 30], ['Marco', 'pk-a30', -1, 34, 'vc-3'],
+  ['Marco', 'pk-a40', 0, 36, 'vc-5'],
+  ['Marco', 'pk-a40', 1, 28, 'vc-5'], ['Marco', 'pk-a40', 3, 20, 'vc-5'],
+  ['Sara', 'pk-a20', -5, 18], ['Sara', 'pk-a20', -2, 16, 'vc-1'],
+  ['Sara', 'pk-a50', 2, 12, 'vc-6'],
 ])) {
-  CARICO[`${risorsa}|${pacchetto}|${settimana(da)}`] = ore;
+  const chiave = `${risorsa}|${pacchetto}|${settimana(da)}${voce ? `|${voce}` : ''}`;
+  CARICO[chiave] = ore;
 }
 
 export const PROGRAMMI = [
   { id: 'pg-2573', nome: '2573 · Sottopasso ferroviario', file: 'programmi/2573-sottopasso.json', attivo: true },
+  // La commessa grande: dieci persone, un anno, trenta sotto-voci. È quella su
+  // cui si guarda se il pannello *si legge* — in fondo a questo file.
+  { id: 'pg-2588', nome: '2588 · Ampliamento stabilimento', file: 'programmi/2588-ampliamento.json', attivo: true },
   { id: 'pg-2601', nome: '2601 · Villa', file: 'programmi/2601-villa.json', attivo: false },
 ];
 
@@ -331,8 +378,13 @@ export const PROGRAMMA = {
       { id: 'vc-5', titolo: 'Impalcato — carpenteria', nota: '', pacchettoId: 'pk-a40', padreId: null,
         ore: 260, oreIniziali: 260, risorsa: 'Marco', finestra: { da: settimana(0), a: settimana(4) },
         scartata: false, taskId: null, listId: null, creatoIl: istante(g(-35), '10:00'), attivataIl: null },
+      // Le altre voci portano `risorsa`, una stringa, come i file scritti prima
+      // che le proposte fossero un elenco: è il formato vecchio, e deve
+      // continuare a leggersi. Questa porta `risorse` — due persone sulla
+      // stessa voce, di cui una senza ancora un'ora, che è la riga da cui si
+      // comincia a darle lavoro.
       { id: 'vc-6', titolo: 'Drenaggio e pompe', nota: '', pacchettoId: 'pk-a50', padreId: null,
-        ore: 96, oreIniziali: 96, risorsa: null, finestra: { da: settimana(3), a: settimana(8) },
+        ore: 96, oreIniziali: 96, risorse: ['Sara', 'Marco'], finestra: { da: settimana(3), a: settimana(8) },
         scartata: false, taskId: null, listId: null, creatoIl: istante(g(-30), '11:00'), attivataIl: null },
     ],
     carico: CARICO,
@@ -347,3 +399,159 @@ export const PROGRAMMA = {
     risorse: [], pacchetti: [], voci: [], carico: {},
   },
 };
+
+// ── La commessa grande ──────────────────────────────────────────────────────
+// La 2573 ha tre persone e sei voci: basta per vedere che la matrice funziona,
+// non per vedere se **si legge**. Una commessa vera di studio ne ha dieci di
+// persone, dieci lavorazioni scomposte in una trentina di sotto-voci, e un anno
+// di settimane davanti — cioè cinquanta colonne e trenta righe aperte.
+//
+// È la scala a cui i difetti di leggibilità sono difetti veri: la fascia dei
+// mesi che si perde, il nome che non si distingue dal pacchetto, la riga su cui
+// si è che si confonde con le altre, il totale che non si sa a chi appartenga.
+// Quindi sta qui dentro, e `dev:finto` la apre insieme alle altre.
+
+const SQUADRA = [
+  { nome: 'Michele', oreSettimana: 20 },
+  { nome: 'Marco', oreSettimana: 35 },
+  { nome: 'Sara', oreSettimana: 28 },
+  { nome: 'Luca', oreSettimana: 35 },
+  { nome: 'Elena', oreSettimana: 30 },
+  { nome: 'Giovanni', oreSettimana: 35 },
+  { nome: 'Chiara', oreSettimana: 24 },
+  { nome: 'Andrea', oreSettimana: 35 },
+  { nome: 'Federica', oreSettimana: 18 },
+  { nome: 'Stefano', oreSettimana: 35 },
+];
+
+const PACCHETTI_G = [
+  { id: 'gk-a10', nome: 'A10 Rilievi e indagini', listId: null, colore: '#7fb488' },
+  { id: 'gk-a20', nome: 'A20 Geotecnica', listId: null, colore: '#5b9bd5' },
+  { id: 'gk-b10', nome: 'B10 Fondazioni', listId: null, colore: '#d4a44a' },
+  { id: 'gk-b20', nome: 'B20 Elevazioni', listId: null, colore: '#a07bd0' },
+  { id: 'gk-c10', nome: 'C10 Carpenterie metalliche', listId: null, colore: '#c07a7a' },
+  { id: 'gk-d10', nome: 'D10 Sismica e verifiche', listId: null, colore: '#6fa8a0' },
+];
+
+// Dieci lavorazioni, trenta sotto-voci:
+// `[pacchetto, titolo, stima del primo giorno, risorsa, daW, aW, [figlie]]`.
+//
+// La stima è quella con cui la lavorazione è entrata in offerta, e resta lì:
+// `ore` la rifà dalle figlie (`risommaContenitori`), `oreIniziali` no. La
+// distanza fra le due è il dato che si guarda — «scomponendola è cresciuta di
+// venti ore» — ed è per questo che qui i due numeri non coincidono mai.
+const LAVORAZIONI = /** @type {[string, string, number, string|null, number, number, [string, number, string|null][]][]} */ ([
+  ['gk-a10', 'Rilievo geometrico e restituzione', 150, 'Federica', -14, -8, [
+    ['Rilievo con stazione totale', 60, 'Federica'],
+    ['Restituzione piante e sezioni', 80, 'Federica'],
+    ['Verifica quote con il DL', 24, 'Michele'],
+  ]],
+  ['gk-a20', 'Caratterizzazione geotecnica', 200, 'Sara', -12, -4, [
+    ['Lettura prove penetrometriche', 40, 'Sara'],
+    ['Modello di sottosuolo', 70, 'Sara'],
+    ['Relazione geotecnica', 90, 'Sara'],
+  ]],
+  ['gk-a20', 'Risposta sismica locale', 160, 'Chiara', -6, 2, [
+    ['Raccolta accelerogrammi', 30, 'Chiara'],
+    ['Analisi monodimensionale', 85, 'Chiara'],
+    ['Relazione RSL', 45, 'Chiara'],
+  ]],
+  ['gk-b10', 'Fondazioni corpo A', 400, 'Marco', -4, 6, [
+    ['Predimensionamento plinti', 50, 'Marco'],
+    ['Calcolo plinti P1-P12', 140, 'Marco'],
+    ['Travi rovesce e collegamenti', 110, 'Luca'],
+    ['Carpenterie fondazioni corpo A', 130, 'Luca'],
+  ]],
+  ['gk-b10', 'Fondazioni corpo B — platea', 300, 'Luca', 2, 12, [
+    ['Modello platea su suolo elastico', 90, 'Luca'],
+    ['Armature platea', 120, 'Andrea'],
+    ['Verifiche a punzonamento', 60, 'Marco'],
+  ]],
+  ['gk-b20', 'Elevazioni in c.a.', 640, 'Andrea', 4, 18, [
+    ['Modello globale SAP2000', 120, 'Michele'],
+    ['Pilastri e setti — verifiche', 160, 'Andrea'],
+    ['Solai e scale', 140, 'Elena'],
+    ['Carpenterie elevazioni', 180, 'Elena'],
+  ]],
+  ['gk-c10', 'Copertura metallica', 480, 'Giovanni', 8, 22, [
+    ['Schema statico e predimensionamento', 70, 'Giovanni'],
+    ['Verifiche travi reticolari', 130, 'Giovanni'],
+    ['Nodi e collegamenti bullonati', 150, 'Stefano'],
+    ['Disegni officina', 160, 'Stefano'],
+  ]],
+  ['gk-c10', 'Controventi e baraccature', 150, 'Stefano', 14, 24, [
+    ['Verifica controventi di falda', 80, 'Stefano'],
+    ['Baraccature di parete', 70, 'Giovanni'],
+  ]],
+  ['gk-d10', 'Verifiche sismiche globali', 250, 'Michele', 10, 26, [
+    ['Analisi modale e spettri NTC 2018', 100, 'Michele'],
+    ['Verifiche di duttilità', 90, 'Chiara'],
+    ['Spostamenti di interpiano', 60, 'Elena'],
+  ]],
+  ['gk-d10', 'Relazione di calcolo e consegna', 280, 'Michele', 24, 32, [
+    ['Fascicolo dei calcoli', 130, 'Andrea'],
+    ['Relazione generale', 90, 'Michele'],
+    ['Revisione e timbri', 40, 'Michele'],
+  ]],
+]);
+
+/** @type {any[]} */
+const VOCI_G = [];
+/** @type {Record<string, number>} */
+const CARICO_G = {};
+
+LAVORAZIONI.forEach(([pacchettoId, titolo, ore, risorsa, daW, aW, figlie], i) => {
+  const madre = `gv-${i + 1}`;
+  VOCI_G.push({
+    id: madre, titolo, nota: '', pacchettoId, padreId: null,
+    ore, oreIniziali: ore, risorsa,
+    finestra: { da: settimana(daW), a: settimana(aW) },
+    scartata: false, taskId: null, listId: null,
+    creatoIl: istante(g(-100), '09:00'), attivataIl: null,
+  });
+  figlie.forEach(([sotto, oreFiglia, chi], j) => {
+    // Le figlie si spartiscono la finestra della madre, in ordine: la seconda
+    // comincia dove finisce la prima.
+    const da = daW + Math.round(((aW - daW) * j) / figlie.length);
+    const a = Math.max(da, daW + Math.round(((aW - daW) * (j + 1)) / figlie.length) - 1);
+    VOCI_G.push({
+      id: `gv-${i + 1}-${j + 1}`, titolo: sotto, nota: '', pacchettoId, padreId: madre,
+      ore: oreFiglia, oreIniziali: oreFiglia, risorsa: chi,
+      finestra: { da: settimana(da), a: settimana(a) },
+      scartata: false, taskId: null, listId: null,
+      creatoIl: istante(g(-100), '09:00'), attivataIl: null,
+    });
+    // E le loro ore finiscono nelle settimane della loro finestra: la matrice
+    // si riempie come si riempirebbe davvero — un piano che copre l'anno e in
+    // qualche punto sfora — invece che di celle sparse.
+    if (!chi) return;
+    const quante = a - da + 1;
+    const perSettimana = Math.round((oreFiglia / quante) * 2) / 2;
+    for (let k = 0; k < quante; k++) {
+      // Le ore vanno **sulla figlia**: è dove sta la descrizione del lavoro,
+      // ed è la riga in cui la matrice le fa scrivere.
+      const chiave = `${chi}|${pacchettoId}|${settimana(da + k)}|gv-${i + 1}-${j + 1}`;
+      CARICO_G[chiave] = (CARICO_G[chiave] || 0) + perSettimana;
+    }
+  });
+});
+
+/** @type {any} */
+export const PROGRAMMA_GRANDE = {
+  version: 1,
+  id: 'pg-2588',
+  commessa: {
+    nome: '2588 · Ampliamento stabilimento', codice: '2588', oreVendute: 4200,
+    inizio: g(-105), fine: g(240), settimaneDa: null, settimaneA: null,
+    sezione: null, sezioneId: null,
+  },
+  risorse: SQUADRA,
+  pacchetti: PACCHETTI_G,
+  voci: VOCI_G,
+  carico: CARICO_G,
+};
+
+// Si aggancia qui e non dentro `PROGRAMMA` più su: quella mappa è la prima cosa
+// che si legge scorrendo il file, e cinquanta righe di commessa grande in mezzo
+// la renderebbero illeggibile.
+PROGRAMMA['pg-2588'] = PROGRAMMA_GRANDE;

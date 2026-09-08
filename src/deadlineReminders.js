@@ -43,7 +43,7 @@
 // `origineScadenza`. Un elenco a parte sarebbe una cosa in più da tenere in
 // pari, e quando si disallinea si ritrovano tre copie della stessa revisione.
 
-import { ymd, spostaGiorni } from './tempo.js';
+import { ymd, spostaGiorni, giorniFra } from './tempo.js';
 
 /** L'anticipo quando il titolo non ne dice uno: due settimane. */
 export const ANTICIPO_DEFAULT = 14;
@@ -171,6 +171,113 @@ export function scadenzeDovute(eventi, liste, oggi = ymd()) {
     });
   }
   return dovute;
+}
+
+/**
+ * Fin dove si guarda avanti quando si vuole *vedere* cosa sta arrivando (la
+ * scheda «Scadenze» della campanella), invece di creare quello che è dovuto
+ * oggi. Quattro mesi: abbastanza per accorgersi che il bollo è scritto e che
+ * la revisione manca, non tanto da diventare un elenco che nessuno legge.
+ */
+export const ORIZZONTE_GIORNI = 120;
+
+/**
+ * Le scadenze scritte sul calendario che riguardano una lista che esiste, da
+ * qui a `orizzonteGiorni` — quelle già diventate attività e quelle che lo
+ * diventeranno, ciascuna col giorno in cui entra.
+ *
+ * Non serve a creare niente: serve a **mostrare il meccanismo**. Finché
+ * l'unica prova che una scadenza è scritta bene era vederla comparire nel
+ * pool il giorno dell'anticipo, un prefisso sbagliato o un anticipo troppo
+ * corto non si distinguevano da «non l'ho ancora scritta»: si scopriva a
+ * scadenza passata, che è esattamente quando non serve più saperlo.
+ *
+ * @param {any[]} eventi
+ * @param {{ id: string, displayName: string }[]} liste
+ * @param {string} [oggi]
+ * @param {number} [orizzonteGiorni]
+ * @returns {import('./types').ScadenzaInArrivo[]}
+ */
+export function prossimeScadenze(eventi, liste, oggi = ymd(), orizzonteGiorni = ORIZZONTE_GIORNI) {
+  const perNome = new Map((liste || []).map(l => [l.displayName.toLowerCase(), l]));
+  const limite = spostaGiorni(oggi, orizzonteGiorni);
+  /** @type {import('./types').ScadenzaInArrivo[]} */
+  const righe = [];
+  const viste = new Set();
+
+  for (const evento of eventi || []) {
+    const letto = parseReminderSubject(evento?.subject);
+    if (!letto) continue;
+    const lista = perNome.get(letto.listName.toLowerCase());
+    if (!lista) continue;
+
+    const giorno = giornoEvento(evento);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(giorno)) continue;
+    // La finestra parte dalla grazia e non da oggi: una scadenza di tre giorni
+    // fa è ancora nel pool, e sparire dalla scheda mentre l'attività c'è
+    // sarebbe la scheda a mentire.
+    if (giorno < spostaGiorni(oggi, -GRAZIA_GIORNI)) continue;
+    if (giorno > limite) continue;
+
+    const origine = origineScadenza(lista.displayName, letto.title, giorno);
+    if (viste.has(origine)) continue;
+    viste.add(origine);
+
+    const entraIl = spostaGiorni(giorno, -letto.anticipoGiorni);
+    righe.push({
+      listId: lista.id,
+      listName: lista.displayName,
+      titolo: letto.title,
+      giorno,
+      anticipoGiorni: letto.anticipoGiorni,
+      entraIl,
+      giorniAllaScadenza: giorniFra(oggi, giorno),
+      giaEntrata: oggi >= entraIl,
+      origine,
+    });
+  }
+  return righe.sort((a, b) => a.giorno.localeCompare(b.giorno));
+}
+
+/**
+ * Le scadenze scritte col prefisso di una lista **che non esiste**.
+ *
+ * `scadenzeDovute` le salta in silenzio, ed è giusto — non c'è nessun posto
+ * dove metterle — ma il silenzio è il difetto: un `[AREA-AUTO]` scritto
+ * `[AREA AUTO]`, o la lista rinominata dopo, danno un evento che non diventerà
+ * mai un'attività e nessuno che lo dica. Qui si raccolgono per poterlo dire.
+ *
+ * Una riga per nome-di-lista e titolo, con la data più vicina: la stessa serie
+ * ricorrente sbagliata darebbe altrimenti quattro anni di occorrenze uguali.
+ *
+ * @param {any[]} eventi
+ * @param {{ id: string, displayName: string }[]} liste
+ * @param {string} [oggi]
+ * @param {number} [orizzonteGiorni]
+ * @returns {{ listName: string, titolo: string, giorno: string }[]}
+ */
+export function scadenzeOrfane(eventi, liste, oggi = ymd(), orizzonteGiorni = ORIZZONTE_GIORNI) {
+  const nomiNoti = new Set((liste || []).map(l => l.displayName.toLowerCase()));
+  const limite = spostaGiorni(oggi, orizzonteGiorni);
+  /** @type {Map<string, { listName: string, titolo: string, giorno: string }>} */
+  const perChiave = new Map();
+
+  for (const evento of eventi || []) {
+    const letto = parseReminderSubject(evento?.subject);
+    if (!letto) continue;
+    if (nomiNoti.has(letto.listName.toLowerCase())) continue;
+
+    const giorno = giornoEvento(evento);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(giorno)) continue;
+    if (giorno < spostaGiorni(oggi, -GRAZIA_GIORNI) || giorno > limite) continue;
+
+    const chiave = `${letto.listName.toLowerCase()}|${letto.title.toLowerCase()}`;
+    const gia = perChiave.get(chiave);
+    if (!gia || giorno < gia.giorno) {
+      perChiave.set(chiave, { listName: letto.listName, titolo: letto.title, giorno });
+    }
+  }
+  return [...perChiave.values()].sort((a, b) => a.giorno.localeCompare(b.giorno));
 }
 
 /**

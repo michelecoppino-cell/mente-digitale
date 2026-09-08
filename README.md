@@ -14,10 +14,13 @@ su OneDrive, nostri.
   per la sezione selezionata.
 - **Pianificatore giornaliero** — drag & drop dei task su una timeline a slot di 30 minuti,
   vista giorno/settimana, eventi del calendario in sola lettura, sottostep ridimensionabili,
-  piani salvati su OneDrive. Candidati task estratti da email ed email OneNote con euristiche
-  locali (`src/dailyReview.js`), senza chiamate AI. Da telefono il Piano si legge e basta: il
+  piani salvati su OneDrive. Da telefono il Piano si legge e basta: il
   trascinamento è il gesto di uno schermo largo, e pianificare col pollice vorrebbe dire un
   gesto diverso — la proposta sta in `docs/proposta-piano-da-telefono.md`, non è costruita.
+- **Revisione quotidiana** — la campanella in testata, due schede: le proposte di attività
+  ricavate da email e righe «Da fare» di OneNote con euristiche locali (`src/dailyReview.js`),
+  ognuna col motivo per cui è emersa, e le scadenze ricorrenti scritte sul calendario con il
+  giorno in cui diventeranno attività. Nessuna chiamata AI.
 - **Oggi** — la home, divisa in due metà. A sinistra la **giornata operativa**: «Oggi · agenda e
   azioni», cioè appuntamenti del calendario e azioni programmate in un elenco solo ordinato per
   ora, e sotto «In arrivo»: i sei giorni che vengono, uno per colonna (oggi no — sta già nel
@@ -178,7 +181,7 @@ Sette destinazioni, ognuna con un indirizzo proprio. Il menù è il rail a sinis
 | `#/piano` | Il Piano: serbatoio, giornata a blocchi, capacità della giornata, pannello di dettaglio |
 | `#/attivita` | Le cinque colonne del flusso, con la lente Scadenza (`?vista=`, `?ctx=`) |
 | `#/sezioni/:id` | Plancia della sezione: OneNote, percorsi, attività, dettaglio, oggi |
-| `#/programma/:id?` | Il Programma di commessa: ore vendute, pacchetti, matrice risorsa × settimana, voci, riepilogo |
+| `#/programma/:id?` | Il Programma di commessa: ore vendute, pacchetti, matrice risorsa × settimana, Gantt, voci, riepilogo |
 | `#/diario` | Diario |
 | `#/mappa` | La mappa mentale |
 
@@ -283,7 +286,20 @@ gli obiettivi prendono i numeri; nel file del rituale resta solo quello che il
 registro non sa dire, cioè il perché di un no. I giorni saltati si recuperano
 fino a tre indietro, compilati come «non fatto» e **dichiarati** in cima al
 pannello: un registro che si compila da solo in silenzio è un registro di cui non
-ci si fida più. Vedi `rituale.js` e `RitualeMattino.jsx`.
+ci si fida più.
+
+E si chiede **una volta al giorno**, non ogni volta che si passa da «Oggi». A
+dire «l'ho già chiesto» era rimasta a lungo una sola riga di `localStorage`, e
+non bastava: quel cassetto si riempie (è lo stesso in cui sta l'account, vedi
+più avanti) e allora `setItem` non passa, in silenzio; il segno non attraversa
+i dispositivi; e non viene scritto affatto se «Oggi» si lascia senza chiudere
+il pannello. Adesso la domanda si guarda a **stato**: se nel documento c'è la
+riga di oggi, la risposta c'è già — data qui, dal portatile, o stamattina prima
+di ricaricare — ed è `giaRisposto` a dirlo. Il segno locale resta per il solo
+caso in cui una risposta non c'è, cioè «Più tardi». È la stessa regola delle
+scadenze ricorrenti: un meccanismo che dipende da essere svegli nell'istante
+giusto, in un'app che sta su un telefono, è un meccanismo che ha già smesso di
+funzionare. Vedi `rituale.js` e `RitualeMattino.jsx`.
 
 Il pannello di dettaglio del Piano porta a `#/sezioni/:id` con «Apri il
 workbook»: è il passaggio che lega la programmazione al posto di lavoro.
@@ -534,6 +550,51 @@ non è più un avviso, è un rimprovero. Di aver già suonato ci si ricorda su
 quella sul fisso. Vedi `sveglie.js` (la logica), `useSveglie.js` (il ciclo) e
 `SvegliaAlert.jsx` (il pannello).
 
+### La revisione quotidiana
+
+La campanella in testata. Due schede, che sono le due metà dello stesso giro:
+**Da valutare**, quello che chiede una decisione, e **Scadenze**, il
+meccanismo che lavora da solo (la sezione qui sotto).
+
+Le proposte nascono da euristiche locali — niente AI, niente costi — su due
+fonti: le email recenti e le righe segnate «Da fare» (Ctrl+1) nelle pagine
+OneNote toccate dall'ultimo controllo. Il lavoro dell'euristica è scegliere
+**quali** email meritano attenzione, non riscriverle: senza un modello a
+ripulire il testo, l'oggetto originale resta il titolo proposto, modificabile
+prima di portarselo dietro.
+
+Ogni riga dice **perché è lì**. I segnali che l'hanno fatta emergere — «non
+letta», «parla di una scadenza», «chiede una revisione», «è una domanda» —
+si leggono come pastiglie sotto il testo, insieme a chi ha mandato l'email,
+quando, e un collegamento all'originale. Prima c'era solo l'oggetto: un
+punteggio calcolato e mai mostrato, e chi guardava doveva indovinare cosa ci
+facesse lì quella riga. Un elenco di proposte senza i motivi non è un elenco
+di proposte, è un elenco.
+
+Due filtri tengono fuori il rumore, e il secondo è nato da un caso vero. Il
+primo è quello di sempre: mittenti automatici e oggetti da newsletter. Il
+secondo guarda la **forma** del filo — stesso mittente, stesso oggetto ridotto
+alla sua firma (senza date, ore, numeri, `Re:`) — e se lo stesso filo torna tre
+volte o più nella finestra lo scarta: è un flusso di servizio, non una
+richiesta. Sotto quella soglia ne resta comunque **uno solo**, perché due righe
+identiche non sono due decisioni. È così che spariscono le mail dello specchio
+del calendario di lavoro, che il PC di lavoro si manda ogni due ore e che
+riempivano il pannello di righe intitolate «calendario» — nessuna delle quali
+era una cosa da fare.
+
+«Chiarisci →» non crea niente: apre il diagramma GTD col testo già dentro, e la
+decisione — se è un'azione, se sta in meno di due minuti, in quale sezione va —
+resta a chi guarda. Il diagramma adesso lo dice: in cima mostra la frase su cui
+si sta decidendo, da dove viene, e cosa fa una foglia dell'uno o dell'altro
+ramo. Prima il bottone diceva «Crea task» e apriva sette foglie senza una
+parola di spiegazione — la promessa e quello che succedeva non coincidevano.
+
+Una proposta si mostra una volta sola: accettata o scartata, la sua firma resta
+nei marker per una settimana. Le righe OneNote si spuntano anche nella pagina
+d'origine, in tutti e due i casi — sono state guardate. Le euristiche stanno in
+`src/dailyReview.js`, provate (`npm run prova-cattura`); il giro attorno in
+`src/useDailyReview.js`, il pannello in `src/PannelloReview.jsx`.
+
 ### Le scadenze che tornano ogni anno
 
 Bollo, assicurazione, revisione, tasse, visite: cose che non si vogliono
@@ -580,6 +641,19 @@ quest'ultima riconosce anche le attività nate dal meccanismo di prima, che il
 marker ce l'hanno in un altro formato. I conti stanno in
 `src/deadlineReminders.js`, provati (`npm run prova-cattura`); il giro attorno
 in `src/useScadenzeRicorrenti.js`.
+
+E dalla campanella si **vede** il meccanismo mentre lavora: la scheda
+«Scadenze» elenca le occorrenze scritte sul calendario da qui a quattro mesi,
+ciascuna col giorno in cui diventa un'attività e un pallino che dice se è già
+entrata. Sopra c'è la sintassi, che prima non era scritta in nessun punto
+dell'app. E in cima, quando c'è, l'unica cosa che nessun altro schermo direbbe
+mai: le scadenze il cui prefisso **non aggancia nessuna lista** — un
+`[AREA-AUTO]` scritto `[AREA AUTO]`, una lista rinominata dopo. `scadenzeDovute`
+le salta in silenzio, ed è giusto, non c'è nessun posto dove metterle; ma il
+silenzio era il difetto, perché un evento che non diventerà mai un'attività si
+scopriva a scadenza passata. Le due letture (`prossimeScadenze`,
+`scadenzeOrfane`) sono pure e provate come il resto, e girano sugli eventi già
+scaricati: nessuna chiamata in più.
 
 ### Il calendario di lavoro
 
@@ -765,7 +839,7 @@ dell'attivazione una voce non esiste da nessuna parte tranne che qui: non nel
 pool, non nel Piano, non suona, non scade. Zero rumore per costruzione, non per
 un filtro che qualcuno si ricorda di applicare.
 
-Il pannello ha **cinque schede, ed è l'ordine in cui si lavora**: Matrice,
+Il pannello ha **sei schede, ed è l'ordine in cui si lavora**: Matrice, Gantt,
 Persone ed Elenco voci sono il lavoro di tutti i giorni, Riepilogo è la domanda
 del coordinatore — come sta messa tutta la commessa, non un pacchetto alla volta
 — e Impostazioni è la mezz'ora in cui si mette in piedi il programma e poi quasi
@@ -773,6 +847,90 @@ mai più: la commessa, le persone, i pacchetti, tutti correggibili. Dentro c'è
 anche un «come si usa», perché il pannello ha quattro oggetti che si somigliano
 (commessa, pacchetto, voce, cella) e due numeri che apposta non coincidono, e
 niente di tutto questo si indovina la prima volta.
+
+**La Matrice ha in cima il lavoro, non le persone**: una riga per pacchetto,
+e aprendola le persone che ci stanno sopra. Le due tabelle rispondono a due
+domande diverse, e girarne una era il modo di dargliele tutte e due: qui è
+«questo pacchetto quando si fa, e chi ci sta sopra», nella scheda Persone è «a
+questa persona quanto ho già dato». Finché erano tutt'e due per persona, per
+sapere quante ore c'erano su un pacchetto in una settimana bisognava aprire tutte
+le righe e sommare a mente le sotto-righe con lo stesso nome. Una cosa non si
+perde nel giro: **la tinta della cella resta la persona** — dice che quella
+settimana è oltre la sua capacità contando tutto quello che ha addosso, non le
+ore del pacchetto che si sta guardando, che direbbero sempre che va tutto bene.
+
+**La catena è pacchetto › voce › sotto-voce › persona**, e le ore stanno in
+fondo. Due bottoni nella barra — «voci» e «sottovoci» — dicono quanto scendere:
+spenti, sotto il pacchetto ci sono direttamente le persone. La cella porta la
+voce nella sua chiave, così si programma dove il lavoro è davvero descritto —
+«Calcolo plinti, Marco, W35: 34 ore» — invece che su un pacchetto da
+quattrocento ore in cui non si distingue più cosa è cosa. Gli stessi due bottoni
+sono nella scheda Persone, dove la stessa catena si legge dall'altro capo: là si
+parte dal lavoro e si arriva alla persona, qui si parte dalla persona e si
+arriva al lavoro.
+
+Sotto una voce compaiono le persone che ci hanno già ore e **quelle che la voce
+propone**, che possono essere più d'una: un calcolo lo fanno in due, e finché la
+proposta era una sola l'unico modo di far comparire la seconda riga era
+sdoppiare la voce. Le proposte si scrivono nel pannello di destra, un campo per
+ognuna, e sotto l'ultimo pieno ce n'è sempre uno vuoto — aggiungere è scrivere,
+togliere è cancellare, e nessun bottone «+» per la cosa che si fa più spesso. Un
+nome scritto in minuscolo si appoggia alla persona che c'è già; uno nuovo entra
+fra le risorse della commessa, com'è sempre stato per l'incollato. Attivare, che
+sceglie **una** persona perché un task ha un delegato solo, aggiunge la sua alle
+proposte invece di sostituirle: cancellare l'elenco vorrebbe dire togliere dalla
+matrice la riga dell'altra, e con lei il posto in cui stanno le sue ore.
+
+Quattro cose che questo comporta, e che sono la parte interessante:
+
+- **Ogni riga dice la somma di quello che ha sotto.** La riga di una persona
+  sotto una voce conta anche le sotto-voci che non si stanno mostrando, e quella
+  sotto un pacchetto — coi due bottoni spenti — conta tutte le sue ore lì
+  dentro, voci comprese. Prima ogni riga leggeva la sua sola cella: bastava
+  spegnere «voci» per vedere un pacchetto dire quaranta e la persona sotto di
+  lui zero, che è un totale che non torna e nessuno che lo dice.
+- **Si scrive nell'ultimo livello mostrato, mai in una somma.** Una riga di voce
+  dice il totale del suo ramo, come le ore stimate: batterci dentro un numero
+  vorrebbe dire deciderne la ripartizione fra le figlie al posto di chi scrive.
+  Una riga di persona invece si compila sempre, e le ore vanno nella **cella più
+  profonda in cui stanno già** — la sotto-voce nascosta in cui erano, la voce che
+  le adotta — mentre quella che sostituiscono si azzera nello stesso colpo:
+  sono le stesse ore, e tenerle in due posti raddoppierebbe la settimana.
+  L'unico caso senza destinazione è la persona che sotto quella riga ha ore su
+  **due voci diverse**: lì scegliere vorrebbe dire cancellare un'attribuzione
+  fatta da qualcuno, e la risposta è scendere di un livello — infatti è quello
+  che succede.
+- **La voce sta in coda alla chiave, e può non esserci.**
+  `risorsa|pacchetto|settimana` era la chiave, `risorsa|pacchetto|settimana|voce`
+  è quella nuova: le celle scritte prima restano valide e vogliono dire «ore del
+  pacchetto, senza voce». Non un file su OneDrive da riscrivere, nessuna
+  migrazione da sbagliare, e `const [r, p, s] = chiave.split('|')` continua a
+  dire quello che diceva.
+- **Le ore lasciate sul pacchetto le adotta la voce che propone quella
+  persona.** Sono le celle di prima che le voci ci fossero, e quelle che
+  arrivano dal consuntivo. Restavano in coda al pacchetto, in righe marcate «sul
+  pacchetto», perché nessuno poteva dire a quale voce andassero — ma **la voce
+  lo dice**: porta la persona che la fa, e se dentro un pacchetto una sola voce
+  propone Riccardo, «Riccardo, A10, W39» e «Riccardo, Calcolo, W39» sono la
+  stessa frase detta con meno parole. Scomporre un pacchetto e vedersi le sue
+  ore restare in fondo, in righe che ripetono i nomi di quelle appena aperte,
+  rende illeggibile proprio la schermata che si è appena aperta. Adottare non
+  riscrive niente sul file: la chiave resta a tre segmenti finché qualcuno non
+  scrive in quella riga. Se le voci che propongono la stessa persona sono due
+  non si adotta — lì la domanda torna senza risposta, e indovinarla è quello che
+  qui non si fa — e chi nessuna voce reclama tiene la sua riga in coda, marcata
+  «sul pacchetto»: sparire da una schermata e continuare a pesare sui totali è
+  esattamente la cosa che quelle ore non devono fare. Cancellando una voce le
+  sue ore risalgono alla madre, o al pacchetto: il totale della commessa non
+  cambia mai di nascosto.
+
+**Il filtro dei pacchetti vale dappertutto.** Acceso, restano le ore di quel
+pacchetto: le righe, i totali di riga, la colonna «tot» e il piede — e vale anche
+nella scheda Persone, dove diventa «di questo pacchetto, chi fa cosa e quando».
+Un filtro che lascia in piedi le somme di tutto il resto è peggio di nessun
+filtro, perché il numero sbagliato sembra giusto. Le sovrapposizioni no: quelle
+restano contate sul carico intero, perché è la persona a essere sovraccarica, non
+il pacchetto che si sta guardando.
 
 **Persone** è la stessa matrice girata: una riga per persona, e le ore sommate
 su **tutti i programmi accesi**. Serve a una domanda sola, e non ha una risposta
@@ -789,6 +947,36 @@ documenti diversi, e scriverci vorrebbe dire decidere al posto di chi scrive da
 quale commessa togliere le ore. I conti stanno in `caricoPersone()`
 (`src/programma.js`), provati; la vista in `src/programma/MatricePersone.jsx`.
 
+**Gantt** è la terza lettura dello stesso carico, e risponde alla domanda che
+nelle altre due c'è ma sparsa: **cosa finisce quando**. Una riga per attività,
+una colonna per settimana, e nella cella una barra del colore del suo pacchetto.
+Le righe stanno in ordine di quando finiscono — la prima è la cosa che si chiude
+prima, le ultime sono la coda della commessa — ed è l'ordine che la rende una
+vista invece di un altro elenco di voci: nella Matrice le righe sono raccolte
+per pacchetto, e per sapere cosa si chiude prima bisogna leggerne venti e tenere
+a mente venti date.
+
+Ogni cella del carico finisce **in una riga e in una sola**: quella della sua
+voce, oppure — per le ore lasciate sul pacchetto — quella della voce che le
+adotta, e se nessuna le reclama la riga del pacchetto, marcata «sul pacchetto».
+Non è la regola dell'ultimo livello mostrato che governa la Matrice, ed è voluto:
+lì le righe si aprono, e sommare i rami serve a non far vedere un totale senza le
+righe che lo fanno; qui non si apre niente, quindi non c'è nessuna eco da
+evitare — c'è invece da non disegnare la stessa barra su due righe incolonnate.
+Il totale del Gantt è il carico della finestra, ed è una delle prove.
+
+Chi ci lavora sta scritto in una colonna, non solo nel passaggio del mouse: il
+mouse dà il dettaglio della settimana — chi, e quante ore — ma un'informazione
+che esiste *solo* al passaggio del mouse non esiste stampata e non esiste per chi
+sta guardando la tabella insieme a qualcun altro. Un bottone «non programmate»
+mette in coda le voci che in quelle settimane non hanno nemmeno un'ora, con la
+loro stima e la persona che la voce propone: senza di loro il Gantt racconta una
+commessa che finisce prima di quanto finirà. **Qui si legge e basta** — le celle
+si scrivono nella Matrice, e due posti in cui scrivere la stessa cella sarebbero
+due modi di sbagliarla — e cliccando una riga si apre il dettaglio della voce,
+che è dove quelle ore si cambiano davvero. I conti stanno in `gantt()`
+(`src/programma.js`), provati; la vista in `src/programma/Gantt.jsx`.
+
 **Un programma si collega alla sua sezione**, scelta da una tendina. Non è un
 campo in più da compilare: è quello che decide come si chiamano le liste che
 nasceranno attivando. Una commessa collegata a `2573-ABS` genera
@@ -804,18 +992,32 @@ Tre cose che vale la pena sapere prima di aprirlo:
   sulle settimane produrrebbe un piano che nessuno riconosce, e ricavare le
   stime dal carico perderebbe il «cosa». Quello che serve è il **delta fra i
   due**, sempre a schermo — ed è il motivo per cui il pannello esiste.
-- **Ore a finire senza timesheet.** La colonna della settimana corrente taglia
+- **Ore spese senza timesheet.** La colonna della settimana corrente taglia
   la matrice in due: a sinistra il passato, che si corregge con quanto è andato
-  davvero quando ci si passa sopra; a destra la previsione. Un dato solo, nessun
-  secondo inserimento — è la stessa approssimazione che si fa a mente guardando
-  un Excel, ed è abbastanza per decidere. Il passato però non si compila cella
+  davvero quando ci si passa sopra; a destra quello che è già in calendario. Un
+  dato solo, nessun secondo inserimento — è la stessa approssimazione che si fa a
+  mente guardando un Excel, ed è abbastanza per decidere. Il passato però non si compila cella
   per cella all'indietro: di quello che è già andato non si sa la distribuzione,
   si sa il totale — «su A30 Marco ha fatto novanta ore». Quindi dal Riepilogo si
   scrive **un numero per pacchetto e persona**, spalmato sulle settimane
   passate: il totale è vero, la distribuzione è dichiaratamente approssimata, ed
   è la stessa promessa di sopra.
+- **«A finire» sono le stime meno lo speso, non le celle a destra.** Prima era la
+  matrice futura, e leggeva bene solo su una commessa programmata fino in fondo.
+  Qui la programmazione si ferma dove serve — si mettono in calendario le
+  settimane vicine e non l'anno intero — quindi «a finire» diceva
+  sistematicamente meno del lavoro che restava, e il margine ne usciva ottimista:
+  migliorava smettendo di programmare, che è esattamente il contrario di quello
+  che dovrebbe fare. Le stime invece ci sono sempre — sono le voci. Restano a
+  schermo tutt'e due, perché sono due domande: «programmate» è quanto lavoro è
+  già in calendario, «a finire» è quanto ne resta. Il loro delta, per
+  costruzione, è il «da collocare». E il **margine** è il venduto meno *speso più
+  a finire*, cioè meno quello che la commessa costerà in tutto. «A finire» non va
+  mai sotto zero: chi ha già speso più di quanto stimava non ha ore di credito da
+  finire, ha un margine rosso, ed è lì che si legge.
 - **Una voce si scrive in due modi, e portano allo stesso posto.** Quattro campi
-  separati (`pacchetto`, `titolo`, `ore`, `risorsa`) per scriverne una, e una
+  separati (`pacchetto`, `titolo`, `ore`, `risorsa` — anche «Marco, Gaia», che è
+  come si scrivono in una cella di Excel) per scriverne una, e una
   casella da incollare per scriverne duecento. Servono tutti e due: senza
   l'incolla il caricamento iniziale si ferma alla seconda commessa, senza i
   campi si ferma alla prima, perché alla prima voce nessuno ha voglia di
@@ -852,9 +1054,160 @@ Si può portar via una **fotografia**: il documento intero con il giorno nel nom
 tiene già le versioni — è il programma com'era il giorno in cui è stato mandato
 o discusso, e senza la data nel nome due fotografie si coprirebbero a vicenda.
 
-Fuori dalla prima versione, deciso adesso: niente timesheet, niente dipendenze o
-percorso critico, niente costi in euro, niente zoom mensile, e la saturazione si
-legge sul solo programma aperto invece che sommata su tutte le commesse accese.
+### Quando diventa grande
+
+Tre risorse e sedici settimane stanno a schermo e non c'è niente da governare.
+Dieci persone e un anno sono **cinquanta colonne**: la stessa griglia diventa un
+tunnel — si scorre per due schermate, si perde di vista la settimana di oggi, e
+la riga che si sta leggendo si confonde con le altre nove. Da lì la barra sopra
+la matrice, e sono tre gesti soli: la **densità** (la stessa griglia a tre
+larghezze di colonna — «anno» rimpicciolisce finché la commessa intera ci sta in
+una schermata, e lì le ore si scrivono all'ora intera perché «16,5» a ventotto
+pixel non ci sta, e un numero tagliato a metà è peggio di un numero arrotondato);
+**«oggi»**, che riporta a schermo la colonna di adesso — quella che divide lo
+speso dalla previsione, e senza la quale i numeri della testata non si sanno più
+leggere; e **una persona sola**, perché dieci righe aperte sono sessanta
+sotto-righe e quasi sempre la domanda è su una persona.
+
+Su quel filtro c'è una scelta che sembra un dettaglio e non lo è: i pacchetti in
+cui quella persona non ha ancora niente **restano**, in coda e tenui, invece di
+sparire. Sceglierla è anche il modo di far comparire la sua riga sotto ogni voce,
+cioè di darle la prima ora su un pacchetto nuovo: finché quei pacchetti
+sparivano, il filtro toglieva di mezzo proprio l'unico posto in cui quel gesto si
+poteva fare. E l'ordine si decide **quando si sceglie la persona**, non a ogni
+modifica: ricalcolarlo farebbe saltare in cima il pacchetto in cui si è appena
+scritta la prima ora, proprio mentre ci si sta scrivendo dentro, e la cella dopo
+sarebbe di un'altra riga.
+
+Poi tre cose che si vedono e non si toccano: la riga e la colonna in cui si sta
+restano segnate mentre si scorre, le righe si alternano di fondo **per persona**
+(una persona aperta resta un blocco solo con le sue sotto-righe), e il primo
+lunedì di ogni mese porta una linea verticale. Sono i modi di tenere il segno in
+una tabella grande, e nessuno costa un click. Nell'elenco voci le **lavorazioni
+si chiudono**: chiuse tutte, quaranta righe tornano a essere le dieci
+lavorazioni che sono la commessa.
+
+Nel OneDrive finto c'è una commessa a questa scala — dieci persone, sei
+pacchetti, dieci lavorazioni in trenta sotto-voci, un anno di settimane — perché
+è la scala a cui i difetti di leggibilità sono difetti veri, e su sei voci non
+si vedono.
+
+### Excel: come esce, e come rientra
+
+Il programma esce dallo studio: si discute in riunione, si manda al
+capocommessa. Finché l'unica uscita era il JSON, l'unico modo di farlo vedere a
+un collega era fargli guardare lo schermo. **↓ Excel** scarica un `.xlsx` con
+quattro fogli — Riepilogo, Gantt, Persone, Voci — col giorno nel nome come la
+fotografia.
+
+Senza librerie: `xlsx` e `exceljs` pesano fra i 400 kB e il megabyte, cioè
+sarebbero il pacchetto più grosso del progetto per una cosa che si fa due volte
+al mese, in un'app che si apre da un telefono. Un `.xlsx` è uno zip di file XML,
+e le due parti che servono — lo zip «store» (nessuna compressione: un'intestazione
+e i byte come sono) e i fogli con le stringhe dentro la cella invece che in una
+tabella condivisa — stanno in duecento righe che si leggono (`src/xlsx.js`).
+
+**↑ Ore registrate** è il giro all'indietro, e serve perché le ore davvero fatte
+non stanno qui: stanno nel foglio ore dello studio. Ribatterle a mano cinquanta
+celle per volta è il passaggio che fa smettere di aggiornare il programma, e un
+programma non aggiornato è peggio di nessun programma — dice un margine che non
+c'è. Quindi il foglio che esce rientra: si corregge la colonna della settimana
+appena chiusa, si seleziona il rettangolo (intestazione compresa) e si incolla.
+Il foglio **Persone** esce apposta nella stessa forma in cui rientra, e la
+persona scritta una volta sola sulla riga del totale si trascina in giù sulle
+righe sotto.
+
+Sotto quel totale c'è **una riga per ogni lavoro in cui la persona ha delle
+ore**, con pacchetto, *Oggetto* (la lavorazione) e *Attività* (la sua
+sotto-voce) scritti per esteso sulla stessa riga: chi guarda il foglio in
+riunione chiede «venti ore su B10 a fare cosa?», e la risposta deve stare
+accanto al numero, non tre righe più su. Prima il foglio ricalcava l'albero —
+una riga per il pacchetto, una per l'Oggetto, una per l'Attività — e le prime
+due erano quasi sempre vuote da parte a parte, perché i numeri stanno solo
+nell'ultimo livello: tre righe per dire un dato. Adesso le colonne si ripetono
+(due Attività dello stesso pacchetto scrivono due volte pacchetto e Oggetto), ed
+è quello che rende la tabella ordinabile e filtrabile in Excel — la cosa che con
+l'albero, e per la stessa ragione con un rientro, non si poteva fare.
+
+Quello che non è sceso fino in fondo tiene la sua riga: delle ore lasciate sul
+pacchetto che nessuna voce reclama sono una riga col solo pacchetto, delle ore
+su un Oggetto senza scendere su un'Attività sono una riga senza l'ultima
+colonna. Non si spalmano su una voce scelta a caso — indovinare è quello che qui
+non si fa — e lasciarle fuori sarebbe peggio, sparirebbero dal foglio in
+silenzio.
+
+Una fascia ocra stacca una persona dall'altra: su cinquanta colonne si legge
+scorrendo in orizzontale, e senza una riga piena il punto in cui finisce un
+gruppo si perde fra righe che si somigliano tutte.
+
+Ed è anche la riga che rientra: si corregge il numero che si vede, e l'incollato
+scrive le ore nella cella della voce che quella riga descrive. Le righe di somma
+— il totale della persona, il «Totale settimana» in coda — si saltano, perché
+rileggerle vorrebbe dire scrivere la stessa settimana due volte. Vale anche per
+un foglio esportato da una versione di prima, dove le stesse ore comparivano a
+ogni livello dell'albero: lì conta la riga più profonda, e una riga è una somma
+quando quella sotto è più profonda **e** non ripete il pacchetto. Una lavorazione il cui titolo non si riconosce finisce fra le righe
+ignorate invece di scaricare le sue ore sul pacchetto: sarebbero ore attribuite
+a un lavoro che nessuno ha scelto, e in un consuntivo è peggio di una riga
+mancante — che almeno si vede.
+
+Si **incolla** e non si carica un file: leggere un `.xlsx` vorrebbe dire
+scrivere anche il decompressore, cioè la metà difficile del formato, per far
+arrivare qui gli stessi numeri che il sistema operativo mette negli appunti
+appena si seleziona un rettangolo in Excel. Incollare è più corto per chi lo fa
+e non ha un formato da indovinare — ed è il gesto con cui in questa app entrano
+già le voci, le sotto-voci e i movimenti. Vanno bene anche righe sciolte
+`persona | pacchetto | settimana | ore`, che è quello che esce da un gestionale.
+
+Un consuntivo **sostituisce** le celle che tocca, non ci si somma: reincollare
+lo stesso foglio non raddoppia niente. E sostituisce *dove quelle ore stanno* —
+se la settimana era programmata su una voce, si riscrive quella cella invece di
+aggiungerne una sul pacchetto: due celle per la stessa settimana sarebbero la
+settimana contata due volte, cioè un margine sbagliato che si scopre tre
+settimane dopo. Se sotto ci sono due voci diverse va sul pacchetto e le azzera:
+del passato si sa il totale, non su quale voce sia caduto. Una cella lasciata vuota non si tocca —
+chi corregge una settimana seleziona tutto il rettangolo, e le altre colonne sono
+vuote perché non le ha guardate, non perché quelle ore non ci siano più. E
+siccome sostituire un mese di ore di quattro persone in un gesto è irreversibile
+in un modo che scrivere una cella non è, prima di applicare si vede **cosa
+cambia**: quante celle, di chi, in quali settimane, quante ore c'erano e quante
+ce ne saranno, e l'elenco delle righe che non si sono capite — una riga persa in
+silenzio, in un consuntivo, è un margine sbagliato che poi nessuno sa da dove
+venga. Le celle passano dalla stessa strada di una cifra battuta a mano, quindi
+`⌘Z` annulla tutto l'incollato in un colpo.
+
+Il terzo foglio, **Voci**, è l'elenco di cosa c'è da fare, in cinque colonne che
+si chiamano come quelle del foglio Persone — Pacchetto, Oggetto, Attività, Ore,
+Persona — così che passando da un foglio all'altro la stessa cosa abbia lo
+stesso nome. Ore iniziali, Δ, la finestra e lo stato non ci sono più: sono la
+storia di una voce e il suo avanzamento, si guardano nell'app dove si cambiano,
+e qui erano quattro colonne che nessuno ordinava e che spingevano fuori schermo
+l'unica domanda che si fa aprendo questo foglio — chi fa cosa, per quante ore.
+Anche qui una fascia ocra stacca una lavorazione dall'altra: con le sotto-voci
+sotto la loro madre, senza una riga piena in mezzo l'elenco è una colonna sola
+di titoli in cui non si vede dove finisce un lavoro.
+
+Il quarto foglio, **Gantt**, è lo stesso di quello a schermo: una riga per
+attività in ordine di quando finiscono, e nella cella della settimana **il nome
+di chi ci lavora**, su fondo del colore del pacchetto — schiarito, perché nero su
+un colore pieno non si legge. Il nome e non le ore, perché le ore ci sono già nel
+foglio Persone, che è quello fatto per contarle e per rientrare corretto: qui la
+domanda è un'altra, e la risposta si legge scorrendo in orizzontale — una fascia
+colorata con dentro dei nomi si segue con l'occhio, una fascia di numeri no. Il
+totale della riga resta in coda, e le voci non programmate stanno sotto una fascia
+ocra con la loro stima. È l'unica uscita che **non rientra**: le celle si scrivono
+nella matrice, e un secondo foglio da cui reimportare le stesse ore sarebbe un
+secondo modo di sbagliarle.
+
+I colori sono la ragione per cui `src/xlsx.js` sa dichiarare dei fondi: i sette
+stili fissi bastano per una tabella di numeri e non per un Gantt, dove il colore
+*è* il dato — e i colori sono quelli dei pacchetti, che la commessa sceglie e che
+quel file non può conoscere. Si passano al libro (`xlsx(fogli, { fondi })`), e lo
+stile di una cella è la posizione in quell'elenco.
+
+Fuori dalla prima versione, deciso adesso: niente timesheet automatico, niente
+dipendenze o percorso critico (il Gantt disegna quando si lavora a cosa, non cosa
+aspetta cosa), niente costi in euro.
 
 ## Design token
 
@@ -1174,6 +1527,7 @@ davvero, non una copia che può divergere.
 | `prova-nucleo` | lo stesso nucleo dei file visto dalla parte del CLI |
 | `prova-pool` | il serbatoio delle attività come lettura della cache di query |
 | `prova-colori` | il colore di un calendario: la scelta fatta nell'app, l'enum di Outlook sotto |
+| `prova-cache` | cosa sopravvive alla chiusura dell'app: la potatura delle finestre di eventi entro il tetto di `localStorage`, e la domanda del mattino che si fa una volta sola |
 
 Girano in CI insieme a tipi, lint e build. Prima non ci giravano, e tre suite
 su quattro si erano rotte in silenzio quando `api.js` ha cambiato il modo di
@@ -1331,8 +1685,8 @@ c'è. Perché i casi sono due, e si somigliano solo da fuori:
 `localStorage` è uno solo per origine, e su Safari è piccolo — qualche mega,
 meno ancora per un'app aperta dall'icona sulla Home. Dentro ci finiscono due
 cose che non hanno niente a che vedere fra loro: la cache di TanStack Query
-(`md_rq_cache_v1` — pagine OneNote, task, eventi di calendario a ±3 mesi,
-tenuti 24 ore, riscritta a ogni cambiamento) e la cache di MSAL, cioè
+(`md_rq_cache_v2` — pagine OneNote, task, eventi di calendario,
+tenuti sette giorni, riscritta a ogni cambiamento) e la cache di MSAL, cioè
 l'account e il refresh token.
 
 Quando lo spazio finisce, `setItem` smette di funzionare **per tutti**. La
@@ -1344,11 +1698,30 @@ si vede dal fatto che la sessione muore *dopo* un po' di navigazione, non a
 un'ora tonda dall'accesso.
 
 Per questo la persistenza della cache ha un tetto (`PERSIST_BUDGET`, un mega di
-JSON): se lo supera, `serializzaEntroIlBudget` butta le query più grosse finché
-non ci sta. Perdere gli eventi di tre mesi vuol dire riscaricarli, perdere
-l'account vuol dire rifare l'accesso: non è lo stesso prezzo. Se lo spazio
-finisce lo stesso, la chiave `md_storage_full` lo registra e la schermata di
-login lo dice.
+JSON). Perdere gli eventi di tre mesi vuol dire riscaricarli, perdere l'account
+vuol dire rifare l'accesso: non è lo stesso prezzo. Se lo spazio finisce lo
+stesso, la chiave `md_storage_full` lo registra e la schermata di login lo dice.
+
+Come ci si sta dentro, però, era sbagliato, e si vedeva solo dal telefono. Il
+tetto si difendeva buttando via le query più grosse — e le più grosse sono
+**sempre** le due finestre di eventi del calendario: ±3 mesi per il Piano,
+−1/+18 mesi per i pannelli di sezione e le scadenze. Un evento porta con sé un
+id di Graph, un `webLink` e l'id del calendario, cioè stringhe da centinaia di
+caratteri: mille eventi fanno mezzo megabyte, e si mangiavano il tetto da soli.
+Risultato: di tutta l'app il calendario era l'unica cosa che alla riapertura
+non c'era mai — cioè proprio quella che si guarda per prima la mattina. Tutto
+il resto sembrava funzionare, e questo no, senza che niente lo dicesse.
+
+Adesso `serializzaEntroIlBudget` (in `cachePersistenza.js`, puro e provato)
+prima **pota**: della finestra di eventi si conservano i giorni attorno a oggi
+— quattordici indietro e sessanta avanti, che è quanto copre la settimana, il
+mese e quello dopo — e la copia ridotta si marca come vecchia
+(`dataUpdatedAt = 0`), così nessuno la scambia per la finestra intera: si vede
+subito riaprendo l'app, e la lettura vera parte comunque e la sostituisce. È la
+stessa idea di `fresco` in `useDatoPersistito`: una copia vecchia si mostra,
+non ci si scrive sopra. In memoria la finestra resta intera — si pota solo
+quello che va su `localStorage`. Se anche così non ci si sta, si torna a
+buttare via query intere, dalla più grossa in giù.
 
 ### Il riscatto a ogni avvio (e perché costava l'accesso)
 

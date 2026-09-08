@@ -12,7 +12,7 @@
 // pacchetti. Le tre cose stanno in una scheda sola e non in tre posti diversi
 // perché si sistemano nello stesso momento — la mezz'ora in cui si mette in
 // piedi il programma, e poi quasi mai più.
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   conCommessa, conPacchetto, conPacchettoAggiornato, senzaPacchetto,
   conRisorsa, conRisorsaAggiornata, conRisorsaRinominata, senzaRisorsa,
@@ -22,6 +22,52 @@ import CampoSezione from './CampoSezione.jsx';
 import { oreBrevi } from './formato.js';
 
 /** @typedef {import('../programma.js').DocProgramma} DocProgramma */
+
+/** Il grigio di chi un colore non ce l'ha: è quello che il campo mostra da spento. */
+const GRIGIO = '#7a8899';
+
+/**
+ * Il colore di un pacchetto.
+ *
+ * Sembra un `<input type="color">` e basta, e invece è il pezzo più delicato
+ * della scheda: la tavolozza del browser manda un evento **a ogni sfumatura**
+ * che si attraversa col mouse, e ognuno faceva partire una `cambia()`, cioè una
+ * rilettura del file su OneDrive e una scrittura. Trenta scritture concorrenti
+ * sullo stesso documento si scavalcavano a vicenda, e quella che tornava per
+ * ultima riportava a schermo il colore di prima: si sceglieva un colore, si
+ * chiudeva la tavolozza, e restava grigio.
+ *
+ * Quindi il colore vive qui finché lo si sta scegliendo — è la bozza, ed è
+ * quella che si vede — e sul documento ci va **una volta sola**, quando la mano
+ * si ferma. La bozza vale finché il documento non dice quel colore: farla
+ * cadere prima riporterebbe il campo al grigio per il tempo del salvataggio,
+ * cioè il difetto di prima in piccolo.
+ *
+ * @param {object} props
+ * @param {string|null} props.valore
+ * @param {(colore: string) => void} props.onScegli
+ */
+function CampoColore({ valore, onScegli }) {
+  const [bozza, setBozza] = useState(/** @type {string|null} */ (null));
+  const timer = useRef(/** @type {ReturnType<typeof setTimeout>|null} */ (null));
+
+  useEffect(() => () => { if (timer.current) clearTimeout(timer.current); }, []);
+
+  return (
+    <input
+      type="color"
+      className="pg-colore"
+      value={bozza || valore || GRIGIO}
+      onChange={e => {
+        const colore = e.target.value;
+        setBozza(colore);
+        if (timer.current) clearTimeout(timer.current);
+        timer.current = setTimeout(() => onScegli(colore), 300);
+      }}
+      title="Il colore del pacchetto"
+    />
+  );
+}
 
 /**
  * @param {object} props
@@ -96,11 +142,21 @@ export default function SchedaCommessa({
 
           <label className="pg-campo-riga">
             <span className="pg-campo-etichetta">inizio</span>
+            {/* Non controllato, come nome/codice qui sopra: un `type="date"`
+                manda un onChange ad ogni cifra composta nel picker, anche a
+                data non ancora completa (valore ''). Con un campo controllato
+                ogni cifra partiva una `cambia()` che rilegge e riscrive il
+                documento su OneDrive: scritture in volo in parallelo, che
+                possono finire in ordine diverso da quello in cui sono partite
+                — e quella con la data ancora vuota, arrivata per ultima,
+                cancellava quella appena finita di scrivere. Scrivendo solo al
+                blur parte una scrittura sola, con il valore finale. */}
             <input
               type="date"
               className="pg-campo"
-              value={c.inizio || ''}
-              onChange={e => onCambia(d => conCommessa(d, { inizio: e.target.value || null }))}
+              defaultValue={c.inizio || ''}
+              key={`inizio-${doc.id}-${c.inizio}`}
+              onBlur={e => e.target.value !== (c.inizio || '') && onCambia(d => conCommessa(d, { inizio: e.target.value || null }))}
             />
           </label>
 
@@ -109,8 +165,9 @@ export default function SchedaCommessa({
             <input
               type="date"
               className="pg-campo"
-              value={c.fine || ''}
-              onChange={e => onCambia(d => conCommessa(d, { fine: e.target.value || null }))}
+              defaultValue={c.fine || ''}
+              key={`fine-${doc.id}-${c.fine}`}
+              onBlur={e => e.target.value !== (c.fine || '') && onCambia(d => conCommessa(d, { fine: e.target.value || null }))}
             />
             <span className="pg-memo">è anche la scadenza proposta alle liste</span>
           </label>
@@ -198,12 +255,9 @@ export default function SchedaCommessa({
           {doc.pacchetti.length === 0 && <p className="pg-empty">Nessun pacchetto: le voci possono starci senza, ma la matrice non ha righe in cui scrivere le ore.</p>}
           {doc.pacchetti.map(p => (
             <div key={p.id} className="pg-tabella-riga">
-              <input
-                type="color"
-                className="pg-colore"
-                value={p.colore || '#7a8899'}
-                onChange={e => onCambia(d => conPacchettoAggiornato(d, p.id, { colore: e.target.value }))}
-                title="Il colore del pacchetto"
+              <CampoColore
+                valore={p.colore}
+                onScegli={colore => onCambia(d => conPacchettoAggiornato(d, p.id, { colore }))}
               />
               <input
                 className="pg-campo pg-campo-nudo pg-cresce"
@@ -291,7 +345,9 @@ export default function SchedaCommessa({
         <p className="pg-memo">
           Il programma vive su OneDrive e non serve salvarlo: quello che si scrive è già scritto.
           L&apos;esportazione è un&apos;altra cosa — una fotografia col giorno nel nome, di com&apos;era
-          il programma quando lo si è mandato o discusso.
+          il programma quando lo si è mandato o discusso. Il JSON è quello che si rilegge da qui;
+          il foglio Excel è quello che si manda ai colleghi, e sta in cima alla schermata insieme
+          alle ore registrate perché non è un&apos;impostazione: è un gesto che si fa spesso.
         </p>
         <div className="pg-due-bottoni">
           <button type="button" className="pg-btn" onClick={onEsporta}>Esporta una fotografia (JSON)</button>

@@ -23,7 +23,7 @@
 //
 // Logica pura: la lettura e la scrittura stanno in api.js (`rituale.json`), il
 // disegno in RitualeMattino.jsx.
-import { FAMIGLIE, ORDINE_FAMIGLIE, nuovaVoce, ymd } from './movimento';
+import { FAMIGLIE, ORDINE_FAMIGLIE, nuovaVoce, ymd } from './movimento.js';
 
 /**
  * Le motivazioni, nell'ordine della tendina. La prima è quella scelta di
@@ -185,6 +185,32 @@ export function giornoVuoto(auto = false) {
   const giorno = { famiglie, compilatoIl: new Date().toISOString() };
   if (auto) giorno.auto = true;
   return giorno;
+}
+
+/**
+ * Se a oggi si è già risposto, e quindi la domanda non va rifatta.
+ *
+ * La risposta è nel documento su OneDrive, non in un segno lasciato su questo
+ * telefono, ed è questa la correzione: il pannello si apriva più volte al
+ * giorno perché l'unica cosa che diceva «l'ho già chiesto» era una riga di
+ * `localStorage` — che sparisce quando lo spazio finisce (ed è quello che
+ * succede, vedi cachePersistenza.js), che non attraversa i dispositivi, e che
+ * non viene scritta se la scheda «Oggi» si lascia senza chiudere il pannello.
+ * Il documento invece è un fatto: se dentro c'è la riga di oggi, la domanda ha
+ * avuto risposta — qui, o dal portatile, o stamattina prima di ricaricare.
+ *
+ * I giorni tappati dall'app (`auto`) non contano come risposta: sono il
+ * «non fatto» messo dal recupero, e sono fatti solo per essere corretti. Oggi
+ * non ne è mai uno — il recupero parte da ieri — ma la regola va scritta dove
+ * si legge, non lasciata a un'invariante che qualcuno può cambiare.
+ *
+ * @param {Record<string, import('./types').RitualeGiorno>|null} doc
+ * @param {string} oggi
+ * @returns {boolean}
+ */
+export function giaRisposto(doc, oggi) {
+  const giorno = doc?.[oggi];
+  return !!giorno && !giorno.auto;
 }
 
 /**

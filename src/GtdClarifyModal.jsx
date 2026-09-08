@@ -29,7 +29,7 @@ import './GtdClarifyModal.css';
 // rapida: il diagramma è lo stesso, ma alla fine l'originale in Inbox va
 // consumato — cancellato se è finito altrove o nel cestino, spuntato se lo si
 // è fatto sul momento. Senza, chiarire un pensiero ne lasciava due.
-export default function GtdClarifyModal({ open, onClose, todoLists = [], notebooks = [], sectionsMap = {}, onTaskCreated, onTaskRemoved, onEventCreated, onEventRemoved, seedText = '', sourceTask = null }) {
+export default function GtdClarifyModal({ open, onClose, todoLists = [], notebooks = [], sectionsMap = {}, onTaskCreated, onTaskRemoved, onEventCreated, onEventRemoved, seedText = '', seedOrigine = '', sourceTask = null }) {
   const [activeLeaf, setActiveLeaf] = useState(null);
   const [eventLeaf, setEventLeaf] = useState(null);
 
@@ -116,6 +116,26 @@ export default function GtdClarifyModal({ open, onClose, todoLists = [], noteboo
         </div>
 
         <div className="gtd-body">
+          {/* Cosa si sta guardando, e da dove viene.
+
+              Arrivando dalla campanella qui si apriva un diagramma con sette
+              foglie e nient'altro: né la frase su cui si stava decidendo, né
+              da quale email o pagina venisse, né cosa facesse premere una
+              foglia. Il diagramma è chiaro per chi conosce GTD e muto per
+              chiunque altro — compreso chi l'ha scritto, sei mesi dopo. */}
+          {seedText && (
+            <div className="gtd-seed">
+              <div className="gtd-seed-testo">«{seedText}»</div>
+              {seedOrigine && <div className="gtd-seed-origine">da {seedOrigine}</div>}
+              <div className="gtd-seed-aiuto">
+                Scendi il diagramma e scegli una foglia: le foglie del ramo <strong>No</strong> creano
+                una pagina OneNote di riferimento, quelle del ramo <strong>Sì</strong> un&apos;attività
+                nella lista che scegli (o una scadenza a calendario, col bottoncino accanto).
+                Niente viene creato finché non confermi.
+              </div>
+            </div>
+          )}
+
           <div className="gtd-flow">
             {/* Box statico — solo per fedeltà visiva al diagramma originale */}
             <div className="gtd-flow-node-wrap">

@@ -114,7 +114,7 @@ repository secret*.
 | Segreto | Cosa contiene | Serve? |
 |---|---|---|
 | `CALENDARIO_LAVORO_MAIL` | il marcatore con cui comincia l'oggetto: `CALENDARIO-LAVORO`. Un nome davanti alla barra verticale per scegliere come si chiama nell'app: `Studio\|CALENDARIO-LAVORO` | **sì** |
-| `MENTE_REFRESH_TOKEN` | il refresh token del CLI (README, § *Il token*): `node scripts/get-refresh-token.mjs` | **sì** |
+| `MENTE_REFRESH_TOKEN` | il refresh token dell'account Microsoft **personale**. Con Node: `node scripts/get-refresh-token.mjs`. Senza installare niente, da Windows: `scripts/calendario-lavoro/Prendi-Token.ps1` | **sì** |
 | `CALENDARIO_LAVORO_MITTENTE` | l'indirizzo di lavoro da cui deve arrivare. Senza, basta l'oggetto | consigliato |
 | `GH_PAT` | un token GitHub con permesso sui segreti del repository, per **riscrivere `MENTE_REFRESH_TOKEN` a ogni giro**: quello Microsoft ruota, e senza questo fra qualche settimana smette di funzionare senza un motivo apparente | consigliato |
 | `CALENDARIO_LAVORO_ICS` | un feed ICS pubblicato, il giorno che l'azienda lo consentisse. Convive con la posta | no |
@@ -163,3 +163,4 @@ giorni feriali.
 | Gli eventi ci sono ma sono di un'ora sbagliata | Il `.ics` dichiara un fuso che non conosciamo: aggiungilo a `FUSI_WINDOWS` in `scripts/ics.mjs` (tutto quello che non riconosce ricade sull'ora di Roma) |
 | Una serie ricorrente compare solo la prima volta | Una regola di ricorrenza che il lettore non copre: aggiungila a `occorrenzeDi()` e a `scripts/prova-ics.mjs`, che gira senza rete |
 | Il token smette di funzionare dopo qualche settimana | Manca `GH_PAT`, quindi il segreto non viene riscritto: rifai il token e aggiungi il PAT |
+| «Token rifiutato — consenso o scope mancanti» | Il token è quello vecchio della sincronizzazione via mail, che sa leggere solo posta e calendario: non può scrivere su OneDrive. Rifallo con uno dei due script qui sopra |

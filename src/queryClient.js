@@ -14,6 +14,7 @@
 // passeranno a questo client.
 
 import { QueryClient, hydrate, dehydrate } from '@tanstack/react-query';
+import { serializzaEntroIlBudget } from './cachePersistenza.js';
 
 const MIN = 60 * 1000;
 const HOUR = 60 * MIN;
@@ -134,8 +135,8 @@ const PERSIST_KEY = 'md_rq_cache_v2';
 //
 // `localStorage` è uno solo per origine, e su Safari è piccolo: qualche mega,
 // meno ancora per un'app aperta dall'icona sulla Home. Dentro ci sta la cache
-// di TanStack — pagine OneNote, task, e gli eventi di calendario a ±3 mesi,
-// tenuti una settimana — ma ci sta anche, nello stesso cassetto, la cache di MSAL,
+// di TanStack — pagine OneNote, task, e gli eventi di calendario, tenuti una
+// settimana — ma ci sta anche, nello stesso cassetto, la cache di MSAL,
 // cioè l'account e il refresh token. Quando lo spazio finisce, `setItem`
 // smette di funzionare *per tutti*: la cache dei dati se ne fa una ragione
 // (c'è il try/catch qui sotto), MSAL no — si ritrova a non poter scrivere il
@@ -143,67 +144,13 @@ const PERSIST_KEY = 'md_rq_cache_v2';
 // scadere niente. Da fuori sembra una sessione che dura poco; in realtà è la
 // cache dei dati che ha mangiato il posto dell'account.
 //
-// Un mega di JSON è comodo per i dati e lascia margine abbondante a MSAL, che
-// di suo occupa qualche decina di kB.
-const PERSIST_BUDGET = 1_000_000;
+// Il tetto e il modo in cui ci si sta dentro — potare le finestre di eventi
+// invece di buttare via le query più grosse, che erano sempre quelle del
+// calendario — stanno in cachePersistenza.js, che è puro e si prova.
 
 // Se lo spazio è finito lo stesso, resta scritto qui: la schermata di login lo
 // legge e lo dice, invece di lasciare l'utente davanti a un logout inspiegato.
 const STORAGE_FULL_KEY = 'md_storage_full';
-
-/**
- * Sfoltisce la cache da persistere finché non sta nel budget, buttando prima
- * le query più grosse. Perdere gli eventi di tre mesi vuol dire riscaricarli;
- * perdere l'account vuol dire rifare l'accesso — non è lo stesso prezzo.
- *
- * Quali buttare si decide contando, non riscrivendo. Prima ogni query tolta
- * costava una serializzazione dell'intera cache da capo: sfoltirne dieci
- * voleva dire serializzare dieci volte un megabyte, sul filo principale e a
- * ogni salvataggio — cioè proprio quando la cache è grossa e il telefono ha
- * già poco fiato. Le misure delle singole query si prendono una volta sola,
- * si sottraggono finché il totale non rientra, e si serializza una volta.
- * @param {ReturnType<typeof dehydrate>} clientState
- * @returns {string} il JSON da scrivere, già sotto al budget
- */
-function serializzaEntroIlBudget(clientState) {
-  const timestamp = Date.now();
-  let json = JSON.stringify({ timestamp, clientState });
-  if (json.length <= PERSIST_BUDGET) return json;
-
-  // Dalla più grossa alla più piccola. `size + 1` tiene conto della virgola
-  // che separa una query dalla successiva nell'array serializzato: è una
-  // stima, e va bene che lo sia — il controllo vero è la misura finale qui
-  // sotto, questa serve solo a scegliere cosa togliere.
-  const queries = [...(clientState.queries || [])]
-    .map(q => ({ q, size: JSON.stringify(q).length + 1 }))
-    .sort((a, b) => b.size - a.size);
-
-  let stima = json.length;
-  const tenute = new Set(queries.map(x => x.q));
-  for (const { q, size } of queries) {
-    if (stima <= PERSIST_BUDGET) break;
-    tenute.delete(q);
-    stima -= size;
-  }
-
-  json = JSON.stringify({
-    timestamp,
-    clientState: { ...clientState, queries: [...tenute] },
-  });
-  // La stima può sbagliare per difetto (l'escaping di una stringa cambia
-  // lunghezza fra una passata e l'altra): se dopo il taglio siamo ancora
-  // sopra, si continua a togliere dalla più grossa, una serializzazione per
-  // giro ma partendo da un insieme già sfoltito.
-  for (const { q } of queries) {
-    if (json.length <= PERSIST_BUDGET || !tenute.size) break;
-    if (!tenute.delete(q)) continue;
-    json = JSON.stringify({
-      timestamp,
-      clientState: { ...clientState, queries: [...tenute] },
-    });
-  }
-  return json;
-}
 
 try {
   const raw = window.localStorage.getItem(PERSIST_KEY);

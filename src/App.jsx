@@ -20,12 +20,14 @@ import QuickCapture from './QuickCapture';
 import { captureContextFor } from './captureContext';
 import AppShell from './AppShell';
 import ShortcutsPanel from './ShortcutsPanel';
+import PannelloReview from './PannelloReview';
 import TodayView from './TodayView';
 import { personRoleFor, taskPerson, STATUS_LABELS } from './taskModel';
 import { pushUndo } from './undo';
 import { usePoolAttivita, cambiaAttivitaInPool, aggiungiAlPool } from './poolAttivita';
 import { useDailyReview } from './useDailyReview';
 import { useScadenzeRicorrenti } from './useScadenzeRicorrenti';
+import { prossimeScadenze, scadenzeOrfane } from './deadlineReminders';
 import { useColoriSezioni, coloraTaccuino, coloraSezioni, COLORI_VUOTI } from './useColoriSezioni';
 import { BUILD_TIME, PREFERRED_LOGIN_HINT } from './config';
 import UndoToast from './UndoToast';
@@ -364,6 +366,11 @@ export default function App() {
   const [pendingPlannerTask, setPendingPlannerTask] = useState(null);
 
   const [gtdSeedText, setGtdSeedText] = useState('');
+  // Da dove viene il testo che il chiarimento si trova già dentro. È una
+  // stringa da mostrare, non un dato: arrivando dalla campanella si apriva un
+  // diagramma con sette foglie e una frase piovuta dal nulla, e la prima cosa
+  // da sapere era di cosa si stesse parlando.
+  const [gtdSeedOrigine, setGtdSeedOrigine] = useState('');
   const [colorSettingsOpen, setColorSettingsOpen] = useState(false);
   const notebooksRef = useRef([]);
 
@@ -452,6 +459,18 @@ export default function App() {
     }
     return counts;
   }, [scheduledTasks, todoLists, allSectionNames]);
+
+  // Le scadenze ricorrenti come si **vedono**, non come si creano: quelle
+  // scritte sul calendario da qui a quattro mesi, e quelle il cui prefisso non
+  // aggancia nessuna lista — che `controllaScadenze` salta in silenzio, ed è
+  // il silenzio il difetto. Derivate dagli eventi già scaricati, quindi
+  // nessuna chiamata in più: è la stessa finestra da cui nascono le attività.
+  const scadenzeInArrivo = useMemo(
+    () => prossimeScadenze(sectionCalendarEvents, todoLists),
+    [sectionCalendarEvents, todoLists]);
+  const scadenzeSenzaLista = useMemo(
+    () => scadenzeOrfane(sectionCalendarEvents, todoLists),
+    [sectionCalendarEvents, todoLists]);
 
   const navigate = useNavigate();
   const location = useLocation();
@@ -832,6 +851,12 @@ export default function App() {
   /** @param {any} proposta @param {string} [testoCorretto] */
   function accettaProposta(proposta, testoCorretto) {
     setGtdSeedText(review.accetta(proposta, testoCorretto));
+    // L'oggetto dell'email non si ripete: per una proposta di posta il testo
+    // mostrato sopra *è* l'oggetto, e riscriverlo qui direbbe due volte la
+    // stessa cosa. Della pagina OneNote invece il titolo è informazione nuova.
+    setGtdSeedOrigine(proposta.source === 'onenote'
+      ? `una riga «Da fare» della pagina OneNote «${proposta.title}»`
+      : `un'email di ${proposta.mittente || proposta.meta || 'mittente sconosciuto'}`);
     setGtdOpen(true);
   }
 
@@ -1238,24 +1263,15 @@ export default function App() {
           {review.proposte.length > 0 && <span className="header-badge">{review.proposte.length}</span>}
         </button>
         {review.aperta && (
-          <div className="bell-dropdown">
-            <div className="bell-dropdown-header">
-              <span>Daily Review</span>
-              <button onClick={() => review.apri(false)}>✕</button>
-            </div>
-            {review.inCorso && <div className="bell-empty">Analisi email e OneNote in corso…</div>}
-            {!review.inCorso && review.proposte.length === 0 && (
-              <div className="bell-empty">Nessuna proposta al momento.</div>
-            )}
-            {!review.inCorso && review.proposte.map(s => (
-              <BellSuggestionItem
-                key={s.id}
-                suggestion={s}
-                onAccept={accettaProposta}
-                onDismiss={review.scarta}
-              />
-            ))}
-          </div>
+          <PannelloReview
+            proposte={review.proposte}
+            inCorso={review.inCorso}
+            scadenze={scadenzeInArrivo}
+            orfane={scadenzeSenzaLista}
+            onAccetta={accettaProposta}
+            onScarta={review.scarta}
+            onChiudi={() => review.apri(false)}
+          />
         )}
       </div>
       {/* Le scorciatoie stanno accanto alla campanella e non in Impostazioni:
@@ -1439,8 +1455,9 @@ export default function App() {
       />
       <GtdClarifyModal
         open={gtdOpen}
-        onClose={() => { setGtdOpen(false); setGtdSeedText(''); setClarifyTask(null); }}
+        onClose={() => { setGtdOpen(false); setGtdSeedText(''); setGtdSeedOrigine(''); setClarifyTask(null); }}
         seedText={gtdSeedText}
+        seedOrigine={gtdSeedOrigine}
         sourceTask={clarifyTask}
         todoLists={todoLists}
         notebooks={notebooks}
@@ -1496,26 +1513,3 @@ export default function App() {
   );
 }
 
-// Riga della campanella Daily Review: senza un LLM a ripulire il testo, il
-// titolo proposto (oggetto email o riga taggata "Da fare" in OneNote) resta
-// modificabile prima di creare il task.
-function BellSuggestionItem({ suggestion, onAccept, onDismiss }) {
-  const [text, setText] = useState(suggestion.extractedAction);
-
-  return (
-    <div className="bell-item">
-      <input
-        className="bell-item-input"
-        value={text}
-        onChange={e => setText(e.target.value)}
-      />
-      <div className="bell-item-meta">
-        {suggestion.source === 'onenote' ? '📓' : '📧'} {suggestion.title?.slice(0, 40)}
-      </div>
-      <div className="bell-item-actions">
-        <button className="bell-accept-btn" onClick={() => onAccept(suggestion, text)}>✓ Crea task</button>
-        <button className="bell-dismiss-btn" onClick={() => onDismiss(suggestion)}>✕</button>
-      </div>
-    </div>
-  );
-}

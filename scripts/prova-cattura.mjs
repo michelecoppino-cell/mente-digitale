@@ -16,6 +16,7 @@ const { verifica, fine } = creaTabellone();
 const cattura = await importaModulo('captureParse.js');
 const scadenze = await importaModulo('deadlineReminders.js');
 const tempo = await importaModulo('tempo.js');
+const review = await importaModulo('dailyReview.js');
 
 console.log('\nI giorni si contano sul calendario\n');
 
@@ -163,5 +164,79 @@ const eventiSezione = [
 verifica(scadenze.filterEventsBySectionPrefix(eventiSezione, 'AREA-AUTO').length === 2,
   'la sezione trova anche gli eventi con l\'anticipo scritto dentro');
 verifica(scadenze.filterEventsBySectionPrefix(eventiSezione, '').length === 0, 'e senza sezione non trova niente');
+
+console.log('\nCosa sta per arrivare, e cosa non arriverà mai\n');
+
+// La scheda «Scadenze» della campanella non crea niente: mostra il meccanismo
+// mentre lavora. È la misura che mancava — finché l'unica prova che una
+// scadenza fosse scritta bene era vederla comparire nel pool, un prefisso
+// sbagliato si scopriva a scadenza passata.
+const inArrivo = scadenze.prossimeScadenze([bollo], listeTodo, '2026-09-15');
+verifica(inArrivo.length === 1 && inArrivo[0].entraIl === '2026-09-01',
+  'una scadenza dice il giorno in cui diventa un\'attività, non solo quando scade');
+verifica(inArrivo[0].giaEntrata === true && inArrivo[0].giorniAllaScadenza === 16,
+  'e dice che è già entrata, e quanto manca');
+verifica(scadenze.prossimeScadenze([bollo], listeTodo, '2026-08-20')[0].giaEntrata === false,
+  'prima dell\'anticipo si vede lo stesso: è quello il punto — sapere che c\'è, prima');
+verifica(scadenze.prossimeScadenze([bollo], listeTodo, '2026-01-01').length === 0,
+  'oltre l\'orizzonte non si guarda: un elenco lungo un anno non lo legge nessuno');
+verifica(scadenze.prossimeScadenze([bollo], listeTodo, '2026-11-01').length === 0,
+  'e passata la grazia sparisce insieme all\'attività che non si crea più');
+verifica(scadenze.prossimeScadenze([bollo, { ...bollo, id: 'altro-id' }], listeTodo, '2026-09-15').length === 1,
+  'lo stesso evento letto due volte resta una riga sola, come per le dovute');
+
+// L'unica cosa qui dentro che nessun altro schermo dirà mai: un prefisso che
+// non aggancia nessuna lista. `scadenzeDovute` lo salta in silenzio.
+const orfane = scadenze.scadenzeOrfane(
+  [evento('[AREA AUTO +30g] Bollo auto', '2026-10-01'), bollo], listeTodo, '2026-09-15');
+verifica(orfane.length === 1 && orfane[0].listName === 'AREA AUTO',
+  'una lista che non esiste si vede, invece di sparire senza dire niente');
+verifica(scadenze.scadenzeOrfane([bollo], listeTodo, '2026-09-15').length === 0,
+  'e quella scritta bene non è un problema da segnalare');
+const serieRotta = ['2026-10-01', '2027-10-01', '2028-10-01']
+  .map(g => evento('[AREA AUTO] Bollo auto', g));
+verifica(scadenze.scadenzeOrfane(serieRotta, listeTodo, '2026-09-15').length === 1,
+  'e una serie ricorrente sbagliata è un avviso solo, non uno per anno');
+
+console.log('\nQuali email meritano una decisione\n');
+
+const mail = (subject, extra = {}) => ({
+  subject,
+  from: { emailAddress: { address: 'collega@studio.it', name: 'Collega' } },
+  bodyPreview: '',
+  receivedDateTime: '2026-09-04T09:00:00Z',
+  isRead: true,
+  ...extra,
+});
+
+const chiede = review.extractEmailCandidates([mail('Puoi confermare entro il 10?')])[0];
+verifica(chiede && chiede.motivi.length >= 2,
+  'una richiesta emerge, e porta con sé i motivi per cui è emersa');
+verifica(chiede.motivi.includes('parla di una scadenza'),
+  'i motivi si leggono come frasi, non come le parole che li hanno fatti scattare');
+verifica(review.extractEmailCandidates([mail('Verbale riunione di ieri')]).length === 0,
+  'una comunicazione letta e senza richieste non è una proposta');
+verifica(review.extractEmailCandidates([mail('noreply', { from: { emailAddress: { address: 'no-reply@banca.it' } }, isRead: false })]).length === 0,
+  'e un mittente automatico resta fuori come prima');
+
+// Il caso che ha fatto nascere tutto questo: lo specchio del calendario di
+// lavoro si manda una mail ogni due ore, e il pannello mostrava cinque righe
+// identiche intitolate «calendario» — nessuna delle quali era una cosa da fare.
+const specchio = ['08:00', '10:00', '12:00', '14:00', '16:00']
+  .map(o => mail(`calendario 2026-09-04 ${o}`, { isRead: false, receivedDateTime: `2026-09-04T${o}:00Z` }));
+verifica(review.extractEmailCandidates(specchio).length === 0,
+  'un oggetto che si ripete a ogni invio è un flusso di servizio, e non propone niente');
+verifica(review.firmaOggetto('R: calendario 2026-09-04 08:00') === review.firmaOggetto('calendario 2026-09-05 10:00'),
+  'due invii dello stesso filo hanno la stessa firma: cambiano solo data e ora');
+verifica(review.extractEmailCandidates(specchio.slice(0, 2)).length === 1,
+  'e sotto la soglia del flusso ne resta comunque uno solo: due righe uguali non sono due decisioni');
+
+const fili = review.extractEmailCandidates([
+  mail('Puoi confermare?', { isRead: false }),
+  mail('Verifica sismica: serve la relazione', { isRead: false }),
+]);
+verifica(fili.length === 2, 'due fili diversi restano due proposte');
+verifica(fili[0].mittente === 'Collega' && fili[0].quando === '2026-09-04T09:00:00Z',
+  'ogni proposta porta con sé chi l\'ha mandata e quando: senza, non si decide niente');
 
 fine();

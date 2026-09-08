@@ -79,7 +79,9 @@ export default function AttivaVoce({ doc, voci, todoLists, onCrea, onChiudi }) {
     : null;
 
   const [risorse, setRisorse] = useState(/** @type {Record<string, string>} */ (
-    Object.fromEntries(voci.map(v => [v.id, v.risorsa || '']))));
+    // La prima delle proposte: un task ha un delegato solo, e se la voce è di
+    // due chi attiva sceglie qui — le altre proposte restano dove sono.
+    Object.fromEntries(voci.map(v => [v.id, v.risorse[0] || '']))));
   const [scadenza, setScadenza] = useState(scadenzaProposta(voci[0]));
   const [listId, setListId] = useState(/** @type {string} */ (listaDelPacchetto?.id || ''));
   const nomeProposto = nomeListaProposto(doc, pacchetto);
