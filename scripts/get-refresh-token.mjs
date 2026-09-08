@@ -25,7 +25,7 @@ const SCOPE = REMOTO ? MENTE_SCOPE_REMOTO : MENTE_SCOPE;
 async function main() {
   // 1 — Richiedi device code
   const dcRes = await fetch(
-    'https://login.microsoftonline.com/consumers/oauth2/v2.0/devicecode',
+    'https://login.microsoftonline.com/common/oauth2/v2.0/devicecode',
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -45,7 +45,7 @@ async function main() {
     await new Promise(r => setTimeout(r, interval));
 
     const tokRes = await fetch(
-      'https://login.microsoftonline.com/consumers/oauth2/v2.0/token',
+      'https://login.microsoftonline.com/common/oauth2/v2.0/token',
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -83,19 +83,18 @@ async function main() {
 }
 
 /**
- * Con quale identità è andata: si stampa, e non è un lusso.
+ * Con quale identità è andata: si stampa **sempre**, e non è un lusso.
  *
  * Lo stesso indirizzo può esistere due volte — una come account Microsoft
- * personale e una dentro un tenant di lavoro — e la pagina del login sceglie
- * da sé, tanto più se ad aprire è una passkey. Fin qui non se ne accorge
- * nessuno: il token esce, si incolla, e l'errore arriva giorni dopo, dal
- * telefono, come «AADSTS7000012: the grant was obtained for a different
- * tenant» — cioè dove non si può fare niente. Qui invece si vede subito, con
- * la stringa ancora sullo schermo.
+ * personale e una dentro un tenant di lavoro — e chi firma il login lo decide
+ * la schermata, non chi digita: su un telefono è la passkey nel portachiavi.
+ * Il token esce comunque, si incolla nel Worker, e quale delle due identità
+ * abbia autorizzato lo si scopre dai dati che non tornano.
  *
- * `9188040d-…` è il tenant degli account personali, l'unico che questa app
- * accetta: `/consumers` è dove va a rinnovare. Un tid diverso vuol dire
- * account sbagliato, e il token appena preso non servirà a niente.
+ * La prima versione di questa stampa parlava solo quando qualcosa non andava,
+ * e infatti nel caso vero è rimasta zitta: il token remoto non ha `User.Read`,
+ * quindi `/me` non risponde, e il silenzio si legge come «tutto a posto».
+ * Adesso dice sempre qualcosa, anche solo il tenant.
  * @param {string} [accessToken]
  */
 async function diChiSei(accessToken) {
@@ -103,28 +102,40 @@ async function diChiSei(accessToken) {
   if (!accessToken) return;
 
   let tid = '';
+  let nome = '';
   try {
     const [, carico] = accessToken.split('.');
-    ({ tid } = JSON.parse(Buffer.from(carico, 'base64url').toString()));
-  } catch { /* non è un JWT leggibile: resta il nome, che basta */ }
+    const dati = JSON.parse(Buffer.from(carico, 'base64url').toString());
+    tid = dati.tid || '';
+    // Quale di questi ci sia dipende dagli scope: con quelli ridotti del
+    // connettore non c'è né `upn` né il profilo, e resta solo il tenant.
+    nome = dati.upn || dati.unique_name || dati.preferred_username || dati.email || '';
+  } catch { /* non è un JWT leggibile: si dirà quel poco che si sa */ }
 
-  let chi = '';
-  try {
-    const r = await fetch('https://graph.microsoft.com/v1.0/me', {
-      headers: { Authorization: `Bearer ${accessToken}` },
-    });
-    const me = await r.json();
-    chi = me.userPrincipalName || me.mail || '';
-  } catch { /* senza rete si vive lo stesso */ }
+  if (!nome) {
+    // Ultima carta, e vale solo dove gli scope la permettono.
+    try {
+      const r = await fetch('https://graph.microsoft.com/v1.0/me', {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      if (r.ok) {
+        const me = await r.json();
+        nome = me.userPrincipalName || me.mail || '';
+      }
+    } catch { /* senza rete si vive lo stesso */ }
+  }
 
-  if (chi) console.log(`Account: ${chi}`);
+  const tipo = !tid ? 'non leggibile'
+    : tid === MSA ? 'account Microsoft personale'
+    : `account di lavoro o scuola (tenant ${tid})`;
+
+  console.log(`Account: ${nome || '(nome non leggibile con questi scope)'} — ${tipo}\n`);
   if (tid && tid !== MSA) {
     console.log(
-      '\n⚠  Questo NON è un account Microsoft personale (tenant ' + tid + ').\n' +
-      '   L\'app rinnova su /consumers, quindi questo token verrà rifiutato con\n' +
-      '   «the grant was obtained for a different tenant». Rifai il login e, se\n' +
-      '   la pagina chiede quale account usare, scegli quello personale — con la\n' +
-      '   password, non con la passkey, che tende a riportare all\'altro.\n'
+      '⚠  Questo non è l\'account personale. Il token funzionerà lo stesso, ma\n' +
+      '   leggerà e scriverà sul OneDrive di *quell\'account*: se non è dove\n' +
+      '   sta la mente digitale, rifai il login scegliendo l\'altro — e se il\n' +
+      '   telefono propone una passkey, rifiutala e usa la password.\n'
     );
   }
 }
