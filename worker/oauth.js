@@ -144,9 +144,16 @@ export async function registraClient(req, env) {
 
 // ── La pagina con il campo ───────────────────────────────────────────────────
 
-/** @param {URLSearchParams} p @param {string} [avviso] */
+/**
+ * La pagina rimanda indietro **tutta** la richiesta, `response_type` compreso:
+ * il POST che ne esce viene ricontrollato dalle stesse regole del GET, quindi
+ * un campo che la pagina non riporta è un campo che al secondo giro manca. Ne
+ * mancava uno, e chi arrivava qui dalla passphrase giusta leggeva
+ * «response_type non supportato» senza aver toccato niente.
+ * @param {URLSearchParams} p @param {string} [avviso]
+ */
 function paginaAutorizza(p, avviso) {
-  const nascosti = ['client_id', 'redirect_uri', 'state', 'code_challenge', 'code_challenge_method', 'scope', 'resource']
+  const nascosti = ['response_type', 'client_id', 'redirect_uri', 'state', 'code_challenge', 'code_challenge_method', 'scope', 'resource']
     .filter(k => p.get(k))
     .map(k => `<input type="hidden" name="${k}" value="${escapeHtml(p.get(k) || '')}">`)
     .join('\n    ');

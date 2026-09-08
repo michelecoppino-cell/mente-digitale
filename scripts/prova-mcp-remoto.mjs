@@ -155,6 +155,11 @@ const parametri = new URLSearchParams({
   const html = await r.text();
   verifica(html.includes('name="passphrase"'), 'e ha un campo solo');
   verifica(html.includes(challenge), 'e si porta dietro il challenge di PKCE');
+  // Il POST ripassa dalle stesse regole del GET: quello che la pagina non
+  // riporta, al secondo giro non c'è. Qui si controlla riga per riga.
+  for (const chiave of parametri.keys()) {
+    verifica(html.includes(`name="${chiave}"`), `e riporta ${chiave}, che il POST ricontrollerà`);
+  }
 }
 
 {
@@ -164,12 +169,26 @@ const parametri = new URLSearchParams({
   verifica(r.status === 400, 'un redirect_uri che il client non ha registrato viene rifiutato');
 }
 
-/** @param {string} passphrase */
-const provaPassphrase = passphrase => chiedi('/authorize', {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-  body: new URLSearchParams({ ...Object.fromEntries(parametri), passphrase }).toString(),
-});
+/**
+ * Manda il form **come lo manderebbe il browser**: i campi sono quelli che la
+ * pagina scrive, non quelli della richiesta di partenza. È tutta la differenza
+ * — prima questa prova rimetteva nel POST anche ciò che la pagina si era
+ * dimenticata di riportare, e un campo perso per strada passava inosservato.
+ * @param {string} passphrase
+ */
+async function provaPassphrase(passphrase) {
+  const pagina = await (await chiedi(`/authorize?${parametri}`)).text();
+  const campi = new URLSearchParams();
+  for (const [, nome, valore] of pagina.matchAll(/<input type="hidden" name="([^"]+)" value="([^"]*)">/g)) {
+    campi.set(nome, valore);
+  }
+  campi.set('passphrase', passphrase);
+  return chiedi('/authorize', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: campi.toString(),
+  });
+}
 
 {
   const r = await provaPassphrase('sbagliata');
