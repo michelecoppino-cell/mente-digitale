@@ -21,8 +21,14 @@ e nient'altro: lo stesso server, un altro trasporto.
 
 Due cose da sapere prima di cominciare, perché cambiano le aspettative:
 
-- **Claude chiede il permesso** prima di usare uno strumento connesso. A voce
-  si risponde a voce, ma è un giro di parole in più per ogni azione.
+- **Claude chiede il permesso** prima di usare uno strumento connesso, e lo
+  chiede **strumento per strumento**. A voce si risponde a voce, ma è un giro
+  di parole in più per ogni azione. Due cose lo riducono, e sono tutte e due
+  di là: nel pannello del connettore si può dire *consenti sempre* per un
+  singolo strumento — quelli in sola lettura sono i primi a meritarselo, non
+  scrivono niente — e da qui l'elenco resta corto apposta, con le cose che si
+  fanno insieme in uno strumento solo (`piano_scrivi` mette, sposta e toglie:
+  spostare un blocco costa un consenso, non due).
 - **Non tutto quello che torna appare a schermo.** Un elenco lungo lo si sente
   riassunto. È il motivo per cui dal connettore escono quattordici strumenti e
   non ventuno: vedi *Cosa esce di casa*, più sotto.
@@ -54,14 +60,22 @@ dicibile.
 
 | | |
 |---|---|
-| Guardare | `oggi`, `agenda`, `piano`, `piano_arco`, `attivita_lista`, `sezioni`, `obiettivi_leggi` |
-| Scrivere | `attivita_crea`, `attivita_stato`, `piano_aggiungi`, `piano_togli`, `evento_crea`, `diario_scrivi`, `sezione_crea` |
+| Guardare | `oggi`, `agenda`, `piano`, `programma`, `attivita_lista`, `sezioni`, `obiettivi_leggi` |
+| Scrivere | `attivita_crea`, `attivita_stato`, `piano_scrivi`, `programma_ore`, `evento_crea`, `diario_scrivi`, `sezione_crea` |
 
 Restano sul computer: tutto OneNote (`note_*`), `diario_leggi`,
 `obiettivi_scrivi` e `identita`. Il perché sta scritto accanto all'elenco, in
 `scripts/mente-mcp-nucleo.mjs` (`NOMI_DA_VOCE`): in breve, ogni strumento in più
-è tempo di attesa in telefonata, e le cose che si scrivono pensandoci non si
-dettano in tangenziale.
+è tempo di attesa in telefonata e un consenso in più da dare, e le cose che si
+scrivono pensandoci non si dettano in tangenziale.
+
+Del **Programma di commessa** escono due strumenti soli, che sono le due cose
+che si dicono a voce: `programma` — quante ore vale una commessa, quante ne
+restano, chi è pieno nelle prossime settimane — e `programma_ore`, le ore di
+una persona su un pacchetto in una settimana. Quelle **sostituiscono** e non si
+sommano, come il consuntivo nell'app: ridire la stessa frase non raddoppia la
+settimana, e zero toglie la cella. Voci nuove, scomposizioni e attivazioni no:
+sono la matrice, cioè venti colonne da guardare insieme.
 
 Da qui non si cancella niente, come dal computer. È una regola del progetto, non
 un'omissione.
@@ -87,6 +101,11 @@ di copiare il file.
 `--remoto` chiede **meno scope**: `Files.ReadWrite` e `Calendars.ReadWrite`,
 senza posta e senza OneNote. Nessuno dei quattordici strumenti ne ha bisogno, e
 un token che vive fuori da casa deve poter fare solo quello che gli serve.
+
+Il Programma di commessa non ha aggiunto niente a questo elenco: i suoi
+programmi sono file JSON nella stessa cartella dell'app su OneDrive, e
+`Files.ReadWrite` li comprendeva già. Un token preso prima che il Programma
+esistesse continua a valere — non c'è niente da rifare.
 
 ### 2. L'archivio
 

@@ -29,7 +29,15 @@ import {
   getCalendarEvents, getCalendars, createCalendarEvent,
   getNotebooks, getSections, getPages, getPageContentHtml, htmlToText,
   createPage, appendToPage, textToHtml,
+  leggiRegistroProgrammi, leggiProgramma, salvaCelleProgramma,
 } from './mente-graph.mjs';
+
+import {
+  riepilogoPacchetti, caricoPersone, celleConsuntivo, oreSottoRiga, catenaVoce,
+  ORE_SETTIMANA_DEFAULT,
+} from '../src/programma.js';
+
+import { settimanaIso, spostaSettimane, settimaneTra } from '../src/tempo.js';
 
 import {
   taskStatus, inboxListId, indexScheduled, taskEstimateMin,
@@ -813,31 +821,29 @@ function nuovoIdBlocco() {
 }
 
 /**
- * Mette un'attività nel piano di un giorno, a un'ora.
+ * Mette un blocco nel piano di un giorno, **nei piani che ha in mano chi
+ * chiama**: chi ha chiamato salva.
+ *
+ * Sta qui, e non dentro `pianoAggiungi`, perché spostare è togliere e rimettere
+ * — e togliere prima e rimettere poi, con due salvataggi, vuol dire che un
+ * conflitto d'orario nel mezzo lascia il blocco tolto e basta. Con i due pezzi
+ * in memoria lo spostamento è una scrittura sola: o si sposta, o non è successo
+ * niente.
  *
  * Due blocchi che si accavallano sono un errore e non una sovrapposizione da
  * disegnare: il piano dice quando si fa una cosa, e due cose alla stessa ora
  * vuol dire che non lo dice. L'app, dove si trascina e si vede la griglia, può
  * permetterselo; da qui, dove si scrive alla cieca, no.
  *
- * @param {{ attivita?: string, data?: string, ora?: string, durataMin?: number }} opts
- * @returns {Promise<{ data: any, text: string }>}
+ * @param {Record<string, any>} plans
+ * @param {string} giorno
+ * @param {{ id: string, titolo: string, listId?: string|null, listName?: string|null }} task
+ * @param {string} inizio  'HH:MM'
+ * @param {number} durata  minuti
+ * @returns {any} il blocco messo
  */
-export async function pianoAggiungi(opts = {}) {
-  const query = testo(opts.attivita);
-  if (!query) throw new Error("Serve l'attività: un pezzo del suo id o del suo titolo.");
-  const inizio = testo(opts.ora);
-  if (!inizio) throw new Error("Serve l'ora di inizio, HH:MM.");
-
-  const giorno = giornoValido(testo(opts.data) || dateKey());
+function mettiBlocco(plans, giorno, task, inizio, durata) {
   const inizioMin = minuti(inizio);
-
-  const { tasks, plans } = await collectTasks();
-  const task = findTask(tasks, query);
-
-  // La durata: quella chiesta, altrimenti la stima dell'attività — che è la
-  // stessa cosa che fa l'app quando si trascina un task sulla griglia.
-  const durata = numero(opts.durataMin) ?? taskEstimateMin(task);
   if (durata <= 0) throw new Error(`Durata non valida: ${durata} minuti.`);
   const fineMin = inizioMin + durata;
   if (fineMin > 24 * 60) throw new Error(`Un blocco dalle ${inizio} di ${durata} minuti esce dal giorno.`);
@@ -865,8 +871,8 @@ export async function pianoAggiungi(opts = {}) {
     id: nuovoIdBlocco(),
     taskId: task.id,
     taskTitle: task.titolo,
-    listId: task._listId,
-    listName: task._listName,
+    listId: task.listId ?? null,
+    listName: task.listName ?? null,
     // Il colore lo assegna l'app dalla mappa delle sezioni, che qui non c'è:
     // lasciarlo null la fa ricadere sul suo default invece di scrivere un
     // colore inventato che poi resterebbe.
@@ -880,11 +886,126 @@ export async function pianoAggiungi(opts = {}) {
   };
 
   plans[giorno] = { ...piano, date: giorno, blocks: [...blocchi, blocco].sort((a, b) => a.startTime.localeCompare(b.startTime)) };
+  return blocco;
+}
+
+/**
+ * I blocchi che somigliano a quello che si è chiesto: in un giorno, o in tutti.
+ * Cercare dappertutto è quello che permette di dire «sposta la relazione a
+ * domani alle nove» senza dover ricordare in che giorno stava.
+ * @param {Record<string, any>} plans
+ * @param {string} query
+ * @param {string|null} [giorno]
+ * @returns {{ giorno: string, blocco: any }[]}
+ */
+function trovaBlocchi(plans, query, giorno = null) {
+  const q = query.toLowerCase();
+  /** @type {{ giorno: string, blocco: any }[]} */
+  const esiti = [];
+  for (const [g, piano] of Object.entries(plans || {})) {
+    if (giorno && g !== giorno) continue;
+    for (const b of piano?.blocks || []) {
+      if (String(b.taskId).toLowerCase().startsWith(q) || (b.taskTitle || '').toLowerCase().includes(q)) {
+        esiti.push({ giorno: g, blocco: b });
+      }
+    }
+  }
+  return esiti;
+}
+
+/**
+ * Toglie dal piano l'unico blocco che somiglia alla richiesta, in memoria.
+ * @param {Record<string, any>} plans
+ * @param {string} query
+ * @param {string|null} giorno  null per cercarlo in tutti i giorni
+ * @returns {{ giorno: string, blocco: any }}
+ */
+function togliBlocco(plans, query, giorno) {
+  const trovati = trovaBlocchi(plans, query, giorno);
+  const dove = giorno ? `nel piano del ${giorno}` : 'in nessun piano';
+  if (!trovati.length) throw new Error(`Niente che somigli a "${query}" ${dove}.`);
+  if (trovati.length > 1) {
+    throw new Error(`"${query}" corrisponde a ${trovati.length} blocchi: ` +
+      trovati.map(t => `${t.giorno} ${t.blocco.startTime} ${tronca(t.blocco.taskTitle, 40)}`).join(', '));
+  }
+  const via = trovati[0];
+  const piano = plans[via.giorno];
+  plans[via.giorno] = { ...piano, blocks: (piano.blocks || []).filter(b => b.id !== via.blocco.id) };
+  return via;
+}
+
+/**
+ * Mette un'attività nel piano di un giorno, a un'ora.
+ * @param {{ attivita?: string, data?: string, ora?: string, durataMin?: number }} opts
+ * @returns {Promise<{ data: any, text: string }>}
+ */
+export async function pianoAggiungi(opts = {}) {
+  const query = testo(opts.attivita);
+  if (!query) throw new Error("Serve l'attività: un pezzo del suo id o del suo titolo.");
+  const inizio = testo(opts.ora);
+  if (!inizio) throw new Error("Serve l'ora di inizio, HH:MM.");
+
+  const giorno = giornoValido(testo(opts.data) || dateKey());
+
+  const { tasks, plans } = await collectTasks();
+  const task = findTask(tasks, query);
+
+  // La durata: quella chiesta, altrimenti la stima dell'attività — che è la
+  // stessa cosa che fa l'app quando si trascina un task sulla griglia.
+  const durata = numero(opts.durataMin) ?? taskEstimateMin(task);
+  const blocco = mettiBlocco(
+    plans, giorno,
+    { id: task.id, titolo: task.titolo, listId: task._listId, listName: task._listName },
+    inizio, durata,
+  );
   await saveDailyPlans(plans);
 
   return {
     data: { giorno, blocco },
     text: `✓ ${giorno} ${blocco.startTime}–${blocco.endTime}  ${tronca(task.titolo, 55)}`,
+  };
+}
+
+/**
+ * Sposta un blocco: altro giorno, altra ora, o tutti e due. Una scrittura sola,
+ * e la durata resta quella che aveva se non se ne chiede un'altra — chi sposta
+ * una cosa non sta anche decidendo che duri di meno.
+ *
+ * Il blocco si cerca in tutti i giorni quando non si dice da dove: è la forma
+ * in cui la richiesta arriva parlando («sposta la relazione a domani alle
+ * nove»), dove il giorno di partenza è proprio la cosa che non si ricorda.
+ *
+ * @param {{ attivita?: string, ora?: string, data?: string, daData?: string, durataMin?: number }} opts
+ * @returns {Promise<{ data: any, text: string }>}
+ */
+export async function pianoSposta(opts = {}) {
+  const query = testo(opts.attivita);
+  if (!query) throw new Error("Serve l'attività: un pezzo del suo id o del suo titolo.");
+
+  const daGiorno = testo(opts.daData) ? giornoValido(String(testo(opts.daData))) : null;
+  const plans = await loadDailyPlans();
+  const { giorno: eraIl, blocco: via } = togliBlocco(plans, query, daGiorno);
+
+  const giorno = giornoValido(testo(opts.data) || eraIl);
+  const inizio = testo(opts.ora) || via.startTime;
+  const durata = numero(opts.durataMin) ?? (minuti(via.endTime) - minuti(via.startTime));
+
+  const blocco = mettiBlocco(
+    plans, giorno,
+    { id: via.taskId, titolo: via.taskTitle, listId: via.listId, listName: via.listName },
+    inizio, durata,
+  );
+  // Quello che c'era attaccato al blocco lo si porta dietro: i sotto-passi
+  // spuntati sono lavoro fatto, e uno spostamento non è un ricominciare.
+  blocco.subSteps = via.subSteps || [];
+  blocco.completed = !!via.completed;
+  blocco.completedAt = via.completedAt ?? null;
+  await saveDailyPlans(plans);
+
+  return {
+    data: { giorno, eraIl, blocco },
+    text: `✓ ${tronca(via.taskTitle, 45)}: da ${eraIl} ${via.startTime} ` +
+      `a ${giorno} ${blocco.startTime}–${blocco.endTime}`,
   };
 }
 
@@ -900,20 +1021,7 @@ export async function pianoTogli(opts = {}) {
   const giorno = giornoValido(testo(opts.data) || dateKey());
 
   const plans = await loadDailyPlans();
-  const piano = plans[giorno];
-  const blocchi = piano?.blocks || [];
-  const q = query.toLowerCase();
-  const trovati = blocchi.filter(b =>
-    String(b.taskId).toLowerCase().startsWith(q) || (b.taskTitle || '').toLowerCase().includes(q));
-
-  if (!trovati.length) throw new Error(`Niente che somigli a "${query}" nel piano del ${giorno}.`);
-  if (trovati.length > 1) {
-    throw new Error(`"${query}" corrisponde a ${trovati.length} blocchi: ` +
-      trovati.map(b => `${b.startTime} ${tronca(b.taskTitle, 40)}`).join(', '));
-  }
-
-  const via = trovati[0];
-  plans[giorno] = { ...piano, blocks: blocchi.filter(b => b.id !== via.id) };
+  const { blocco: via } = togliBlocco(plans, query, giorno);
   await saveDailyPlans(plans);
 
   return {
@@ -926,11 +1034,15 @@ export async function pianoTogli(opts = {}) {
  * Il piano di un arco di giorni: la settimana che contiene una data, oppure un
  * mese intero. È la stessa cosa che `piano` mostra per un giorno solo, letta
  * dalla distanza da cui si decide come sta la settimana.
- * @param {{ data?: string, mese?: string }} opts
+ * `arco` dice quale dei due si vuole quando il mese non si nomina: senza di
+ * lui «mese» si potrebbe chiedere solo scrivendone il numero, e chi parla dice
+ * «questo mese».
+ * @param {{ data?: string, mese?: string, arco?: string }} opts
  * @returns {Promise<{ data: any, text: string }>}
  */
 export async function pianoArco(opts = {}) {
-  const mese = testo(opts.mese);
+  const mese = testo(opts.mese)
+    || (opts.arco === 'mese' ? meseDi(testo(opts.data) || dateKey()) : null);
   /** @type {string[]} */
   let giorni;
   /** @type {string} */
@@ -964,6 +1076,241 @@ export async function pianoArco(opts = {}) {
   return {
     data: { giorni: perGiorno, totaleBlocchi: totale },
     text: blocco(titolo, righe),
+  };
+}
+
+// ── Programma di commessa ────────────────────────────────────────────────────
+// Il piano del giorno dice quando si fa una cosa; il Programma dice quante ore
+// una commessa vale, in quante si divide e chi le fa in che settimana. Da qui
+// se ne guarda il quadro e si scrivono le ore di una persona — il resto (voci
+// nuove, scomposizioni, attivazioni) resta nell'app, dove c'è la matrice: sono
+// le cose che si fanno guardando venti colonne insieme, non dettandole.
+//
+// Le regole dei conti stanno in `src/programma.js`, le stesse su cui gira la
+// matrice: qui non se ne riscrive nessuna.
+
+const SETTIMANA_RE = /^\d{4}-W(0[1-9]|[1-4]\d|5[0-3])$/;
+
+/** @param {string} nome @param {string} query */
+const somiglia = (nome, query) => String(nome).toLowerCase().includes(query.toLowerCase());
+
+/**
+ * L'unico programma che somiglia a quello che si è chiesto. Un nome che ne
+ * pesca due è un errore e non una scelta da fare al posto di chi chiede:
+ * scrivere ore sulla commessa sbagliata non si vede finché non si guarda il
+ * margine, settimane dopo.
+ * @param {any[]} programmi
+ * @param {string} query
+ */
+function programmaUno(programmi, query) {
+  const trovati = programmi.filter(p => String(p.id).toLowerCase().startsWith(query.toLowerCase()) || somiglia(p.nome, query));
+  if (!trovati.length) {
+    throw new Error(`Nessuna commessa somiglia a "${query}". Ci sono: ${programmi.map(p => p.nome).join(', ')}`);
+  }
+  if (trovati.length > 1) {
+    throw new Error(`"${query}" corrisponde a ${trovati.length} commesse: ${trovati.map(p => p.nome).join(', ')}`);
+  }
+  return trovati[0];
+}
+
+/** Il registro, con un errore parlante quando non c'è ancora niente. */
+async function registroProgrammi() {
+  const { programmi } = await leggiRegistroProgrammi();
+  if (!programmi.length) {
+    throw new Error(
+      'Nessun programma di commessa su OneDrive (mente-digitale/programmi/). ' +
+      "Il primo si crea dall'app, nella scheda Programma."
+    );
+  }
+  return programmi;
+}
+
+/**
+ * La settimana di cui si parla: quella detta, quella che contiene un giorno, o
+ * questa.
+ * @param {{ settimana?: string, data?: string }} opts
+ */
+function settimanaChiesta(opts) {
+  const detta = testo(opts.settimana);
+  if (detta) {
+    if (!SETTIMANA_RE.test(detta)) throw new Error(`Settimana in formato sbagliato: ${detta} (serve YYYY-Www)`);
+    return detta;
+  }
+  const giorno = testo(opts.data);
+  return giorno ? settimanaIso(giornoValido(giorno)) : settimanaIso();
+}
+
+/** Le persone che un programma nomina: in anagrafica o proposte su una voce. */
+function nomiDelProgramma(doc) {
+  const nomi = doc.risorse.map(r => r.nome);
+  for (const v of doc.voci) for (const n of v.risorse) if (!nomi.includes(n)) nomi.push(n);
+  return nomi;
+}
+
+/** @param {any} doc @param {string} query */
+function risorsaUna(doc, query) {
+  const nomi = nomiDelProgramma(doc);
+  const trovati = nomi.filter(n => somiglia(n, query));
+  if (!trovati.length) throw new Error(`Nessuno che somigli a "${query}" in questa commessa. Ci sono: ${nomi.join(', ') || '—'}`);
+  if (trovati.length > 1) throw new Error(`"${query}" corrisponde a ${trovati.length} persone: ${trovati.join(', ')}`);
+  return trovati[0];
+}
+
+/** @param {any} doc @param {string} query */
+function pacchettoUno(doc, query) {
+  const trovati = doc.pacchetti.filter(p => somiglia(p.nome, query) || String(p.id).toLowerCase().startsWith(query.toLowerCase()));
+  if (!trovati.length) {
+    throw new Error(`Nessun pacchetto somiglia a "${query}". Ci sono: ${doc.pacchetti.map(p => p.nome).join(', ') || '—'}`);
+  }
+  if (trovati.length > 1) throw new Error(`"${query}" corrisponde a ${trovati.length} pacchetti: ${trovati.map(p => p.nome).join(', ')}`);
+  return trovati[0];
+}
+
+/** @param {any} doc @param {string} pacchettoId @param {string} query */
+function voceUna(doc, pacchettoId, query) {
+  const trovate = doc.voci.filter(v => !v.scartata && somiglia(v.titolo, query));
+  if (!trovate.length) throw new Error(`Nessuna voce somiglia a "${query}".`);
+  if (trovate.length > 1) throw new Error(`"${query}" corrisponde a ${trovate.length} voci: ${trovate.map(v => v.titolo).join(', ')}`);
+  const voce = trovate[0];
+  // Il pacchetto di una voce è quello della sua radice: una sotto-voce non lo
+  // porta scritto addosso, e scrivere le ore in un pacchetto che non è il suo
+  // le metterebbe in una riga che nella matrice non esiste.
+  const radice = catenaVoce(doc, voce.id)[0];
+  if (radice?.pacchettoId !== pacchettoId) {
+    throw new Error(`La voce «${voce.titolo}» non è di questo pacchetto.`);
+  }
+  return voce;
+}
+
+/** Le ore come si dicono: interi dove sono interi. @param {number} n */
+const oreDette = n => (Math.round(n * 10) / 10).toString().replace('.', ',');
+
+/**
+ * Il quadro del Programma: le commesse accese, oppure una sola, oppure il
+ * carico di una persona. Sola lettura.
+ *
+ * La finestra parte da questa settimana e va avanti: del passato il Programma
+ * dice già lo speso nella testata, e la domanda che si fa da fuori — «come
+ * siamo messi», «chi è pieno» — guarda avanti.
+ *
+ * @param {{ commessa?: string, persona?: string, settimane?: number }} [opts]
+ * @returns {Promise<{ data: any, text: string }>}
+ */
+export async function programma(opts = {}) {
+  const quante = Math.min(Math.max(numero(opts.settimane, 6) || 6, 1), 26);
+  const settimanaOra = settimanaIso();
+  const finestra = settimaneTra(settimanaOra, spostaSettimane(settimanaOra, quante - 1));
+  const persona = testo(opts.persona);
+  const query = testo(opts.commessa);
+
+  const programmi = await registroProgrammi();
+  const scelte = query ? [programmaUno(programmi, query)] : programmi.filter(p => p.attivo);
+  if (!scelte.length) {
+    throw new Error('Nessuna commessa accesa. Dimmi quale guardare, o accendile dall\'app.');
+  }
+
+  const docs = await Promise.all(scelte.map(async voce => ({
+    id: voce.id, nome: voce.nome, doc: await leggiProgramma(voce.id),
+  })));
+
+  // Le persone senza ore nella finestra restano fuori: un elenco di righe a
+  // zero non è una risposta. A meno che sia proprio quella la domanda.
+  const righe = caricoPersone(docs, finestra)
+    .filter(r => (persona ? somiglia(r.nome, persona) : r.totale > 0));
+  if (persona && !righe.length) {
+    throw new Error(`Nessuno che somigli a "${persona}" in ${scelte.length > 1 ? 'queste commesse' : 'questa commessa'}.`);
+  }
+
+  const commesse = docs.map(({ id, nome, doc }) => {
+    const { righe: pacchetti, totale } = riepilogoPacchetti(doc, { settimanaOra });
+    return { id, nome, totale, pacchetti };
+  });
+
+  const rigaPersona = (/** @type {any} */ r) => {
+    const capacita = r.capacita || ORE_SETTIMANA_DEFAULT;
+    const celle = finestra.map(w => (r.ore[w] ? oreDette(r.ore[w]) : '—')).join(' ');
+    const oltre = r.sovrapposte.length ? `  ⚠ oltre le ${capacita} in ${r.sovrapposte.join(', ')}` : '';
+    return `${r.nome.padEnd(10)} ${celle}${oltre}`;
+  };
+
+  const testata = commesse.map(c => {
+    const t = c.totale;
+    return `${tronca(c.nome, 44)}  vendute ${oreDette(t.vendute)} · stimate ${oreDette(t.stimate)} · ` +
+      `spese ${oreDette(t.speso)} · in calendario ${oreDette(t.programmate)} · margine ${oreDette(t.margine)}`;
+  });
+
+  const testo_ = [
+    // Chiedendo di una persona la testata delle commesse è rumore: la domanda
+    // era «quante ore ha», non «come stanno le commesse».
+    persona && !query ? '' : blocco(scelte.length > 1 ? 'Commesse accese' : 'Commessa', testata) + '\n',
+    // I pacchetti solo quando la commessa è una: con tre commesse aperte
+    // sarebbero trenta righe, e la domanda era un'altra.
+    commesse.length === 1
+      ? blocco('Pacchetti', commesse[0].pacchetti.map(r =>
+        `${tronca(r.nome, 24).padEnd(24)} stimate ${oreDette(r.stimate).padStart(6)} · ` +
+        `a piano ${oreDette(r.aPiano).padStart(6)} · da collocare ${oreDette(r.daCollocare).padStart(6)}`)) + '\n'
+      : '',
+    blocco(`Persone, da ${finestra[0]} (${finestra.length} settimane: ${finestra.join(' ')})`,
+      righe.map(rigaPersona)),
+  ].filter(Boolean).join('\n');
+
+  return {
+    data: {
+      settimane: finestra,
+      commesse,
+      persone: righe.map(r => ({
+        nome: r.nome, capacita: r.capacita, ore: r.ore, totale: r.totale, sovrapposte: r.sovrapposte,
+      })),
+    },
+    text: testo_,
+  };
+}
+
+/**
+ * Le ore di una persona su un pacchetto in una settimana.
+ *
+ * **Sostituisce, non somma**: è la stessa regola del consuntivo, e vale anche
+ * scrivendo da qui. Il numero che si dà è quanto quella persona ha lì quella
+ * settimana — se si sommasse, ripetere la stessa frase due volte raddoppierebbe
+ * la settimana, ed è una cosa che si scopre dal margine sbagliato tre settimane
+ * dopo. Zero toglie la cella.
+ *
+ * Dove finiscono davvero le ore lo decide `celleConsuntivo`, cioè la stessa
+ * regola della matrice: se sotto quella riga c'è una voce sola, ci vanno lì.
+ *
+ * @param {{ commessa?: string, persona?: string, pacchetto?: string, voce?: string,
+ *           settimana?: string, data?: string, ore?: number }} opts
+ * @returns {Promise<{ data: any, text: string }>}
+ */
+export async function programmaOre(opts = {}) {
+  const commessa = testo(opts.commessa);
+  if (!commessa) throw new Error('Serve la commessa: un pezzo del nome.');
+  const chi = testo(opts.persona);
+  if (!chi) throw new Error('Serve la persona.');
+  const quale = testo(opts.pacchetto);
+  if (!quale) throw new Error('Serve il pacchetto.');
+  const ore = numero(opts.ore);
+  if (ore === null || ore < 0) throw new Error('Servono le ore, un numero da zero in su.');
+
+  const settimana = settimanaChiesta(opts);
+  const registrata = programmaUno(await registroProgrammi(), commessa);
+  const doc = await leggiProgramma(registrata.id);
+
+  const risorsa = risorsaUna(doc, chi);
+  const pacchetto = pacchettoUno(doc, quale);
+  const voce = testo(opts.voce) ? voceUna(doc, pacchetto.id, String(testo(opts.voce))) : null;
+
+  const prima = oreSottoRiga(doc, risorsa, pacchetto.id, voce?.id || null, settimana);
+  const celle = celleConsuntivo(doc, risorsa, pacchetto.id, settimana, ore, voce?.id || null);
+  await salvaCelleProgramma(registrata.id, celle);
+
+  const dove = `${risorsa} · ${pacchetto.nome}${voce ? ` · ${voce.titolo}` : ''} · ${settimana}`;
+  return {
+    data: {
+      commessa: registrata.nome, risorsa, pacchettoId: pacchetto.id, voceId: voce?.id || null,
+      settimana, ore, prima, celle,
+    },
+    text: `✓ ${dove}: ${oreDette(ore)} ore` + (prima !== ore ? ` (prima ${oreDette(prima)})` : ''),
   };
 }
 
