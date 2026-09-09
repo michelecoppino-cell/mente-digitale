@@ -84,15 +84,21 @@ async function esegui(args, opts) {
     case 'piano':
       if (!sub || sub === 'giorno') return mente.piano({ data: s(opts.data) });
       if (sub === 'settimana') return mente.pianoArco({ data: s(opts.data) });
-      if (sub === 'mese') return mente.pianoArco({ mese: s(opts.mese) || s(opts.data) });
+      if (sub === 'mese') return mente.pianoArco({ mese: s(opts.mese) || s(opts.data), arco: 'mese' });
       if (sub === 'aggiungi') {
         return mente.pianoAggiungi({
           attivita: resto[1], ora: resto[2] || s(opts.ora),
           data: s(opts.data), durataMin: n(opts.durata),
         });
       }
+      if (sub === 'sposta') {
+        return mente.pianoSposta({
+          attivita: resto[1], ora: resto[2] || s(opts.ora),
+          data: s(opts.data), daData: s(opts['da-data']), durataMin: n(opts.durata),
+        });
+      }
       if (sub === 'togli') return mente.pianoTogli({ attivita: resto[1], data: s(opts.data) });
-      throw new Error(`piano: sottocomando sconosciuto "${sub}" (giorno, settimana, mese, aggiungi, togli)`);
+      throw new Error(`piano: sottocomando sconosciuto "${sub}" (giorno, settimana, mese, aggiungi, sposta, togli)`);
 
     case 'obiettivi':
       if (!sub || sub === 'leggi') return mente.obiettiviLeggi({ mese: s(opts.mese) });
@@ -119,6 +125,22 @@ async function esegui(args, opts) {
         });
       }
       throw new Error(`evento: sottocomando sconosciuto "${sub || ''}" (crea)`);
+
+    case 'programma':
+      if (sub === 'ore') {
+        return mente.programmaOre({
+          commessa: s(opts.commessa) || resto[1],
+          persona: s(opts.persona), pacchetto: s(opts.pacchetto), voce: s(opts.voce),
+          settimana: s(opts.settimana), data: s(opts.data), ore: n(opts.ore),
+        });
+      }
+      // Quello che resta è il nome della commessa: `programma 2573` e
+      // `programma leggi 2573` sono la stessa domanda, e la prima è quella che
+      // si scrive davvero.
+      return mente.programma({
+        commessa: s(opts.commessa) || (sub === 'leggi' ? resto.slice(1) : resto).join(' ').trim() || undefined,
+        persona: s(opts.persona), settimane: n(opts.settimane),
+      });
 
     case 'sezioni':
       return mente.sezioni();
@@ -215,6 +237,9 @@ Lettura
   piano [--data YYYY-MM-DD]       i blocchi del piano di un giorno
   piano settimana [--data D]      la settimana che contiene quel giorno
   piano mese [--mese YYYY-MM]     un mese intero, giorno per giorno
+  programma [commessa]            ore vendute, stimate, spese e margine, e il
+            [--persona "Nome"]    carico settimanale delle persone. Senza
+            [--settimane N]       commessa: quelle accese
   obiettivi [--mese YYYY-MM]      gli obiettivi del mese e a che punto sono
   sezioni                         liste per commessa (con consegne, scadenze e
                                   attività aperte) e sezioni OneNote
@@ -234,7 +259,13 @@ Scrittura
   sezione crea "NOME"  |  sezione crea --commessa 2573 --consegna ABS --scadenza YYYY-MM-DD
 
   piano aggiungi <id|titolo> <HH:MM> [--data YYYY-MM-DD] [--durata 45]
+  piano sposta <id|titolo> [HH:MM] [--data YYYY-MM-DD] [--da-data YYYY-MM-DD] [--durata 45]
   piano togli <id|titolo> [--data YYYY-MM-DD]
+
+  programma ore --commessa 2573 --persona "Marco" --pacchetto "A30" --ore 24
+                [--settimana YYYY-Www | --data YYYY-MM-DD] [--voce "Plinti"]
+                (sostituisce le ore di quella settimana, non ci si somma;
+                 --ore 0 toglie la cella)
   obiettivi scrivi --mese YYYY-MM [--obiettivi '[{"titolo":"…","totale":12}]']
                 (senza --obiettivi legge il JSON da stdin; da 3 a 6 righe,
                  sostituiscono quelle del mese)
@@ -265,7 +296,10 @@ Il piano del giorno, della settimana e del mese non sono tre piani ma tre
 distanze da cui si guarda lo stesso: si compilano tutti con «piano aggiungi»,
 un giorno per volta, e si rileggono con «piano settimana» e «piano mese». Gli
 obiettivi del mese sono un'altra cosa: dove si vuole arrivare, non quando si
-fanno le cose.
+fanno le cose. Il Programma di commessa è un piano ancora più in alto: quante
+ore vale una commessa, in che pacchetti si divide, e chi le fa in che settimana.
+Da qui se ne legge il quadro e se ne scrivono le ore; le voci, le scomposizioni
+e le attivazioni si fanno nell'app, dove c'è la matrice.
 
 Una commessa può avere più consegne, una lista To-Do ciascuna con la sua
 scadenza (nome GRUPPO.Consegna-YYMMDD). --sezione accetta sia il nome della

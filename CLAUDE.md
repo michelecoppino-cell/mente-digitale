@@ -169,8 +169,9 @@ butta le query più grosse invece di riempire il cassetto.
 
 **Il CLI e il server MCP scrivono sugli stessi file.** Le regole stanno in
 `scripts/mente-comandi.mjs`, che importa `taskModel.js`, `paraConfig.js`,
-`obiettivi.js` e `diary.js` da `src/`. Una regola sulle attività si cambia lì
-dentro, non in due posti.
+`obiettivi.js`, `diary.js`, `programma.js` e `programmaStore.js` da `src/`. Una
+regola sulle attività — o sui conti del Programma — si cambia lì dentro, non in
+due posti.
 
 **Da fuori non si cancella niente, e calendario, OneNote e piani si leggono
 soltanto.** È una regola del CLI e del server MCP, non un'omissione: sono le
@@ -184,6 +185,18 @@ rispondere, e a voce l'attesa si sente. Uno strumento nuovo nasce **fuori**
 dall'elenco, e ci entra solo se serve davvero con le mani sul volante. OneNote,
 il diario da rileggere e gli obiettivi da riscrivere non ci entrano: sono le
 cose che si fanno da seduti.
+
+**Un consenso si chiede per strumento, quindi l'elenco è anche un conto.**
+Claude chiede il permesso strumento per strumento: quattordici nomi sono
+quattordici «sì» da dare, e due strumenti che fanno le due metà della stessa
+cosa ne chiedono due per un gesto solo. Da qui la forma: **uno strumento per
+cosa, non per verbo** — `piano_scrivi` mette, sposta e toglie, `piano` dà il
+giorno, la settimana e il mese, `programma` dà le commesse accese, una sola o
+una persona. E da qui la regola per quando se ne aggiunge uno all'elenco da
+voce: se ne toglie un altro, o si fa entrare il nuovo dentro uno che c'è già.
+Un merito in più, non solo un risparmio: mettendo e togliendo in un pezzo solo,
+spostare è una scrittura sola, e un'ora già occupata lascia l'attività dov'era
+invece di lasciarla fuori dal piano fra il tolto e il rimesso.
 
 **Il token del Worker non è il token del computer.** Ne va generato uno suo
 (`get-refresh-token.mjs --remoto`, scope ridotti), perché il refresh token ruota
@@ -258,7 +271,7 @@ che ha già smesso di funzionare.
 | `src/PannelloReview.jsx` | il pannello della campanella: «Da valutare» e «Scadenze», le due metà del giro quotidiano |
 | `src/calendarioLavoro.js` | lo specchio del calendario aziendale: cosa c'è nel file su OneDrive e come diventa un evento nella forma di Graph |
 | `src/programma.js` | il Programma di commessa: i conti, le chiavi del carico (`risorsa\|pacchetto\|settimana` più, in coda e facoltativa, la voce), lo stato derivato di una voce, e il carico di una persona su tutte le commesse. Niente rete, niente React: è il file su cui girano le prove |
-| `src/programmaStore.js` | gli stessi programmi su OneDrive: registro, un documento per commessa, `reapply` che unisce per chiave |
+| `src/programmaStore.js` | gli stessi programmi su OneDrive: registro, un documento per commessa, `reapply` che unisce per chiave. Ci si arriva anche da fuori: il CLI e il server MCP montano lo stesso strato in `mente-graph.mjs`, e le ore scritte da lì passano da `celleConsuntivo` come quelle incollate nell'app |
 | `src/programmaExcel.js` | il foglio che esce (tre fogli: riepilogo, persone, voci) e le ore vere che rientrano incollate. Puro, e il foglio Persone esce nella stessa forma in cui rientra |
 | `src/xlsx.js` | un `.xlsx` vero senza librerie: lo zip «store» e i fogli con le celle in chiaro. Duecento righe invece di mezzo megabyte di JavaScript |
 | `src/programma/` | la vista: la matrice (pacchetto › voce › sotto-voce › persona, potata da due bottoni) e la sua tastiera, il Gantt (una riga per attività, in ordine di quando finiscono, in sola lettura), la matrice per persona (in sola lettura, su tutti i programmi accesi), l'elenco voci, il dettaglio, attiva, le voci nuove (a campi o incollate), il riepilogo, la scheda della commessa, la guida |

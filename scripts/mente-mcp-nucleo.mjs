@@ -93,65 +93,57 @@ export const TOOLS = [
   {
     name: 'piano',
     description:
-      'I blocchi del piano di un giorno: orario, attività, sottopassi e cosa è già stato chiuso. ' +
-      'Per vedere una settimana o un mese interi c\'è piano_arco; per metterci dentro ' +
-      'un\'attività, piano_aggiungi.',
-    sola_lettura: true,
-    schema: { type: 'object', properties: { data: stringa('Giorno, YYYY-MM-DD. Default: oggi.') } },
-    run: a => mente.piano(a),
-  },
-  {
-    name: 'piano_arco',
-    description:
-      'Il piano di una settimana o di un mese interi, giorno per giorno, con quante ore sono già ' +
-      'a piano in ciascuno e quali giorni sono ancora liberi. È la stessa cosa di «piano» letta ' +
-      'dalla distanza da cui si decide se la settimana sta in piedi. Sola lettura.',
+      'I blocchi del piano: orario, attività, sottopassi e cosa è già stato chiuso. Di un giorno, ' +
+      'oppure — con «arco» — di una settimana o di un mese interi, giorno per giorno, con quante ' +
+      'ore sono già a piano in ciascuno e quali sono liberi. Sono la stessa cosa vista da tre ' +
+      "distanze, non tre piani. Per metterci dentro un'attività c'è piano_scrivi.",
     sola_lettura: true,
     schema: {
       type: 'object',
       properties: {
-        data: stringa('Un giorno qualunque della settimana da guardare, YYYY-MM-DD. Default: oggi.'),
-        mese: stringa('Un mese intero, YYYY-MM. Alternativo a data.'),
+        data: stringa('Giorno, YYYY-MM-DD. Default: oggi. Con «arco», un giorno qualunque dentro il periodo.'),
+        arco: {
+          type: 'string',
+          enum: ['giorno', 'settimana', 'mese'],
+          description: 'Quanto guardare. Default: giorno.',
+        },
+        mese: stringa('Un mese preciso, YYYY-MM. Vale come arco=mese.'),
       },
     },
-    run: a => mente.pianoArco(a),
+    run: a => ((a?.arco && a.arco !== 'giorno') || a?.mese ? mente.pianoArco(a) : mente.piano(a)),
   },
   {
-    name: 'piano_aggiungi',
+    name: 'piano_scrivi',
     description:
-      "Mette un'attività nel piano di un giorno, a un'ora: è così che un'attività diventa " +
-      '«programmata». Il giorno può essere uno qualunque — è con questo, un giorno per volta, ' +
-      'che si compila il piano della settimana o del mese. Senza durata usa la stima ' +
-      "dell'attività. Due blocchi che si accavallano sono un errore, non una sovrapposizione: " +
-      "se all'ora chiesta c'è già qualcosa, lo dice e non scrive niente.",
-    sola_lettura: false,
-    schema: {
-      type: 'object',
-      required: ['attivita', 'ora'],
-      properties: {
-        attivita: stringa("Id (anche solo l'inizio) o pezzo di titolo dell'attività."),
-        ora: stringa("Ora d'inizio, HH:MM."),
-        data: stringa('Giorno, YYYY-MM-DD. Default: oggi.'),
-        durataMin: { type: 'integer', description: "Durata in minuti. Default: la stima dell'attività." },
-      },
-    },
-    run: a => mente.pianoAggiungi(a),
-  },
-  {
-    name: 'piano_togli',
-    description:
-      "Toglie un'attività dal piano di un giorno. Non la completa e non la cancella: torna solo " +
-      "a non avere un'ora. Serve anche per spostarla — si toglie e si rimette a un'altra ora.",
+      "Mette un'attività nel piano di un giorno a un'ora, la sposta o la toglie. Mettere a piano " +
+      "è ciò che rende un'attività «programmata»; il giorno può essere uno qualunque — è con " +
+      'questo, un giorno per volta, che si compila la settimana o il mese. Spostare non serve ' +
+      'togliere e rimettere: tiene la durata e i sotto-passi, e senza dire da che giorno cerca ' +
+      "il blocco in tutti. Togliere non completa e non cancella: l'attività torna solo a non " +
+      "avere un'ora. Due blocchi che si accavallano sono un errore, non una sovrapposizione: se " +
+      "all'ora chiesta c'è già qualcosa, lo dice e non scrive niente.",
     sola_lettura: false,
     schema: {
       type: 'object',
       required: ['attivita'],
       properties: {
-        attivita: stringa("Id o pezzo di titolo dell'attività da togliere."),
-        data: stringa('Giorno, YYYY-MM-DD. Default: oggi.'),
+        attivita: stringa("Id (anche solo l'inizio) o pezzo di titolo dell'attività."),
+        azione: {
+          type: 'string',
+          enum: ['aggiungi', 'sposta', 'togli'],
+          description: 'Default: aggiungi.',
+        },
+        ora: stringa("Ora d'inizio, HH:MM. Serve per aggiungere; spostando, senza resta quella di prima."),
+        data: stringa('Giorno, YYYY-MM-DD. Default: oggi (spostando: il giorno in cui il blocco sta già).'),
+        daData: stringa('Solo per spostare: il giorno da cui prenderlo, se si sa. Senza, lo cerca in tutti.'),
+        durataMin: { type: 'integer', description: "Durata in minuti. Default: la stima dell'attività, o quella che il blocco aveva." },
       },
     },
-    run: a => mente.pianoTogli(a),
+    run: a => {
+      if (a?.azione === 'togli') return mente.pianoTogli(a);
+      if (a?.azione === 'sposta') return mente.pianoSposta(a);
+      return mente.pianoAggiungi(a);
+    },
   },
   {
     name: 'obiettivi_leggi',
@@ -302,6 +294,49 @@ export const TOOLS = [
     run: a => mente.attivitaStato(a),
   },
   {
+    name: 'programma',
+    description:
+      'Il Programma di commessa: le ore vendute, quelle stimate dalle voci, quelle già spese, ' +
+      'quelle messe in calendario e il margine — e il carico settimanale delle persone, con chi ' +
+      'sfora la sua capacità. Senza argomenti sono le commesse accese; con «commessa» il quadro ' +
+      'di quella, pacchetto per pacchetto; con «persona» le sue ore settimana per settimana su ' +
+      'tutte. È il piano del lavoro di settimane e mesi, non quello del giorno: quello è «piano». ' +
+      'Sola lettura — le ore si scrivono con programma_ore.',
+    sola_lettura: true,
+    schema: {
+      type: 'object',
+      properties: {
+        commessa: stringa('Nome anche parziale della commessa. Senza, quelle accese.'),
+        persona: stringa('Filtra su una persona sola.'),
+        settimane: { type: 'integer', description: 'Quante settimane avanti guardare, da questa. Default 6, massimo 26.' },
+      },
+    },
+    run: a => mente.programma(a),
+  },
+  {
+    name: 'programma_ore',
+    description:
+      "Scrive le ore di una persona su un pacchetto di una commessa, in una settimana. " +
+      '**Sostituisce, non somma**: il numero è quanto quella persona ha lì quella settimana, e ' +
+      'le ore che ci stavano si azzerano — ripetere la stessa frase due volte non deve ' +
+      'raddoppiare la settimana. Zero toglie la cella. Senza settimana, questa.',
+    sola_lettura: false,
+    schema: {
+      type: 'object',
+      required: ['commessa', 'persona', 'pacchetto', 'ore'],
+      properties: {
+        commessa: stringa('Nome anche parziale della commessa.'),
+        persona: stringa('Nome anche parziale della persona, fra quelle della commessa.'),
+        pacchetto: stringa('Nome anche parziale del pacchetto.'),
+        ore: { type: 'number', description: 'Le ore della settimana. Zero toglie.' },
+        settimana: stringa('Settimana ISO, YYYY-Www. Default: questa.'),
+        data: stringa('Un giorno dentro la settimana, YYYY-MM-DD. Alternativo a settimana.'),
+        voce: stringa('Titolo anche parziale della voce, per scendere sotto il pacchetto. Facoltativo.'),
+      },
+    },
+    run: a => mente.programmaOre(a),
+  },
+  {
     name: 'diario_leggi',
     description:
       'Le voci del diario personale, dalla più recente. Si può chiedere un mese preciso o gli ultimi N giorni, ' +
@@ -437,8 +472,8 @@ export const TOOLS = [
 // Una prova verifica che ogni nome esista davvero (`prova-mcp-remoto.mjs`):
 // un rinomino, altrimenti, svuoterebbe il connettore in silenzio.
 export const NOMI_DA_VOCE = [
-  'oggi', 'agenda', 'piano', 'piano_arco', 'attivita_lista', 'sezioni', 'obiettivi_leggi',
-  'attivita_crea', 'attivita_stato', 'piano_aggiungi', 'piano_togli',
+  'oggi', 'agenda', 'piano', 'attivita_lista', 'sezioni', 'obiettivi_leggi', 'programma',
+  'attivita_crea', 'attivita_stato', 'piano_scrivi', 'programma_ore',
   'evento_crea', 'diario_scrivi', 'sezione_crea',
 ];
 
@@ -456,9 +491,11 @@ export const ISTRUZIONI =
   'chiamata GRUPPO.Consegna-YYMMDD, dove le ultime sei cifre sono la scadenza.\n' +
   "Un'attività è una cosa da fare; un evento del calendario è un'ora fissa che riguarda " +
   "anche altri. Piano del giorno, della settimana e del mese non sono tre piani ma tre " +
-  "distanze da cui si guarda lo stesso: si compilano tutti con piano_aggiungi, un giorno " +
-  'per volta, e si rileggono con piano_arco. Gli obiettivi del mese sono un\'altra cosa ' +
-  'ancora: dove si vuole arrivare, non quando si fanno le cose.\n' +
+  "distanze da cui si guarda lo stesso: si compilano tutti con piano_scrivi, un giorno " +
+  'per volta, e si rileggono con «piano», che li dà tutti e tre. Gli obiettivi del mese sono ' +
+  'un\'altra cosa ancora: dove si vuole arrivare, non quando si fanno le cose. Il Programma di ' +
+  'commessa è un piano ancora più in alto: quante ore vale una commessa, in che pacchetti si ' +
+  'divide, e chi le fa in che settimana.\n' +
   GRANULARITY_MEMO_LINE;
 
 // Le stesse cose dette a chi risponderà a voce. Più corte apposta: quello che
@@ -467,7 +504,7 @@ export const ISTRUZIONI =
 // risposta — nessuno può leggere un elenco, e nemmeno riascoltarlo.
 export const ISTRUZIONI_VOCE =
   'La mente digitale di Michele — attività, piano del giorno, calendario, diario, ' +
-  'obiettivi del mese — da un telefono, spesso in auto, parlando.\n' +
+  'obiettivi del mese, Programma di commessa — da un telefono, spesso in auto, parlando.\n' +
   'Rispondi corto e dicibile ad alta voce: quante cose ci sono e le prime due o tre, ' +
   'non l\'elenco intero; le ore come si dicono («giovedì alle nove»), non come si scrivono. ' +
   'Chiedi solo quello che manca davvero per fare la cosa, e poi falla.\n' +
@@ -475,6 +512,9 @@ export const ISTRUZIONI_VOCE =
   'chiamata GRUPPO.Consegna-YYMMDD, dove le ultime sei cifre sono la scadenza.\n' +
   "Un'attività è una cosa da fare; un evento del calendario è un'ora fissa che riguarda " +
   'anche altri. Mettere a piano vuol dire dare un\'ora a un\'attività in un giorno.\n' +
+  'Il Programma di commessa sta più in alto: le ore vendute di una commessa, i pacchetti in ' +
+  'cui si dividono, e quante ne fa ciascuno in una settimana. Le ore si sostituiscono, non si ' +
+  'sommano.\n' +
   'Da qui non si cancella niente, e OneNote, il diario da rileggere e gli obiettivi da ' +
   'riscrivere non ci sono: quelli si fanno dal computer, seduti.\n' +
   GRANULARITY_MEMO_LINE;

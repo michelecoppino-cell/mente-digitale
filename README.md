@@ -1335,14 +1335,23 @@ davvero è che nella risposta compaiono chiamate a `oggi` o `attivita_lista`, e
 non comandi `node scripts/mente.mjs`.
 
 I ventuno strumenti sono gli stessi comandi. In lettura: `oggi`, `agenda`,
-`piano`, `piano_arco`, `obiettivi_leggi`, `sezioni`, `attivita_lista`,
+`piano`, `programma`, `obiettivi_leggi`, `sezioni`, `attivita_lista`,
 `diario_leggi`, `note_pagine`, `note_leggi`, `identita`. In scrittura:
-`attivita_crea`, `attivita_stato`, `sezione_crea`, `piano_aggiungi`,
-`piano_togli`, `obiettivi_scrivi`, `evento_crea`, `note_crea`, `note_aggiungi`,
+`attivita_crea`, `attivita_stato`, `sezione_crea`, `piano_scrivi`,
+`programma_ore`, `obiettivi_scrivi`, `evento_crea`, `note_crea`, `note_aggiungi`,
 `diario_scrivi`. Quelli in sola lettura sono marcati come tali (`readOnlyHint`),
 così un client che chiede conferma prima di scrivere sa quando chiederla. Dal
 connettore remoto ne escono quattordici — è una scelta, e sta due sezioni più
 sotto.
+
+**Uno strumento per cosa, non per verbo.** `piano_scrivi` mette, sposta e
+toglie; `programma` dà le commesse accese, una sola o una persona. Non è
+gusto per la brevità: Claude chiede il permesso **strumento per strumento**,
+quindi ogni nome in più è un consenso in più da dare — e spostare un blocco,
+che erano `piano_togli` e `piano_aggiungi` in fila, ne chiedeva due per una
+cosa sola. Spostare adesso è anche una scrittura sola, il che vuol dire che
+un'ora già occupata lascia l'attività dov'era invece di lasciarla per strada
+fra il tolto e il rimesso.
 
 Nessuno cancella niente, ed è una regola e non un'omissione: un'attività di prova
 si può spuntare, non eliminare; su OneNote si scrive solo in fondo a una pagina,
@@ -1352,8 +1361,8 @@ documenti che si scrivono pensandoci, non dettandoli a una chat.
 
 **Il piano, alle tre distanze.** Giornaliero, settimanale e mensile non sono tre
 piani ma tre distanze da cui si guarda lo stesso, come le tre viste del Piano
-nell'app. Si compilano tutti con `piano_aggiungi`, un giorno per volta, e si
-rileggono con `piano_arco`. Due blocchi che si accavallano sono un errore e non
+nell'app. Si compilano tutti con `piano_scrivi`, un giorno per volta, e si
+rileggono con `piano`, che li dà tutti e tre (`arco`: giorno, settimana, mese). Due blocchi che si accavallano sono un errore e non
 una sovrapposizione da disegnare: l'app, dove si trascina e si vede la griglia,
 può permetterselo; da una chat, dove si scrive alla cieca, no. Gli **obiettivi
 del mese** (`obiettivi_leggi` / `obiettivi_scrivi`) sono un'altra cosa ancora:
@@ -1416,6 +1425,7 @@ Non sostituisce quello sul computer: **convivono**, e non sono la stessa cosa.
 |---|---|---|
 | Strumenti | tutti e ventuno | quattordici |
 | OneNote | sì | no |
+| Programma di commessa | si guarda e ci si scrivono le ore | uguale |
 | Diario | si legge e si scrive | si scrive soltanto |
 | Obiettivi del mese | si leggono e si riscrivono | si leggono soltanto |
 | Dove sta il token | sul tuo disco | in KV, su Cloudflare |
@@ -1423,10 +1433,20 @@ Non sostituisce quello sul computer: **convivono**, e non sono la stessa cosa.
 
 La riduzione è una scelta, e sta scritta accanto all'elenco (`NOMI_DA_VOCE` in
 `mente-mcp-nucleo.mjs`): ogni strumento in più è una descrizione in più che il
-modello legge prima di rispondere, e in telefonata l'attesa si sente; `note_leggi`
-può tirare dentro pagine intere di appunti, che a voce sono tempo speso per un
-risultato che non si può nemmeno guardare; e gli obiettivi del mese, come la
-Bussola, sono roba che si scrive pensandoci, non dettandola in tangenziale.
+modello legge prima di rispondere, e in telefonata l'attesa si sente; è anche un
+consenso in più da dare, perché Claude il permesso lo chiede strumento per
+strumento; `note_leggi` può tirare dentro pagine intere di appunti, che a voce
+sono tempo speso per un risultato che non si può nemmeno guardare; e gli
+obiettivi del mese, come la Bussola, sono roba che si scrive pensandoci, non
+dettandola in tangenziale.
+
+Il **Programma di commessa** invece esce, ed è l'eccezione che dice la regola:
+ne escono due strumenti soli, `programma` (com'è messa una commessa, chi è
+pieno) e `programma_ore` (le ore di una persona in una settimana), che sono le
+due cose che si dicono a voce. Le voci nuove, le scomposizioni e le attivazioni
+restano nell'app: sono la matrice, cioè venti colonne da guardare insieme.
+Quelle ore stanno negli stessi file su OneDrive di tutto il resto, quindi il
+token del Worker non cambia — `Files.ReadWrite` le comprendeva già.
 
 Sotto il trasporto non cambia niente: `mente-mcp-nucleo.mjs` tiene gli
 strumenti e il protocollo, `mente-comandi.mjs` le operazioni e le regole. Le

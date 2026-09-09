@@ -455,6 +455,26 @@ usaDrive({ leggi: getDriveJson, scrivi: putDriveJson });
 
 export * from '../src/taskStore.js';
 
+// ── Programmi di commessa ────────────────────────────────────────────────────
+// Stesso disegno delle attività, e per lo stesso motivo: le regole del
+// Programma stanno in `src/programma.js` (puro, ci girano le prove) e i file in
+// `src/programmaStore.js`. Qui si dice soltanto da dove si legge e dove si
+// scrive, così l'app, il CLI e il connettore toccano quei file con una regola
+// sola — compresa quella per cui una cella scritta da qui si fonde con quello
+// che l'altro dispositivo ha scritto nel frattempo invece di sovrascriverlo.
+
+import { usaDrive as usaDriveProgrammi } from '../src/programmaStore.js';
+
+usaDriveProgrammi({ leggi: getDriveJson, scrivi: putDriveJson });
+
+// Nomi espliciti e non `export *`: `leggiRegistro` da solo, accanto a quello
+// delle liste, direbbe il registro di che cosa solo a chi già lo sa.
+export {
+  leggiRegistro as leggiRegistroProgrammi,
+  leggiProgramma,
+  salvaCelle as salvaCelleProgramma,
+} from '../src/programmaStore.js';
+
 // ── Calendario ───────────────────────────────────────────────────────────────
 
 /**

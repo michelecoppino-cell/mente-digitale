@@ -325,6 +325,145 @@ verifica(
   );
 }
 
+// ── Il piano, in uno strumento solo ──────────────────────────────────────────
+// Mettere, spostare e togliere erano tre strumenti, cioè tre consensi da dare
+// uno per uno: adesso sono `piano_scrivi`. Lo spostamento è il caso che conta,
+// perché prima erano due chiamate — e fra il «tolto» e il «rimesso» un'ora
+// occupata lasciava l'attività fuori dal piano e nessuno che lo dicesse.
+
+console.log('\nIl piano: mettere, spostare, togliere\n');
+
+/** @param {string} nome @param {any} argomenti */
+const chiama = async (nome, argomenti) => {
+  const { result } = await (await rpc('/mcp', {
+    jsonrpc: '2.0', id: 100, method: 'tools/call', params: { name: nome, arguments: argomenti },
+  }, gettoni.access_token)).json();
+  return result;
+};
+
+/** I blocchi di un giorno, letti dal file su OneDrive. @param {string} giorno */
+const blocchiDi = giorno => finto.contenuto('mente-digitale-daily-plans.json')[giorno]?.blocks || [];
+
+const oggiStr = new Date().toISOString().slice(0, 10);
+const domaniStr = new Date(Date.now() + 86400000).toISOString().slice(0, 10);
+
+{
+  const messo = await chiama('piano_scrivi', { attivita: 'Richiamare il committente', ora: '14:00', data: oggiStr });
+  verifica(!messo.isError, 'un\'attività si mette a piano');
+  verifica(blocchiDi(oggiStr).some(b => b.startTime === '14:00'), 'e il blocco è nel file');
+
+  const scontro = await chiama('piano_scrivi', { attivita: 'Richiamare il committente', ora: '14:15', data: oggiStr });
+  verifica(scontro.isError, 'la stessa attività non si mette due volte nello stesso giorno');
+}
+
+{
+  // Su un'ora già occupata lo spostamento non si può fare — ed è qui che si
+  // vede che è una scrittura sola: l'attività resta dov'era, invece di sparire
+  // dal giorno di prima e non arrivare in quello dopo.
+  const occupata = blocchiDi(domaniStr)[0];
+  const scontro = await chiama('piano_scrivi', {
+    azione: 'sposta', attivita: 'Richiamare il committente', ora: occupata.startTime, data: domaniStr,
+  });
+  verifica(scontro.isError, 'spostare su un\'ora occupata è un errore');
+  verifica(
+    blocchiDi(oggiStr).some(b => b.startTime === '14:00'),
+    'e l\'attività resta dov\'era: o si sposta, o non è successo niente'
+  );
+}
+
+{
+  const spostato = await chiama('piano_scrivi', {
+    azione: 'sposta', attivita: 'Richiamare il committente', ora: '07:00', data: domaniStr,
+  });
+  verifica(!spostato.isError, 'e si sposta a un altro giorno e a un\'altra ora');
+  verifica(!blocchiDi(oggiStr).some(b => b.startTime === '14:00'), 'dal giorno di prima sparisce');
+  const arrivato = blocchiDi(domaniStr).find(b => b.startTime === '07:00');
+  verifica(Boolean(arrivato), 'e compare in quello nuovo');
+  // La durata era quella con cui il blocco era nato (la stima di default,
+  // mezz'ora): spostare non la cambia.
+  verifica(arrivato?.endTime === '07:30', 'con la durata che aveva, che spostare non cambia');
+  // Senza dire da che giorno: il blocco si cerca in tutti, ed è la forma in cui
+  // la richiesta arriva parlando.
+  const senzaGiorno = await chiama('piano_scrivi', { azione: 'sposta', attivita: 'Richiamare il committente', ora: '07:30' });
+  verifica(!senzaGiorno.isError, 'e si sposta anche senza dire in che giorno stava');
+  verifica(blocchiDi(domaniStr).some(b => b.startTime === '07:30'), 'restando nel suo giorno');
+}
+
+{
+  const tolto = await chiama('piano_scrivi', { azione: 'togli', attivita: 'Richiamare il committente', data: domaniStr });
+  verifica(!tolto.isError, 'e togliere le leva l\'ora');
+  verifica(!blocchiDi(domaniStr).some(b => b.taskTitle === 'Richiamare il committente'), 'fuori dal piano');
+}
+
+// ── Il Programma di commessa ─────────────────────────────────────────────────
+// Le ore vendute, i pacchetti, chi è pieno. È la scheda che prima si poteva
+// solo guardare dall'app, e da qui esce perché «come siamo messi sulla 2573» e
+// «quante ore ha Marco questa settimana» sono domande da telefono.
+
+console.log('\nIl Programma di commessa\n');
+
+verifica(
+  nomiRemoti.includes('programma') && nomiRemoti.includes('programma_ore'),
+  'il Programma esce di casa: guardarlo e scriverci le ore'
+);
+verifica(
+  !nomiRemoti.some(n => n.startsWith('programma_voc')),
+  'ma non le voci: la matrice si guarda da seduti'
+);
+
+{
+  const quadro = await chiama('programma', { commessa: '2573' });
+  verifica(!quadro.isError, 'il quadro di una commessa risponde');
+  const { commesse, persone } = quadro.structuredContent;
+  verifica(commesse.length === 1 && commesse[0].totale.vendute === 1200, 'con le ore vendute che stanno nel file');
+  verifica(commesse[0].pacchetti.some(r => r.nome.startsWith('A30')), 'e i pacchetti uno per uno');
+  verifica(persone.some(p => p.nome === 'Marco'), 'e le persone che hanno ore nelle prossime settimane');
+}
+
+{
+  const ambiguo = await chiama('programma', { commessa: '25' });
+  verifica(ambiguo.isError, 'un nome che pesca due commesse è un errore, non una scelta fatta al posto tuo');
+}
+
+{
+  const settimana = await (async () => {
+    const { structuredContent } = await chiama('programma', { commessa: '2573' });
+    return structuredContent.settimane[1];
+  })();
+
+  const scritto = await chiama('programma_ore', {
+    commessa: '2573', persona: 'Marco', pacchetto: 'A40', settimana, ore: 12,
+  });
+  verifica(!scritto.isError, 'le ore di una persona in una settimana si scrivono');
+
+  const doc = finto.contenuto('programmi/2573-sottopasso.json');
+  const celle = Object.entries(doc.carico).filter(([k]) => k.startsWith(`Marco|pk-a40|${settimana}`));
+  verifica(celle.length === 1, 'e finiscono in una cella sola');
+  verifica(celle[0][1] === 12, 'con dentro quello che si è detto');
+  // La regola del consuntivo: sostituisce, non somma. Ridirlo non raddoppia.
+  await chiama('programma_ore', { commessa: '2573', persona: 'Marco', pacchetto: 'A40', settimana, ore: 12 });
+  const ancora = Object.entries(finto.contenuto('programmi/2573-sottopasso.json').carico)
+    .filter(([k]) => k.startsWith(`Marco|pk-a40|${settimana}`));
+  verifica(ancora.length === 1 && ancora[0][1] === 12, 'e dirlo due volte non raddoppia la settimana');
+
+  const zero = await chiama('programma_ore', {
+    commessa: '2573', persona: 'Marco', pacchetto: 'A40', settimana, ore: 0,
+  });
+  verifica(!zero.isError, 'zero toglie la cella');
+  verifica(
+    !Object.keys(finto.contenuto('programmi/2573-sottopasso.json').carico)
+      .some(k => k.startsWith(`Marco|pk-a40|${settimana}`)),
+    'e la mappa del carico resta sparsa, senza zeri scritti dentro'
+  );
+}
+
+{
+  const nessuno = await chiama('programma_ore', {
+    commessa: '2573', persona: 'Qualcuno che non c\'è', pacchetto: 'A40', ore: 4,
+  });
+  verifica(nessuno.isError, 'una persona che la commessa non conosce è un errore, non una riga inventata');
+}
+
 // ── Il token di Microsoft, che ruota ─────────────────────────────────────────
 
 console.log('\nLa chiave che cambia a ogni giro\n');
