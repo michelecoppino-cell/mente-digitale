@@ -9,7 +9,7 @@
 import { importaModulo, creaTabellone } from './finto-onedrive.mjs';
 
 const { verifica, fine } = creaTabellone();
-const { taskStatus, taskPerson, taskEstimateMin, taskAlarm, taskContext, inboxListId, indexScheduled, isSlipped, DEFAULT_ESTIMATE_MIN } =
+const { taskStatus, taskPerson, taskEstimateMin, taskAlarm, taskContext, inboxListId, indexScheduled, isSlipped, applicaSottoattivita, DEFAULT_ESTIMATE_MIN } =
   await importaModulo('taskModel.js');
 
 const LISTA_INBOX = 'lista-inbox';
@@ -80,5 +80,44 @@ console.log('\nProgrammate scivolate\n');
 const piazzamento = { date: '2026-08-01', completed: false };
 verifica(isSlipped(piazzamento, '2026-09-01') === true, 'un blocco passato e non finito è scivolato');
 verifica(isSlipped({ ...piazzamento, completed: true }, '2026-09-01') === false, 'se è stato fatto, no');
+
+console.log('\nI sotto-passi scritti da fuori\n');
+
+// La prova che mancava: i sotto-passi si leggevano dal CLI e dal server MCP ma
+// non si scrivevano, e spezzare un'attività a voce finiva in una nota.
+
+const partenza = [{ id: 's1', titolo: 'Disegni', fatta: false }, { id: 's2', titolo: 'Calcoli', fatta: true }];
+
+const aggiunto = applicaSottoattivita(partenza, { aggiungi: ['Relazione'] });
+verifica(aggiunto.sottoattivita.length === 3 && aggiunto.aggiunte[0] === 'Relazione',
+  'un sotto-passo nuovo si aggiunge in coda');
+verifica(partenza.length === 2, 'e l\'elenco di partenza resta com\'era: la funzione è pura');
+verifica(aggiunto.sottoattivita[2].id === undefined,
+  'al nuovo l\'id non lo inventa qui: glielo dà normalizzaTask scrivendo il file');
+
+const doppio = applicaSottoattivita(partenza, { aggiungi: ['disegni'] });
+verifica(doppio.sottoattivita.length === 2 && doppio.gia[0] === 'disegni',
+  'un titolo che c\'è già non si ripete: ridire la stessa cosa non raddoppia l\'elenco');
+
+const spuntato = applicaSottoattivita(partenza, { fatte: ['dise'] });
+verifica(spuntato.sottoattivita[0].fatta === true && spuntato.spuntate[0] === 'Disegni',
+  'un pezzo di testo basta a spuntare il passo giusto');
+verifica(applicaSottoattivita(partenza, { fatte: ['calc'] }).spuntate.length === 0,
+  'spuntare quello che era già fatto non conta come cambiamento');
+verifica(applicaSottoattivita(partenza, { aperte: ['calc'] }).sottoattivita[1].fatta === false,
+  'e si può riaprire');
+
+let ambiguo = null;
+try { applicaSottoattivita([{ titolo: 'Calcolo travi' }, { titolo: 'Calcolo pilastri' }], { fatte: ['calcolo'] }); }
+catch (e) { ambiguo = e.message; }
+verifica(!!ambiguo && ambiguo.includes('2'), 'un pezzo di testo che ne prende due è un errore, non una scelta a caso');
+
+let assente = null;
+try { applicaSottoattivita(partenza, { aperte: ['fondazioni'] }); } catch (e) { assente = e.message; }
+verifica(!!assente, 'e uno che non esiste non si inventa');
+
+const insieme = applicaSottoattivita(partenza, { aggiungi: ['Relazione'], fatte: ['relaz'] });
+verifica(insieme.sottoattivita[2].fatta === true,
+  'aggiungere e spuntare nella stessa scrittura funziona: prima si aggiunge, poi si spunta');
 
 fine();
