@@ -264,6 +264,12 @@ export const TOOLS = [
         scadenza: stringa('Scadenza, YYYY-MM-DD.'),
         contesto: { type: 'string', enum: CONTEXTS.map(c => c.key), description: 'Contesto GTD.' },
         nota: stringa('Testo della nota.'),
+        sottoattivita: {
+          type: 'array', items: { type: 'string' },
+          description:
+            "I sotto-passi, come elenco di titoli. Spezzare mentre si dice la cosa è il momento " +
+            'in cui si sa com\'è fatta. Meno di due ore l\'uno.',
+        },
         attesa: stringa(
           'Nome della persona. Solo con stato ask, waiting o delegated — obbligatorio con ask e delegated. ' +
           'I nomi che ricorrono stanno in src/persone.json.'),
@@ -274,21 +280,36 @@ export const TOOLS = [
   {
     name: 'attivita_stato',
     description:
-      `Sposta un'attività nel flusso: ${STATI_SCRIVIBILI.join(', ')}. «ask» (da chiedere) e «delegated» ` +
-      'portano il nome di una persona, che finisce in una riga delle note. ' +
+      `Scrive un'attività che c'è già: la sposta nel flusso (${STATI_SCRIVIBILI.join(', ')}) e ne tiene i ` +
+      'sotto-passi — aggiungerne, segnarne uno fatto, riaprirlo. Si può fare l\'uno, gli altri o tutto ' +
+      'insieme: lo stato è facoltativo, e senza si tocca solo l\'elenco. «ask» (da chiedere) e «delegated» ' +
+      'portano il nome di una persona. ' +
       "L'attività si indica con un pezzo del suo " +
-      'id o del suo titolo, purché identifichi una sola attività. «inbox» e «scheduled» non si impostano da qui: ' +
+      'id o del suo titolo, purché identifichi una sola attività; un sotto-passo con un pezzo del suo testo. ' +
+      '«inbox» e «scheduled» non si impostano da qui: ' +
       'il primo è la lista di default, il secondo un blocco nel piano.',
     sola_lettura: false,
     schema: {
       type: 'object',
-      required: ['attivita', 'stato'],
+      required: ['attivita'],
       properties: {
         attivita: stringa("Id (anche solo l'inizio) o pezzo di titolo dell'attività."),
-        stato: { type: 'string', enum: [...STATI_SCRIVIBILI], description: 'Nuovo stato.' },
+        stato: { type: 'string', enum: [...STATI_SCRIVIBILI], description: 'Nuovo stato. Facoltativo.' },
         persona: stringa(
           'Nome della persona, per gli stati ask, waiting e delegated. Senza, si tiene quella che ' +
           "l'attività aveva già."),
+        sottoAggiungi: {
+          type: 'array', items: { type: 'string' },
+          description: 'Sotto-passi da aggiungere, come elenco di titoli. Uno che c\'è già non si ripete.',
+        },
+        sottoFatta: {
+          type: 'array', items: { type: 'string' },
+          description: 'Sotto-passi da segnare fatti, indicati con un pezzo del loro testo.',
+        },
+        sottoAperta: {
+          type: 'array', items: { type: 'string' },
+          description: 'Sotto-passi da riaprire, indicati con un pezzo del loro testo.',
+        },
       },
     },
     run: a => mente.attivitaStato(a),

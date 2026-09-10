@@ -1345,7 +1345,11 @@ connettore remoto ne escono quattordici — è una scelta, e sta due sezioni pi�
 sotto.
 
 **Uno strumento per cosa, non per verbo.** `piano_scrivi` mette, sposta e
-toglie; `programma` dà le commesse accese, una sola o una persona. Non è
+toglie; `programma` dà le commesse accese, una sola o una persona;
+`attivita_stato` scrive un'attività che c'è già — la sposta nel flusso e ne
+tiene i sotto-passi, che si aggiungono, si spuntano e si riaprono da lì (lo
+stato è facoltativo: spuntare un passo non è cambiare stato all'attività, e
+prima i sotto-passi da fuori si leggevano soltanto). Non è
 gusto per la brevità: Claude chiede il permesso **strumento per strumento**,
 quindi ogni nome in più è un consenso in più da dare — e spostare un blocco,
 che erano `piano_togli` e `piano_aggiungi` in fila, ne chiedeva due per una

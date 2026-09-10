@@ -255,3 +255,75 @@ export function indexScheduled(plans) {
   }
   return out;
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Sottoattività
+// ─────────────────────────────────────────────────────────────────────────────
+// I sotto-passi si scrivevano solo dall'app: da fuori — CLI e server MCP — si
+// leggevano e basta, e spezzare un'attività a voce finiva per essere un elenco
+// dettato dentro la nota, cioè in un posto dove nessuna spunta si può togliere.
+//
+// La regola qui è la stessa di `findTask`: si indica un sotto-passo con un
+// pezzo del suo testo, e se il pezzo ne prende due è un errore, non una scelta
+// a caso — da qui si scrive sull'archivio vero. E un titolo che c'è già non si
+// riaggiunge: chi detta due volte la stessa cosa (o ripete la chiamata perché
+// la prima risposta non è arrivata) si ritroverebbe l'elenco doppio, che è la
+// classe di guai per cui altrove si dice «sostituisce, non somma».
+
+/**
+ * @param {{ titolo: string }[]} elenco
+ * @param {string} query
+ * @returns {{ titolo: string }} il solo sotto-passo che il pezzo di testo prende
+ */
+function trovaSottoattivita(elenco, query) {
+  const q = query.trim().toLowerCase();
+  const presi = elenco.filter(s => (s.titolo || '').toLowerCase().includes(q));
+  if (!presi.length) throw new Error(`Nessuna sottoattività per "${query}".`);
+  if (presi.length > 1) {
+    throw new Error(
+      `"${query}" corrisponde a ${presi.length} sottoattività: ` +
+      presi.map(s => `«${s.titolo}»`).join(', '));
+  }
+  return presi[0];
+}
+
+/**
+ * Applica a un elenco di sotto-passi quello che una scrittura chiede: aggiungerne,
+ * spuntarne, riaprirne. Puro: nuovo elenco in uscita, l'originale intatto, e
+ * nessun id inventato qui dentro — ai sotto-passi nuovi lo dà `normalizzaTask`
+ * quando il file viene scritto.
+ *
+ * @param {{ id?: string, titolo: string, fatta?: boolean }[]} elenco
+ * @param {{ aggiungi?: string[], fatte?: string[], aperte?: string[] }} [ops]
+ * @returns {{ sottoattivita: { id?: string, titolo: string, fatta: boolean }[],
+ *             aggiunte: string[], gia: string[], spuntate: string[], riaperte: string[] }}
+ */
+export function applicaSottoattivita(elenco, ops = {}) {
+  const out = (elenco || []).map(s => ({ ...s, titolo: String(s.titolo || ''), fatta: !!s.fatta }));
+  /** @type {string[]} */ const aggiunte = [];
+  /** @type {string[]} */ const gia = [];
+  /** @type {string[]} */ const spuntate = [];
+  /** @type {string[]} */ const riaperte = [];
+
+  // Prima si aggiunge, poi si spunta: così «aggiungi A, B e segna fatta A» è
+  // una scrittura sola, e a voce è una frase sola.
+  for (const grezzo of ops.aggiungi || []) {
+    const titolo = String(grezzo || '').trim();
+    if (!titolo) continue;
+    if (out.some(s => s.titolo.toLowerCase() === titolo.toLowerCase())) { gia.push(titolo); continue; }
+    out.push({ titolo, fatta: false });
+    aggiunte.push(titolo);
+  }
+  for (const query of ops.fatte || []) {
+    const s = trovaSottoattivita(out, String(query));
+    if (!(/** @type {any} */ (s).fatta)) spuntate.push(s.titolo);
+    /** @type {any} */ (s).fatta = true;
+  }
+  for (const query of ops.aperte || []) {
+    const s = trovaSottoattivita(out, String(query));
+    if (/** @type {any} */ (s).fatta) riaperte.push(s.titolo);
+    /** @type {any} */ (s).fatta = false;
+  }
+
+  return { sottoattivita: /** @type {any} */ (out), aggiunte, gia, spuntate, riaperte };
+}

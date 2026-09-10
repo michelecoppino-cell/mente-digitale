@@ -41,7 +41,7 @@ import { settimanaIso, spostaSettimane, settimaneTra } from '../src/tempo.js';
 
 import {
   taskStatus, inboxListId, indexScheduled, taskEstimateMin,
-  taskContext, personRoleFor, taskPerson,
+  taskContext, personRoleFor, taskPerson, applicaSottoattivita,
   STATUS_LABELS, TASK_STATUSES, CONTEXTS, GRANULARITY_MEMO_LINE,
 } from '../src/taskModel.js';
 
@@ -396,7 +396,8 @@ export async function attivitaLista(opts = {}) {
 
 /**
  * @param {{ titolo?: string, sezione?: string, stato?: string, stimaMin?: number,
- *           scadenza?: string, contesto?: string, nota?: string, attesa?: string }} opts
+ *           scadenza?: string, contesto?: string, nota?: string, attesa?: string,
+ *           sottoattivita?: string[]|string }} opts
  * @returns {Promise<{ data: any, text: string }>}
  */
 export async function attivitaCrea(opts = {}) {
@@ -444,6 +445,11 @@ export async function attivitaCrea(opts = {}) {
   // Ogni cosa nel suo campo. Prima la stima diventava un marker nelle note e la
   // persona una riga da mettere per prima, nell'ordine che l'app sapeva
   // rileggere: bastava sbagliarlo per far sparire uno stato.
+  // I sotto-passi alla nascita: spezzare una cosa mentre la si dice è il momento
+  // in cui si sa com'è fatta, e obbligare a una seconda scrittura vuol dire che
+  // quasi sempre non si fa. Gli id glieli dà `normalizzaTask` scrivendo il file.
+  const sotto = applicaSottoattivita([], { aggiungi: elenco(opts.sottoattivita, ';') }).sottoattivita;
+
   const creato = await creaTask(lista.id, {
     titolo,
     stato: stato === 'inbox' ? 'inbox' : stato,
@@ -452,24 +458,51 @@ export async function attivitaCrea(opts = {}) {
     stimaMin: numero(opts.stimaMin) || null,
     scadenza: scadenza || null,
     contesto: contestoRaw?.toLowerCase() || null,
+    sottoattivita: sotto,
   });
 
   return {
-    data: { creata: { id: creato.id, titolo: creato.titolo, sezione: lista.displayName, stato } },
-    text: `✓ creata in ${lista.displayName} come ${STATUS_LABELS[stato]}\n  ${shortId(creato.id)}  ${creato.titolo}`,
+    data: {
+      creata: {
+        id: creato.id, titolo: creato.titolo, sezione: lista.displayName, stato,
+        sottoattivita: creato.sottoattivita.map(x => ({ testo: x.titolo, fatta: x.fatta })),
+      },
+    },
+    text: `✓ creata in ${lista.displayName} come ${STATUS_LABELS[stato]}\n  ${shortId(creato.id)}  ${creato.titolo}` +
+      creato.sottoattivita.map(x => `\n    · ${x.titolo}`).join(''),
   };
 }
 
 /**
- * @param {{ attivita?: string, stato?: string, persona?: string }} opts
+ * Scrive un'attività che c'è già: lo stato nel flusso, chi ce l'ha in mano, e i
+ * suoi sotto-passi. Uno strumento per cosa, non per verbo — da voce ogni
+ * strumento in più è un consenso in più da dare, e «segna fatto il calcolo
+ * dentro la relazione» non deve costarne due.
+ *
+ * Lo stato è facoltativo apposta: spuntare un sotto-passo non è cambiare stato
+ * all'attività, e obbligare a ripetere quello che l'attività è già finirebbe
+ * per riscriverlo per sbaglio.
+ *
+ * @param {{ attivita?: string, stato?: string, persona?: string,
+ *           sottoAggiungi?: string[]|string, sottoFatta?: string[]|string,
+ *           sottoAperta?: string[]|string }} opts
  * @returns {Promise<{ data: any, text: string }>}
  */
 export async function attivitaStato(opts = {}) {
   const query = testo(opts.attivita);
   if (!query) throw new Error("Serve l'attività: un pezzo del suo id o del suo titolo.");
   const stato = testo(opts.stato);
-  if (!stato) throw new Error(`Serve lo stato: ${STATI_SCRIVIBILI.join(', ')}`);
-  if (!STATI_SCRIVIBILI.includes(stato)) {
+  const aggiungi = elenco(opts.sottoAggiungi, ';');
+  const fatte = elenco(opts.sottoFatta, ';');
+  const aperte = elenco(opts.sottoAperta, ';');
+  const tocca = aggiungi.length || fatte.length || aperte.length;
+
+  if (!stato && !tocca) {
+    throw new Error(
+      `Serve lo stato (${STATI_SCRIVIBILI.join(', ')}) ` +
+      'o qualcosa da fare sulle sottoattività.');
+  }
+  if (stato && !STATI_SCRIVIBILI.includes(stato)) {
     throw new Error(
       `Da qui si passa a ${STATI_SCRIVIBILI.join(', ')}. ` +
       '«inbox» è la lista di default e «scheduled» è un blocco nel piano: si cambiano dall\'app.'
@@ -477,7 +510,7 @@ export async function attivitaStato(opts = {}) {
   }
 
   const persona = testo(opts.persona);
-  const ruolo = personRoleFor(stato);
+  const ruolo = stato ? personRoleFor(stato) : null;
   if (persona && !ruolo) {
     throw new Error('La persona vale solo per gli stati «ask», «waiting» e «delegated».');
   }
@@ -489,18 +522,48 @@ export async function attivitaStato(opts = {}) {
   // si tiene quello che c'era — passare da «in attesa da Sara» a «delegata» non
   // deve perdere Sara.
   const chi = ruolo ? (persona || taskPerson(task)?.who || 'qualcuno') : null;
+  const cambiaStato = !!stato && !(task._status === stato && (task.persona || null) === chi);
 
-  if (task._status === stato && (task.persona || null) === chi) {
+  // I sotto-passi si risolvono prima di scrivere: un pezzo di testo che ne
+  // prende due è un errore, e deve fermare tutta la scrittura — non lasciare
+  // l'attività spostata di stato e l'elenco a metà.
+  const esito = tocca
+    ? applicaSottoattivita(task.sottoattivita || [], { aggiungi, fatte, aperte })
+    : null;
+
+  if (!cambiaStato && !esito) {
     return {
       data: { id: task.id, titolo: task.titolo, stato, invariato: true },
       text: `${tronca(task.titolo, 60)} era già ${STATUS_LABELS[stato]}.`,
     };
   }
 
-  await aggiornaTask(task._listId, task.id, { stato, persona: chi });
+  /** @type {any} */
+  const patch = {};
+  if (cambiaStato) { patch.stato = stato; patch.persona = chi; }
+  if (esito) patch.sottoattivita = esito.sottoattivita;
+  await aggiornaTask(task._listId, task.id, patch);
+
+  const righe = [];
+  if (cambiaStato) righe.push(`✓ ${tronca(task.titolo, 60)} → ${STATUS_LABELS[stato]}${chi ? ` · ${chi}` : ''}`);
+  else righe.push(`  ${tronca(task.titolo, 60)}`);
+  for (const t of esito?.aggiunte || []) righe.push(`  + ${t}`);
+  for (const t of esito?.gia || []) righe.push(`  = ${t} (c'era già)`);
+  for (const t of esito?.spuntate || []) righe.push(`  ✓ ${t}`);
+  for (const t of esito?.riaperte || []) righe.push(`  · ${t} (riaperta)`);
+
   return {
-    data: { id: task.id, titolo: task.titolo, stato, persona: chi, precedente: task._status },
-    text: `✓ ${tronca(task.titolo, 60)} → ${STATUS_LABELS[stato]}${chi ? ` · ${chi}` : ''}`,
+    data: {
+      id: task.id, titolo: task.titolo,
+      stato: cambiaStato ? stato : task._status,
+      persona: cambiaStato ? chi : (task.persona || null),
+      precedente: task._status,
+      ...(esito ? {
+        sottoattivita: esito.sottoattivita.map(x => ({ testo: x.titolo, fatta: x.fatta })),
+        aggiunte: esito.aggiunte, gia: esito.gia, spuntate: esito.spuntate, riaperte: esito.riaperte,
+      } : {}),
+    },
+    text: righe.join('\n'),
   };
 }
 

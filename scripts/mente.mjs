@@ -173,6 +173,7 @@ async function esegui(args, opts) {
           sezione: s(opts.sezione), stato: s(opts.stato), stimaMin: n(opts.stima),
           scadenza: s(opts.scadenza), contesto: s(opts.contesto),
           nota: s(opts.nota), attesa: s(opts.persona) || s(opts.attesa),
+          sottoattivita: s(opts.sotto),
         });
       }
       if (sub === 'stato' || sub === 'completa') {
@@ -180,9 +181,23 @@ async function esegui(args, opts) {
           attivita: resto[1],
           stato: sub === 'completa' ? 'done' : resto[2],
           persona: s(opts.persona) || s(opts.attesa),
+          sottoAggiungi: s(opts['sotto-aggiungi']),
+          sottoFatta: s(opts['sotto-fatta']),
+          sottoAperta: s(opts['sotto-aperta']),
         });
       }
-      throw new Error(`attivita: sottocomando sconosciuto "${sub}" (lista, crea, stato, completa)`);
+      // `attivita sotto <attività>` è la stessa scrittura senza toccare lo
+      // stato: il gesto di tutti i giorni è spuntare un passo, non spostare
+      // l'attività, e chiederlo con «stato» in mezzo si sbaglia.
+      if (sub === 'sotto') {
+        return mente.attivitaStato({
+          attivita: resto[1],
+          sottoAggiungi: s(opts.aggiungi) || resto.slice(2).join(' ').trim() || undefined,
+          sottoFatta: s(opts.fatta),
+          sottoAperta: s(opts.aperta),
+        });
+      }
+      throw new Error(`attivita: sottocomando sconosciuto "${sub}" (lista, crea, stato, sotto, completa)`);
 
     case 'diario':
       if (!sub || sub === 'leggi') {
@@ -254,7 +269,11 @@ Scrittura
   attivita crea "titolo" [--sezione s] [--stato ${STATI_CREABILI.join('|')}]
                          [--stima 45] [--scadenza YYYY-MM-DD]
                          [--contesto ${CONTEXTS.map(c => c.key).join('|')}] [--nota "…"] [--persona "Nome"]
+                         [--sotto "primo passo; secondo passo"]
   attivita stato <id|titolo> <${STATI_SCRIVIBILI.join('|')}> [--persona "Nome"]
+                         [--sotto-aggiungi "…; …"] [--sotto-fatta "…"] [--sotto-aperta "…"]
+  attivita sotto <id|titolo> "primo passo; secondo passo"
+                         [--fatta "pezzo di testo"] [--aperta "pezzo di testo"]
   attivita completa <id|titolo>
   sezione crea "NOME"  |  sezione crea --commessa 2573 --consegna ABS --scadenza YYYY-MM-DD
 
