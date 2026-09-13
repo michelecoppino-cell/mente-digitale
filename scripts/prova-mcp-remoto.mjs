@@ -292,6 +292,15 @@ verifica(
   !nomiRemoti.includes('obiettivi_scrivi') && !nomiRemoti.includes('diario_leggi'),
   'e nemmeno gli obiettivi da riscrivere o il diario da rileggere'
 );
+// Buttare via, correggere una scheda e comporre una giornata sono cose che si
+// fanno da seduti, guardando: il primo perché togliere qualcosa dalla vista
+// non deve poter partire da una frase detta male in tangenziale, gli altri due
+// perché una bozza di otto righe, a voce, non si può nemmeno riascoltare.
+verifica(
+  !nomiRemoti.includes('attivita_elimina') && !nomiRemoti.includes('attivita_modifica')
+  && !nomiRemoti.includes('piano_auto'),
+  'e nemmeno il cestino, la scheda da correggere e la bozza della giornata'
+);
 
 {
   const { result } = await (await rpc('/mcp', {

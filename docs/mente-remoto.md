@@ -31,7 +31,7 @@ Due cose da sapere prima di cominciare, perché cambiano le aspettative:
   spostare un blocco costa un consenso, non due).
 - **Non tutto quello che torna appare a schermo.** Un elenco lungo lo si sente
   riassunto. È il motivo per cui dal connettore escono quattordici strumenti e
-  non ventuno: vedi *Cosa esce di casa*, più sotto.
+  non ventiquattro: vedi *Cosa esce di casa*, più sotto.
 
 ### Cosa gira dove
 
@@ -64,7 +64,11 @@ dicibile.
 | Scrivere | `attivita_crea`, `attivita_stato`, `piano_scrivi`, `programma_ore`, `evento_crea`, `diario_scrivi`, `sezione_crea` |
 
 Restano sul computer: tutto OneNote (`note_*`), `diario_leggi`,
-`obiettivi_scrivi` e `identita`. Il perché sta scritto accanto all'elenco, in
+`obiettivi_scrivi`, `identita`, e i tre che si fanno da seduti guardando —
+`attivita_modifica` (correggere una scheda), `attivita_elimina` (buttare via) e
+`piano_auto` (la bozza della giornata). Il primo perché togliere qualcosa dalla
+vista non deve poter partire da una frase detta male in tangenziale; l'ultimo
+perché una bozza di otto righe, a voce, non si può nemmeno riascoltare. Il perché sta scritto accanto all'elenco, in
 `scripts/mente-mcp-nucleo.mjs` (`NOMI_DA_VOCE`): in breve, ogni strumento in più
 è tempo di attesa in telefonata e un consenso in più da dare, e le cose che si
 scrivono pensandoci non si dettano in tangenziale.

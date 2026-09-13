@@ -1284,6 +1284,9 @@ node scripts/mente.mjs note leggi Manutenzioni --sezione Casa
 
 node scripts/mente.mjs attivita crea "Preventivo caldaia" --sezione Casa --stima 20
 node scripts/mente.mjs attivita stato "Preventivo" ask --persona Sara
+node scripts/mente.mjs attivita modifica "Preventivo" --titolo "Preventivo caldaia a condensazione"
+node scripts/mente.mjs attivita elimina "Prova" --conferma
+node scripts/mente.mjs piano auto --dalle 09:00 --alle 13:00   # una bozza, non scrive
 node scripts/mente.mjs diario scrivi --testo "Giornata piena." --umore 4
 ```
 
@@ -1296,9 +1299,10 @@ voci di diario da `src/diary.js`, gli stessi moduli dell'app — quindi il marke
 `Delegato a:`, con `--persona "Nome"`) e la forma di una voce restano quelle di
 prima. Un'attività creata da qui compare su To-Do e nell'app senza differenze.
 
-**Cosa non fa.** Calendario, OneNote, Bussola, Visione e piani del giorno si
-leggono soltanto. Sono le cose che non si ricostruiscono da una cronologia, e un
-comando sbagliato — o un'AI troppo sicura di sé — non deve poterle toccare.
+**Cosa non fa.** Calendario, OneNote, Bussola e Visione si leggono soltanto —
+del calendario si può solo aggiungere un evento, e di OneNote solo scrivere in
+fondo a una pagina. Sono le cose che non si ricostruiscono da una cronologia, e
+un comando sbagliato — o un'AI troppo sicura di sé — non deve poterle toccare.
 Restano fuori anche `scheduled` e `inbox` come stati scrivibili: il primo è un
 blocco nel piano, il secondo è la lista di default, e si cambiano trascinando,
 nell'app. Le Finanze non ci sono affatto: vivono in IndexedDB, dentro il browser.
@@ -1334,11 +1338,12 @@ elenca i server e il loro stato. Il segno che gli strumenti stanno funzionando
 davvero è che nella risposta compaiono chiamate a `oggi` o `attivita_lista`, e
 non comandi `node scripts/mente.mjs`.
 
-I ventuno strumenti sono gli stessi comandi. In lettura: `oggi`, `agenda`,
-`piano`, `programma`, `obiettivi_leggi`, `sezioni`, `attivita_lista`,
-`diario_leggi`, `note_pagine`, `note_leggi`, `identita`. In scrittura:
-`attivita_crea`, `attivita_stato`, `sezione_crea`, `piano_scrivi`,
-`programma_ore`, `obiettivi_scrivi`, `evento_crea`, `note_crea`, `note_aggiungi`,
+I ventiquattro strumenti sono gli stessi comandi. In lettura: `oggi`, `agenda`,
+`piano`, `piano_auto`, `programma`, `obiettivi_leggi`, `sezioni`,
+`attivita_lista`, `diario_leggi`, `note_pagine`, `note_leggi`, `identita`. In
+scrittura: `attivita_crea`, `attivita_stato`, `attivita_modifica`,
+`attivita_elimina`, `sezione_crea`, `piano_scrivi`, `programma_ore`,
+`obiettivi_scrivi`, `evento_crea`, `note_crea`, `note_aggiungi`,
 `diario_scrivi`. Quelli in sola lettura sono marcati come tali (`readOnlyHint`),
 così un client che chiede conferma prima di scrivere sa quando chiederla. Dal
 connettore remoto ne escono quattordici — è una scelta, e sta due sezioni più
@@ -1357,11 +1362,40 @@ cosa sola. Spostare adesso è anche una scrittura sola, il che vuol dire che
 un'ora già occupata lascia l'attività dov'era invece di lasciarla per strada
 fra il tolto e il rimesso.
 
-Nessuno cancella niente, ed è una regola e non un'omissione: un'attività di prova
-si può spuntare, non eliminare; su OneNote si scrive solo in fondo a una pagina,
-mai sopra a quello che c'era; «togliere» un'attività dal piano vuol dire toglierle
-l'ora, non cancellarla. La Bussola e la Visione restano in sola lettura — sono i
-documenti che si scrivono pensandoci, non dettandoli a una chat.
+Niente sparisce davvero, ed è una regola e non un'omissione: su OneNote si
+scrive solo in fondo a una pagina, mai sopra a quello che c'era; «togliere»
+un'attività dal piano vuol dire toglierle l'ora, non cancellarla; e buttare via
+un'attività (`attivita_elimina`) vuol dire spostarla nella lista **Cestino** e
+metterla fra le «un giorno» — fuori dalle prossime azioni, fuori dallo storico
+delle completate, ma con il suo id, la sua nota e i suoi sotto-passi, in una
+lista che si apre dall'app. Prima l'unico modo di togliersi davanti una cosa che
+non andava fatta era spuntarla, e lo storico delle completate — che è come si
+racconta un mese — si riempiva di cose mai fatte. Per rimetterla dov'era basta
+`attivita_modifica` con la sezione di prima, che la risposta dice. La Bussola e
+la Visione restano in sola lettura — sono i documenti che si scrivono
+pensandoci, non dettandoli a una chat.
+
+**Correggere, e comporre una giornata.** `attivita_modifica` scrive la scheda di
+un'attività che c'è già — titolo, nota, sezione, contesto, stima, scadenza — ed è
+l'altra metà di `attivita_stato`, che invece la sposta nel flusso. Serve perché
+rifare un'attività per correggerle il titolo vuol dire un **id nuovo**, e i
+blocchi nel piano, le sveglie e la deduplica delle scadenze citano i task per id:
+ne restavano tre che indicavano una cosa che non esisteva più. Un campo detto
+vuoto (`""`, o stima `0`) toglie quello che c'era, uno non nominato resta; e
+siccome un blocco del piano si tiene una **copia** del titolo, correggere il
+titolo lo riscrive anche lì — altrimenti la stessa attività si chiamerebbe in due
+modi a seconda della vista da cui la si guarda.
+
+`piano_auto` propone una giornata: prende le prossime azioni, le ordina per
+scadenza e le incastra nei buchi di una finestra oraria, usando la stima che ogni
+attività porta già con sé e rispettando quello che è a piano e quello che è sul
+calendario. **Non scrive niente** — restituisce una bozza, e le righe che
+convincono si mettono a piano con `piano_scrivi`, una per volta. È la scelta che
+conta: comporre otto blocchi costa una frase, disfarne due che non convincono
+costa otto gesti. Chi non ci sta viene detto, non scartato in silenzio: una
+giornata che non contiene quello che deve contenere è esattamente la cosa che si
+vuole vedere alle nove del mattino. Se il calendario non risponde, non esce
+nessuna bozza: una che scavalca le riunioni è peggio di nessuna.
 
 **Il piano, alle tre distanze.** Giornaliero, settimanale e mensile non sono tre
 piani ma tre distanze da cui si guarda lo stesso, come le tre viste del Piano
@@ -1427,7 +1461,7 @@ Non sostituisce quello sul computer: **convivono**, e non sono la stessa cosa.
 
 | | dal computer (stdio) | dal connettore |
 |---|---|---|
-| Strumenti | tutti e ventuno | quattordici |
+| Strumenti | tutti e ventiquattro | quattordici |
 | OneNote | sì | no |
 | Programma di commessa | si guarda e ci si scrivono le ore | uguale |
 | Diario | si legge e si scrive | si scrive soltanto |

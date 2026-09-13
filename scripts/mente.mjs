@@ -51,6 +51,15 @@ function parseArgv(argv) {
 /** @param {string|true|undefined} v @returns {string|undefined} */
 const s = v => (typeof v === 'string' && v.trim() ? v.trim() : undefined);
 
+/**
+ * Come `s`, ma quello che è stato detto vuoto resta vuoto: `--nota ""` toglie
+ * la nota, e distinguerlo da «non l'ho detto» è tutta la differenza fra
+ * correggere un campo e perderlo. Una bandiera nuda (`--nota` e basta) non
+ * vuol dire niente, e infatti non passa.
+ * @param {string|true|undefined} v @returns {string|undefined}
+ */
+const sv = v => (typeof v === 'string' ? v.trim() : undefined);
+
 /** @param {string|true|undefined} v @returns {number|undefined} */
 const n = v => (typeof v === 'string' && v.trim() !== '' && Number.isFinite(Number(v)) ? Number(v) : undefined);
 
@@ -98,7 +107,16 @@ async function esegui(args, opts) {
         });
       }
       if (sub === 'togli') return mente.pianoTogli({ attivita: resto[1], data: s(opts.data) });
-      throw new Error(`piano: sottocomando sconosciuto "${sub}" (giorno, settimana, mese, aggiungi, sposta, togli)`);
+      // `piano auto` non scrive: stampa una bozza da leggere, e quello che
+      // convince si mette a piano con `piano aggiungi`, una riga per volta.
+      if (sub === 'auto') {
+        return mente.pianoAuto({
+          data: s(opts.data), dalle: s(opts.dalle), alle: s(opts.alle),
+          sezione: s(opts.sezione), contesto: s(opts.contesto),
+          pausaMin: n(opts.pausa), massimo: n(opts.massimo),
+        });
+      }
+      throw new Error(`piano: sottocomando sconosciuto "${sub}" (giorno, settimana, mese, auto, aggiungi, sposta, togli)`);
 
     case 'obiettivi':
       if (!sub || sub === 'leggi') return mente.obiettiviLeggi({ mese: s(opts.mese) });
@@ -197,7 +215,19 @@ async function esegui(args, opts) {
           sottoAperta: s(opts.aperta),
         });
       }
-      throw new Error(`attivita: sottocomando sconosciuto "${sub}" (lista, crea, stato, sotto, completa)`);
+      if (sub === 'modifica') {
+        return mente.attivitaModifica({
+          attivita: resto[1],
+          titolo: s(opts.titolo), nota: sv(opts.nota), sezione: s(opts.sezione),
+          contesto: sv(opts.contesto), stimaMin: n(opts.stima), scadenza: sv(opts.scadenza),
+        });
+      }
+      // `--conferma` è una bandiera, cioè `true`: qui diventa il booleano che
+      // `attivitaElimina` pretende scritto a parte.
+      if (sub === 'elimina') {
+        return mente.attivitaElimina({ attivita: resto[1], conferma: opts.conferma === true });
+      }
+      throw new Error(`attivita: sottocomando sconosciuto "${sub}" (lista, crea, stato, sotto, completa, modifica, elimina)`);
 
     case 'diario':
       if (!sub || sub === 'leggi') {
@@ -275,7 +305,18 @@ Scrittura
   attivita sotto <id|titolo> "primo passo; secondo passo"
                          [--fatta "pezzo di testo"] [--aperta "pezzo di testo"]
   attivita completa <id|titolo>
+  attivita modifica <id|titolo> [--titolo "…"] [--nota "…"] [--sezione s]
+                         [--contesto c] [--stima 45] [--scadenza YYYY-MM-DD]
+                         (un'opzione vuota — --scadenza "" , --stima 0 — toglie
+                          quello che c'era; senza l'opzione il campo resta)
+  attivita elimina <id|titolo> --conferma
+                         (non cancella: va nel Cestino e fuori dalle prossime
+                          azioni; si rimette con «attivita modifica --sezione»)
   sezione crea "NOME"  |  sezione crea --commessa 2573 --consegna ABS --scadenza YYYY-MM-DD
+
+  piano auto [--data YYYY-MM-DD] [--dalle 09:00] [--alle 13:00]
+             [--sezione s] [--contesto c] [--pausa 10] [--massimo 5]
+                (una bozza di giornata: non scrive niente)
 
   piano aggiungi <id|titolo> <HH:MM> [--data YYYY-MM-DD] [--durata 45]
   piano sposta <id|titolo> [HH:MM] [--data YYYY-MM-DD] [--da-data YYYY-MM-DD] [--durata 45]

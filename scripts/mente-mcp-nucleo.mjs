@@ -23,6 +23,7 @@
 import * as mente from './mente-comandi.mjs';
 import {
   TASK_STATUSES, CONTEXTS, STATI_SCRIVIBILI, STATI_CREABILI, TIPI_DIARIO, GRANULARITY_MEMO_LINE,
+  NOME_CESTINO,
 } from './mente-comandi.mjs';
 
 export const SERVER = { name: 'mente-digitale', version: '1.0.0' };
@@ -35,7 +36,7 @@ const PROTOCOL_DEFAULT = '2025-06-18';
 const stringa = /** @param {string} description */ description => ({ type: 'string', description });
 
 
-/** @type {{ name: string, description: string, schema: any, sola_lettura: boolean, run: (a: any) => Promise<{data:any,text:string}> }[]} */
+/** @type {{ name: string, description: string, schema: any, sola_lettura: boolean, distruttivo?: boolean, run: (a: any) => Promise<{data:any,text:string}> }[]} */
 export const TOOLS = [
   {
     name: 'oggi',
@@ -315,6 +316,81 @@ export const TOOLS = [
     run: a => mente.attivitaStato(a),
   },
   {
+    name: 'attivita_modifica',
+    description:
+      "Corregge la scheda di un'attività che c'è già: titolo, nota, sezione, contesto, stima e " +
+      "scadenza. È l'altra metà di attivita_stato, che invece la sposta nel flusso e ne tiene i " +
+      "sotto-passi. Un campo non nominato resta com'era; un campo vuoto («» o stima 0) toglie " +
+      "quello che c'era. Cambiare sezione è uno spostamento vero: l'id non cambia, quindi i " +
+      'blocchi già nel piano restano attaccati, e il titolo nuovo ci compare dentro.',
+    sola_lettura: false,
+    schema: {
+      type: 'object',
+      required: ['attivita'],
+      properties: {
+        attivita: stringa("Id (anche solo l'inizio) o pezzo di titolo dell'attività."),
+        titolo: stringa('Il titolo nuovo. Non si può svuotare.'),
+        nota: stringa('La nota nuova. «» toglie quella che c\'era.'),
+        sezione: stringa(
+          'Sezione in cui spostarla (nome anche parziale della lista). Se la commessa ha più ' +
+          'consegne va indicata la consegna.'),
+        contesto: { type: 'string', enum: ['', ...CONTEXTS.map(c => c.key)], description: 'Contesto GTD. «» lo toglie.' },
+        stimaMin: { type: 'integer', description: 'Stima di durata in minuti. 0 la toglie.' },
+        scadenza: stringa('Scadenza, YYYY-MM-DD. «» la toglie.'),
+      },
+    },
+    run: a => mente.attivitaModifica(a),
+  },
+  {
+    name: 'attivita_elimina',
+    description:
+      "Butta via un'attività: la sposta nella lista «" + NOME_CESTINO + "» e la mette fra le «un " +
+      "giorno», cioè fuori dalle prossime azioni e fuori dallo storico delle completate — dove " +
+      "prima finiva tutto quello che si spuntava solo per farlo sparire. Non cancella: l'attività " +
+      "resta con il suo id, la sua nota e i suoi sotto-passi, e si rimette a posto con " +
+      'attivita_modifica indicando la sezione di prima (che la risposta dice). Toglie dal piano i ' +
+      'blocchi ancora aperti e lascia quelli già spuntati, che sono lavoro fatto. ' +
+      'Vuole conferma: true.',
+    sola_lettura: false,
+    distruttivo: true,
+    schema: {
+      type: 'object',
+      required: ['attivita', 'conferma'],
+      properties: {
+        attivita: stringa("Id (anche solo l'inizio) o pezzo di titolo dell'attività."),
+        conferma: {
+          type: 'boolean',
+          description: 'Deve essere true. È l\'unico strumento che porta via qualcosa dalla vista.',
+        },
+      },
+    },
+    run: a => mente.attivitaElimina(a),
+  },
+  {
+    name: 'piano_auto',
+    description:
+      'Una bozza di giornata: prende le prossime azioni e le incastra nei buchi di una finestra ' +
+      "oraria, in ordine di scadenza, usando la stima che ogni attività porta con sé. Rispetta " +
+      'quello che è già a piano e gli eventi del calendario. **Non scrive niente**: restituisce ' +
+      'una proposta da guardare e correggere, e le righe che convincono si mettono a piano con ' +
+      'piano_scrivi, una per volta. Si può restringere a una sezione o a un contesto. Chi non ci ' +
+      'sta viene detto, non scartato in silenzio.',
+    sola_lettura: true,
+    schema: {
+      type: 'object',
+      properties: {
+        data: stringa('Giorno, YYYY-MM-DD. Default: oggi.'),
+        dalle: stringa("Ora d'inizio della finestra, HH:MM. Default 09:00."),
+        alle: stringa('Ora di fine della finestra, HH:MM. Default 18:00.'),
+        sezione: stringa('Pesca solo da questa sezione o commessa (nome anche parziale).'),
+        contesto: { type: 'string', enum: CONTEXTS.map(c => c.key), description: 'Pesca solo da questo contesto.' },
+        pausaMin: { type: 'integer', description: 'Minuti di stacco fra un blocco e il successivo. Default 0.' },
+        massimo: { type: 'integer', description: 'Quante attività al massimo. Default: quante ce ne stanno.' },
+      },
+    },
+    run: a => mente.pianoAuto(a),
+  },
+  {
     name: 'programma',
     description:
       'Il Programma di commessa: le ore vendute, quelle stimate dalle voci, quelle già spese, ' +
@@ -488,7 +564,7 @@ export const TOOLS = [
 //  - `diario_leggi` no e `diario_scrivi` sì, perché in auto il diario si detta,
 //    non si riascolta.
 //
-// Sta qui e non sparso nei ventuno strumenti perché la domanda «cosa può fare
+// Sta qui e non sparso nei ventiquattro strumenti perché la domanda «cosa può fare
 // il connettore?» deve avere una risposta che si legge in un colpo d'occhio.
 // Una prova verifica che ogni nome esista davvero (`prova-mcp-remoto.mjs`):
 // un rinomino, altrimenti, svuoterebbe il connettore in silenzio.
@@ -506,8 +582,9 @@ export const ISTRUZIONI =
   'La mente digitale di Michele: attività (file JSON su OneDrive), piano del giorno, calendario, ' +
   'diario, obiettivi del mese e taccuini OneNote. Si legge tutto e si scrive quasi ' +
   'ovunque: attività e liste, blocchi del piano, eventi del calendario, pagine OneNote, ' +
-  'voci di diario, obiettivi. Nessuno strumento cancella niente, e su OneNote si scrive ' +
-  'solo in fondo a una pagina, mai sopra a quello che c\'era.\n' +
+  'voci di diario, obiettivi. Niente si cancella davvero: quello che si butta via ' +
+  "(attivita_elimina) va nel Cestino, che è una lista come le altre, e su OneNote si scrive " +
+  "solo in fondo a una pagina, mai sopra a quello che c'era.\n" +
   'Una sezione è una lista; una commessa può averne più di una, una per consegna, ' +
   'chiamata GRUPPO.Consegna-YYMMDD, dove le ultime sei cifre sono la scadenza.\n' +
   "Un'attività è una cosa da fare; un evento del calendario è un'ora fissa che riguarda " +
@@ -565,7 +642,11 @@ export function creaServer(config = {}) {
     inputSchema: { ...t.schema, additionalProperties: false },
     annotations: {
       readOnlyHint: t.sola_lettura,
-      destructiveHint: false,   // nessuno strumento cancella niente
+      // Nessuno strumento cancella niente: l'unico che porta via qualcosa
+      // dalla vista è `attivita_elimina`, e lo fa spostando nel Cestino. È
+      // dichiarato lo stesso, perché è quello davanti al quale un client fa
+      // bene a fermarsi a chiedere.
+      destructiveHint: !!t.distruttivo,
       idempotentHint: t.sola_lettura,
       openWorldHint: true,      // i dati vivono su Microsoft Graph, non qui
     },
