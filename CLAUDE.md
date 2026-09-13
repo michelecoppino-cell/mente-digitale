@@ -152,6 +152,26 @@ Attività e ancora sbagliato nel Piano: due verità per la stessa cosa, che è i
 difetto peggiore da cercare perché non somiglia a un errore. Vale anche per lo
 spostamento fra liste, che riscrive `listId` e `listName`.
 
+**Il recap del mattino è di stamattina o non è niente.** Un file solo,
+riscritto ogni notte dal compito delle cinque (`docs/recap-mattina.md`), e
+`oggi` lo mostra **solo se la sua data è quella del giorno chiesto**: un recap di
+ieri messo in cima senza dirlo si legge come se fosse fresco, ed è l'unico modo
+in cui questo meccanismo può mentire. Vale anche qui la regola dello specchio del
+calendario di lavoro — `etaRecap` sta nel modulo, non nella vista — perché
+dipende da un PC che può essere spento. Non se ne tiene la cronologia: quello che
+merita di restare va nel diario.
+
+**Una sottoattività è un passo, non un'attività piccola.** Niente stato, niente
+persona, niente scadenza, e non va a piano da sola: se serve una di quelle
+quattro cose è un'attività, e va creata come tale. Le regole per esteso stanno in
+`REGOLE_SOTTOATTIVITA` (`src/taskModel.js`) e il server MCP le mette nelle
+istruzioni dell'handshake: sono il modello e non l'interfaccia, e ripeterle nelle
+descrizioni dei ventisei strumenti vorrebbe dire ventisei copie da tenere in
+pari. Un blocco spezzato ne tiene una **copia** (`subSteps`, con lo stesso id):
+spuntare un passo dalle Attività lo spunta anche dentro il blocco
+(`sincronizzaSottoPassi`), mentre un passo *nuovo* non ci entra da solo — quali
+righe un blocco mostri l'ha deciso qualcuno.
+
 **Una giornata composta da una macchina è una proposta.** `pianoAuto` incastra le
 prossime azioni nei buchi di una finestra e **non scrive niente**: comporre otto
 blocchi costa una frase, disfarne due che non convincono costa otto gesti. Le
@@ -294,6 +314,7 @@ che ha già smesso di funzionare.
 | `src/dailyReview.js` | le proposte della campanella: quali email chiedono qualcosa e perché (`motivi`), quali sono un flusso di servizio che si ripete, e le righe «Da fare» di OneNote |
 | `src/PannelloReview.jsx` | il pannello della campanella: «Da valutare» e «Scadenze», le due metà del giro quotidiano |
 | `src/calendarioLavoro.js` | lo specchio del calendario aziendale: cosa c'è nel file su OneDrive e come diventa un evento nella forma di Graph |
+| `scripts/recap/` | il compito delle cinque: il prompt fisso del recap, lo script che lo passa a `claude -p` con gli strumenti dichiarati uno per uno, e la registrazione del compito di Windows. Il perché sta in `docs/recap-mattina.md` |
 | `src/programma.js` | il Programma di commessa: i conti, le chiavi del carico (`risorsa\|pacchetto\|settimana` più, in coda e facoltativa, la voce), lo stato derivato di una voce, e il carico di una persona su tutte le commesse. Niente rete, niente React: è il file su cui girano le prove |
 | `src/programmaStore.js` | gli stessi programmi su OneDrive: registro, un documento per commessa, `reapply` che unisce per chiave. Ci si arriva anche da fuori: il CLI e il server MCP montano lo stesso strato in `mente-graph.mjs`, e le ore scritte da lì passano da `celleConsuntivo` come quelle incollate nell'app |
 | `src/programmaExcel.js` | il foglio che esce (tre fogli: riepilogo, persone, voci) e le ore vere che rientrano incollate. Puro, e il foglio Persone esce nella stessa forma in cui rientra |

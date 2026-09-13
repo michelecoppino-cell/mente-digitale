@@ -84,6 +84,40 @@ export const GRANULARITY_MEMO = [
 export const GRANULARITY_MEMO_LINE =
   'Orientativamente: ' + GRANULARITY_MEMO.map(g => `${g.label.toLowerCase()} ${g.limit}`).join(', ') + '.';
 
+// Le regole delle sottoattività, scritte per esteso in un posto solo.
+//
+// Il memo qui sopra dice *quanto* deve essere grande una cosa; questo dice
+// *che cosa* è una sottoattività e cosa non è — ed è la parte che serviva a
+// chi la mente digitale la guida da fuori (il CLI, il server MCP, il recap del
+// mattino), perché una macchina che non lo sa fa la cosa sbagliata in modo
+// plausibile: crea otto attività dove ne bastava una con otto passi, oppure
+// tiene tutto in un'attività sola e non sa mai dire a che punto è.
+//
+// Sta qui e non nelle descrizioni dei tool perché è il modello, non
+// l'interfaccia: la stessa frase vale per la colonna Attività, per il modale
+// del Piano e per chi scrive da una chat.
+export const REGOLE_SOTTOATTIVITA = [
+  "Una sottoattività è un passo dentro un'attività, non un'attività piccola: " +
+  'non ha uno stato suo, non ha una persona, non ha una scadenza e non va a piano da sola. ' +
+  "Se serve una di queste quattro cose, non è un passo: è un'attività, e va creata come tale.",
+
+  "Si spezza mentre si scrive l'attività, non dopo: il momento in cui si sa com'è fatta una cosa " +
+  'è quello in cui la si sta dicendo. Sotto le due ore non si spezza niente — una scaletta di una ' +
+  "riga non serve a nessuno — e sopra i cinque o sei passi quella non è più un'attività ma una " +
+  'consegna travestita, e vuole una sezione sua.',
+
+  "Spuntare un passo è il gesto di tutti i giorni e non tocca lo stato dell'attività: " +
+  "l'attività resta dov'è finché non la si chiude. Spuntato l'ultimo passo, chiedere se chiuderla " +
+  'è la cosa giusta da fare — non farlo da soli, e non lasciarlo cadere.',
+
+  "Messa a piano, un'attività può portarsi dentro il blocco i suoi passi ancora aperti: sono la " +
+  "scaletta dell'ora che si sta per passare. Spuntarne uno vale da tutte e due le parti — nelle " +
+  'Attività e dentro il blocco — e non va tenuto in pari a mano.',
+];
+
+/** Le stesse regole in un paragrafo, per le istruzioni di un modello. */
+export const REGOLE_SOTTOATTIVITA_TESTO = REGOLE_SOTTOATTIVITA.join(' ');
+
 export const DEFAULT_ESTIMATE_MIN = 30;
 
 /** Le durate offerte come chip nel serbatoio del Piano. */

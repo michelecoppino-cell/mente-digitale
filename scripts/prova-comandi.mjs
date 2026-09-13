@@ -4,17 +4,19 @@
 //   npm run prova-comandi
 //
 // Le altre prove guardano i moduli puri (il flusso, il Programma, la cattura) o
-// il trasporto (il connettore remoto). Questa guarda le tre scritture che
-// toccano insieme le attività e il piano del giorno, dove il difetto non è un
+// il trasporto (il connettore remoto). Questa guarda le operazioni che toccano
+// insieme le attività, il piano del giorno e il recap, dove il difetto non è un
 // conto sbagliato ma **due verità per la stessa cosa**:
 //
 //  - correggere un titolo e lasciarlo vecchio dentro il blocco già a piano;
+//  - spuntare un sotto-passo e vederlo ancora da fare dentro il blocco;
 //  - buttare via un'attività e lasciarle addosso l'ora che aveva;
 //  - comporre una giornata scavalcando una riunione, o scrivendola invece di
-//    proporla.
+//    proporla;
+//  - leggere il recap di ieri credendo che sia di stamattina.
 //
 // Sono tutte cose che, contro il OneDrive vero, si scoprirebbero guardando il
-// Piano il giorno dopo.
+// Piano il giorno dopo — o non si scoprirebbero affatto.
 
 import { montaFintoOnedrive, creaTabellone } from './finto-onedrive.mjs';
 import { montaFintoGraph } from '../src/finto/graph.js';
@@ -269,6 +271,109 @@ console.log('\nButtare via, senza cancellare\n');
     file('casa.json').tasks.some((/** @type {any} */ t) => t.id === 't-c1'),
     'dal Cestino si torna indietro con attivita_modifica, e l\'id è sempre quello'
   );
+}
+
+// ── Le sottoattività, dalle due parti ────────────────────────────────────────
+// Un blocco spezzato nei suoi passi ne tiene una copia. Copia vuol dire due
+// verità possibili, e qui si prova che restano una sola.
+
+console.log('\nLe sottoattività, nelle Attività e dentro il blocco\n');
+
+const DOPODOMANI = g(2);
+
+{
+  const messo = await mente.pianoAggiungi({
+    attivita: 't-a2', data: DOPODOMANI, ora: '09:00', sottoPassi: true,
+  });
+  const passi = messo.data.blocco.subSteps;
+  verifica(passi.length === 1, 'nel blocco finiscono solo i passi ancora aperti');
+  verifica(passi[0].title === 'Variabili per destinazione', 'con il loro testo');
+  verifica(passi[0].id === 's2', 'e con lo stesso id del passo nell\'attività');
+
+  const senza = await mente.pianoAggiungi({ attivita: 't-a2', data: g(3), ora: '09:00' });
+  verifica(senza.data.blocco.subSteps.length === 0,
+    'senza chiederlo il blocco resta liscio: sette righe in mezz\'ora non si leggono');
+}
+
+{
+  const esito = await mente.attivitaStato({ attivita: 't-a2', sottoFatta: ['Variabili'] });
+  verifica(esito.data.spuntate.length === 1, 'il passo si spunta dalle Attività');
+  const blocco = blocchiDi(DOPODOMANI).find((/** @type {any} */ b) => b.taskId === 't-a2');
+  verifica(blocco.subSteps[0].completed === true,
+    'e risulta spuntato anche dentro il blocco: una riga, una verità');
+}
+
+{
+  await mente.attivitaStato({ attivita: 't-a2', sottoAggiungi: ['Combinazioni sismiche'] });
+  const blocco = blocchiDi(DOPODOMANI).find((/** @type {any} */ b) => b.taskId === 't-a2');
+  verifica(blocco.subSteps.length === 1,
+    'un passo nuovo non si infila da solo in un blocco già spezzato: quello l\'ha deciso qualcuno');
+}
+
+{
+  await mente.pianoSposta({ attivita: 't-a2', daData: DOPODOMANI, data: g(4), ora: '14:00' });
+  const blocco = blocchiDi(g(4)).find((/** @type {any} */ b) => b.taskId === 't-a2');
+  verifica(blocco.subSteps.length === 1 && blocco.subSteps[0].completed === true,
+    'spostando il blocco, la scaletta e quello che è già fatto vengono dietro');
+}
+
+// ── Il recap del mattino ─────────────────────────────────────────────────────
+
+console.log('\nIl recap del mattino\n');
+
+{
+  await mente.recapScrivi({ testo: 'Giornata piena: due riunioni e il plinto da chiudere.', data: oggi, fonti: ['calendario', 'attività'] });
+  const letto = await mente.recapLeggi();
+  verifica(/plinto da chiudere/.test(letto.text), 'quello che è stato scritto si rilegge');
+  verifica(letto.data.recap.fonti.length === 2, 'con l\'elenco di cosa era stato guardato');
+
+  await mente.recapScrivi({ testo: 'Seconda versione, quella buona.', data: oggi });
+  const dinuovo = await mente.recapLeggi();
+  verifica(!/plinto da chiudere/.test(dinuovo.text) && /quella buona/.test(dinuovo.text),
+    'e riscriverlo sostituisce: se ne tiene uno solo');
+}
+
+{
+  const quadro = await mente.oggi({ data: oggi });
+  verifica(/Recap del mattino/.test(quadro.text) && /quella buona/.test(quadro.text),
+    'il recap di stamattina arriva insieme al quadro del giorno');
+  verifica(quadro.data.recap !== null, 'anche nella forma strutturata');
+}
+
+{
+  // Il caso che conta: la notte in cui il PC era spento. Il recap di ieri non
+  // deve poter passare per quello di stamattina.
+  await mente.recapScrivi({ testo: 'Questo è di ieri.', data: g(-1) });
+  const quadro = await mente.oggi({ data: oggi });
+  verifica(!/Questo è di ieri/.test(quadro.text), 'un recap di ieri non si legge come quello di oggi');
+  verifica(/il recap più recente è del/.test(quadro.text), 'e «oggi» dice che stanotte non ne è arrivato uno');
+
+  const chiesto = await mente.recapLeggi({ data: oggi });
+  verifica(/non del/.test(chiesto.text), 'chiedendolo per oggi, dice che quello che ha è di un altro giorno');
+}
+
+{
+  const fresco = mente.etaRecap({ scrittoIl: new Date(Date.now() - 2 * 3_600_000).toISOString() });
+  const stantio = mente.etaRecap({ scrittoIl: new Date(Date.now() - 30 * 3_600_000).toISOString() });
+  verifica(fresco?.vecchio === false && stantio?.vecchio === true,
+    'un recap dichiara quanti anni ha, come lo specchio del calendario di lavoro');
+  verifica(mente.etaRecap(null) === null, 'e quando non si sa, lo dice invece di inventare un\'ora');
+}
+
+// ── La posta ─────────────────────────────────────────────────────────────────
+
+console.log('\nLa posta che chiede qualcosa\n');
+
+{
+  const esito = await mente.posta({ giorni: 3 });
+  verifica(esito.data.arrivate > 0, 'le email arrivano');
+  const titoli = esito.data.proposte.map((/** @type {any} */ p) => p.title);
+  verifica(titoli.some((/** @type {string} */ t) => /quote di fondazione/i.test(t)),
+    'una che fa una domanda diventa una proposta');
+  verifica(!titoli.some((/** @type {string} */ t) => /^calendario /i.test(t)),
+    'un flusso di servizio che si ripete resta fuori, come nella campanella dell\'app');
+  esito.data.proposte.forEach((/** @type {any} */ p) =>
+    verifica(p.motivi.length > 0, `«${p.title.slice(0, 30)}» dice perché è lì`));
 }
 
 fine();

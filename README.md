@@ -1338,13 +1338,14 @@ elenca i server e il loro stato. Il segno che gli strumenti stanno funzionando
 davvero è che nella risposta compaiono chiamate a `oggi` o `attivita_lista`, e
 non comandi `node scripts/mente.mjs`.
 
-I ventiquattro strumenti sono gli stessi comandi. In lettura: `oggi`, `agenda`,
+I ventisei strumenti sono gli stessi comandi. In lettura: `oggi`, `agenda`,
 `piano`, `piano_auto`, `programma`, `obiettivi_leggi`, `sezioni`,
-`attivita_lista`, `diario_leggi`, `note_pagine`, `note_leggi`, `identita`. In
-scrittura: `attivita_crea`, `attivita_stato`, `attivita_modifica`,
-`attivita_elimina`, `sezione_crea`, `piano_scrivi`, `programma_ore`,
-`obiettivi_scrivi`, `evento_crea`, `note_crea`, `note_aggiungi`,
-`diario_scrivi`. Quelli in sola lettura sono marcati come tali (`readOnlyHint`),
+`attivita_lista`, `posta`, `diario_leggi`, `note_pagine`, `note_leggi`,
+`identita`. In scrittura: `attivita_crea`, `attivita_stato`,
+`attivita_modifica`, `attivita_elimina`, `sezione_crea`, `piano_scrivi`,
+`programma_ore`, `obiettivi_scrivi`, `evento_crea`, `note_crea`,
+`note_aggiungi`, `diario_scrivi`. In mezzo `recap`, che senza argomenti legge e
+con un testo scrive. Quelli in sola lettura sono marcati come tali (`readOnlyHint`),
 così un client che chiede conferma prima di scrivere sa quando chiederla. Dal
 connettore remoto ne escono quattordici — è una scelta, e sta due sezioni più
 sotto.
@@ -1396,6 +1397,37 @@ costa otto gesti. Chi non ci sta viene detto, non scartato in silenzio: una
 giornata che non contiene quello che deve contenere è esattamente la cosa che si
 vuole vedere alle nove del mattino. Se il calendario non risponde, non esce
 nessuna bozza: una che scavalca le riunioni è peggio di nessuna.
+
+**Le sottoattività, e la scaletta dell'ora.** Una sottoattività è un passo
+dentro un'attività, non un'attività piccola: non ha uno stato suo, non ha una
+persona, non ha una scadenza e non va a piano da sola — se serve una di quelle
+quattro cose, è un'attività. Le regole stanno in `src/taskModel.js`
+(`REGOLE_SOTTOATTIVITA`) e il server MCP le mette nelle istruzioni
+dell'handshake, cioè le fa leggere una volta sola all'inizio: da fuori l'errore
+plausibile era creare otto attività dove ne bastava una con otto passi, e nessuna
+descrizione di strumento riusciva a dirlo senza ripetersi ventisei volte.
+Mettendo a piano si può chiedere che il blocco si porti dentro i passi ancora
+aperti (`sottoPassi`), come fa il modale «Sottoattività» del Piano: sono la
+scaletta dell'ora che si sta per passare. E siccome il blocco ne tiene una
+**copia**, spuntarne uno dalle Attività lo spunta anche lì — la stessa regola del
+titolo, per la stessa ragione.
+
+**Il recap del mattino.** Alle cinque, sul PC sempre acceso, un Claude Code non
+interattivo guarda calendario, posta e attività e scrive due paragrafi su com'è
+messa la giornata; al risveglio si chiede a voce di leggerli. Lo scrive `recap`,
+che sostituisce quello di ieri — se ne tiene uno solo, perché un recap è di
+stamattina o non è niente — e lo rilegge `oggi`, che lo porta con sé **solo se è
+di stamattina**: uno di ieri messo in cima senza dirlo si leggerebbe come se
+fosse fresco, ed è l'unico modo in cui questo meccanismo potrebbe mentire. Il
+resto — perché un compito pianificato e non un servizio, come si registra perché
+giri a sessione bloccata, cosa fare quando non arriva — sta in
+`docs/recap-mattina.md`.
+
+`posta` è la metà che mancava per poterlo scrivere: le email degli ultimi giorni
+che sembrano chiedere qualcosa, con il perché. Le proposte le tira fuori
+`src/dailyReview.js`, lo stesso modulo della campanella dell'app, così una regola
+su «cosa chiede qualcosa» si cambia in un posto solo. Sola lettura, e non per
+scelta soltanto: il token ha `Mail.Read` e basta.
 
 **Il piano, alle tre distanze.** Giornaliero, settimanale e mensile non sono tre
 piani ma tre distanze da cui si guarda lo stesso, come le tre viste del Piano
@@ -1461,7 +1493,7 @@ Non sostituisce quello sul computer: **convivono**, e non sono la stessa cosa.
 
 | | dal computer (stdio) | dal connettore |
 |---|---|---|
-| Strumenti | tutti e ventiquattro | quattordici |
+| Strumenti | tutti e ventisei | quattordici |
 | OneNote | sì | no |
 | Programma di commessa | si guarda e ci si scrivono le ore | uguale |
 | Diario | si legge e si scrive | si scrive soltanto |

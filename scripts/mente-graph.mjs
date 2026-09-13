@@ -422,6 +422,49 @@ export async function saveDailyPlans(plans) {
   return putDriveJson('mente-digitale-daily-plans.json', pruned);
 }
 
+// ── Il recap del mattino ─────────────────────────────────────────────────────
+// Un file solo, riscritto per intero ogni volta: il recap è di stamattina o non
+// è niente, e tenerne una cronologia vorrebbe dire un file che cresce per
+// sempre con dentro quarantasei giornate che nessuno rileggerà. Chi lo scrive è
+// un Claude Code non interattivo sul PC sempre acceso (docs/recap-mattina.md);
+// chi lo legge è `oggi`, cioè la prima domanda del mattino.
+
+/** @returns {Promise<any|null>} */
+export async function loadRecap() {
+  return getDriveJson('mente-digitale-recap.json', null);
+}
+
+/** @param {any} doc @returns {Promise<any>} */
+export async function saveRecap(doc) {
+  return putDriveJson('mente-digitale-recap.json', doc);
+}
+
+// ── Posta ────────────────────────────────────────────────────────────────────
+
+/**
+ * Le email arrivate negli ultimi giorni, nella stessa forma che legge
+ * `src/dailyReview.js` — gli stessi campi che chiede l'app (`getRecentEmails`
+ * in `src/api.js`), perché le proposte le tira fuori lo stesso modulo puro.
+ *
+ * `Mail.Read` e basta: la casella non si tocca. Vale qui come vale per lo
+ * specchio del calendario di lavoro.
+ *
+ * @param {number} [giorni]
+ * @returns {Promise<any[]>}
+ */
+export async function getRecentEmails(giorni = 1) {
+  const da = new Date();
+  da.setDate(da.getDate() - Math.max(1, giorni));
+  const params = [
+    `$filter=receivedDateTime ge ${da.toISOString()}`,
+    '$select=subject,from,bodyPreview,receivedDateTime,isRead,webLink',
+    '$top=50',
+    '$orderby=receivedDateTime desc',
+  ].join('&');
+  const d = await graph(`/me/messages?${params}`);
+  return d?.value || [];
+}
+
 /** @param {'bussola'|'visione'} type @returns {Promise<any>} */
 export async function loadIdentityDoc(type) {
   return getDriveJson(`mente-digitale-${type}.json`, null);
