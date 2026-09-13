@@ -22,7 +22,7 @@
  */
 
 import {
-  elencoListe, leggiTask, leggiTaskAperti, creaTask, aggiornaTask, creaLista,
+  elencoListe, leggiTask, leggiTaskAperti, creaTask, aggiornaTask, creaLista, spostaTask,
   loadDailyPlans, saveDailyPlans, loadIdentityDoc,
   loadObiettivi, saveObiettivi,
   loadDiaryIndex, loadDiaryMonth, saveDiaryEntry,
@@ -562,6 +562,289 @@ export async function attivitaStato(opts = {}) {
         sottoattivita: esito.sottoattivita.map(x => ({ testo: x.titolo, fatta: x.fatta })),
         aggiunte: esito.aggiunte, gia: esito.gia, spuntate: esito.spuntate, riaperte: esito.riaperte,
       } : {}),
+    },
+    text: righe.join('\n'),
+  };
+}
+
+/**
+ * Il nome della lista in cui finisce quello che si butta. È una lista come le
+ * altre — non un campo nascosto e non un file a parte — perché così il cestino
+ * si apre dall'app senza aver scritto una riga di interfaccia, e quello che c'è
+ * dentro si rimette a posto con gli stessi strumenti di tutti i giorni.
+ */
+export const NOME_CESTINO = 'Cestino';
+
+/**
+ * Un campo che si sta scrivendo: `undefined` se non è stato nominato, `''` se
+ * è stato nominato vuoto — cioè «togli quello che c'era».
+ *
+ * `testo()` non basta qui: appiattisce i due casi su `null`, e finché nessuno
+ * prova a cancellare una scadenza «non l'ho detto» e «cancellala» sembrano la
+ * stessa cosa. Sono la differenza fra una modifica e una perdita di dati.
+ *
+ * @param {any} v
+ * @returns {string|undefined}
+ */
+function campo(v) {
+  if (v === undefined || v === null) return undefined;
+  return String(v).trim();
+}
+
+/**
+ * Riscrive nei blocchi del piano quello che i blocchi si tengono per copia:
+ * il titolo dell'attività e la lista da cui viene.
+ *
+ * Serve perché un blocco porta `taskTitle` dentro di sé, e l'app lo mostra
+ * così com'è senza mai riandare a rileggere il task. Correggere un titolo
+ * sbagliato senza passare di qui vorrebbe dire vederlo corretto nella vista
+ * Attività e ancora sbagliato nel Piano — cioè due verità per la stessa cosa,
+ * che è il difetto peggiore da cercare, perché non somiglia a un errore.
+ *
+ * Lavora sui piani che ha in mano chi chiama: salva lui, una volta sola.
+ *
+ * @param {Record<string, any>} plans
+ * @param {string} taskId
+ * @param {Partial<{ taskTitle: string, listId: string|null, listName: string|null }>} patch
+ * @returns {{ giorno: string, blocco: any }[]} i blocchi toccati
+ */
+function ribattezzaBlocchi(plans, taskId, patch) {
+  /** @type {{ giorno: string, blocco: any }[]} */
+  const toccati = [];
+  for (const [g, piano] of Object.entries(plans || {})) {
+    const blocchi = piano?.blocks || [];
+    if (!blocchi.some((/** @type {any} */ b) => b.taskId === taskId)) continue;
+    const nuovi = blocchi.map((/** @type {any} */ b) => (b.taskId === taskId ? { ...b, ...patch } : b));
+    plans[g] = { ...piano, blocks: nuovi };
+    for (const b of nuovi) if (b.taskId === taskId) toccati.push({ giorno: g, blocco: b });
+  }
+  return toccati;
+}
+
+/**
+ * Sfila dal piano i blocchi ancora aperti di un'attività, in tutti i giorni.
+ *
+ * I blocchi già spuntati restano: sono lavoro fatto, e il piano di un giorno
+ * passato è il registro di com'è andata, non un elenco di intenzioni da
+ * ripulire. Quelli aperti invece se ne vanno, altrimenti il Piano continuerebbe
+ * a dare un'ora a una cosa che nelle Attività non c'è più.
+ *
+ * @param {Record<string, any>} plans
+ * @param {string} taskId
+ * @returns {{ giorno: string, blocco: any }[]} i blocchi tolti
+ */
+function sfilaBlocchiAperti(plans, taskId) {
+  /** @type {{ giorno: string, blocco: any }[]} */
+  const tolti = [];
+  for (const [g, piano] of Object.entries(plans || {})) {
+    const blocchi = piano?.blocks || [];
+    const via = blocchi.filter((/** @type {any} */ b) => b.taskId === taskId && !b.completed);
+    if (!via.length) continue;
+    for (const b of via) tolti.push({ giorno: g, blocco: b });
+    plans[g] = { ...piano, blocks: blocchi.filter((/** @type {any} */ b) => !via.includes(b)) };
+  }
+  return tolti;
+}
+
+/**
+ * Corregge la scheda di un'attività che c'è già: titolo, nota, sezione,
+ * contesto, stima e scadenza.
+ *
+ * È l'altra metà di `attivitaStato`, che sposta nel flusso e tiene i
+ * sotto-passi: due strumenti e non uno perché sono due gesti diversi — «questa
+ * l'ha in mano Sara» si dice mentre si guida, «il titolo dice plinto P3 e
+ * invece è il P4» si sistema da seduti. Prima l'unica strada per correggere un
+ * titolo era rifare l'attività da capo, e rifarla vuol dire un id nuovo: i
+ * blocchi nel piano, le sveglie e la deduplica delle scadenze citano i task per
+ * id, e ne restavano tre che indicavano una cosa che non esisteva più.
+ *
+ * Un campo passato vuoto (`""`, o `0` per la stima) toglie quello che c'era; un
+ * campo non nominato resta com'è. Cambiare sezione è uno spostamento vero
+ * (`spostaTask`), che l'id se lo tiene.
+ *
+ * @param {{ attivita?: string, titolo?: string, nota?: string, sezione?: string,
+ *           contesto?: string, stimaMin?: number|string, scadenza?: string }} opts
+ * @returns {Promise<{ data: any, text: string }>}
+ */
+export async function attivitaModifica(opts = {}) {
+  const query = testo(opts.attivita);
+  if (!query) throw new Error("Serve l'attività: un pezzo del suo id o del suo titolo.");
+
+  // Tutti i controlli che non hanno bisogno della rete stanno prima della
+  // prima chiamata: un contesto inventato deve fallire subito, non a metà
+  // scrittura e non dopo due secondi di Graph.
+  const titolo = campo(opts.titolo);
+  if (titolo === '') throw new Error("Il titolo non si può svuotare: un'attività senza titolo non si ritrova più.");
+
+  const nota = campo(opts.nota);
+
+  const contesto = campo(opts.contesto)?.toLowerCase();
+  if (contesto && !CONTEXTS.some(c => c.key === contesto)) {
+    throw new Error(`Contesto sconosciuto: ${contesto} (${CONTEXTS.map(c => c.key).join(', ')})`);
+  }
+
+  const scadenza = campo(opts.scadenza);
+  if (scadenza && !/^\d{4}-\d{2}-\d{2}$/.test(scadenza)) {
+    throw new Error(`Scadenza in formato sbagliato: ${scadenza} (serve YYYY-MM-DD; "" la toglie)`);
+  }
+
+  /** @type {number|null|undefined} */
+  let stima;
+  if (opts.stimaMin !== undefined && opts.stimaMin !== null && opts.stimaMin !== '') {
+    const n = numero(opts.stimaMin);
+    if (n === null) throw new Error(`Stima non valida: ${opts.stimaMin} (minuti, 0 la toglie)`);
+    stima = n > 0 ? Math.round(n) : null;
+  }
+
+  const sezione = testo(opts.sezione);
+
+  if (titolo === undefined && nota === undefined && contesto === undefined
+    && scadenza === undefined && stima === undefined && !sezione) {
+    throw new Error('Niente da cambiare: dì almeno uno fra titolo, nota, sezione, contesto, stima e scadenza.');
+  }
+
+  const { lists, tasks, plans } = await collectTasks({ includeDone: true });
+  const task = findTask(tasks, query);
+  const destinazione = sezione ? findList(lists, sezione) : null;
+
+  /** @type {any} */
+  const patch = {};
+  /** @type {string[]} */
+  const cambi = [];
+  if (titolo !== undefined && titolo !== task.titolo) {
+    patch.titolo = titolo;
+    cambi.push(`titolo: «${tronca(task.titolo, 40)}» → «${tronca(titolo, 40)}»`);
+  }
+  if (nota !== undefined && nota !== (task.nota || '')) {
+    patch.nota = nota;
+    cambi.push(nota ? `nota: ${tronca(nota, 50)}` : 'nota tolta');
+  }
+  if (contesto !== undefined && (contesto || null) !== (taskContext(task) || null)) {
+    patch.contesto = contesto || null;
+    cambi.push(contesto ? `contesto: ${contesto}` : 'contesto tolto');
+  }
+  if (scadenza !== undefined && (scadenza || null) !== (task.scadenza || null)) {
+    patch.scadenza = scadenza || null;
+    cambi.push(scadenza ? `scadenza: ${scadenza}` : 'scadenza tolta');
+  }
+  if (stima !== undefined && stima !== (task.stimaMin ?? null)) {
+    patch.stimaMin = stima;
+    cambi.push(stima ? `stima: ${stima} minuti` : 'stima tolta');
+  }
+  const sposta = destinazione && destinazione.id !== task._listId;
+  if (sposta) cambi.push(`sezione: ${task._listName} → ${destinazione.displayName}`);
+
+  if (!cambi.length) {
+    return {
+      data: { id: task.id, titolo: task.titolo, invariata: true },
+      text: `${tronca(task.titolo, 60)}: era già così.`,
+    };
+  }
+
+  // Prima lo spostamento, poi la patch: `spostaTask` copia il task com'è e lo
+  // toglie dall'origine, quindi una patch scritta prima verrebbe portata dietro
+  // — ma se lo spostamento fallisse a metà resterebbe scritta nella lista
+  // sbagliata. Scrivendo dopo, e nella lista d'arrivo, quello che si legge è
+  // sempre l'ultimo passo riuscito.
+  const listaFinale = sposta ? /** @type {any} */ (destinazione) : { id: task._listId, displayName: task._listName };
+  if (sposta) await spostaTask(task._listId, listaFinale.id, task.id);
+  if (Object.keys(patch).length) await aggiornaTask(listaFinale.id, task.id, patch);
+
+  // Il piano tiene una copia del titolo e della lista: se cambiano qui,
+  // cambiano anche lì, o le due viste raccontano due cose diverse.
+  const daRibattezzare = {
+    ...(patch.titolo ? { taskTitle: patch.titolo } : {}),
+    ...(sposta ? { listId: listaFinale.id, listName: listaFinale.displayName } : {}),
+  };
+  const blocchi = Object.keys(daRibattezzare).length
+    ? ribattezzaBlocchi(plans, task.id, daRibattezzare)
+    : [];
+  if (blocchi.length) await saveDailyPlans(plans);
+
+  const righe = [`✓ ${tronca(patch.titolo || task.titolo, 60)}`, ...cambi.map(c => `  · ${c}`)];
+  if (blocchi.length) {
+    righe.push(`  · aggiornat${blocchi.length === 1 ? 'o' : 'i'} ${blocchi.length} blocc${blocchi.length === 1 ? 'o' : 'hi'} nel piano`);
+  }
+
+  return {
+    data: {
+      id: task.id,
+      titolo: patch.titolo || task.titolo,
+      sezione: listaFinale.displayName,
+      cambi,
+      blocchiAggiornati: blocchi.map(b => ({ giorno: b.giorno, ora: b.blocco.startTime })),
+    },
+    text: righe.join('\n'),
+  };
+}
+
+/**
+ * Butta via un'attività: la sposta nel Cestino e la mette fra le «un giorno»,
+ * cioè fuori dalle prossime azioni e fuori dal conto delle completate.
+ *
+ * È l'eccezione dichiarata alla regola «da fuori non si cancella niente», e la
+ * regola resta in piedi perché **niente sparisce**: l'attività è in una lista
+ * che si apre dall'app, con il suo id, la sua nota e i suoi sotto-passi. Prima
+ * l'unico modo di togliersi davanti una cosa che non andava fatta era
+ * spuntarla, e lo storico delle completate — che è come si racconta un mese —
+ * si riempiva di cose mai fatte.
+ *
+ * Vuole `conferma: true` scritto a parte: è l'unico strumento che porta via
+ * qualcosa dalla vista, e un argomento in più è quello che separa «cancella la
+ * prova» detto per sbaglio dal volerlo davvero.
+ *
+ * Per rimetterla dov'era: `attivita_modifica --sezione «…»` e poi
+ * `attivita_stato`. Lo stato che aveva lo dice la risposta qui sotto.
+ *
+ * @param {{ attivita?: string, conferma?: boolean }} opts
+ * @returns {Promise<{ data: any, text: string }>}
+ */
+export async function attivitaElimina(opts = {}) {
+  const query = testo(opts.attivita);
+  if (!query) throw new Error("Serve l'attività: un pezzo del suo id o del suo titolo.");
+  if (opts.conferma !== true) {
+    throw new Error(
+      'Serve la conferma: ripeti la richiesta con conferma: true. ' +
+      `L'attività non viene cancellata — va nella lista «${NOME_CESTINO}», da dove si può rimettere a posto.`
+    );
+  }
+
+  const { lists, tasks, plans } = await collectTasks({ includeDone: true });
+  const task = findTask(tasks, query);
+
+  const gia = lists.find(l => (l.displayName || '').toLowerCase() === NOME_CESTINO.toLowerCase());
+  if (gia && task._listId === gia.id) {
+    throw new Error(`«${tronca(task.titolo, 50)}» è già nel ${NOME_CESTINO}.`);
+  }
+  // La lista nasce alla prima cosa buttata: crearla all'avvio vorrebbe dire un
+  // Cestino vuoto in mezzo alle sezioni di chi non butta mai niente.
+  const cestino = gia || await creaLista(NOME_CESTINO);
+
+  const statoPrima = task._status;
+  await spostaTask(task._listId, cestino.id, task.id);
+  // `someday` e non lo stato di prima: nel Cestino una cosa non è una prossima
+  // azione, non è un'attesa e non è fatta. È l'unico stato che vuol dire «non
+  // adesso» senza dire nient'altro, e toglie anche il completatoIl a chi era
+  // stato spuntato per farlo sparire.
+  await aggiornaTask(cestino.id, task.id, { stato: 'someday' });
+
+  const tolti = sfilaBlocchiAperti(plans, task.id);
+  if (tolti.length) await saveDailyPlans(plans);
+
+  const righe = [
+    `✓ nel ${NOME_CESTINO}: ${tronca(task.titolo, 55)}`,
+    `  era ${STATUS_LABELS[statoPrima]} in ${task._listName}`,
+  ];
+  for (const t of tolti) righe.push(`  · tolto dal piano del ${t.giorno}, ${t.blocco.startTime}`);
+  righe.push(`  per rimetterla: attivita_modifica «${shortId(task.id)}» con sezione «${task._listName}»`);
+
+  return {
+    data: {
+      id: task.id,
+      titolo: task.titolo,
+      da: { lista: task._listName, stato: statoPrima },
+      cestino: cestino.displayName,
+      blocchiTolti: tolti.map(t => ({ giorno: t.giorno, ora: t.blocco.startTime })),
     },
     text: righe.join('\n'),
   };
@@ -1139,6 +1422,215 @@ export async function pianoArco(opts = {}) {
   return {
     data: { giorni: perGiorno, totaleBlocchi: totale },
     text: blocco(titolo, righe),
+  };
+}
+
+/**
+ * Gli intervalli occupati di un giorno, in minuti dalla mezzanotte, uniti e in
+ * ordine. Ci finiscono i blocchi del piano e gli eventi del calendario: sono
+ * due cose diverse — uno dice quando farò una cosa, l'altro un'ora che riguarda
+ * anche altri — ma per chi cerca un buco valgono uguale.
+ *
+ * Gli eventi di giornata intera restano fuori: «ferie» o «compleanno» non
+ * occupano le nove del mattino, e trattarli come tali svuoterebbe il giorno.
+ *
+ * @param {any[]} blocchi
+ * @param {any[]} eventi
+ * @returns {{ da: number, a: number, cosa: string }[]}
+ */
+function occupatoDelGiorno(blocchi, eventi) {
+  /** @type {{ da: number, a: number, cosa: string }[]} */
+  const pezzi = [];
+  for (const b of blocchi) {
+    pezzi.push({ da: minuti(b.startTime), a: minuti(b.endTime), cosa: b.taskTitle || 'a piano' });
+  }
+  for (const e of eventi) {
+    if (e.isAllDay) continue;
+    const da = String(e.start?.dateTime || '').slice(11, 16);
+    const a = String(e.end?.dateTime || '').slice(11, 16);
+    if (!ORA_RE.test(da) || !ORA_RE.test(a)) continue;
+    pezzi.push({ da: minuti(da), a: minuti(a), cosa: e.subject || 'evento' });
+  }
+  return pezzi.sort((x, y) => x.da - y.da);
+}
+
+/**
+ * I buchi dentro una finestra, tolto quello che è già occupato.
+ * @param {number} da
+ * @param {number} a
+ * @param {{ da: number, a: number }[]} occupato
+ * @returns {{ da: number, a: number }[]}
+ */
+function buchi(da, a, occupato) {
+  /** @type {{ da: number, a: number }[]} */
+  const liberi = [];
+  let cursore = da;
+  for (const o of occupato) {
+    if (o.a <= cursore) continue;
+    if (o.da >= a) break;
+    if (o.da > cursore) liberi.push({ da: cursore, a: Math.min(o.da, a) });
+    cursore = Math.max(cursore, o.a);
+    if (cursore >= a) break;
+  }
+  if (cursore < a) liberi.push({ da: cursore, a });
+  return liberi;
+}
+
+/**
+ * Una bozza di giornata: prende le prossime azioni e le incastra nei buchi di
+ * una finestra oraria, in ordine di urgenza, usando la stima che ogni attività
+ * porta già con sé.
+ *
+ * **Non scrive niente**, ed è la cosa che conta di questo strumento. Una
+ * giornata composta da una macchina è una proposta: si guarda, si sposta una
+ * riga, se ne toglie un'altra. Scriverla di slancio vorrebbe dire otto blocchi
+ * da disfare uno per uno quando due non convincono — e disfare costa più che
+ * comporre. Quello che passa si mette a piano con `piano_scrivi`, una riga per
+ * volta, che è anche l'occasione per cambiare l'ora prima di scriverla.
+ *
+ * L'ordine è la scadenza: prima quella dell'attività, poi — se non ce l'ha —
+ * quella della consegna in cui sta, perché una consegna che scade è una
+ * scadenza per tutto quello che contiene. A pari scadenza vale l'ordine che le
+ * attività hanno nella loro lista, che è quello deciso trascinandole.
+ *
+ * Chi non entra viene detto, non scartato in silenzio: «non ci sta» è
+ * un'informazione sulla giornata, e una giornata che non contiene quello che
+ * deve contenere è esattamente la cosa che si vuole vedere alle nove.
+ *
+ * @param {{ data?: string, dalle?: string, alle?: string, sezione?: string,
+ *           contesto?: string, pausaMin?: number, massimo?: number }} opts
+ * @returns {Promise<{ data: any, text: string }>}
+ */
+export async function pianoAuto(opts = {}) {
+  const giorno = giornoValido(testo(opts.data) || dateKey());
+  const dalle = testo(opts.dalle) || '09:00';
+  const alle = testo(opts.alle) || '18:00';
+  const da = minuti(dalle);
+  const a = minuti(alle);
+  if (a <= da) throw new Error(`La finestra ${dalle}–${alle} è vuota: la fine viene prima dell'inizio.`);
+
+  const pausa = Math.max(0, numero(opts.pausaMin, 0) ?? 0);
+  const massimo = Math.max(0, numero(opts.massimo, 0) ?? 0);   // 0: quante ce ne stanno
+  const contesto = testo(opts.contesto)?.toLowerCase();
+  if (contesto && !CONTEXTS.some(c => c.key === contesto)) {
+    throw new Error(`Contesto sconosciuto: ${contesto} (${CONTEXTS.map(c => c.key).join(', ')})`);
+  }
+
+  // Il calendario qui non è un di più che si può perdere: una bozza che non
+  // vede le riunioni propone di lavorare dentro una riunione, e chi la legge
+  // non ha modo di accorgersene. Meglio nessuna bozza che una sbagliata.
+  const [{ lists, tasks, plans }, eventi] = await Promise.all([
+    collectTasks(),
+    getCalendarEvents(new Date(`${giorno}T00:00:00`), new Date(`${giorno}T23:59:59`))
+      .catch(e => {
+        throw new Error(
+          `Calendario non raggiungibile (${e.message}): senza non si sa quali ore sono già impegnate, ` +
+          'e una bozza che scavalca le riunioni è peggio di nessuna bozza.'
+        );
+      }),
+  ]);
+
+  const occupato = occupatoDelGiorno(plans[giorno]?.blocks || [], eventi);
+  const liberi = buchi(da, a, occupato);
+
+  let candidati = tasks.filter(t => t._status === 'next');
+  const sezione = testo(opts.sezione);
+  if (sezione) {
+    const ids = new Set(matchLists(lists, sezione).map(l => l.id));
+    candidati = candidati.filter(t => ids.has(t._listId));
+  }
+  if (contesto) candidati = candidati.filter(t => taskContext(t) === contesto);
+
+  /** La scadenza che pesa su un'attività: la sua, o quella della consegna. */
+  const scadenzaDi = /** @param {any} t */ t => {
+    if (t.scadenza) return t.scadenza;
+    const consegna = listDueDate(t._listName);
+    return consegna ? consegna.toISOString().slice(0, 10) : null;
+  };
+  candidati = [...candidati].sort((x, y) => {
+    const sx = scadenzaDi(x) || '9999-12-31';
+    const sy = scadenzaDi(y) || '9999-12-31';
+    if (sx !== sy) return sx < sy ? -1 : 1;
+    const ox = Number.isFinite(x.ordine) ? x.ordine : Number.MAX_SAFE_INTEGER;
+    const oy = Number.isFinite(y.ordine) ? y.ordine : Number.MAX_SAFE_INTEGER;
+    if (ox !== oy) return ox - oy;
+    return String(x.creatoIl || '').localeCompare(String(y.creatoIl || ''));
+  });
+
+  /** @type {any[]} */
+  const bozza = [];
+  const presi = new Set();
+  for (const buco of liberi) {
+    let cursore = buco.da;
+    // Dentro un buco si scende in ordine e si prende la prima che ci sta: la
+    // prima che *non* ci sta non ferma il giro, perché mezz'ora libera dopo una
+    // riunione è mezz'ora, e lasciarla vuota per rispetto dell'ordine non
+    // aiuta nessuno.
+    for (const t of candidati) {
+      if (presi.has(t.id)) continue;
+      if (massimo && bozza.length >= massimo) break;
+      const durata = taskEstimateMin(t);
+      const inizio = cursore + (cursore > buco.da ? pausa : 0);
+      if (inizio + durata > buco.a) continue;
+      presi.add(t.id);
+      cursore = inizio + durata;
+      bozza.push({
+        id: t.id,
+        titolo: t.titolo,
+        data: giorno,
+        ora: ora(inizio),
+        fine: ora(inizio + durata),
+        durataMin: durata,
+        stimata: t.stimaMin !== null && t.stimaMin !== undefined,
+        sezione: listGroupKey(t._listName) || t._listName,
+        lista: t._listName,
+        contesto: taskContext(t),
+        scadenza: scadenzaDi(t),
+        // I sotto-passi ancora aperti: sono quello che si guarda per decidere
+        // se il blocco basta o se la cosa va spezzata su due giorni.
+        sottoattivitaAperte: (t.sottoattivita || []).filter((/** @type {any} */ s) => !s.fatta).map((/** @type {any} */ s) => s.titolo),
+      });
+    }
+    if (massimo && bozza.length >= massimo) break;
+  }
+
+  const fuori = candidati.filter(t => !presi.has(t.id));
+  const minutiLiberi = liberi.reduce((n, b) => n + (b.a - b.da), 0);
+  const minutiPresi = bozza.reduce((n, b) => n + b.durataMin, 0);
+  const durata = /** @param {number} m */ m => `${Math.floor(m / 60)}h${String(m % 60).padStart(2, '0')}`;
+
+  const righe = bozza.map(b => {
+    const meta = [listLabel(b.lista)];
+    if (b.scadenza) meta.push(`scade ${b.scadenza}`);
+    if (!b.stimata) meta.push('stima di default');
+    const capo = `${b.ora}–${b.fine}  ${tronca(b.titolo, 45)}  · ${meta.join(' · ')}`;
+    return [capo, ...b.sottoattivitaAperte.map((/** @type {string} */ s) => `     · ${tronca(s, 50)}`)].join('\n  ');
+  });
+
+  const coda = [
+    '',
+    `Bozza: ${bozza.length} attività, ${durata(minutiPresi)} dentro ${durata(minutiLiberi)} liberi ` +
+    `fra le ${dalle} e le ${alle}.`,
+    'Niente è stato scritto. Per metterne una a piano: piano_scrivi con la sua ora.',
+  ];
+  if (fuori.length) {
+    coda.push(`Restano fuori ${fuori.length}: ` + fuori.slice(0, 5).map(t => tronca(t.titolo, 35)).join(', ') +
+      (fuori.length > 5 ? '…' : ''));
+  }
+
+  return {
+    data: {
+      data: giorno,
+      finestra: { dalle, alle },
+      occupato: occupato.map(o => ({ dalle: ora(o.da), alle: ora(o.a), cosa: o.cosa })),
+      liberi: liberi.map(b => ({ dalle: ora(b.da), alle: ora(b.a), minuti: b.a - b.da })),
+      bozza,
+      fuori: fuori.map(riassuntoTask),
+      minutiLiberi,
+      minutiPianificati: minutiPresi,
+      scritto: false,
+    },
+    text: blocco(`Bozza per ${fmtGiorno.format(new Date(`${giorno}T12:00:00`))}`, righe) + '\n' + coda.join('\n'),
   };
 }
 

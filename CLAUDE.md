@@ -42,7 +42,7 @@ secondi. La CI esegue tutti e quattro i comandi a ogni push e ogni PR.
    `programmaStore.js`, `programmaExcel.js`, `xlsx.js`, `captureParse.js`,
    `deadlineReminders.js`, `dailyReview.js`, `calendarioLavoro.js`,
    `cachePersistenza.js`, `rituale.js`, `scripts/ics.mjs`,
-   `scripts/mente-mcp-nucleo.mjs`, `worker/`),
+   `scripts/mente-comandi.mjs`, `scripts/mente-mcp-nucleo.mjs`, `worker/`),
    aggiungi la verifica che avrebbe
    intercettato quello che hai corretto. Le prove si sono rotte una volta e
    nessuno se n'è accorto per settimane: è successo perché nessuna misura
@@ -144,6 +144,21 @@ sveglie già suonate e la deduplica delle scadenze ricorrenti citano i task per
 id. Spostare un'attività fra liste è uno spostamento vero (`spostaTask`), non un
 crea-e-cancella.
 
+**Il piano tiene una copia del titolo, quindi chi cambia il titolo cambia anche
+il piano.** Un blocco porta dentro `taskTitle` e la lista da cui viene, e l'app
+li mostra così come sono senza mai riandare a rileggere il task. Correggere un
+titolo senza passare da `ribattezzaBlocchi` vuol dire vederlo corretto nelle
+Attività e ancora sbagliato nel Piano: due verità per la stessa cosa, che è il
+difetto peggiore da cercare perché non somiglia a un errore. Vale anche per lo
+spostamento fra liste, che riscrive `listId` e `listName`.
+
+**Una giornata composta da una macchina è una proposta.** `pianoAuto` incastra le
+prossime azioni nei buchi di una finestra e **non scrive niente**: comporre otto
+blocchi costa una frase, disfarne due che non convincono costa otto gesti. Le
+righe buone si mettono a piano con `piano_scrivi`, una per volta. E se il
+calendario non risponde non esce nessuna bozza, invece di una che scavalca le
+riunioni senza che chi la legge possa accorgersene.
+
 **Ogni scrittura su OneDrive passa da `putDriveJson`.** Legge l'ETag, manda
 `If-Match`, e sul 412 rilegge e riapplica. Chi scrive un documento che un altro
 dispositivo può aver toccato nel frattempo passa un `reapply` — è così che il
@@ -173,9 +188,18 @@ butta le query più grosse invece di riempire il cassetto.
 regola sulle attività — o sui conti del Programma — si cambia lì dentro, non in
 due posti.
 
-**Da fuori non si cancella niente, e calendario, OneNote e piani si leggono
-soltanto.** È una regola del CLI e del server MCP, non un'omissione: sono le
-cose che non si ricostruiscono da una cronologia.
+**Da fuori niente sparisce davvero.** È una regola del CLI e del server MCP, non
+un'omissione: sono le cose che non si ricostruiscono da una cronologia. Il
+calendario e OneNote si leggono, e si può solo aggiungere in fondo; il piano si
+scrive un blocco per volta, e «togliere» vuol dire togliere l'ora. Buttare via
+un'attività (`attivitaElimina`) è l'unica cosa che porta via qualcosa dalla
+vista, e infatti non cancella: sposta nella lista **Cestino** e mette fra le «un
+giorno» — fuori dalle prossime azioni e fuori dallo storico delle completate, che
+prima si riempiva di cose spuntate solo per farle sparire. Il Cestino è una lista
+come le altre, si apre dall'app, e si torna indietro con `attivitaModifica`
+indicando la sezione di prima. Vuole `conferma: true` scritto a parte: un
+argomento in più è quello che separa «cancella la prova» detto per sbaglio dal
+volerlo davvero.
 
 **Dal computer c'è tutto, dal connettore solo quello che si dice a voce.** I
 ventuno strumenti restano su stdio; dal Worker ne escono quattordici
