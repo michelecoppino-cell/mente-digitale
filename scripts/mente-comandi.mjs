@@ -26,6 +26,7 @@ import {
   loadDailyPlans, saveDailyPlans, loadIdentityDoc,
   loadObiettivi, saveObiettivi,
   loadDiaryIndex, loadDiaryMonth, saveDiaryEntry,
+  loadRecap, saveRecap, getRecentEmails,
   getCalendarEvents, getCalendars, createCalendarEvent,
   getNotebooks, getSections, getPages, getPageContentHtml, htmlToText,
   createPage, appendToPage, textToHtml,
@@ -42,7 +43,7 @@ import { settimanaIso, spostaSettimane, settimaneTra } from '../src/tempo.js';
 import {
   taskStatus, inboxListId, indexScheduled, taskEstimateMin,
   taskContext, personRoleFor, taskPerson, applicaSottoattivita,
-  STATUS_LABELS, TASK_STATUSES, CONTEXTS, GRANULARITY_MEMO_LINE,
+  STATUS_LABELS, TASK_STATUSES, CONTEXTS, GRANULARITY_MEMO_LINE, REGOLE_SOTTOATTIVITA_TESTO,
 } from '../src/taskModel.js';
 
 import {
@@ -59,13 +60,15 @@ import {
   MOOD_LABELS, ENERGY_LABELS,
 } from '../src/diary.js';
 
+import { extractEmailCandidates } from '../src/dailyReview.js';
+
 // Gli stati che si possono scrivere da fuori l'app. `inbox` e `scheduled` non
 // ci sono: il primo è la lista in cui il task si trova, il secondo un blocco
 // nel piano del giorno. Nessuno dei due è un campo che si possa impostare.
 export const STATI_SCRIVIBILI = ['next', 'ask', 'waiting', 'delegated', 'someday', 'done'];
 export const STATI_CREABILI = ['inbox', 'next', 'ask', 'waiting', 'delegated', 'someday'];
 export const TIPI_DIARIO = Object.keys(DIARY_TYPES);
-export { TASK_STATUSES, CONTEXTS, STATUS_LABELS, GRANULARITY_MEMO_LINE };
+export { TASK_STATUSES, CONTEXTS, STATUS_LABELS, GRANULARITY_MEMO_LINE, REGOLE_SOTTOATTIVITA_TESTO };
 
 // ── Formattazione ────────────────────────────────────────────────────────────
 
@@ -275,9 +278,13 @@ export async function oggi(opts = {}) {
   // "giornata libera" quanto "Graph ha risposto 403".
   /** @type {string|null} */
   let erroreAgenda = null;
-  const [{ tasks, plans }, eventi] = await Promise.all([
+  const [{ tasks, plans }, eventi, recap] = await Promise.all([
     collectTasks(),
     getCalendarEvents(inizio, fine).catch(e => { erroreAgenda = e.message; return []; }),
+    // Il recap del mattino, se stanotte è stato scritto. Sta dentro «oggi» e
+    // non in uno strumento suo perché la domanda è la stessa — «come si mette
+    // la giornata» — e uno strumento in più è un consenso in più da dare.
+    loadRecap().catch(() => null),
   ]);
 
   const piano = plans[giornoStr]?.blocks || [];
@@ -285,6 +292,16 @@ export async function oggi(opts = {}) {
   const conteggi = {};
   for (const s of TASK_STATUSES) conteggi[s] = tasks.filter(t => t._status === s).length;
   const scivolate = tasks.filter(t => t._placement && !t._placement.completed && t._placement.date < giornoStr);
+
+  // Il recap si mostra solo se parla di questa giornata: uno di ieri, messo in
+  // cima senza dirlo, si legge come se fosse di stamattina — ed è l'unico modo
+  // in cui questo meccanismo può mentire.
+  const etaDelRecap = etaRecap(recap);
+  const recapDiOggi = recap?.data === giornoStr ? recap : null;
+  const testoRecap = recapDiOggi
+    ? '\n' + blocco('Recap del mattino', String(recapDiOggi.testo || '').split('\n')) +
+      (etaDelRecap?.vecchio ? `\n  ⚠ scritto ${etaDelRecap.ore} ore fa` : '')
+    : (recap ? `\n  ⚠ il recap più recente è del ${recap.data}: stanotte non ne è stato scritto uno.` : '');
 
   const text = [
     fmtGiorno.format(new Date(`${giornoStr}T12:00:00`)),
@@ -299,6 +316,7 @@ export async function oggi(opts = {}) {
     blocco('Attività', TASK_STATUSES.filter(s => s !== 'done' && conteggi[s])
       .map(s => `${String(conteggi[s]).padStart(3)}  ${STATUS_LABELS[s]}`)),
     scivolate.length ? `\n  ⚠ ${scivolate.length} programmate in giorni passati e mai chiuse` : '',
+    testoRecap,
   ].join('\n');
 
   return {
@@ -309,6 +327,8 @@ export async function oggi(opts = {}) {
       piano,
       conteggi,
       scivolate: scivolate.map(riassuntoTask),
+      recap: recapDiOggi,
+      etaRecap: etaDelRecap,
     },
     text,
   };
@@ -515,7 +535,7 @@ export async function attivitaStato(opts = {}) {
     throw new Error('La persona vale solo per gli stati «ask», «waiting» e «delegated».');
   }
 
-  const { tasks } = await collectTasks({ includeDone: true });
+  const { tasks, plans } = await collectTasks({ includeDone: true });
   const task = findTask(tasks, query);
 
   // Stato e persona sono due campi e si scrivono insieme. Senza un nome nuovo
@@ -542,7 +562,16 @@ export async function attivitaStato(opts = {}) {
   const patch = {};
   if (cambiaStato) { patch.stato = stato; patch.persona = chi; }
   if (esito) patch.sottoattivita = esito.sottoattivita;
-  await aggiornaTask(task._listId, task.id, patch);
+  const scritto = await aggiornaTask(task._listId, task.id, patch);
+
+  // I blocchi che erano stati spezzati nei sotto-passi tengono una copia di
+  // quelle righe: se qui ne è stata spuntata una, là dentro va spuntata anche.
+  // Gli id li assegna `normalizzaTask` scrivendo il file, quindi si rilegge da
+  // quello che è stato scritto e non da quello che gli si è passato.
+  const sincronizzati = esito
+    ? sincronizzaSottoPassi(plans, task.id, scritto?.sottoattivita || esito.sottoattivita)
+    : [];
+  if (sincronizzati.length) await saveDailyPlans(plans);
 
   const righe = [];
   if (cambiaStato) righe.push(`✓ ${tronca(task.titolo, 60)} → ${STATUS_LABELS[stato]}${chi ? ` · ${chi}` : ''}`);
@@ -551,6 +580,7 @@ export async function attivitaStato(opts = {}) {
   for (const t of esito?.gia || []) righe.push(`  = ${t} (c'era già)`);
   for (const t of esito?.spuntate || []) righe.push(`  ✓ ${t}`);
   for (const t of esito?.riaperte || []) righe.push(`  · ${t} (riaperta)`);
+  if (sincronizzati.length) righe.push(`  · aggiornati anche nel piano (${sincronizzati.length})`);
 
   return {
     data: {
@@ -615,6 +645,49 @@ function ribattezzaBlocchi(plans, taskId, patch) {
     const blocchi = piano?.blocks || [];
     if (!blocchi.some((/** @type {any} */ b) => b.taskId === taskId)) continue;
     const nuovi = blocchi.map((/** @type {any} */ b) => (b.taskId === taskId ? { ...b, ...patch } : b));
+    plans[g] = { ...piano, blocks: nuovi };
+    for (const b of nuovi) if (b.taskId === taskId) toccati.push({ giorno: g, blocco: b });
+  }
+  return toccati;
+}
+
+/**
+ * Riporta nei blocchi del piano i sotto-passi come sono adesso.
+ *
+ * Un blocco che è stato spezzato nelle sue sottoattività ne tiene una **copia**
+ * (id, titolo, spuntato), perché è quello che l'app disegna dentro il
+ * rettangolo. Spuntare un passo dalle Attività senza passare di qui vuol dire
+ * vederlo fatto in una vista e da fare nell'altra — la stessa classe di
+ * difetto del titolo che resta indietro, e si nota ancora meno.
+ *
+ * Tocca solo i passi che il blocco ha già: quali righe un blocco mostri è una
+ * scelta di chi l'ha spezzato, e aggiungercene di nuove da qui vorrebbe dire
+ * disfarla.
+ *
+ * @param {Record<string, any>} plans
+ * @param {string} taskId
+ * @param {{ id?: string, titolo: string, fatta?: boolean }[]} sottoattivita
+ * @returns {{ giorno: string, blocco: any }[]} i blocchi toccati
+ */
+function sincronizzaSottoPassi(plans, taskId, sottoattivita) {
+  const perId = new Map(sottoattivita.filter(p => p.id).map(p => [p.id, p]));
+  /** @type {{ giorno: string, blocco: any }[]} */
+  const toccati = [];
+  for (const [g, piano] of Object.entries(plans || {})) {
+    const blocchi = piano?.blocks || [];
+    let cambiato = false;
+    const nuovi = blocchi.map((/** @type {any} */ b) => {
+      if (b.taskId !== taskId || !(b.subSteps || []).length) return b;
+      const passi = b.subSteps.map((/** @type {any} */ s) => {
+        const fresco = perId.get(s.id);
+        if (!fresco) return s;
+        if (s.completed === !!fresco.fatta && s.title === fresco.titolo) return s;
+        cambiato = true;
+        return { ...s, title: fresco.titolo, completed: !!fresco.fatta };
+      });
+      return cambiato ? { ...b, subSteps: passi } : b;
+    });
+    if (!cambiato) continue;
     plans[g] = { ...piano, blocks: nuovi };
     for (const b of nuovi) if (b.taskId === taskId) toccati.push({ giorno: g, blocco: b });
   }
@@ -964,6 +1037,141 @@ function voceText(e) {
   return righe.join('\n');
 }
 
+// ── Il recap del mattino, e la posta ─────────────────────────────────────────
+// Alle cinque un Claude Code non interattivo, sul PC che resta acceso, guarda
+// calendario, posta e attività e scrive due paragrafi qui dentro. Al risveglio
+// la domanda è una sola — «leggimi il recap» — e la risposta è già pronta:
+// niente da aspettare mentre si fa colazione, e nessuna chiamata a pagamento,
+// perché quel Claude gira sull'abbonamento.
+//
+// Il perché sta in `docs/recap-mattina.md`. Qui ci sono le due metà che
+// riguardano i dati: chi lo scrive e chi lo rilegge.
+
+/** Oltre queste ore un recap non è più «di stamattina» e lo si dice. */
+const ORE_RECAP_VECCHIO = 18;
+
+/**
+ * Quanti anni ha il recap. È la stessa regola dello specchio del calendario di
+ * lavoro (`etaSpecchio`): un dato che arriva da un PC che può essere spento
+ * deve dichiarare quanto è vecchio, perché un recap fermo a ieri non si
+ * distingue da uno giusto — un recap mancante si nota, uno stantio no.
+ *
+ * @param {any} doc
+ * @param {Date} [adesso]
+ * @returns {{ ore: number, vecchio: boolean, quando: string }|null}
+ */
+export function etaRecap(doc, adesso = new Date()) {
+  const quando = typeof doc?.scrittoIl === 'string' ? doc.scrittoIl : null;
+  if (!quando) return null;
+  const ore = Math.max(0, Math.round((adesso.getTime() - new Date(quando).getTime()) / 3_600_000));
+  return { ore, vecchio: ore >= ORE_RECAP_VECCHIO, quando };
+}
+
+/**
+ * Scrive il recap del mattino, sostituendo quello di ieri.
+ *
+ * **Sostituisce, non aggiunge**: il recap è di stamattina o non è niente, e
+ * tenerne la cronologia vorrebbe dire un file che cresce per sempre con dentro
+ * quarantasei giornate che nessuno rileggerà. Quello che merita di restare si
+ * scrive nel diario, che è il posto delle cose che si rileggono.
+ *
+ * @param {{ testo?: string, data?: string, titolo?: string, fonti?: string[]|string }} opts
+ * @returns {Promise<{ data: any, text: string }>}
+ */
+export async function recapScrivi(opts = {}) {
+  const testoRecap = testo(opts.testo);
+  if (!testoRecap) throw new Error('Niente da scrivere: serve il testo del recap.');
+
+  const giorno = testo(opts.data) || dateKey();
+  if (!GIORNO_RE.test(giorno)) throw new Error(`Giorno in formato sbagliato: ${giorno} (serve YYYY-MM-DD)`);
+
+  const doc = {
+    version: 1,
+    data: giorno,
+    scrittoIl: new Date().toISOString(),
+    titolo: testo(opts.titolo) || `Recap del ${giorno}`,
+    testo: testoRecap,
+    // Da cosa è stato ricavato: serve a leggere un recap vecchio sapendo cosa
+    // ci mancava. «Niente dalla posta» e «la posta non l'ho guardata» sono due
+    // giornate diverse.
+    fonti: elenco(opts.fonti, ','),
+  };
+  await saveRecap(doc);
+
+  return {
+    data: { recap: doc, sostituito: true },
+    text: `✓ recap del ${giorno} scritto (${testoRecap.length} caratteri)` +
+      (doc.fonti.length ? `, da ${doc.fonti.join(', ')}` : ''),
+  };
+}
+
+/**
+ * Rilegge il recap, con quanti anni ha.
+ * @param {{ data?: string }} [opts]
+ * @returns {Promise<{ data: any, text: string }>}
+ */
+export async function recapLeggi(opts = {}) {
+  const doc = await loadRecap();
+  if (!doc?.testo) {
+    return {
+      data: { recap: null },
+      text: 'Nessun recap: stanotte non è stato scritto. ' +
+        'Lo scrive il compito delle cinque sul PC di lavoro — vedi docs/recap-mattina.md.',
+    };
+  }
+  const eta = etaRecap(doc);
+  const giorno = testo(opts.data);
+  const avviso = eta?.vecchio
+    ? `⚠ recap di ${doc.data}, scritto ${eta.ore} ore fa: il PC che lo scrive potrebbe essere stato spento.`
+    : '';
+  if (giorno && doc.data !== giorno) {
+    return {
+      data: { recap: doc, eta, chiesto: giorno },
+      text: `Il recap più recente è del ${doc.data}, non del ${giorno}. Non se ne tiene la cronologia.\n\n` +
+        [avviso, doc.testo].filter(Boolean).join('\n\n'),
+    };
+  }
+  return {
+    data: { recap: doc, eta },
+    text: [avviso, doc.titolo, '', doc.testo].filter(Boolean).join('\n'),
+  };
+}
+
+/**
+ * Le email che sembrano chiedere qualcosa, negli ultimi giorni.
+ *
+ * Le proposte le tira fuori `src/dailyReview.js`, lo stesso modulo della
+ * campanella dell'app: i flussi di servizio che si ripetono, le newsletter e i
+ * fili già visti restano fuori di lì, non di qui. Una regola su «cosa chiede
+ * qualcosa» si cambia in un posto solo, o la campanella e il recap del mattino
+ * finiscono per raccontare due caselle diverse.
+ *
+ * Sola lettura, e non solo per scelta: il token ha `Mail.Read` e basta.
+ *
+ * @param {{ giorni?: number, massimo?: number }} [opts]
+ * @returns {Promise<{ data: any, text: string }>}
+ */
+export async function posta(opts = {}) {
+  const giorni = Math.max(1, numero(opts.giorni, 1) ?? 1);
+  const massimo = Math.max(1, numero(opts.massimo, 6) ?? 6);
+
+  const email = await getRecentEmails(giorni);
+  const proposte = extractEmailCandidates(email, massimo);
+  const nonLette = email.filter((/** @type {any} */ e) => !e.isRead).length;
+
+  const righe = proposte.map((/** @type {any} */ p) =>
+    `${tronca(p.title, 55)}\n     da ${p.mittente || p.meta} · ${p.motivi.join(', ')}`);
+
+  return {
+    data: { giorni, arrivate: email.length, nonLette, proposte },
+    text: blocco(
+      `Posta degli ultimi ${giorni === 1 ? 'giorno' : `${giorni} giorni`}: ` +
+      `${email.length} arrivate, ${nonLette} non lette`,
+      righe,
+    ),
+  };
+}
+
 // ── Sezioni, OneNote, documenti identitari ───────────────────────────────────
 
 /**
@@ -1186,9 +1394,11 @@ function nuovoIdBlocco() {
  * @param {{ id: string, titolo: string, listId?: string|null, listName?: string|null }} task
  * @param {string} inizio  'HH:MM'
  * @param {number} durata  minuti
+ * @param {{ id?: string, titolo: string, fatta?: boolean }[]} [sottoPassi]
+ *   i sotto-passi da portare dentro il blocco, già scelti da chi chiama
  * @returns {any} il blocco messo
  */
-function mettiBlocco(plans, giorno, task, inizio, durata) {
+function mettiBlocco(plans, giorno, task, inizio, durata, sottoPassi = []) {
   const inizioMin = minuti(inizio);
   if (durata <= 0) throw new Error(`Durata non valida: ${durata} minuti.`);
   const fineMin = inizioMin + durata;
@@ -1228,7 +1438,17 @@ function mettiBlocco(plans, giorno, task, inizio, durata) {
     endTime: ora(fineMin),
     completed: false,
     completedAt: null,
-    subSteps: [],
+    // I sotto-passi dentro il blocco sono la stessa forma che scrive l'app dal
+    // modale «Sottoattività» (`applyBreakdown` in PlannerView): id uguale a
+    // quello del task, `title` e `completed`. Uguale apposta — sono la stessa
+    // riga vista da due schermate, e due forme diverse vorrebbero dire che una
+    // delle due schermate non la sa leggere.
+    subSteps: sottoPassi.map(p => ({ id: p.id, title: p.titolo, completed: !!p.fatta })),
+    // Le righe orizzontali che dividono il blocco in parti uguali: senza,
+    // i sotto-passi ci sono ma il blocco non li mostra.
+    subSplits: sottoPassi.length > 1
+      ? Array.from({ length: sottoPassi.length - 1 }, (_, k) => (k + 1) / sottoPassi.length)
+      : [],
   };
 
   plans[giorno] = { ...piano, date: giorno, blocks: [...blocchi, blocco].sort((a, b) => a.startTime.localeCompare(b.startTime)) };
@@ -1282,7 +1502,16 @@ function togliBlocco(plans, query, giorno) {
 
 /**
  * Mette un'attività nel piano di un giorno, a un'ora.
- * @param {{ attivita?: string, data?: string, ora?: string, durataMin?: number }} opts
+ *
+ * Con `sottoPassi` il blocco si porta dentro i sotto-passi ancora aperti
+ * dell'attività, come fa il modale «Sottoattività» del Piano: sono la scaletta
+ * dell'ora che si sta per passare, e averla dentro il blocco vuol dire poterla
+ * spuntare da lì. Facoltativo e non automatico, per la stessa ragione per cui
+ * nell'app è un gesto: un blocco di mezz'ora con dentro sette righe non si
+ * legge più.
+ *
+ * @param {{ attivita?: string, data?: string, ora?: string, durataMin?: number,
+ *           sottoPassi?: boolean }} opts
  * @returns {Promise<{ data: any, text: string }>}
  */
 export async function pianoAggiungi(opts = {}) {
@@ -1299,16 +1528,22 @@ export async function pianoAggiungi(opts = {}) {
   // La durata: quella chiesta, altrimenti la stima dell'attività — che è la
   // stessa cosa che fa l'app quando si trascina un task sulla griglia.
   const durata = numero(opts.durataMin) ?? taskEstimateMin(task);
+  // Solo quelli aperti: portarsi dentro il blocco una riga già spuntata vuol
+  // dire rifare un pezzo di strada che si era già fatto.
+  const sotto = opts.sottoPassi
+    ? (task.sottoattivita || []).filter((/** @type {any} */ p) => !p.fatta)
+    : [];
   const blocco = mettiBlocco(
     plans, giorno,
     { id: task.id, titolo: task.titolo, listId: task._listId, listName: task._listName },
-    inizio, durata,
+    inizio, durata, sotto,
   );
   await saveDailyPlans(plans);
 
   return {
     data: { giorno, blocco },
-    text: `✓ ${giorno} ${blocco.startTime}–${blocco.endTime}  ${tronca(task.titolo, 55)}`,
+    text: `✓ ${giorno} ${blocco.startTime}–${blocco.endTime}  ${tronca(task.titolo, 55)}` +
+      sotto.map((/** @type {any} */ p) => `\n    · ${tronca(p.titolo, 50)}`).join(''),
   };
 }
 
@@ -1344,6 +1579,7 @@ export async function pianoSposta(opts = {}) {
   // Quello che c'era attaccato al blocco lo si porta dietro: i sotto-passi
   // spuntati sono lavoro fatto, e uno spostamento non è un ricominciare.
   blocco.subSteps = via.subSteps || [];
+  blocco.subSplits = via.subSplits || [];
   blocco.completed = !!via.completed;
   blocco.completedAt = via.completedAt ?? null;
   await saveDailyPlans(plans);
