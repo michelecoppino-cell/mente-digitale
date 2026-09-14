@@ -18,15 +18,21 @@
   è tutta la differenza fra un recap che c'è e uno che si scopre mancante
   mentre si fa colazione.
 
-  Due modi di ottenerlo, e sono l'uno l'alternativa dell'altro:
+  Si prova in scala, perché su un PC aziendale il modo migliore può essere
+  semplicemente vietato e lo si scopre solo provando:
 
-  - **S4U** (quello di default): Windows avvia il compito a nome tuo senza
+  - **S4U** (il primo che si prova): Windows avvia il compito a nome tuo senza
     conservare la password. Funziona a schermo bloccato e a utente scollegato,
     e basta per un programma che parla solo via HTTPS. Vuole il diritto «Accedi
-    come processo batch», che di solito l'utente di un PC aziendale ha già.
+    come processo batch», che su un PC aziendale può non esserci.
   - **Password** (`-ConPassword`): la si digita una volta e Windows la
-    custodisce. Serve dove S4U è negato dai criteri di dominio — succede — o
-    dove il compito dovesse leggere una cartella di rete.
+    custodisce. Si prova per primo solo se lo chiedi, perché conservare una
+    password è una decisione, non un ripiego automatico.
+  - **Interattivo**, e poi la stessa cosa via `schtasks.exe`: il compito parte
+    mentre sei collegato, **anche a schermo bloccato** — che su una VDI è il
+    caso normale, visto che disconnettersi non chiude la sessione. Non parte se
+    ti scolleghi davvero, e lo script te lo dice a chiare lettere invece di
+    lasciartelo scoprire una mattina senza recap.
 
   Se la sessione è bloccata da criteri aziendali che uccidono i processi
   dell'utente allo screen lock, nessuno dei due modi basta: in quel caso il
@@ -85,22 +91,109 @@ $impostazioni = New-ScheduledTaskSettingsSet `
 
 $utente = "$env:USERDOMAIN\$env:USERNAME"
 
+# ── I modi di registrarlo, dal migliore al ripiego ───────────────────────────
+# Su un PC aziendale il modo migliore può essere semplicemente vietato, e lo si
+# scopre solo provando: registrare un compito S4U vuole il diritto «Accedi come
+# processo batch», che l'amministratore di dominio può non aver dato. Il
+# fallimento è un «Accesso negato» secco (0x80070005) che non spiega cosa
+# manca, e la reazione sbagliata — l'unica possibile fino a ieri — era fermarsi
+# lì e restare senza recap.
+#
+# Quindi si prova in scala, e **si dice sempre quale livello si è ottenuto**,
+# perché cambia quando il compito parte davvero:
+#
+#   password     gira anche a utente scollegato. La password la custodisce
+#                Windows, e la si digita una volta sola.
+#   S4U          uguale, senza che nessuna password venga conservata.
+#   interattivo  gira mentre sei collegato, **anche a schermo bloccato** — che
+#                su una VDI è il caso normale, perché disconnettersi non chiude
+#                la sessione. Si perde solo se ti scolleghi davvero.
+#   schtasks     lo stesso livello, per la strada vecchia: a volte l'unica che
+#                i criteri lasciano aperta, perché non passa dalle stesse API.
+#
+# Un compito interattivo non è la stessa cosa di uno S4U, e spacciarlo per tale
+# sarebbe il modo di scoprire a marzo che il recap non arrivava da gennaio.
+
+$modi = @()
 if ($ConPassword) {
   $password = Read-Host "Password di $utente" -AsSecureString
   $chiaro = [Runtime.InteropServices.Marshal]::PtrToStringAuto(
     [Runtime.InteropServices.Marshal]::SecureStringToBSTR($password))
-  Register-ScheduledTask -TaskName $Nome -Action $azione -Trigger $quando `
-    -Settings $impostazioni -User $utente -Password $chiaro -RunLevel Limited -Force | Out-Null
-  Remove-Variable chiaro
+  $modi += @{
+    nome  = 'password'
+    dove  = 'anche a sessione bloccata o utente scollegato'
+    prova = { Register-ScheduledTask -TaskName $Nome -Action $azione -Trigger $quando `
+                -Settings $impostazioni -User $utente -Password $chiaro -RunLevel Limited -Force }
+  }
 }
-else {
-  # S4U: gira a utente scollegato senza che la password venga conservata da
-  # nessuna parte.
-  $principale = New-ScheduledTaskPrincipal -UserId $utente -LogonType S4U -RunLevel Limited
-  Register-ScheduledTask -TaskName $Nome -Action $azione -Trigger $quando `
-    -Settings $impostazioni -Principal $principale -Force | Out-Null
+$modi += @{
+  nome  = 'S4U'
+  dove  = 'anche a sessione bloccata o utente scollegato, senza password conservata'
+  prova = {
+    $p = New-ScheduledTaskPrincipal -UserId $utente -LogonType S4U -RunLevel Limited
+    Register-ScheduledTask -TaskName $Nome -Action $azione -Trigger $quando `
+      -Settings $impostazioni -Principal $p -Force
+  }
+}
+$modi += @{
+  nome  = 'interattivo'
+  dove  = 'mentre sei collegato, anche a schermo bloccato — NON se ti scolleghi'
+  prova = {
+    $p = New-ScheduledTaskPrincipal -UserId $utente -LogonType Interactive -RunLevel Limited
+    Register-ScheduledTask -TaskName $Nome -Action $azione -Trigger $quando `
+      -Settings $impostazioni -Principal $p -Force
+  }
+}
+$modi += @{
+  nome  = 'schtasks'
+  dove  = 'mentre sei collegato, anche a schermo bloccato — NON se ti scolleghi'
+  prova = {
+    $comando = 'powershell -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File "' + $script + '"'
+    $out = & schtasks.exe /Create /F /TN $Nome /SC DAILY /ST $Ora /TR $comando 2>&1
+    if ($LASTEXITCODE -ne 0) { throw ($out -join ' ') }
+  }
 }
 
-Write-Host "✓ registrato: «$Nome», ogni giorno alle $Ora, anche a sessione bloccata."
+$riuscito = $null
+$errori = @()
+foreach ($m in $modi) {
+  try {
+    & $m.prova | Out-Null
+    $riuscito = $m
+    break
+  }
+  catch {
+    # Si prende nota e si scende di un gradino. L'errore serve dopo: se non
+    # riesce nemmeno l'ultimo, va mostrato quello di ciascuno — «non ha
+    # funzionato» senza dire cosa ha risposto Windows non si può diagnosticare.
+    $errori += "$($m.nome): $($_.Exception.Message.Trim())"
+  }
+}
+
+if ($chiaro) { Remove-Variable chiaro }
+
+if (-not $riuscito) {
+  Write-Host "✗ Non sono riuscito a registrare il compito in nessun modo:" -ForegroundColor Red
+  $errori | ForEach-Object { Write-Host "   - $_" }
+  Write-Host ""
+  Write-Host "  Le tre cose da provare, in quest'ordine:"
+  Write-Host "   1. riapri PowerShell come amministratore, se su questa macchina puoi;"
+  Write-Host "   2. chiedi all'IT il diritto «Accedi come processo batch» per il tuo utente"
+  Write-Host "      (secpol.msc → Assegnazione diritti utente), che è quello che serve a S4U;"
+  Write-Host "   3. se i criteri non lo consentono, il compito va su un'altra macchina sempre"
+  Write-Host "      accesa: il recap legge e scrive su OneDrive, quindi non cambia niente."
+  Write-Host ""
+  Write-Host "  Intanto il recap lo puoi scrivere a mano quando vuoi:"
+  Write-Host "   powershell -ExecutionPolicy Bypass -File .\Recap-Mattina.ps1"
+  exit 1
+}
+
+Write-Host "✓ registrato: «$Nome», ogni giorno alle $Ora ($($riuscito.nome))."
+Write-Host "  Quando parte:    $($riuscito.dove)"
+if ($riuscito.nome -in @('interattivo', 'schtasks')) {
+  Write-Host "  ⚠ Questo livello non basta a utente scollegato. Su una VDI di solito va bene" -ForegroundColor Yellow
+  Write-Host "    lo stesso — disconnettersi non è scollegarsi — ma se una mattina il recap" -ForegroundColor Yellow
+  Write-Host "    non c'è, è il primo sospetto. Per quello pieno serve S4U: vedi docs/recap-mattina.md." -ForegroundColor Yellow
+}
 Write-Host "  Provalo adesso:  Start-ScheduledTask -TaskName '$Nome'"
 Write-Host "  Il log sta in:   $env:LOCALAPPDATA\mente-digitale\recap"
