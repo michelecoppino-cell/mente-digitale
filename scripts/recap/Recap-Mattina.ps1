@@ -1,3 +1,13 @@
+﻿# encoding: UTF-8 **con BOM**, ed è obbligatorio.
+#
+# Windows PowerShell 5.1 — quello di serie su Windows, quello che l'Utilità di
+# pianificazione avvia — legge un .ps1 senza BOM come ANSI (CP1252). Un trattino
+# lungo diventa allora tre caratteri, e l'ultimo dei tre è una virgoletta
+# «intelligente» che PowerShell prende per l'inizio di una stringa: da lì in poi
+# il file non si chiude più, e l'errore compare sull'ultima riga del file, cioè
+# lontanissimo dalla riga che l'ha causato. Il file si è rifiutato di partire
+# così, una volta. Chi lo modifica lo risalvi con il BOM.
+
 <#
 .SYNOPSIS
   Fa scrivere a Claude Code il recap del mattino, senza che nessuno sia davanti

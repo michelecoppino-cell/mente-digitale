@@ -1,3 +1,13 @@
+﻿# encoding: UTF-8 **con BOM**, ed è obbligatorio.
+#
+# Windows PowerShell 5.1 — quello di serie su Windows, quello che l'Utilità di
+# pianificazione avvia — legge un .ps1 senza BOM come ANSI (CP1252). Un trattino
+# lungo diventa allora tre caratteri, e l'ultimo dei tre è una virgoletta
+# «intelligente» che PowerShell prende per l'inizio di una stringa: da lì in poi
+# il file non si chiude più, e l'errore compare sull'ultima riga del file, cioè
+# lontanissimo dalla riga che l'ha causato. Il file si è rifiutato di partire
+# così, una volta. Chi lo modifica lo risalvi con il BOM.
+
 <#
 .SYNOPSIS
   Registra il compito delle cinque nell'Utilità di pianificazione di Windows.
@@ -37,13 +47,13 @@
   powershell -ExecutionPolicy Bypass -File .\Registra-Compito.ps1 -ConPassword -Ora 04:30
 
 .NOTES
-  Per toglierlo:  Unregister-ScheduledTask -TaskName "Mente digitale — recap del mattino"
-  Per provarlo:   Start-ScheduledTask   -TaskName "Mente digitale — recap del mattino"
+  Per toglierlo:  Unregister-ScheduledTask -TaskName "Mente digitale - recap del mattino"
+  Per provarlo:   Start-ScheduledTask   -TaskName "Mente digitale - recap del mattino"
 #>
 
 [CmdletBinding()]
 param(
-  [string]$Nome = 'Mente digitale — recap del mattino',
+  [string]$Nome = 'Mente digitale - recap del mattino',
   [string]$Ora = '05:00',
   [switch]$ConPassword,
   [int]$MinutiMassimi = 20
@@ -92,5 +102,5 @@ else {
 }
 
 Write-Host "✓ registrato: «$Nome», ogni giorno alle $Ora, anche a sessione bloccata."
-Write-Host "  Provalo adesso:  Start-ScheduledTask -TaskName `"$Nome`""
+Write-Host "  Provalo adesso:  Start-ScheduledTask -TaskName '$Nome'"
 Write-Host "  Il log sta in:   $env:LOCALAPPDATA\mente-digitale\recap"
