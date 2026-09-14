@@ -69,17 +69,42 @@ Se il server MCP è registrato con un nome diverso da `mente`, va detto:
 `.\Recap-Mattina.ps1 -Server altronome`. Il nome entra negli strumenti
 (`mcp__mente__oggi`), e sono quelli che lo script dichiara uno per uno.
 
-### A sessione bloccata
+### A sessione bloccata, e quando Windows dice di no
 
 È il punto che fa fallire questo genere di cose, e va guardato prima e non dopo.
-Il compito è registrato con **S4U**: Windows lo avvia a nome tuo senza
-conservare la password, e funziona a schermo bloccato e a utente scollegato. Se i
-criteri di dominio lo negano — succede — si rifà con `-ConPassword`, che la
-password la chiede una volta e la lascia custodire a Windows.
 
-Se invece i criteri uccidono i processi dell'utente allo screen lock, non c'è
-opzione che tenga: il compito va su un'altra macchina sempre accesa. Al recap non
-cambia niente, perché legge e scrive su OneDrive.
+Su un PC aziendale il modo migliore di registrare il compito può essere
+semplicemente vietato, e lo si scopre solo provando: `Register-ScheduledTask`
+risponde **«Accesso negato» (0x80070005)** e non dice cosa manca. Per questo lo
+script prova in scala e **dice sempre quale livello ha ottenuto**, perché cambia
+quando il compito parte davvero:
+
+| | quando parte | |
+|---|---|---|
+| password (`-ConPassword`) | anche a utente scollegato | la digiti una volta, la custodisce Windows |
+| S4U *(il primo che prova)* | anche a utente scollegato | nessuna password conservata; vuole il diritto «Accedi come processo batch» |
+| interattivo | mentre sei collegato, **anche a schermo bloccato** | non parte se ti scolleghi davvero |
+| `schtasks.exe` | come sopra | la strada vecchia, a volte l'unica che i criteri lasciano aperta |
+
+Su una VDI il livello interattivo di solito basta: **disconnettersi non è
+scollegarsi**, la sessione resta viva e alle cinque il compito parte. Ma non è la
+stessa cosa, e spacciarlo per tale sarebbe il modo di scoprire a marzo che il
+recap non arrivava da gennaio — perciò lo script lo scrive a chiare lettere, e se
+una mattina il recap manca quello è il primo sospetto.
+
+Se non riesce **nessuno** dei quattro, in ordine: riapri PowerShell come
+amministratore se su quella macchina puoi; chiedi all'IT il diritto «Accedi come
+processo batch» (`secpol.msc` → Assegnazione diritti utente), che è quello che
+serve a S4U; oppure metti il compito su un'altra macchina sempre accesa — al
+recap non cambia niente, perché legge e scrive su OneDrive.
+
+E intanto, in ogni caso, il recap si scrive a mano quando vuoi. È anche il modo
+giusto di provare tutta la catena — `claude`, il server MCP, la ricerca sul web,
+la scrittura su OneDrive — senza avere ancora nessun compito registrato:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\Recap-Mattina.ps1
+```
 
 ## Cosa c'è dentro
 
