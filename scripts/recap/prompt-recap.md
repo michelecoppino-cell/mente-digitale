@@ -34,15 +34,24 @@ primo che risponde:
    **non scrive niente**: serve a te per dire quanto di quello che c'è da fare
    ci sta davvero.
 
+Poi, e solo dopo aver finito con la mente digitale, le notizie: cerca sul web
+cosa è successo nelle ultime ventiquattro ore. Tre ricerche separate — mondo,
+Europa, Italia — e cerca oggi, non la settimana scorsa.
+
 Se uno strumento dà errore, vai avanti con gli altri e **dillo nel recap**, in
 mezza riga. Una giornata raccontata senza la posta non è sbagliata; una
-raccontata senza la posta *e senza dirlo* sì.
+raccontata senza la posta *e senza dirlo* sì. Vale uguale per le notizie: se la
+ricerca sul web non funziona — sulla VDI può capitare — scrivi che stamattina i
+titoli non ci sono, e non tirare fuori niente dalla memoria. Una notizia
+inventata alle cinque del mattino la si scopre a pranzo, parlando con qualcuno.
 
 ## Cosa scrivere
 
-Da 150 a 250 parole, in italiano, in prosa. Niente elenchi puntati, niente
-grassetti, niente tabelle: verrà letto ad alta voce, e un elenco ad alta voce
-non si ricorda. Le ore come si dicono — «alle nove e mezza», non «09:30».
+Da 150 a 250 parole per la giornata, più i titoli in fondo. In italiano, in
+prosa. Niente elenchi puntati, niente grassetti, niente tabelle: verrà letto ad
+alta voce, e un elenco ad alta voce non si ricorda. L'unica eccezione sono le
+notizie in coda, che sono titoli e vanno una per riga. Le ore come si dicono —
+«alle nove e mezza», non «09:30».
 
 Nell'ordine:
 
@@ -67,7 +76,25 @@ Nell'ordine:
 Chiudi con una domanda sola, quella che conta stamattina: cosa spostare, cosa
 dire di no, chi richiamare. Una, non tre.
 
-Non inventare niente. Se una cosa non risulta dagli strumenti, non c'è. Non dare
+Poi, **staccato dal resto e in fondo**, i titoli del giorno:
+
+- due o tre notizie dal mondo;
+- due o tre dall'Europa;
+- due o tre dall'Italia.
+
+Qui, e solo qui, vanno bene le righe brevi: un titolo è fatto così, e una riga
+per notizia si ascolta senza perdere il filo. Una frase l'una, al massimo venti
+parole: cosa è successo e dove, non il retroscena. Niente link, niente nomi di
+testate nel testo — si dicono solo se te li chiede lui dopo. Se una notizia
+riguarda da vicino il suo lavoro (edilizia, sismica, appalti, normativa tecnica,
+Friuli), mettila per prima nel suo gruppo: è quella su cui è più probabile che
+voglia fermarsi.
+
+Sono titoli e basta. Non commentarli, non spiegarli e non dire cosa ne pensi:
+sceglie lui, parlando, su cosa tornare.
+
+Non inventare niente. Se una cosa non risulta dagli strumenti — o, per le
+notizie, dai risultati della ricerca che hai appena letto — non c'è. Non dare
 consigli generici sulla produttività: questo è un resoconto, e chi lo ascolta
 conosce il proprio lavoro meglio di te.
 
@@ -78,9 +105,10 @@ Chiama lo strumento `recap` con:
 - `testo`: il recap, esattamente come va letto;
 - `data`: il giorno di oggi, `YYYY-MM-DD`;
 - `fonti`: l'elenco di quello che sei riuscito a guardare davvero (per esempio
-  `["calendario", "posta", "attività", "piano", "obiettivi"]`). Quello che ha
-  dato errore **non** va messo qui: serve a rileggere un recap sapendo cosa gli
-  mancava.
+  `["calendario", "posta", "attività", "piano", "obiettivi", "notizie"]`).
+  Quello che ha dato errore **non** va messo qui: serve a rileggere un recap
+  sapendo cosa gli mancava — «niente dalla posta» e «la posta non l'ho
+  guardata» sono due giornate diverse, e lo stesso vale per i titoli.
 
 Sostituisce quello di ieri, ed è voluto: se ne tiene uno solo.
 

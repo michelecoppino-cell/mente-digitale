@@ -10,9 +10,10 @@
 
   Fa una cosa sola: legge `prompt-recap.md` e lo passa a `claude -p`, cioè alla
   modalità non interattiva. Il modello guarda calendario, posta e attività con
-  gli strumenti del server MCP e scrive il risultato con lo strumento `recap`,
-  che sostituisce quello di ieri su OneDrive. Al risveglio la domanda è una
-  sola — «leggimi il recap» — e la risposta è già pronta.
+  gli strumenti del server MCP, cerca sul web i titoli del giorno, e scrive il
+  risultato con lo strumento `recap`, che sostituisce quello di ieri su
+  OneDrive. Al risveglio la domanda è una sola — «leggimi il recap» — e la
+  risposta è già pronta.
 
   **Gli strumenti si dichiarano uno per uno** (`-AllowedTools`): in modalità non
   interattiva nessuno può rispondere a una richiesta di consenso, e l'alternativa
@@ -71,6 +72,12 @@ $strumenti = @(
   'attivita_lista', 'sezioni', 'obiettivi_leggi', 'programma',
   'recap'
 ) | ForEach-Object { "mcp__${Server}__$_" }
+
+# E il web, per i titoli del giorno in coda al recap. Sono di Claude Code, non
+# del server MCP, e vanno nominati anche loro: in modalità non interattiva
+# quello che non è dichiarato non si può usare, e il recap uscirebbe senza
+# notizie senza che nessuno dica perché.
+$strumenti += @('WebSearch', 'WebFetch')
 
 New-Item -ItemType Directory -Force -Path $CartellaLog | Out-Null
 $log = Join-Path $CartellaLog ("recap-{0:yyyy-MM-dd}.log" -f (Get-Date))

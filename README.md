@@ -1413,8 +1413,11 @@ scaletta dell'ora che si sta per passare. E siccome il blocco ne tiene una
 titolo, per la stessa ragione.
 
 **Il recap del mattino.** Alle cinque, sul PC sempre acceso, un Claude Code non
-interattivo guarda calendario, posta e attività e scrive due paragrafi su com'è
-messa la giornata; al risveglio si chiede a voce di leggerli. Lo scrive `recap`,
+interattivo guarda calendario, posta e attività, cerca i titoli del giorno, e
+scrive due paragrafi su com'è messa la giornata con una manciata di notizie in
+coda — due o tre dal mondo, due o tre dall'Europa, due o tre dall'Italia, senza
+commento: si sceglie parlando, dopo, su cosa tornare. Al risveglio si chiede a
+voce di leggere tutto. Lo scrive `recap`,
 che sostituisce quello di ieri — se ne tiene uno solo, perché un recap è di
 stamattina o non è niente — e lo rilegge `oggi`, che lo porta con sé **solo se è
 di stamattina**: uno di ieri messo in cima senza dirlo si leggerebbe come se

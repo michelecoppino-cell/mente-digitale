@@ -1,10 +1,12 @@
 # Il recap del mattino
 
 Alle cinque, su un PC che resta acceso, un Claude Code non interattivo guarda
-calendario, posta e attività e scrive due o tre paragrafi su com'è messa la
-giornata. Al risveglio si apre una chat a voce e si chiede di leggerlo: la
-risposta è già pronta, non c'è niente da aspettare mentre si fa colazione, e da
-lì si comincia a ragionare — cosa spostare, chi richiamare, cosa dire di no.
+calendario, posta e attività, cerca i titoli del giorno, e scrive due o tre
+paragrafi su com'è messa la giornata più una manciata di notizie in coda. Al
+risveglio si apre una chat a voce e si chiede di leggerlo: la risposta è già
+pronta, non c'è niente da aspettare mentre si fa colazione, e da lì si comincia a
+ragionare — cosa spostare, chi richiamare, cosa dire di no, e su quale notizia
+tornare.
 
 ## Perché così
 
@@ -23,7 +25,8 @@ quindi la macchina che lo scrive e quella da cui lo si ascolta non hanno bisogno
 di essere la stessa — né di conoscersi.
 
 **Aspettare al risveglio non si può.** Guardare calendario, posta e attività
-sono otto chiamate: un minuto o due. Un minuto con il telefono in mano e gli
+sono otto chiamate, e i titoli del giorno sono tre ricerche sul web: un minuto o
+due. Un minuto con il telefono in mano e gli
 occhi ancora chiusi è tanto; alle cinque non lo è per nessuno.
 
 ## I tre pezzi
@@ -92,9 +95,24 @@ prima di tutto il resto, e la domanda finale è una sola.
 5. **Le due o tre cose che valgono la giornata**, con il perché, e — se la prima
    è spezzata in sottoattività — da quale passo si comincia.
 6. **Una riga sugli obiettivi del mese**, solo se qualcosa è indietro.
+7. **Una domanda sola**: cosa spostare, cosa dire di no, chi richiamare.
+8. **I titoli del giorno**, staccati dal resto e in fondo: due o tre notizie dal
+   mondo, due o tre dall'Europa, due o tre dall'Italia. Una frase l'una, e nessun
+   commento — si sceglie parlando, dopo, su cosa tornare. Quelle che toccano il
+   lavoro (edilizia, sismica, appalti, normativa, Friuli) vanno per prime nel loro
+   gruppo.
 
-Da 150 a 250 parole, in prosa, senza elenchi: verrà letto ad alta voce, e un
-elenco ad alta voce non si ricorda. Le ore come si dicono, «alle nove e mezza».
+Da 150 a 250 parole per la giornata, in prosa, senza elenchi: verrà letto ad alta
+voce, e un elenco ad alta voce non si ricorda. L'unica eccezione sono i titoli in
+coda, che sono titoli e vanno una riga l'uno. Le ore come si dicono, «alle nove e
+mezza».
+
+Le notizie arrivano da `WebSearch`, cioè da Claude Code e non dal server MCP: è
+l'unico pezzo del recap che esce di casa, e l'unico che può mancare per conto
+suo. Se dalla VDI il web non si raggiunge — proxy, criteri aziendali — il recap
+lo **dice** e non tira fuori niente dalla memoria: una notizia inventata alle
+cinque la si scopre a pranzo, parlando con qualcuno. Il campo `fonti` del recap
+dice se i titoli c'erano davvero.
 
 Cambiare cosa contiene vuol dire cambiare `prompt-recap.md`: niente codice, e
 nessun compito da registrare di nuovo.
@@ -122,8 +140,8 @@ Dove guardare, nell'ordine:
 
 Solo quello che lo script dichiara: `oggi`, `agenda`, `piano`, `piano_auto`,
 `posta`, `attivita_lista`, `sezioni`, `obiettivi_leggi`, `programma` in lettura,
-e `recap` in scrittura. Basta questo, e vale la pena che sia un elenco e non un
-permesso in bianco: è un processo che gira di notte, senza nessuno davanti allo
+`recap` in scrittura, e `WebSearch`/`WebFetch` per i titoli del giorno. Basta
+questo, e vale la pena che sia un elenco e non un permesso in bianco: è un processo che gira di notte, senza nessuno davanti allo
 schermo, e l'elenco è la risposta alla domanda «cosa può combinare».
 
 Non tocca attività, piano, calendario, diario e OneNote. Le decisioni si prendono
