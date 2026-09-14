@@ -98,6 +98,10 @@ $strumenti = @(
 # notizie senza che nessuno dica perché.
 $strumenti += @('WebSearch', 'WebFetch')
 
+# E `Read`, perché il prompt non gli viene passato: gli viene *indicato*. Vedi
+# più sotto il perché.
+$strumenti += @('Read')
+
 New-Item -ItemType Directory -Force -Path $CartellaLog | Out-Null
 $log = Join-Path $CartellaLog ("recap-{0:yyyy-MM-dd}.log" -f (Get-Date))
 
@@ -105,13 +109,25 @@ $log = Join-Path $CartellaLog ("recap-{0:yyyy-MM-dd}.log" -f (Get-Date))
 "progetto: $Progetto" | Out-File $log -Append -Encoding utf8
 
 try {
-  # Il prompt arriva da stdin invece che come argomento: un testo di duemila
-  # caratteri su una riga di comando di Windows è il modo di scoprire il limite
-  # degli 8191 caratteri in una notte qualunque, e senza un errore leggibile.
-  $testo = Get-Content -Path $Prompt -Raw -Encoding utf8
+  # **Il prompt si indica, non si passa.** Le altre due strade hanno tutte e due
+  # un difetto che si paga di notte:
+  #
+  #  - da stdin (`$testo | claude -p`): su Windows non arriva. Claude parte con
+  #    una richiesta vuota e risponde «dimmi pure su cosa vuoi lavorare», esce
+  #    con codice 0, e nel log resta un saluto al posto del recap. È esattamente
+  #    come si è rotto la prima volta;
+  #  - come argomento (`claude -p "<seimila caratteri>"`): funziona finché il
+  #    prompt è corto. Se `claude` è uno shim .cmd si passa da cmd.exe, e lì la
+  #    riga di comando si taglia a 8191 caratteri — cioè il giorno in cui il
+  #    prompt cresce un po', e senza un errore che lo dica.
+  #
+  # Indicare il file non ha nessuno dei due limiti: la riga di comando resta di
+  # duecento caratteri, e il prompt lo legge Claude, che i file li sa leggere.
+  $istruzione = 'Leggi il file "' + $Prompt + '" ed esegui alla lettera quello che dice. ' +
+    "Non chiedere conferme e non fare domande: non c'è nessuno davanti allo schermo."
 
   Push-Location $Progetto
-  $risposta = $testo | & $Claude -p `
+  $risposta = & $Claude -p $istruzione `
     --allowedTools ($strumenti -join ',') `
     --output-format text 2>&1
   $codice = $LASTEXITCODE
@@ -120,6 +136,34 @@ try {
   $risposta | Out-File $log -Append -Encoding utf8
 
   if ($codice -ne 0) { throw "claude è uscito con codice $codice" }
+
+  # ── E poi si controlla che abbia scritto davvero ──────────────────────────
+  # «Ha risposto» non è «ha scritto», e la differenza non è teorica: la prima
+  # volta che questo è andato storto, Claude aveva salutato ed era uscito con
+  # codice zero, il compito risultava riuscito e su OneDrive non c'era niente.
+  # Un compito che dice «fatto» senza aver fatto è peggio di uno che fallisce.
+  $oggi = Get-Date -Format 'yyyy-MM-dd'
+  $quando = $null
+  $verificato = $false
+  try {
+    $json = & node (Join-Path $Progetto 'scripts\mente.mjs') recap --json 2>&1 | Out-String
+    if ($LASTEXITCODE -eq 0) {
+      $quando = ($json | ConvertFrom-Json).recap.data
+      $verificato = $true
+    }
+  }
+  catch { }   # node non c'è, o il token non è raggiungibile da qui: si dirà sotto
+
+  if ($verificato -and $quando -ne $oggi) {
+    throw ("claude è uscito senza errori ma su OneDrive il recap non è di oggi " +
+           "(trovato: $(if ($quando) { $quando } else { 'nessuno' })). " +
+           'Guarda la sua risposta qui sopra: se è un saluto o una domanda, il prompt non è arrivato.')
+  }
+  if (-not $verificato) {
+    "⚠ non ho potuto verificare su OneDrive (node o il token non raggiungibili da qui)." |
+      Out-File $log -Append -Encoding utf8
+  }
+
   "--- fatto {0:HH:mm:ss} ---" -f (Get-Date) | Out-File $log -Append -Encoding utf8
 }
 catch {

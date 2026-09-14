@@ -37,7 +37,10 @@ occhi ancora chiusi è tanto; alle cinque non lo è per nessuno.
 | `scripts/recap/Recap-Mattina.ps1` | passa il prompt a `claude -p`, dichiarando gli strumenti che quel processo può usare, e tiene un log |
 | `scripts/recap/Registra-Compito.ps1` | registra il compito delle cinque, con la spunta che conta: anche a sessione bloccata |
 
-Il recap finisce su OneDrive in `mente-digitale-recap.json`, **uno solo**,
+**Dove finisce cosa.** Nella cartella del progetto non compare niente: il recap
+va su **OneDrive**, in `mente-digitale/mente-digitale-recap.json`, accanto ai
+piani e al diario; il log della notte va in
+`%LOCALAPPDATA%\mente-digitale\recap`. Il recap è **uno solo**,
 riscritto ogni notte. Non se ne tiene la cronologia: un recap è di stamattina o
 non è niente, e quello che merita di restare si scrive nel diario, che è il posto
 delle cose che si rileggono.
@@ -157,6 +160,33 @@ Da 150 a 250 parole per la giornata, in prosa, senza elenchi: verrà letto ad al
 voce, e un elenco ad alta voce non si ricorda. L'unica eccezione sono i titoli in
 coda, che sono titoli e vanno una riga l'uno. Le ore come si dicono, «alle nove e
 mezza».
+
+### Come il prompt arriva a Claude
+
+Il prompt non gli viene passato: gli viene **indicato**. Lo script lancia
+`claude -p "Leggi il file …\prompt-recap.md ed esegui alla lettera quello che
+dice"`, e per questo fra gli strumenti concessi c'è anche `Read`.
+
+Le altre due strade hanno tutte e due un difetto che si paga di notte. Da
+**stdin** (`Get-Content prompt.md | claude -p`) su Windows il testo non arriva:
+Claude parte con una richiesta vuota, risponde «dimmi pure su cosa vuoi
+lavorare», esce con codice 0, e nel log resta un saluto al posto del recap — è
+esattamente come si è rotto la prima volta. Come **argomento**
+(`claude -p "<seimila caratteri>"`) funziona finché il prompt è corto, ma se
+`claude` è uno shim `.cmd` si passa da `cmd.exe`, dove la riga di comando si
+taglia a 8191 caratteri: si romperebbe il giorno in cui il prompt cresce, senza
+un errore che lo dica.
+
+### «Ha risposto» non è «ha scritto»
+
+Finito il giro, lo script controlla su OneDrive che il recap sia davvero di
+oggi (`node scripts/mente.mjs recap --json`) e **fallisce se non lo è**, anche
+quando Claude è uscito senza errori.
+
+Non è pignoleria: la prima volta che questo è andato storto, Claude aveva
+salutato, era uscito con codice zero, il compito risultava riuscito e su
+OneDrive non c'era niente. Un compito che dice «fatto» senza aver fatto è
+peggio di uno che fallisce, perché toglie l'unico segnale che avevi.
 
 Le notizie arrivano da `WebSearch`, cioè da Claude Code e non dal server MCP: è
 l'unico pezzo del recap che esce di casa, e l'unico che può mancare per conto
