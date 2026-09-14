@@ -31,7 +31,7 @@ Due cose da sapere prima di cominciare, perché cambiano le aspettative:
   spostare un blocco costa un consenso, non due).
 - **Non tutto quello che torna appare a schermo.** Un elenco lungo lo si sente
   riassunto. È il motivo per cui dal connettore escono quattordici strumenti e
-  non ventiquattro: vedi *Cosa esce di casa*, più sotto.
+  non ventisei: vedi *Cosa esce di casa*, più sotto.
 
 ### Cosa gira dove
 
@@ -64,7 +64,10 @@ dicibile.
 | Scrivere | `attivita_crea`, `attivita_stato`, `piano_scrivi`, `programma_ore`, `evento_crea`, `diario_scrivi`, `sezione_crea` |
 
 Restano sul computer: tutto OneNote (`note_*`), `diario_leggi`,
-`obiettivi_scrivi`, `identita`, e i tre che si fanno da seduti guardando —
+`obiettivi_scrivi`, `identita`, `posta` (il token del connettore non ha
+`Mail.Read`, ed è voluto), `recap` — che si scrive di notte da un compito
+pianificato e si rilegge da `oggi`, senza bisogno di uno strumento in più a
+voce — e i tre che si fanno da seduti guardando —
 `attivita_modifica` (correggere una scheda), `attivita_elimina` (buttare via) e
 `piano_auto` (la bozza della giornata). Il primo perché togliere qualcosa dalla
 vista non deve poter partire da una frase detta male in tangenziale; l'ultimo

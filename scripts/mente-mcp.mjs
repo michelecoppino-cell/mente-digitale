@@ -7,7 +7,7 @@
  * La differenza con la riga di comando è solo l'involucro: le operazioni, e le
  * regole su cosa si può scrivere, stanno in `mente-comandi.mjs`.
  *
- * Da qui escono tutti e ventiquattro gli strumenti, OneNote compreso: questo è il
+ * Da qui escono tutti e ventisei gli strumenti, OneNote compreso: questo è il
  * modo di lavorare dal computer, seduti, con lo schermo davanti. Il connettore
  * remoto (`worker/`) ne espone quattordici, perché serve a un altro uso — vedi
  * NOMI_DA_VOCE in `mente-mcp-nucleo.mjs`.

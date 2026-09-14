@@ -98,6 +98,7 @@ async function esegui(args, opts) {
         return mente.pianoAggiungi({
           attivita: resto[1], ora: resto[2] || s(opts.ora),
           data: s(opts.data), durataMin: n(opts.durata),
+          sottoPassi: opts['sotto-passi'] === true,
         });
       }
       if (sub === 'sposta') {
@@ -117,6 +118,22 @@ async function esegui(args, opts) {
         });
       }
       throw new Error(`piano: sottocomando sconosciuto "${sub}" (giorno, settimana, mese, auto, aggiungi, sposta, togli)`);
+
+    // Il recap: senza testo lo legge, con --testo (o da stdin) lo scrive. È il
+    // comando che gira alle cinque dentro Claude Code sul PC sempre acceso —
+    // vedi docs/recap-mattina.md.
+    case 'recap':
+      if (!sub || sub === 'leggi') return mente.recapLeggi({ data: s(opts.data) });
+      if (sub === 'scrivi') {
+        return mente.recapScrivi({
+          testo: s(opts.testo) || await leggiStdin(),
+          data: s(opts.data), titolo: s(opts.titolo), fonti: s(opts.fonti),
+        });
+      }
+      throw new Error(`recap: sottocomando sconosciuto "${sub}" (leggi, scrivi)`);
+
+    case 'posta':
+      return mente.posta({ giorni: n(opts.giorni), massimo: n(opts.massimo) });
 
     case 'obiettivi':
       if (!sub || sub === 'leggi') return mente.obiettiviLeggi({ mese: s(opts.mese) });
@@ -286,6 +303,8 @@ Lettura
             [--persona "Nome"]    carico settimanale delle persone. Senza
             [--settimane N]       commessa: quelle accese
   obiettivi [--mese YYYY-MM]      gli obiettivi del mese e a che punto sono
+  recap [--data YYYY-MM-DD]       il recap del mattino, con quanti anni ha
+  posta [--giorni N]              le email che sembrano chiedere qualcosa
   sezioni                         liste per commessa (con consegne, scadenze e
                                   attività aperte) e sezioni OneNote
   note pagine <sezione>           le pagine OneNote di una sezione
@@ -318,7 +337,9 @@ Scrittura
              [--sezione s] [--contesto c] [--pausa 10] [--massimo 5]
                 (una bozza di giornata: non scrive niente)
 
-  piano aggiungi <id|titolo> <HH:MM> [--data YYYY-MM-DD] [--durata 45]
+  piano aggiungi <id|titolo> <HH:MM> [--data YYYY-MM-DD] [--durata 45] [--sotto-passi]
+                (con --sotto-passi il blocco si porta dentro le sottoattività
+                 ancora aperte, da spuntare poi dal Piano)
   piano sposta <id|titolo> [HH:MM] [--data YYYY-MM-DD] [--da-data YYYY-MM-DD] [--durata 45]
   piano togli <id|titolo> [--data YYYY-MM-DD]
 
@@ -336,6 +357,8 @@ Scrittura
 
   note crea "titolo" --sezione X [--testo "…"]      (senza --testo legge da stdin)
   note aggiungi <id | titolo --sezione X> [--testo "…"]
+  recap scrivi [--testo "…"] [--data YYYY-MM-DD] [--titolo "…"] [--fonti a,b]
+                (senza --testo legge da stdin; sostituisce il recap di ieri)
   diario scrivi [--testo "…"] [--tipo ${TIPI_DIARIO.join('|')}] [--data YYYY-MM-DD]
                 [--tag a,b] [--umore 1-5] [--energia 1-5] [--gratitudine "a|b"] [--cassetto]
                 (senza --testo legge da stdin)

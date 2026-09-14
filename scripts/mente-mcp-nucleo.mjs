@@ -23,7 +23,7 @@
 import * as mente from './mente-comandi.mjs';
 import {
   TASK_STATUSES, CONTEXTS, STATI_SCRIVIBILI, STATI_CREABILI, TIPI_DIARIO, GRANULARITY_MEMO_LINE,
-  NOME_CESTINO,
+  NOME_CESTINO, REGOLE_SOTTOATTIVITA_TESTO,
 } from './mente-comandi.mjs';
 
 export const SERVER = { name: 'mente-digitale', version: '1.0.0' };
@@ -42,7 +42,9 @@ export const TOOLS = [
     name: 'oggi',
     description:
       'Il quadro del giorno: eventi del calendario, blocchi del piano, quante attività ci sono per stato ' +
-      'e quali sono programmate in giorni passati e mai chiuse. È il punto di partenza per "come sta andando".',
+      'e quali sono programmate in giorni passati e mai chiuse. Porta anche il recap del mattino, se ' +
+      'stanotte è stato scritto — quindi «leggimi il recap» si risponde da qui. È il punto di partenza ' +
+      'per "come sta andando".',
     sola_lettura: true,
     schema: { type: 'object', properties: { data: stringa('Giorno da guardare, YYYY-MM-DD. Default: oggi.') } },
     run: a => mente.oggi(a),
@@ -138,6 +140,13 @@ export const TOOLS = [
         data: stringa('Giorno, YYYY-MM-DD. Default: oggi (spostando: il giorno in cui il blocco sta già).'),
         daData: stringa('Solo per spostare: il giorno da cui prenderlo, se si sa. Senza, lo cerca in tutti.'),
         durataMin: { type: 'integer', description: "Durata in minuti. Default: la stima dell'attività, o quella che il blocco aveva." },
+        sottoPassi: {
+          type: 'boolean',
+          description:
+            "Porta dentro il blocco i sotto-passi ancora aperti dell'attività, come scaletta " +
+            "dell'ora: si spuntano poi dal Piano. Default false — un blocco di mezz'ora con dentro " +
+            'sette righe non si legge più. Spostando, il blocco si tiene quelli che aveva.',
+        },
       },
     },
     run: a => {
@@ -434,6 +443,48 @@ export const TOOLS = [
     run: a => mente.programmaOre(a),
   },
   {
+    name: 'recap',
+    description:
+      'Il recap del mattino: due o tre paragrafi su com\'è messa la giornata, scritti stanotte e ' +
+      'riletti al risveglio. Senza «testo» lo legge; con «testo» lo scrive, **sostituendo** quello ' +
+      'del giorno prima — se ne tiene uno solo, perché un recap è di stamattina o non è niente. ' +
+      'Lo scrive il compito delle cinque sul PC sempre acceso (docs/recap-mattina.md); a voce lo ' +
+      'si rilegge da «oggi», che lo porta con sé. Quello che merita di restare va nel diario.',
+    sola_lettura: false,
+    schema: {
+      type: 'object',
+      properties: {
+        testo: stringa('Il testo del recap. Senza, lo strumento legge invece di scrivere.'),
+        data: stringa('Giorno di cui parla, YYYY-MM-DD. Default: oggi.'),
+        titolo: stringa('Un titolo per il recap. Default: «Recap del <giorno>».'),
+        fonti: {
+          type: 'array', items: { type: 'string' },
+          description: 'Cosa è stato guardato per scriverlo (calendario, posta, attività, piano). ' +
+            'Serve a rileggere un recap sapendo cosa gli mancava.',
+        },
+      },
+    },
+    run: a => (a?.testo ? mente.recapScrivi(a) : mente.recapLeggi(a)),
+  },
+  {
+    name: 'posta',
+    description:
+      'Le email arrivate di recente che sembrano chiedere qualcosa, con il perché (non letta, ' +
+      'chiede una risposta, è una domanda, ha una scadenza). Le stesse regole della campanella ' +
+      "dell'app: i flussi di servizio che si ripetono e le newsletter restano fuori. Sola lettura, " +
+      'e non per scelta soltanto — il token ha Mail.Read e basta: da qui non si risponde, non si ' +
+      'archivia e non si cancella niente.',
+    sola_lettura: true,
+    schema: {
+      type: 'object',
+      properties: {
+        giorni: { type: 'integer', description: 'Quanti giorni indietro guardare. Default 1.' },
+        massimo: { type: 'integer', description: 'Quante proposte al massimo. Default 6.' },
+      },
+    },
+    run: a => mente.posta(a),
+  },
+  {
     name: 'diario_leggi',
     description:
       'Le voci del diario personale, dalla più recente. Si può chiedere un mese preciso o gli ultimi N giorni, ' +
@@ -564,7 +615,7 @@ export const TOOLS = [
 //  - `diario_leggi` no e `diario_scrivi` sì, perché in auto il diario si detta,
 //    non si riascolta.
 //
-// Sta qui e non sparso nei ventiquattro strumenti perché la domanda «cosa può fare
+// Sta qui e non sparso nei ventisei strumenti perché la domanda «cosa può fare
 // il connettore?» deve avere una risposta che si legge in un colpo d'occhio.
 // Una prova verifica che ogni nome esista davvero (`prova-mcp-remoto.mjs`):
 // un rinomino, altrimenti, svuoterebbe il connettore in silenzio.
@@ -580,7 +631,8 @@ export const NOMI_DA_VOCE = [
 
 export const ISTRUZIONI =
   'La mente digitale di Michele: attività (file JSON su OneDrive), piano del giorno, calendario, ' +
-  'diario, obiettivi del mese e taccuini OneNote. Si legge tutto e si scrive quasi ' +
+  'diario, obiettivi del mese, taccuini OneNote, la posta (in lettura) e il recap del ' +
+  'mattino. Si legge tutto e si scrive quasi ' +
   'ovunque: attività e liste, blocchi del piano, eventi del calendario, pagine OneNote, ' +
   'voci di diario, obiettivi. Niente si cancella davvero: quello che si butta via ' +
   "(attivita_elimina) va nel Cestino, che è una lista come le altre, e su OneNote si scrive " +
@@ -594,7 +646,13 @@ export const ISTRUZIONI =
   'un\'altra cosa ancora: dove si vuole arrivare, non quando si fanno le cose. Il Programma di ' +
   'commessa è un piano ancora più in alto: quante ore vale una commessa, in che pacchetti si ' +
   'divide, e chi le fa in che settimana.\n' +
-  GRANULARITY_MEMO_LINE;
+  GRANULARITY_MEMO_LINE + '\n' +
+  // Le sottoattività sono l'altra metà delle attività, e da fuori si
+  // sbagliavano nel modo più plausibile: otto attività dove ne bastava una con
+  // otto passi. Le regole stanno in `src/taskModel.js`, le stesse che valgono
+  // nell'app, e si leggono una volta sola all'handshake invece di ripeterle in
+  // ogni descrizione.
+  'Sottoattività. ' + REGOLE_SOTTOATTIVITA_TESTO;
 
 // Le stesse cose dette a chi risponderà a voce. Più corte apposta: quello che
 // il modello legge qui se lo porta dietro per tutta la conversazione, e in
@@ -614,7 +672,11 @@ export const ISTRUZIONI_VOCE =
   'cui si dividono, e quante ne fa ciascuno in una settimana. Le ore si sostituiscono, non si ' +
   'sommano.\n' +
   'Da qui non si cancella niente, e OneNote, il diario da rileggere e gli obiettivi da ' +
-  'riscrivere non ci sono: quelli si fanno dal computer, seduti.\n' +
+  'riscrivere non ci sono: quelli si fanno dal computer, seduti. Il recap del mattino lo porta ' +
+  '«oggi», già scritto stanotte.\n' +
+  "Una sottoattività è un passo dentro un'attività: non ha uno stato suo, non ha una persona e " +
+  "non va a piano da sola — se ne serve una, è un'attività. Si spezza mentre si detta, in passi " +
+  "da meno di due ore, e spuntarne uno non chiude l'attività: chiedilo.\n" +
   GRANULARITY_MEMO_LINE;
 
 // ── JSON-RPC ─────────────────────────────────────────────────────────────────
