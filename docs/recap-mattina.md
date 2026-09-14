@@ -50,14 +50,26 @@ Sul PC sempre acceso, una volta sola:
 # 1. Claude Code c'è e il server MCP risponde
 claude mcp list                      # deve dire: mente ✔ Connected
 
-# 2. registra il compito (S4U: nessuna password conservata)
 cd C:\percorso\mente-digitale\scripts\recap
+
+# 2. il recap, scritto adesso e a mano: è la prova di tutta la catena
+powershell -ExecutionPolicy Bypass -File .\Recap-Mattina.ps1
+
+# 3. registra il compito delle cinque
 powershell -ExecutionPolicy Bypass -File .\Registra-Compito.ps1
 
-# 3. provalo adesso, senza aspettare domani
+# 4. e prova anche la strada del compito, che non è la stessa cosa: gira
+#    senza console, senza il tuo PATH e con il suo ambiente
 Start-ScheduledTask -TaskName "Mente digitale - recap del mattino"
+Get-ScheduledTaskInfo -TaskName "Mente digitale - recap del mattino"
 Get-Content "$env:LOCALAPPDATA\mente-digitale\recap\recap-$(Get-Date -f yyyy-MM-dd).log"
 ```
+
+I passi 2 e 4 provano due cose diverse e servono tutti e due: il primo dice che
+`claude`, il server MCP, la ricerca sul web e la scrittura su OneDrive
+funzionano; il secondo che funzionano **anche da dentro l'Utilità di
+pianificazione**, che è un ambiente diverso — altro PATH, nessuna console, e il
+`LastTaskResult` di `Get-ScheduledTaskInfo` che deve dire `0`.
 
 Poi, da qualunque altra parte:
 
@@ -91,6 +103,20 @@ scollegarsi**, la sessione resta viva e alle cinque il compito parte. Ma non è 
 stessa cosa, e spacciarlo per tale sarebbe il modo di scoprire a marzo che il
 recap non arrivava da gennaio — perciò lo script lo scrive a chiare lettere, e se
 una mattina il recap manca quello è il primo sospetto.
+
+E attenzione a un'altra cosa, perché è la fonte vera dell'equivoco: **«la
+macchina è sempre accesa» non vuol dire «la sessione è sempre collegata»**. Un
+compito interattivo ha bisogno che l'utente sia *collegato*, non che il computer
+sia acceso. Restano scoperti due casi, tutti e due normali su una VDI
+aziendale: il riavvio notturno per gli aggiornamenti, dopo il quale nessuno ha
+ancora fatto l'accesso; e il criterio che scollega le sessioni ferme da troppe
+ore. In tutti e due i casi alle cinque non c'è nessuna sessione, e il recap non
+viene scritto — senza errori, perché il compito semplicemente non parte.
+
+Non è un disastro e non passa inosservato: il recap di ieri resta dov'è, `oggi`
+dice che è di ieri, e si rifà a mano in un minuto. Ma se succede due mattine su
+tre, la cosa da chiedere all'IT è il diritto «Accedi come processo batch», che
+sposta il compito su S4U e toglie di mezzo la questione.
 
 Se non riesce **nessuno** dei quattro, in ordine: riapri PowerShell come
 amministratore se su quella macchina puoi; chiedi all'IT il diritto «Accedi come
