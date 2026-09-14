@@ -55,7 +55,7 @@ cd C:\percorso\mente-digitale\scripts\recap
 powershell -ExecutionPolicy Bypass -File .\Registra-Compito.ps1
 
 # 3. provalo adesso, senza aspettare domani
-Start-ScheduledTask -TaskName "Mente digitale — recap del mattino"
+Start-ScheduledTask -TaskName "Mente digitale - recap del mattino"
 Get-Content "$env:LOCALAPPDATA\mente-digitale\recap\recap-$(Get-Date -f yyyy-MM-dd).log"
 ```
 
@@ -116,6 +116,11 @@ dice se i titoli c'erano davvero.
 
 Cambiare cosa contiene vuol dire cambiare `prompt-recap.md`: niente codice, e
 nessun compito da registrare di nuovo.
+
+Se invece tocchi i due `.ps1`, risalvali **UTF-8 con BOM**: senza, Windows
+PowerShell 5.1 li legge come ANSI, i trattini lunghi diventano tre caratteri di
+cui uno è una virgoletta, e il file non parte con un errore che punta all'ultima
+riga invece che al punto vero. È già successo una volta.
 
 ## Quando non arriva
 
