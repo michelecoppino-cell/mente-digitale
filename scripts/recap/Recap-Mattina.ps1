@@ -61,15 +61,24 @@
 
 [CmdletBinding()]
 param(
-  [string]$Progetto = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path,
+  [string]$Progetto,
   [string]$Claude = 'claude',
   [string]$Server = 'mente',
-  [string]$Prompt = (Join-Path $PSScriptRoot 'prompt-recap.md'),
+  [string]$Prompt,
   [string]$CartellaLog = (Join-Path $env:LOCALAPPDATA 'mente-digitale\recap'),
   [int]$LogDaTenere = 14
 )
 
 $ErrorActionPreference = 'Stop'
+
+# I percorsi che dipendono da dove sta questo file si calcolano **qui**, non
+# come valore di default dentro `param()`: in Windows PowerShell 5.1
+# `$PSScriptRoot` lì dentro è ancora vuoto, e `Join-Path` si ferma con «stringa
+# vuota» prima che lo script esista davvero. Nel corpo è valorizzato — è la
+# stessa riga che in Registra-Compito.ps1 funziona da sempre.
+$radice = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Parent $PSCommandPath }
+if (-not $Prompt)   { $Prompt   = Join-Path $radice 'prompt-recap.md' }
+if (-not $Progetto) { $Progetto = (Resolve-Path (Join-Path $radice '..\..')).Path }
 
 if (-not (Test-Path $Prompt)) { throw "Prompt non trovato: $Prompt" }
 if (-not (Test-Path $Progetto)) { throw "Cartella del progetto non trovata: $Progetto" }
