@@ -56,18 +56,42 @@ dicibile.
 
 ---
 
+## Quando l'elenco cambia, il connettore va ripubblicato
+
+Il Worker ha dentro **il codice che ci si è pubblicato**, non quello che sta nel
+repository. Uno strumento nuovo — o un'istruzione cambiata — compare nelle chat
+solo dopo:
+
+```bash
+npx wrangler deploy
+```
+
+Finché non lo si fa, le chat continuano a parlare con la versione di prima e
+rispondono che quello strumento non esiste. Non è un errore da cercare
+altrove: è il deploy che manca. Dopo il deploy, dal pannello dei connettori su
+claude.ai conviene **scollegare e ricollegare** il connettore: l'elenco degli
+strumenti Claude lo legge all'handshake, e una chat già aperta si porta dietro
+quello vecchio.
+
 ## Cosa esce di casa
 
 | | |
 |---|---|
-| Guardare | `oggi`, `agenda`, `piano`, `programma`, `attivita_lista`, `sezioni`, `obiettivi_leggi` |
-| Scrivere | `attivita_crea`, `attivita_stato`, `piano_scrivi`, `programma_ore`, `evento_crea`, `diario_scrivi`, `sezione_crea` |
+| Guardare | `oggi`, `agenda`, `piano`, `programma`, `attivita_lista`, `sezioni`, `obiettivi_leggi`, `briefing` |
+| Scrivere | `attivita_crea`, `attivita_stato`, `piano_scrivi`, `programma_ore`, `evento_crea`, `diario_scrivi` |
+
+`briefing` è entrato al posto di `sezione_crea`, ed è la regola dell'elenco
+applicata: per farne entrare uno se ne toglie un altro. Il briefing è **la** cosa
+che si chiede al risveglio, col telefono in mano e gli occhi ancora chiusi;
+creare una sezione vuole commessa, nome e scadenza insieme — tre campi da
+dettare senza vedere quello che si scrive — e resta dal computer, dove del resto
+si crea una commessa. Da voce il briefing si legge soltanto: approvare una
+proposta mette un blocco nel piano, e quello si fa guardando, dalla scheda.
 
 Restano sul computer: tutto OneNote (`note_*`), `diario_leggi`,
 `obiettivi_scrivi`, `identita`, `posta` (il token del connettore non ha
-`Mail.Read`, ed è voluto), `recap` — che si scrive di notte da un compito
-pianificato e si rilegge da `oggi`, senza bisogno di uno strumento in più a
-voce — e i tre che si fanno da seduti guardando —
+`Mail.Read`, ed è voluto), `sezione_crea`, e i tre che si fanno da seduti
+guardando —
 `attivita_modifica` (correggere una scheda), `attivita_elimina` (buttare via) e
 `piano_auto` (la bozza della giornata). Il primo perché togliere qualcosa dalla
 vista non deve poter partire da una frase detta male in tangenziale; l'ultimo

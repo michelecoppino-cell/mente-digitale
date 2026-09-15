@@ -42,7 +42,8 @@ secondi. La CI esegue tutti e quattro i comandi a ogni push e ogni PR.
    `programmaStore.js`, `programmaExcel.js`, `xlsx.js`, `captureParse.js`,
    `deadlineReminders.js`, `dailyReview.js`, `calendarioLavoro.js`,
    `cachePersistenza.js`, `rituale.js`, `scripts/ics.mjs`,
-   `scripts/mente-comandi.mjs`, `scripts/mente-mcp-nucleo.mjs`, `worker/`),
+   `briefing.js`, `scripts/mente-comandi.mjs`, `scripts/mente-mcp-nucleo.mjs`,
+   `worker/`),
    aggiungi la verifica che avrebbe
    intercettato quello che hai corretto. Le prove si sono rotte una volta e
    nessuno se n'è accorto per settimane: è successo perché nessuna misura
@@ -152,14 +153,24 @@ Attività e ancora sbagliato nel Piano: due verità per la stessa cosa, che è i
 difetto peggiore da cercare perché non somiglia a un errore. Vale anche per lo
 spostamento fra liste, che riscrive `listId` e `listName`.
 
-**Il recap del mattino è di stamattina o non è niente.** Un file solo,
-riscritto ogni notte dal compito delle cinque (`docs/recap-mattina.md`), e
-`oggi` lo mostra **solo se la sua data è quella del giorno chiesto**: un recap di
-ieri messo in cima senza dirlo si legge come se fosse fresco, ed è l'unico modo
-in cui questo meccanismo può mentire. Vale anche qui la regola dello specchio del
-calendario di lavoro — `etaRecap` sta nel modulo, non nella vista — perché
-dipende da un PC che può essere spento. Non se ne tiene la cronologia: quello che
-merita di restare va nel diario.
+**Il briefing del mattino è di stamattina o non è niente.** Un file solo,
+riscritto ogni notte dal compito delle cinque (`docs/briefing-mattina.md`), e
+sia `oggi` sia la scheda lo mostrano **solo se la sua data è quella del giorno
+chiesto**: uno di ieri messo in cima senza dirlo si legge come fresco, ed è
+l'unico modo in cui questo meccanismo può mentire. Vale anche qui la regola
+dello specchio del calendario di lavoro — `etaBriefing` sta in `briefing.js`,
+non nella vista — perché dipende da un PC che può essere spento. Non se ne tiene
+la cronologia: quello che merita di restare va nel diario.
+
+**Il briefing propone, non dispone.** Le proposte nascono senza esito e niente
+finisce a piano da solo: approvare è un gesto, uno per riga, nella scheda
+`Briefing.jsx`, e passa da `handlePlansChanged` — la stessa scrittura del Piano
+e delle Sezioni, perché è lo stesso piano. Un piano che si riempie da solo
+mentre dormi è un piano di cui non ci si fida più, e basta trovarci dentro una
+volta un blocco che non si è messo per smettere di guardarlo. L'esito vive
+dentro il documento del briefing perché dura quanto lui: un giorno. Le regole
+stanno in `src/briefing.js` — puro, condiviso fra app, CLI e server MCP, e ci
+girano le prove.
 
 **Una sottoattività è un passo, non un'attività piccola.** Niente stato, niente
 persona, niente scadenza, e non va a piano da sola: se serve una di quelle
@@ -314,7 +325,9 @@ che ha già smesso di funzionare.
 | `src/dailyReview.js` | le proposte della campanella: quali email chiedono qualcosa e perché (`motivi`), quali sono un flusso di servizio che si ripete, e le righe «Da fare» di OneNote |
 | `src/PannelloReview.jsx` | il pannello della campanella: «Da valutare» e «Scadenze», le due metà del giro quotidiano |
 | `src/calendarioLavoro.js` | lo specchio del calendario aziendale: cosa c'è nel file su OneDrive e come diventa un evento nella forma di Graph |
-| `scripts/recap/` | il compito delle cinque: il prompt fisso del recap, lo script che lo passa a `claude -p` con gli strumenti dichiarati uno per uno, e la registrazione del compito di Windows. Il perché sta in `docs/recap-mattina.md` |
+| `src/briefing.js` | il briefing del mattino: la forma del documento, chi è di oggi, come si approva una proposta e dove finisce il suo blocco. Puro, e ci girano le prove |
+| `src/Briefing.jsx` | la scheda: le proposte con Approva e Scarta, il resto in sola lettura. Una colonna sola, pensata per il telefono appena svegli |
+| `scripts/briefing/` | il compito delle cinque: le preferenze (`briefing.json`, che si cambia senza toccare codice), il prompt fisso, lo script che lo passa a `claude -p` con gli strumenti dichiarati uno per uno, e la registrazione del compito di Windows. Il perché sta in `docs/briefing-mattina.md` |
 | `src/programma.js` | il Programma di commessa: i conti, le chiavi del carico (`risorsa\|pacchetto\|settimana` più, in coda e facoltativa, la voce), lo stato derivato di una voce, e il carico di una persona su tutte le commesse. Niente rete, niente React: è il file su cui girano le prove |
 | `src/programmaStore.js` | gli stessi programmi su OneDrive: registro, un documento per commessa, `reapply` che unisce per chiave. Ci si arriva anche da fuori: il CLI e il server MCP montano lo stesso strato in `mente-graph.mjs`, e le ore scritte da lì passano da `celleConsuntivo` come quelle incollate nell'app |
 | `src/programmaExcel.js` | il foglio che esce (tre fogli: riepilogo, persone, voci) e le ore vere che rientrano incollate. Puro, e il foglio Persone esce nella stessa forma in cui rientra |

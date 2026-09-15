@@ -119,18 +119,22 @@ async function esegui(args, opts) {
       }
       throw new Error(`piano: sottocomando sconosciuto "${sub}" (giorno, settimana, mese, auto, aggiungi, sposta, togli)`);
 
-    // Il recap: senza testo lo legge, con --testo (o da stdin) lo scrive. È il
-    // comando che gira alle cinque dentro Claude Code sul PC sempre acceso —
-    // vedi docs/recap-mattina.md.
-    case 'recap':
-      if (!sub || sub === 'leggi') return mente.recapLeggi({ data: s(opts.data) });
+    // Il briefing del mattino: senza sottocomando lo legge. Scriverlo è un
+    // documento intero — proposte, notizie, curiosità — quindi da terminale
+    // arriva come JSON, da stdin o da --briefing: gli stessi motivi per cui
+    // «obiettivi scrivi» fa così. Chi lo scrive davvero è il compito delle
+    // cinque, che passa dallo strumento MCP — vedi docs/briefing-mattina.md.
+    case 'briefing':
+      if (!sub || sub === 'leggi') return mente.briefingLeggi({ data: s(opts.data) });
       if (sub === 'scrivi') {
-        return mente.recapScrivi({
-          testo: s(opts.testo) || await leggiStdin(),
-          data: s(opts.data), titolo: s(opts.titolo), fonti: s(opts.fonti),
-        });
+        const grezzo = s(opts.briefing) || await leggiStdin();
+        if (!grezzo) throw new Error('Serve il briefing in JSON (--briefing o da stdin).');
+        let doc;
+        try { doc = JSON.parse(grezzo); }
+        catch (e) { throw new Error(`Il briefing non è JSON valido: ${e.message}`); }
+        return mente.briefingScrivi({ ...doc, data: s(opts.data) || doc.data });
       }
-      throw new Error(`recap: sottocomando sconosciuto "${sub}" (leggi, scrivi)`);
+      throw new Error(`briefing: sottocomando sconosciuto "${sub}" (leggi, scrivi)`);
 
     case 'posta':
       return mente.posta({ giorni: n(opts.giorni), massimo: n(opts.massimo) });
@@ -303,7 +307,7 @@ Lettura
             [--persona "Nome"]    carico settimanale delle persone. Senza
             [--settimane N]       commessa: quelle accese
   obiettivi [--mese YYYY-MM]      gli obiettivi del mese e a che punto sono
-  recap [--data YYYY-MM-DD]       il recap del mattino, con quanti anni ha
+  briefing [--data YYYY-MM-DD]    il briefing del mattino, con quanti anni ha
   posta [--giorni N]              le email che sembrano chiedere qualcosa
   sezioni                         liste per commessa (con consegne, scadenze e
                                   attività aperte) e sezioni OneNote
@@ -357,8 +361,9 @@ Scrittura
 
   note crea "titolo" --sezione X [--testo "…"]      (senza --testo legge da stdin)
   note aggiungi <id | titolo --sezione X> [--testo "…"]
-  recap scrivi [--testo "…"] [--data YYYY-MM-DD] [--titolo "…"] [--fonti a,b]
-                (senza --testo legge da stdin; sostituisce il recap di ieri)
+  briefing scrivi [--briefing '{"giornata":"…","proposte":[…]}']
+                (senza --briefing legge il JSON da stdin; sostituisce quello di
+                 ieri. Lo scrive il compito delle cinque, non le dita)
   diario scrivi [--testo "…"] [--tipo ${TIPI_DIARIO.join('|')}] [--data YYYY-MM-DD]
                 [--tag a,b] [--umore 1-5] [--energia 1-5] [--gratitudine "a|b"] [--cassetto]
                 (senza --testo legge da stdin)

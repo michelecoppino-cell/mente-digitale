@@ -24,6 +24,7 @@ import './AppShell.css';
  */
 const DESTINATIONS = [
   { to: '/oggi',     label: 'Oggi',     icon: 'sun' },
+  { to: '/briefing', label: 'Briefing', icon: 'sunrise' },
   { to: '/piano',    label: 'Piano',    icon: 'calendar' },
   { to: '/attivita', label: 'Attività', icon: 'check' },
   { to: '/sezioni',  label: 'Sezioni',  icon: 'book' },
@@ -54,6 +55,13 @@ function Icon({ name }) {
   switch (name) {
     case 'sun': return (
       <svg {...common}><circle cx="12" cy="12" r="4.2" /><path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6l1.4 1.4M17 17l1.4 1.4M18.4 5.6L17 7M7 17l-1.4 1.4" /></svg>
+    );
+    // Il sole che sorge dietro l'orizzonte: «Oggi» ha il sole intero e alto,
+    // questo ne ha metà appoggiata a una riga. A 17px la differenza si vede
+    // perché cambia la silhouette — un sole con meno raggi, invece, sarebbe
+    // stata la stessa macchia.
+    case 'sunrise': return (
+      <svg {...common}><path d="M3.5 19h17M6.5 15.5a5.5 5.5 0 0 1 11 0" /><path d="M12 4.5v2.4M4.8 8.2l1.7 1.7M19.2 8.2l-1.7 1.7" /></svg>
     );
     case 'calendar': return (
       <svg {...common}><rect x="3.5" y="5" width="17" height="15.5" rx="2" /><path d="M3.5 10h17M8 3.2v3.6M16 3.2v3.6" /></svg>

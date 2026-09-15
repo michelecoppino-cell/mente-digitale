@@ -15,7 +15,7 @@
 .DESCRIPTION
   Una volta sola, su questa macchina. Il compito deve girare **anche a sessione
   bloccata o utente scollegato**, che è il caso normale alle cinque del mattino:
-  è tutta la differenza fra un recap che c'è e uno che si scopre mancante
+  è tutta la differenza fra un briefing che c'è e uno che si scopre mancante
   mentre si fa colazione.
 
   Si prova in scala, perché su un PC aziendale il modo migliore può essere
@@ -32,11 +32,11 @@
     mentre sei collegato, **anche a schermo bloccato** — che su una VDI è il
     caso normale, visto che disconnettersi non chiude la sessione. Non parte se
     ti scolleghi davvero, e lo script te lo dice a chiare lettere invece di
-    lasciartelo scoprire una mattina senza recap.
+    lasciartelo scoprire una mattina senza briefing.
 
   Se la sessione è bloccata da criteri aziendali che uccidono i processi
   dell'utente allo screen lock, nessuno dei due modi basta: in quel caso il
-  compito va messo su un'altra macchina sempre accesa. Il recap non se ne
+  compito va messo su un'altra macchina sempre accesa. Il briefing non se ne
   accorge — legge e scrive su OneDrive, non su questo disco.
 
 .PARAMETER Nome
@@ -44,7 +44,7 @@
 
 .PARAMETER Ora
   A che ora, ogni giorno. Il valore di default è le cinque: l'ora in cui nessuno
-  sta usando il PC e il recap è comunque fresco al risveglio.
+  sta usando il PC e il briefing è comunque fresco al risveglio.
 
 .EXAMPLE
   powershell -ExecutionPolicy Bypass -File .\Registra-Compito.ps1
@@ -53,13 +53,13 @@
   powershell -ExecutionPolicy Bypass -File .\Registra-Compito.ps1 -ConPassword -Ora 04:30
 
 .NOTES
-  Per toglierlo:  Unregister-ScheduledTask -TaskName "Mente digitale - recap del mattino"
-  Per provarlo:   Start-ScheduledTask   -TaskName "Mente digitale - recap del mattino"
+  Per toglierlo:  Unregister-ScheduledTask -TaskName "Mente digitale - briefing del mattino"
+  Per provarlo:   Start-ScheduledTask   -TaskName "Mente digitale - briefing del mattino"
 #>
 
 [CmdletBinding()]
 param(
-  [string]$Nome = 'Mente digitale - recap del mattino',
+  [string]$Nome = 'Mente digitale - briefing del mattino',
   [string]$Ora = '05:00',
   [switch]$ConPassword,
   [int]$MinutiMassimi = 20
@@ -67,8 +67,8 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
-$script = Join-Path $PSScriptRoot 'Recap-Mattina.ps1'
-if (-not (Test-Path $script)) { throw "Non trovo Recap-Mattina.ps1 accanto a questo file." }
+$script = Join-Path $PSScriptRoot 'Briefing-Mattina.ps1'
+if (-not (Test-Path $script)) { throw "Non trovo Briefing-Mattina.ps1 accanto a questo file." }
 
 $azione = New-ScheduledTaskAction `
   -Execute 'powershell.exe' `
@@ -78,8 +78,8 @@ $azione = New-ScheduledTaskAction `
 $quando = New-ScheduledTaskTrigger -Daily -At $Ora
 
 # `StartWhenAvailable`: se alle cinque la macchina era spenta o sospesa, il
-# compito parte appena torna disponibile invece di saltare il giorno. Un recap
-# delle sette è ancora un recap; nessun recap è un buco.
+# compito parte appena torna disponibile invece di saltare il giorno. Un
+# briefing delle sette è ancora un briefing; nessun briefing è un buco.
 # `ExecutionTimeLimit`: un modello che si impianta non deve restare acceso fino
 # a sera — venti minuti sono molti più dei due che servono.
 $impostazioni = New-ScheduledTaskSettingsSet `
@@ -97,7 +97,7 @@ $utente = "$env:USERDOMAIN\$env:USERNAME"
 # processo batch», che l'amministratore di dominio può non aver dato. Il
 # fallimento è un «Accesso negato» secco (0x80070005) che non spiega cosa
 # manca, e la reazione sbagliata — l'unica possibile fino a ieri — era fermarsi
-# lì e restare senza recap.
+# lì e restare senza briefing.
 #
 # Quindi si prova in scala, e **si dice sempre quale livello si è ottenuto**,
 # perché cambia quando il compito parte davvero:
@@ -112,7 +112,7 @@ $utente = "$env:USERDOMAIN\$env:USERNAME"
 #                i criteri lasciano aperta, perché non passa dalle stesse API.
 #
 # Un compito interattivo non è la stessa cosa di uno S4U, e spacciarlo per tale
-# sarebbe il modo di scoprire a marzo che il recap non arrivava da gennaio.
+# sarebbe il modo di scoprire a marzo che il briefing non arrivava da gennaio.
 
 $modi = @()
 if ($ConPassword) {
@@ -181,10 +181,10 @@ if (-not $riuscito) {
   Write-Host "   2. chiedi all'IT il diritto «Accedi come processo batch» per il tuo utente"
   Write-Host "      (secpol.msc → Assegnazione diritti utente), che è quello che serve a S4U;"
   Write-Host "   3. se i criteri non lo consentono, il compito va su un'altra macchina sempre"
-  Write-Host "      accesa: il recap legge e scrive su OneDrive, quindi non cambia niente."
+  Write-Host "      accesa: il briefing legge e scrive su OneDrive, quindi non cambia niente."
   Write-Host ""
-  Write-Host "  Intanto il recap lo puoi scrivere a mano quando vuoi:"
-  Write-Host "   powershell -ExecutionPolicy Bypass -File .\Recap-Mattina.ps1"
+  Write-Host "  Intanto il briefing lo puoi scrivere a mano quando vuoi:"
+  Write-Host "   powershell -ExecutionPolicy Bypass -File .\Briefing-Mattina.ps1"
   exit 1
 }
 
@@ -192,8 +192,8 @@ Write-Host "✓ registrato: «$Nome», ogni giorno alle $Ora ($($riuscito.nome))
 Write-Host "  Quando parte:    $($riuscito.dove)"
 if ($riuscito.nome -in @('interattivo', 'schtasks')) {
   Write-Host "  ⚠ Questo livello non basta a utente scollegato. Su una VDI di solito va bene" -ForegroundColor Yellow
-  Write-Host "    lo stesso — disconnettersi non è scollegarsi — ma se una mattina il recap" -ForegroundColor Yellow
-  Write-Host "    non c'è, è il primo sospetto. Per quello pieno serve S4U: vedi docs/recap-mattina.md." -ForegroundColor Yellow
+  Write-Host "    lo stesso — disconnettersi non è scollegarsi — ma se una mattina il briefing" -ForegroundColor Yellow
+  Write-Host "    non c'è, è il primo sospetto. Per quello pieno serve S4U: vedi docs/briefing-mattina.md." -ForegroundColor Yellow
 }
 Write-Host "  Provalo adesso:  Start-ScheduledTask -TaskName '$Nome'"
-Write-Host "  Il log sta in:   $env:LOCALAPPDATA\mente-digitale\recap"
+Write-Host "  Il log sta in:   $env:LOCALAPPDATA\mente-digitale\briefing"

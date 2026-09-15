@@ -220,6 +220,88 @@ export const PIANI = {
   },
 };
 
+// Il briefing di stamattina, come lo scrive il compito delle cinque. Sta qui
+// perché `dev:finto` deve poter aprire la scheda «Briefing» e vederla piena:
+// contro il OneDrive vero quella schermata si guarda una volta al giorno, alle
+// sette del mattino, e non è il momento in cui si prova un'interfaccia.
+export const BRIEFING = {
+  version: 2,
+  data: oggi,
+  scrittoIl: istante(oggi, '05:00'),
+  fonti: ['calendario', 'posta', 'attività', 'piano', 'notizie'],
+  giornata:
+    'Due impegni fissi oggi: il sopralluogo in cantiere alle otto e mezza e la call con la DL ' +
+    'alle due e mezza. In mezzo restano quattro ore buone. La consegna A60 scade fra due giorni ' +
+    'e il punzonamento del plinto P3 è ancora aperto: è quello che decide la giornata.',
+  proposte: [
+    {
+      id: 'p1',
+      titolo: 'Chiudere la verifica a punzonamento del plinto P3',
+      attivita: 't-a1',
+      lista: 'Fondazioni',
+      ora: '10:30',
+      durataMin: 90,
+      perche: 'La consegna A60 scade fra due giorni ed è l\'ultima verifica aperta del pacchetto.',
+      esito: null,
+      esitoIl: null,
+    },
+    {
+      id: 'p2',
+      titolo: 'Modello SAP2000: variabili per destinazione',
+      attivita: 't-a2',
+      lista: 'Fondazioni',
+      ora: '12:00',
+      durataMin: 120,
+      perche: 'È il sotto-passo rimasto aperto, e senza i carichi non parte il predimensionamento.',
+      esito: null,
+      esitoIl: null,
+    },
+    {
+      id: 'p3',
+      titolo: 'Richiamare ADC per le prove penetrometriche',
+      attivita: 't-a4',
+      lista: 'Fondazioni',
+      ora: '16:30',
+      durataMin: 30,
+      perche: 'Ferma da nove giorni: a questo punto è una telefonata, non un\'attività.',
+      esito: null,
+      esitoIl: null,
+    },
+  ],
+  recap: [
+    'Il predimensionamento delle travi di copertura è a piano da due giorni e non è mai stato chiuso.',
+    'Sara non ha ancora risposto sulle quote di imposta: chiesto cinque giorni fa.',
+    'Marco ha in mano i disegni di carpenteria del piano primo da tre giorni.',
+  ],
+  notizie: {
+    mondo: [
+      'Accordo sulla riduzione delle tariffe sull\'acciaio fra Stati Uniti e Unione Europea.',
+      'Terremoto di magnitudo 6.1 al largo del Giappone, nessun danno rilevante agli edifici recenti.',
+    ],
+    europa: [
+      'La Commissione propone criteri comuni per la ristrutturazione antisismica del patrimonio pubblico.',
+      'Germania: piano decennale per i ponti autostradali, metà da rifare.',
+    ],
+    italia: [
+      'Nuove linee guida del Consiglio Superiore dei Lavori Pubblici sui ponti esistenti.',
+      'Superbonus, chiarimento dell\'Agenzia sulle asseverazioni tardive.',
+    ],
+    friuli: [
+      'Approvato il finanziamento regionale per la messa in sicurezza delle scuole di Udine.',
+    ],
+  },
+  curiosita: {
+    professionali: [
+      'SAP2000 apre all\'import IFC 4.3: i modelli di carpenteria si rileggono senza rifare la geometria.',
+      'Il ponte di Genova ha due anni di dati dai sensori: pubblicati, e si possono scaricare.',
+    ],
+    riflessioni: [
+      'Sadhguru: l\'urgenza è una scelta, non una proprietà delle cose. Le cose urgenti di ieri, oggi, non si ricordano.',
+    ],
+  },
+  domanda: 'La call con la DL la sposti, o rinunci al secondo blocco sul modello?',
+};
+
 export const OBIETTIVI = {
   [mese]: [
     { id: 'o-1', titolo: 'Consegnare le fondazioni A60', totale: 4, fatti: 1, unita: 'tavole' },

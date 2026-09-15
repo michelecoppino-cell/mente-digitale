@@ -17,6 +17,7 @@
     "prova-flusso": "node scripts/prova-flusso.mjs",
     "prova-nucleo": "node scripts/prova-nucleo.mjs",
     "prova-comandi": "node scripts/prova-comandi.mjs",
+    "prova-briefing": "node scripts/prova-briefing.mjs",
     "prova-pool": "node scripts/prova-pool.mjs",
     "prova-colori": "node scripts/prova-colori.mjs",
     "prova-programma": "node scripts/prova-programma.mjs",
@@ -24,7 +25,7 @@
     "prova-ics": "node scripts/prova-ics.mjs",
     "prova-cache": "node scripts/prova-cache.mjs",
     "prova-mcp-remoto": "node scripts/prova-mcp-remoto.mjs",
-    "prova": "npm run prova-onedrive && npm run prova-nucleo && npm run prova-comandi && npm run prova-task && npm run prova-migrazione && npm run prova-flusso && npm run prova-pool && npm run prova-colori && npm run prova-programma && npm run prova-cattura && npm run prova-ics && npm run prova-cache && npm run prova-mcp-remoto",
+    "prova": "npm run prova-onedrive && npm run prova-nucleo && npm run prova-comandi && npm run prova-briefing && npm run prova-task && npm run prova-migrazione && npm run prova-flusso && npm run prova-pool && npm run prova-colori && npm run prova-programma && npm run prova-cattura && npm run prova-ics && npm run prova-cache && npm run prova-mcp-remoto",
     "test": "npm run prova",
     "preview": "vite preview"
   },

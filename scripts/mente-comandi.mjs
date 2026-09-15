@@ -26,7 +26,7 @@ import {
   loadDailyPlans, saveDailyPlans, loadIdentityDoc,
   loadObiettivi, saveObiettivi,
   loadDiaryIndex, loadDiaryMonth, saveDiaryEntry,
-  loadRecap, saveRecap, getRecentEmails,
+  loadBriefing, saveBriefing, getRecentEmails,
   getCalendarEvents, getCalendars, createCalendarEvent,
   getNotebooks, getSections, getPages, getPageContentHtml, htmlToText,
   createPage, appendToPage, textToHtml,
@@ -61,6 +61,11 @@ import {
 } from '../src/diary.js';
 
 import { extractEmailCandidates } from '../src/dailyReview.js';
+
+import {
+  normalizzaBriefing, etaBriefing, eDelGiorno, contaProposte,
+  VERSIONE_BRIEFING, AREE_NOTIZIE, AREE_CURIOSITA,
+} from '../src/briefing.js';
 
 // Gli stati che si possono scrivere da fuori l'app. `inbox` e `scheduled` non
 // ci sono: il primo è la lista in cui il task si trova, il secondo un blocco
@@ -281,10 +286,10 @@ export async function oggi(opts = {}) {
   const [{ tasks, plans }, eventi, recap] = await Promise.all([
     collectTasks(),
     getCalendarEvents(inizio, fine).catch(e => { erroreAgenda = e.message; return []; }),
-    // Il recap del mattino, se stanotte è stato scritto. Sta dentro «oggi» e
-    // non in uno strumento suo perché la domanda è la stessa — «come si mette
-    // la giornata» — e uno strumento in più è un consenso in più da dare.
-    loadRecap().catch(() => null),
+    // Il briefing del mattino, se stanotte è stato scritto: qui ne arriva il
+    // sunto, perché «come si mette la giornata» è la stessa domanda. Per
+    // esteso — proposte, notizie, curiosità — c'è lo strumento «briefing».
+    loadBriefing().catch(() => null),
   ]);
 
   const piano = plans[giornoStr]?.blocks || [];
@@ -293,15 +298,21 @@ export async function oggi(opts = {}) {
   for (const s of TASK_STATUSES) conteggi[s] = tasks.filter(t => t._status === s).length;
   const scivolate = tasks.filter(t => t._placement && !t._placement.completed && t._placement.date < giornoStr);
 
-  // Il recap si mostra solo se parla di questa giornata: uno di ieri, messo in
-  // cima senza dirlo, si legge come se fosse di stamattina — ed è l'unico modo
-  // in cui questo meccanismo può mentire.
-  const etaDelRecap = etaRecap(recap);
-  const recapDiOggi = recap?.data === giornoStr ? recap : null;
-  const testoRecap = recapDiOggi
-    ? '\n' + blocco('Recap del mattino', String(recapDiOggi.testo || '').split('\n')) +
-      (etaDelRecap?.vecchio ? `\n  ⚠ scritto ${etaDelRecap.ore} ore fa` : '')
-    : (recap ? `\n  ⚠ il recap più recente è del ${recap.data}: stanotte non ne è stato scritto uno.` : '');
+  // Il briefing si mostra solo se parla di questa giornata: uno di ieri, messo
+  // in cima senza dirlo, si legge come se fosse di stamattina — ed è l'unico
+  // modo in cui questo meccanismo può mentire.
+  const doc = normalizzaBriefing(recap);
+  const etaDelBriefing = etaBriefing(doc);
+  const briefingDiOggi = eDelGiorno(doc, giornoStr) ? doc : null;
+  const conti = contaProposte(briefingDiOggi);
+  const testoRecap = briefingDiOggi
+    ? '\n' + blocco('Briefing del mattino', [
+        ...String(briefingDiOggi.giornata || '').split('\n').filter(Boolean),
+        ...(conti.aperte.length
+          ? ['', `${conti.aperte.length} proposte da approvare o scartare (scheda Briefing, o strumento «briefing»)`]
+          : []),
+      ]) + (etaDelBriefing?.vecchio ? `\n  ⚠ scritto ${etaDelBriefing.ore} ore fa` : '')
+    : (doc ? `\n  ⚠ il briefing più recente è del ${doc.data}: stanotte non ne è stato scritto uno.` : '');
 
   const text = [
     fmtGiorno.format(new Date(`${giornoStr}T12:00:00`)),
@@ -327,8 +338,8 @@ export async function oggi(opts = {}) {
       piano,
       conteggi,
       scivolate: scivolate.map(riassuntoTask),
-      recap: recapDiOggi,
-      etaRecap: etaDelRecap,
+      briefing: briefingDiOggi,
+      etaBriefing: etaDelBriefing,
     },
     text,
   };
@@ -1037,104 +1048,156 @@ function voceText(e) {
   return righe.join('\n');
 }
 
-// ── Il recap del mattino, e la posta ─────────────────────────────────────────
+// ── Il briefing del mattino, e la posta ──────────────────────────────────────
 // Alle cinque un Claude Code non interattivo, sul PC che resta acceso, guarda
-// calendario, posta e attività e scrive due paragrafi qui dentro. Al risveglio
-// la domanda è una sola — «leggimi il recap» — e la risposta è già pronta:
-// niente da aspettare mentre si fa colazione, e nessuna chiamata a pagamento,
-// perché quel Claude gira sull'abbonamento.
+// calendario, posta e attività, cerca i titoli del giorno e scrive il briefing
+// qui dentro. Al risveglio la domanda è una sola — «leggimi il briefing» — e la
+// risposta è già pronta: niente da aspettare mentre si fa colazione, e nessuna
+// chiamata a pagamento, perché quel Claude gira sull'abbonamento.
 //
-// Il perché sta in `docs/recap-mattina.md`. Qui ci sono le due metà che
-// riguardano i dati: chi lo scrive e chi lo rilegge.
+// Il documento ha una forma, e non è un vezzo: le **proposte** devono poter
+// comparire nella scheda «Briefing» dell'app con un bottone Approva e uno
+// Scarta accanto a ciascuna, e un paragrafo di prosa non si può mettere in un
+// bottone. Il resto — la giornata, il recap degli ultimi giorni, le notizie, le
+// curiosità — è sola lettura, e lì la prosa va benissimo.
+//
+// Le regole del documento stanno in `src/briefing.js`, le stesse su cui gira
+// la vista: qui non se ne riscrive nessuna.
+//
+// Il perché di tutto il meccanismo sta in `docs/briefing-mattina.md`.
 
-/** Oltre queste ore un recap non è più «di stamattina» e lo si dice. */
-const ORE_RECAP_VECCHIO = 18;
-
-/**
- * Quanti anni ha il recap. È la stessa regola dello specchio del calendario di
- * lavoro (`etaSpecchio`): un dato che arriva da un PC che può essere spento
- * deve dichiarare quanto è vecchio, perché un recap fermo a ieri non si
- * distingue da uno giusto — un recap mancante si nota, uno stantio no.
- *
- * @param {any} doc
- * @param {Date} [adesso]
- * @returns {{ ore: number, vecchio: boolean, quando: string }|null}
- */
-export function etaRecap(doc, adesso = new Date()) {
-  const quando = typeof doc?.scrittoIl === 'string' ? doc.scrittoIl : null;
-  if (!quando) return null;
-  const ore = Math.max(0, Math.round((adesso.getTime() - new Date(quando).getTime()) / 3_600_000));
-  return { ore, vecchio: ore >= ORE_RECAP_VECCHIO, quando };
-}
+export { etaBriefing, VERSIONE_BRIEFING };
 
 /**
- * Scrive il recap del mattino, sostituendo quello di ieri.
+ * Scrive il briefing del mattino, sostituendo quello di ieri.
  *
- * **Sostituisce, non aggiunge**: il recap è di stamattina o non è niente, e
+ * **Sostituisce, non aggiunge**: il briefing è di stamattina o non è niente, e
  * tenerne la cronologia vorrebbe dire un file che cresce per sempre con dentro
  * quarantasei giornate che nessuno rileggerà. Quello che merita di restare si
  * scrive nel diario, che è il posto delle cose che si rileggono.
  *
- * @param {{ testo?: string, data?: string, titolo?: string, fonti?: string[]|string }} opts
+ * Le proposte si scrivono **senza esito**: approvare è un gesto che si fa da
+ * svegli, guardando, e niente finisce a piano da solo. È la regola che tiene in
+ * piedi tutta la scheda.
+ *
+ * @param {{ data?: string, giornata?: string, proposte?: any[], recap?: string[]|string,
+ *           notizie?: any, curiosita?: any, domanda?: string, fonti?: string[]|string,
+ *           testo?: string }} opts
  * @returns {Promise<{ data: any, text: string }>}
  */
-export async function recapScrivi(opts = {}) {
-  const testoRecap = testo(opts.testo);
-  if (!testoRecap) throw new Error('Niente da scrivere: serve il testo del recap.');
-
+export async function briefingScrivi(opts = {}) {
   const giorno = testo(opts.data) || dateKey();
   if (!GIORNO_RE.test(giorno)) throw new Error(`Giorno in formato sbagliato: ${giorno} (serve YYYY-MM-DD)`);
 
-  const doc = {
-    version: 1,
+  // `testo` è la forma vecchia, di quando il briefing era un paragrafo solo:
+  // si accetta ancora perché un prompt vecchio deve poter scrivere qualcosa di
+  // leggibile invece di un errore.
+  const giornata = testo(opts.giornata) || testo(opts.testo);
+
+  const proposte = (Array.isArray(opts.proposte) ? opts.proposte : []).map((p, i) => ({
+    id: `p${i + 1}`,
+    titolo: testo(p?.titolo),
+    attivita: testo(p?.attivita) || null,
+    lista: testo(p?.lista) || null,
+    ora: testo(p?.ora),
+    durataMin: numero(p?.durataMin) || 30,
+    perche: testo(p?.perche),
+    esito: null,
+    esitoIl: null,
+  }));
+  const senzaTitolo = proposte.findIndex(p => !p.titolo);
+  if (senzaTitolo > -1) throw new Error(`La proposta numero ${senzaTitolo + 1} non ha titolo.`);
+  const senzaPerche = proposte.find(p => !p.perche);
+  if (senzaPerche) {
+    throw new Error(
+      `«${tronca(senzaPerche.titolo, 40)}» non dice perché: una proposta senza motivo non si può ` +
+      'approvare guardandola, e il motivo è la parte che si legge davvero.');
+  }
+
+  /** @param {any} v */
+  const sezione = v => (Array.isArray(v) ? v.map(x => String(x).trim()).filter(Boolean) : []);
+  const doc = normalizzaBriefing({
+    version: VERSIONE_BRIEFING,
     data: giorno,
     scrittoIl: new Date().toISOString(),
-    titolo: testo(opts.titolo) || `Recap del ${giorno}`,
-    testo: testoRecap,
-    // Da cosa è stato ricavato: serve a leggere un recap vecchio sapendo cosa
-    // ci mancava. «Niente dalla posta» e «la posta non l'ho guardata» sono due
-    // giornate diverse.
     fonti: elenco(opts.fonti, ','),
-  };
-  await saveRecap(doc);
+    giornata,
+    proposte,
+    recap: Array.isArray(opts.recap) ? sezione(opts.recap) : elenco(opts.recap, '|'),
+    notizie: {
+      mondo: sezione(opts.notizie?.mondo),
+      europa: sezione(opts.notizie?.europa),
+      italia: sezione(opts.notizie?.italia),
+      friuli: sezione(opts.notizie?.friuli),
+    },
+    curiosita: {
+      professionali: sezione(opts.curiosita?.professionali),
+      riflessioni: sezione(opts.curiosita?.riflessioni),
+    },
+    domanda: testo(opts.domanda),
+  });
 
+  if (!doc) throw new Error('Briefing vuoto: serve almeno la giornata, o delle proposte, o delle notizie.');
+  await saveBriefing(doc);
+
+  const conti = contaProposte(doc);
+  const quante = AREE_NOTIZIE.reduce((n, a) => n + doc.notizie[a.chiave].length, 0);
   return {
-    data: { recap: doc, sostituito: true },
-    text: `✓ recap del ${giorno} scritto (${testoRecap.length} caratteri)` +
+    data: { briefing: doc, sostituito: true },
+    text: `✓ briefing del ${giorno} scritto: ${conti.totale} proposte, ${quante} notizie, ` +
+      `${AREE_CURIOSITA.reduce((n, a) => n + doc.curiosita[a.chiave].length, 0)} curiosità` +
       (doc.fonti.length ? `, da ${doc.fonti.join(', ')}` : ''),
   };
 }
 
 /**
- * Rilegge il recap, con quanti anni ha.
+ * Rilegge il briefing, con quanti anni ha.
  * @param {{ data?: string }} [opts]
  * @returns {Promise<{ data: any, text: string }>}
  */
-export async function recapLeggi(opts = {}) {
-  const doc = await loadRecap();
-  if (!doc?.testo) {
+export async function briefingLeggi(opts = {}) {
+  const doc = normalizzaBriefing(await loadBriefing());
+  if (!doc) {
     return {
-      data: { recap: null },
-      text: 'Nessun recap: stanotte non è stato scritto. ' +
-        'Lo scrive il compito delle cinque sul PC di lavoro — vedi docs/recap-mattina.md.',
+      data: { briefing: null },
+      text: 'Nessun briefing: stanotte non è stato scritto. ' +
+        'Lo scrive il compito delle cinque sul PC di lavoro — vedi docs/briefing-mattina.md.',
     };
   }
-  const eta = etaRecap(doc);
+
+  const eta = etaBriefing(doc);
   const giorno = testo(opts.data);
-  const avviso = eta?.vecchio
-    ? `⚠ recap di ${doc.data}, scritto ${eta.ore} ore fa: il PC che lo scrive potrebbe essere stato spento.`
-    : '';
-  if (giorno && doc.data !== giorno) {
-    return {
-      data: { recap: doc, eta, chiesto: giorno },
-      text: `Il recap più recente è del ${doc.data}, non del ${giorno}. Non se ne tiene la cronologia.\n\n` +
-        [avviso, doc.testo].filter(Boolean).join('\n\n'),
-    };
+  const righe = [];
+  if (eta?.vecchio) {
+    righe.push(`⚠ briefing di ${doc.data}, scritto ${eta.ore} ore fa: il PC che lo scrive potrebbe essere spento.`);
   }
-  return {
-    data: { recap: doc, eta },
-    text: [avviso, doc.titolo, '', doc.testo].filter(Boolean).join('\n'),
-  };
+  if (giorno && !eDelGiorno(doc, giorno)) {
+    righe.push(`Il briefing più recente è del ${doc.data}, non del ${giorno}. Non se ne tiene la cronologia.`);
+  }
+  if (doc.giornata) righe.push('', doc.giornata);
+
+  const conti = contaProposte(doc);
+  if (conti.totale) {
+    righe.push('', blocco('Proposte', doc.proposte.map(p => {
+      const stato = p.esito === 'approvata' ? '✓' : p.esito === 'scartata' ? '×' : '·';
+      const ora = p.ora ? `${p.ora} ` : '';
+      return `${stato} ${ora}${tronca(p.titolo, 50)} (${p.durataMin}m)\n     ${tronca(p.perche, 70)}`;
+    })));
+    if (conti.aperte.length) {
+      righe.push(`  ${conti.aperte.length} ancora da decidere. Si approvano dalla scheda Briefing: ` +
+        'da qui non si mette niente a piano.');
+    }
+  }
+  if (doc.recap.length) righe.push('', blocco('Gli ultimi giorni', doc.recap));
+  for (const a of AREE_NOTIZIE) {
+    if (doc.notizie[a.chiave].length) righe.push('', blocco(a.label, doc.notizie[a.chiave]));
+  }
+  for (const a of AREE_CURIOSITA) {
+    if (doc.curiosita[a.chiave].length) righe.push('', blocco(a.label, doc.curiosita[a.chiave]));
+  }
+  if (doc.domanda) righe.push('', doc.domanda);
+
+  return { data: { briefing: doc, eta }, text: righe.filter(r => r !== undefined).join('\n').trim() };
 }
 
 /**
