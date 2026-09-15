@@ -1344,8 +1344,8 @@ I ventisei strumenti sono gli stessi comandi. In lettura: `oggi`, `agenda`,
 `identita`. In scrittura: `attivita_crea`, `attivita_stato`,
 `attivita_modifica`, `attivita_elimina`, `sezione_crea`, `piano_scrivi`,
 `programma_ore`, `obiettivi_scrivi`, `evento_crea`, `note_crea`,
-`note_aggiungi`, `diario_scrivi`. In mezzo `recap`, che senza argomenti legge e
-con un testo scrive. Quelli in sola lettura sono marcati come tali (`readOnlyHint`),
+`note_aggiungi`, `diario_scrivi`. In mezzo `briefing`, che senza argomenti legge
+e con un documento scrive. Quelli in sola lettura sono marcati come tali (`readOnlyHint`),
 così un client che chiede conferma prima di scrivere sa quando chiederla. Dal
 connettore remoto ne escono quattordici — è una scelta, e sta due sezioni più
 sotto.
@@ -1412,19 +1412,30 @@ scaletta dell'ora che si sta per passare. E siccome il blocco ne tiene una
 **copia**, spuntarne uno dalle Attività lo spunta anche lì — la stessa regola del
 titolo, per la stessa ragione.
 
-**Il recap del mattino.** Alle cinque, sul PC sempre acceso, un Claude Code non
-interattivo guarda calendario, posta e attività, cerca i titoli del giorno, e
-scrive due paragrafi su com'è messa la giornata con una manciata di notizie in
-coda — due o tre dal mondo, due o tre dall'Europa, due o tre dall'Italia, senza
-commento: si sceglie parlando, dopo, su cosa tornare. Al risveglio si chiede a
-voce di leggere tutto. Lo scrive `recap`,
-che sostituisce quello di ieri — se ne tiene uno solo, perché un recap è di
-stamattina o non è niente — e lo rilegge `oggi`, che lo porta con sé **solo se è
-di stamattina**: uno di ieri messo in cima senza dirlo si leggerebbe come se
-fosse fresco, ed è l'unico modo in cui questo meccanismo potrebbe mentire. Il
-resto — perché un compito pianificato e non un servizio, come si registra perché
-giri a sessione bloccata, cosa fare quando non arriva — sta in
-`docs/recap-mattina.md`.
+**Il briefing del mattino.** Alle cinque, sul PC sempre acceso, un Claude Code
+non interattivo guarda calendario, posta e attività, cerca i titoli del giorno e
+scrive il briefing: com'è messa la giornata, le **proposte** di piano con il loro
+perché, il ripasso degli ultimi giorni, le notizie (mondo, Europa, Italia,
+Friuli) e le curiosità — quello che vale per il mestiere, e uno spunto su cui
+fermarsi. Lo scrive `briefing`, che sostituisce quello di ieri (se ne tiene uno
+solo: un briefing è di stamattina o non è niente), e lo si rilegge dalla scheda
+**Briefing** dell'app, dallo strumento `briefing` a voce, o da `oggi`, che ne
+porta il sunto — e **solo se è di stamattina**: uno di ieri messo in cima senza
+dirlo si leggerebbe come fresco, ed è l'unico modo in cui questo meccanismo
+potrebbe mentire. Quante proposte, quante notizie per area, i temi delle
+curiosità: tutto in `scripts/briefing/briefing.json`, che si cambia senza
+toccare codice. Il resto — perché un compito pianificato e non un servizio, come
+si registra perché giri a sessione bloccata, cosa fare quando non arriva — sta
+in `docs/briefing-mattina.md`.
+
+**Niente finisce a piano da solo.** Le proposte del briefing si approvano una
+per una, dalla scheda: Approva mette il blocco nel piano di oggi con la stessa
+scrittura del Piano, Scarta lo toglie di mezzo, e tutto il resto — giornata,
+recap, notizie, curiosità — è in sola lettura. È la regola che tiene in piedi la
+cosa: un piano che si riempie da solo mentre dormi è un piano di cui non ci si
+fida più, e la prima volta che ci si trova dentro un blocco che non si è messo
+lo si smette di guardare. Se fra le cinque e l'approvazione l'ora proposta si è
+occupata, il blocco scende al primo buco e la scheda lo dice.
 
 `posta` è la metà che mancava per poterlo scrivere: le email degli ultimi giorni
 che sembrano chiedere qualcosa, con il perché. Le proposte le tira fuori

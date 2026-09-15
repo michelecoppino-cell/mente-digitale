@@ -57,6 +57,7 @@ import { ymd } from './tempo.js';
 // la vista del Diario a schermo intero, `ActivityBoard` sono le cinque colonne
 // del flusso: due schermate intere che «Oggi» non apre. Il dato è lo stesso e
 // arriva dalla stessa cache di query, prima come dopo.
+const Briefing = lazy(() => import('./Briefing'));
 const MindMap = lazy(() => import('./MindMap'));
 const PlannerView = lazy(() => import('./PlannerView'));
 const DiaryPanel = lazy(() => import('./DiaryPanel'));
@@ -1324,6 +1325,19 @@ export default function App() {
                 onCompleteBlock={handleCompleteBlock}
                 onEventiCambiati={ricaricaEventiCalendario}
                 onOpenIdentity={setIdentityOpen}
+              />
+            } />
+
+            {/* Il briefing lo scrive un'altra macchina di notte: qui si legge, e
+                l'unica cosa che si scrive è l'esito delle proposte. Approvare
+                passa da `handlePlansChanged`, cioè dalla stessa scrittura del
+                Piano e delle Sezioni — è lo stesso piano, e la scheda non ne
+                tiene una copia sua. */}
+            <Route path="/briefing" element={
+              <Briefing
+                plans={dailyPlans}
+                onPlansChanged={handlePlansChanged}
+                todoLists={todoLists}
               />
             } />
 

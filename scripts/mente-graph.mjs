@@ -422,21 +422,28 @@ export async function saveDailyPlans(plans) {
   return putDriveJson('mente-digitale-daily-plans.json', pruned);
 }
 
-// ── Il recap del mattino ─────────────────────────────────────────────────────
-// Un file solo, riscritto per intero ogni volta: il recap è di stamattina o non
-// è niente, e tenerne una cronologia vorrebbe dire un file che cresce per
+// ── Il briefing del mattino ──────────────────────────────────────────────────
+// Un file solo, riscritto per intero ogni volta: il briefing è di stamattina o
+// non è niente, e tenerne una cronologia vorrebbe dire un file che cresce per
 // sempre con dentro quarantasei giornate che nessuno rileggerà. Chi lo scrive è
-// un Claude Code non interattivo sul PC sempre acceso (docs/recap-mattina.md);
-// chi lo legge è `oggi`, cioè la prima domanda del mattino.
+// un Claude Code non interattivo sul PC sempre acceso
+// (docs/briefing-mattina.md); chi lo legge sono la scheda «Briefing»
+// dell'app, `oggi` e lo strumento `briefing`.
+//
+// Il file ha un nome suo e non quello del recap di prima: il documento adesso
+// ha proposte, notizie e curiosità, cioè una forma diversa, e chi legge con
+// la versione vecchia deve trovare «non c'è» invece di un documento che non sa
+// leggere. Quello vecchio, se è rimasto, è il briefing di un giorno passato:
+// non si migra niente, lo si lascia morire da sé.
 
 /** @returns {Promise<any|null>} */
-export async function loadRecap() {
-  return getDriveJson('mente-digitale-recap.json', null);
+export async function loadBriefing() {
+  return getDriveJson('mente-digitale-briefing.json', null);
 }
 
 /** @param {any} doc @returns {Promise<any>} */
-export async function saveRecap(doc) {
-  return putDriveJson('mente-digitale-recap.json', doc);
+export async function saveBriefing(doc) {
+  return putDriveJson('mente-digitale-briefing.json', doc);
 }
 
 // ── Posta ────────────────────────────────────────────────────────────────────

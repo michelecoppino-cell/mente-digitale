@@ -1,0 +1,83 @@
+{
+  "_commento": [
+    "Le preferenze del briefing del mattino: quante cose, di che tipo, in che finestra.",
+    "Questo file è tuo — cambialo quando vuoi, senza toccare né il prompt né gli script.",
+    "Il prompt (prompt-briefing.md) dice COME si scrive il briefing; qui c'è COSA ci va dentro.",
+    "Vale dalla mattina dopo: il compito delle cinque lo rilegge ogni volta.",
+    "Le righe che cominciano con _ sono note per te e non le legge nessuno."
+  ],
+
+  "finestra": {
+    "_commento": "Dove possono cadere le proposte di piano. Fuori di qui non si propone niente.",
+    "dalle": "08:30",
+    "alle": "18:00"
+  },
+
+  "proposte": {
+    "_commento": [
+      "Quante cose proporre per la giornata, e quanto lunghe al massimo.",
+      "Poche e motivate: un elenco di dieci righe al mattino non si legge, si salta.",
+      "Nessuna finisce a piano da sola — si approvano una per una dalla scheda Briefing."
+    ],
+    "quante": 4,
+    "durataMassimaMin": 120,
+    "criteri": [
+      "quello che scade prima",
+      "quello che sblocca un altro o una persona che aspetta",
+      "il pezzo di un obiettivo del mese che è indietro",
+      "le attese ferme da più di una settimana: quelle sono telefonate, non attività"
+    ]
+  },
+
+  "recap": {
+    "_commento": "Il ripasso degli ultimi giorni, in sola lettura: cosa è rimasto indietro.",
+    "giorniIndietro": 3,
+    "righeMassime": 5
+  },
+
+  "notizie": {
+    "_commento": [
+      "Quante notizie per area. Zero spegne un'area: mettere 0 a «friuli» la fa sparire.",
+      "Una frase l'una, senza commento: si sceglie poi a voce su cosa tornare."
+    ],
+    "mondo": 3,
+    "europa": 3,
+    "italia": 3,
+    "friuli": 2,
+    "primaQuelleCheToccanoIlLavoro": true,
+    "temiDiLavoro": ["edilizia", "sismica", "appalti", "normativa tecnica", "infrastrutture", "Friuli"]
+  },
+
+  "curiosita": {
+    "_commento": [
+      "Le due metà: quello che vale per il mestiere, e quello su cui pensare.",
+      "Non sono notizie di cronaca — sono le cose che uno si segnerebbe per leggerle dopo."
+    ],
+    "professionali": 2,
+    "riflessioni": 1,
+    "temiProfessionali": [
+      "software di calcolo strutturale (SAP2000, Midas, openBIM, IFC)",
+      "AI applicata all'ingegneria e alle costruzioni",
+      "opere interessanti realizzate nel mondo, con il perché sono interessanti",
+      "materiali, tecniche costruttive, sostenibilità strutturale",
+      "normativa tecnica ed Eurocodici, quando cambia qualcosa"
+    ],
+    "temiRiflessioni": [
+      "spunti di introspezione di tradizione orientale — Sadhguru, taoismo, zen, stoicismo",
+      "attenzione, presenza, rapporto col tempo e col lavoro",
+      "una frase o un'idea su cui fermarsi trenta secondi, non un consiglio di produttività"
+    ]
+  },
+
+  "stile": {
+    "_commento": "Come deve suonare. Il briefing si ascolta più spesso di quanto si legga.",
+    "paroleGiornata": "da 80 a 150",
+    "lingua": "italiano",
+    "regole": [
+      "le ore come si dicono («alle nove e mezza»), non come si scrivono",
+      "niente consigli generici di produttività: è un resoconto",
+      "niente entusiasmo di circostanza, niente «ottimo lavoro»",
+      "quello che non risulta dagli strumenti non c'è: non inventare niente"
+    ]
+  }
+}

@@ -317,47 +317,85 @@ const DOPODOMANI = g(2);
     'spostando il blocco, la scaletta e quello che è già fatto vengono dietro');
 }
 
-// ── Il recap del mattino ─────────────────────────────────────────────────────
+// ── Il briefing del mattino ──────────────────────────────────────────────────
 
-console.log('\nIl recap del mattino\n');
+console.log('\nIl briefing del mattino\n');
+
+/** Un briefing plausibile, nella forma che scrive il compito delle cinque. */
+const briefingFinto = (/** @type {string} */ giorno, /** @type {any} */ extra = {}) => ({
+  data: giorno,
+  giornata: 'Giornata senza impegni fissi, sei ore libere fra le nove e le sei.',
+  proposte: [
+    { titolo: 'Mail ad Alfio sulle difformità', perche: 'sblocca il confronto con ABS, ferma da tre giorni',
+      attivita: 't-a1', lista: 'Fondazioni', ora: '09:00', durataMin: 120 },
+    { titolo: 'Rete di drenaggio', perche: 'va prima delle linee antincendio', ora: '14:00', durataMin: 60 },
+  ],
+  recap: ['La consegna A60-2 è scaduta da undici giorni.'],
+  notizie: { mondo: ['Una cosa nel mondo.'], europa: ['Una cosa in Europa.'], italia: ['Una in Italia.'], friuli: ['Una in Friuli.'] },
+  curiosita: { professionali: ['Un modo nuovo di modellare i plinti.'], riflessioni: ['Una frase su cui fermarsi.'] },
+  domanda: 'Le telefonate ferme le fai oggi?',
+  fonti: ['calendario', 'attività', 'notizie'],
+  ...extra,
+});
 
 {
-  await mente.recapScrivi({ testo: 'Giornata piena: due riunioni e il plinto da chiudere.', data: oggi, fonti: ['calendario', 'attività'] });
-  const letto = await mente.recapLeggi();
-  verifica(/plinto da chiudere/.test(letto.text), 'quello che è stato scritto si rilegge');
-  verifica(letto.data.recap.fonti.length === 2, 'con l\'elenco di cosa era stato guardato');
+  const scritto = await mente.briefingScrivi(briefingFinto(oggi));
+  verifica(scritto.data.briefing.proposte.length === 2, 'le proposte si scrivono');
+  verifica(
+    scritto.data.briefing.proposte.every((/** @type {any} */ p) => p.esito === null),
+    'e nascono senza esito: niente va a piano da solo, nemmeno per svista'
+  );
+  verifica(
+    scritto.data.briefing.proposte.map((/** @type {any} */ p) => p.id).join() === 'p1,p2',
+    'ognuna ha un id suo, che serve ad appenderci la decisione'
+  );
 
-  await mente.recapScrivi({ testo: 'Seconda versione, quella buona.', data: oggi });
-  const dinuovo = await mente.recapLeggi();
-  verifica(!/plinto da chiudere/.test(dinuovo.text) && /quella buona/.test(dinuovo.text),
-    'e riscriverlo sostituisce: se ne tiene uno solo');
+  const letto = await mente.briefingLeggi();
+  verifica(/Mail ad Alfio/.test(letto.text), 'e si rileggono');
+  verifica(/sblocca il confronto/.test(letto.text), 'con il loro perché, che è la parte che si legge davvero');
+  verifica(/Dal Friuli/.test(letto.text), 'le notizie escono per area, Friuli compreso');
+  verifica(/2 ancora da decidere/.test(letto.text), 'e si dice quante restano da decidere');
+}
+
+{
+  let errore = null;
+  try {
+    await mente.briefingScrivi({ data: oggi, proposte: [{ titolo: 'Una cosa senza motivo' }] });
+  } catch (e) { errore = e; }
+  verifica(Boolean(errore), 'una proposta senza perché è un errore: senza motivo non si può approvare');
+}
+
+{
+  await mente.briefingScrivi(briefingFinto(oggi, { giornata: 'Seconda versione, quella buona.' }));
+  const letto = await mente.briefingLeggi();
+  verifica(!/sei ore libere/.test(letto.text) && /quella buona/.test(letto.text),
+    'riscriverlo sostituisce: se ne tiene uno solo');
 }
 
 {
   const quadro = await mente.oggi({ data: oggi });
-  verifica(/Recap del mattino/.test(quadro.text) && /quella buona/.test(quadro.text),
-    'il recap di stamattina arriva insieme al quadro del giorno');
-  verifica(quadro.data.recap !== null, 'anche nella forma strutturata');
+  verifica(/Briefing del mattino/.test(quadro.text), 'il briefing di stamattina arriva insieme al quadro del giorno');
+  verifica(/2 proposte da approvare/.test(quadro.text), 'che dice quante proposte aspettano');
+  verifica(quadro.data.briefing !== null, 'anche nella forma strutturata');
 }
 
 {
-  // Il caso che conta: la notte in cui il PC era spento. Il recap di ieri non
-  // deve poter passare per quello di stamattina.
-  await mente.recapScrivi({ testo: 'Questo è di ieri.', data: g(-1) });
+  // Il caso che conta: la notte in cui il PC era spento.
+  await mente.briefingScrivi(briefingFinto(g(-1), { giornata: 'Questo è di ieri.' }));
   const quadro = await mente.oggi({ data: oggi });
-  verifica(!/Questo è di ieri/.test(quadro.text), 'un recap di ieri non si legge come quello di oggi');
-  verifica(/il recap più recente è del/.test(quadro.text), 'e «oggi» dice che stanotte non ne è arrivato uno');
+  verifica(!/Questo è di ieri/.test(quadro.text), 'un briefing di ieri non si legge come quello di oggi');
+  verifica(/il briefing più recente è del/.test(quadro.text), 'e «oggi» dice che stanotte non ne è arrivato uno');
 
-  const chiesto = await mente.recapLeggi({ data: oggi });
+  const chiesto = await mente.briefingLeggi({ data: oggi });
   verifica(/non del/.test(chiesto.text), 'chiedendolo per oggi, dice che quello che ha è di un altro giorno');
 }
 
 {
-  const fresco = mente.etaRecap({ scrittoIl: new Date(Date.now() - 2 * 3_600_000).toISOString() });
-  const stantio = mente.etaRecap({ scrittoIl: new Date(Date.now() - 30 * 3_600_000).toISOString() });
+  const fresco = mente.etaBriefing({ scrittoIl: new Date(Date.now() - 2 * 3_600_000).toISOString() });
+  const stantio = mente.etaBriefing({ scrittoIl: new Date(Date.now() - 30 * 3_600_000).toISOString() });
   verifica(fresco?.vecchio === false && stantio?.vecchio === true,
-    'un recap dichiara quanti anni ha, come lo specchio del calendario di lavoro');
-  verifica(mente.etaRecap(null) === null, 'e quando non si sa, lo dice invece di inventare un\'ora');
+    'un briefing dichiara quanti anni ha, come lo specchio del calendario di lavoro');
+  verifica(mente.etaBriefing(null) === null, 'e quando non si sa, lo dice invece di inventare un\'ora');
 }
 
 // ── La posta ─────────────────────────────────────────────────────────────────

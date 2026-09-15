@@ -443,28 +443,78 @@ export const TOOLS = [
     run: a => mente.programmaOre(a),
   },
   {
-    name: 'recap',
+    name: 'briefing',
     description:
-      'Il recap del mattino: due o tre paragrafi su com\'è messa la giornata, scritti stanotte e ' +
-      'riletti al risveglio. Senza «testo» lo legge; con «testo» lo scrive, **sostituendo** quello ' +
-      'del giorno prima — se ne tiene uno solo, perché un recap è di stamattina o non è niente. ' +
-      'Lo scrive il compito delle cinque sul PC sempre acceso (docs/recap-mattina.md); a voce lo ' +
-      'si rilegge da «oggi», che lo porta con sé. Quello che merita di restare va nel diario.',
+      'Il briefing del mattino: com\'è messa la giornata, le proposte di piano con il loro perché, ' +
+      'il recap degli ultimi giorni, le notizie (mondo, Europa, Italia, Friuli) e le curiosità. ' +
+      'Senza argomenti lo legge; con «giornata», «proposte» o le altre sezioni lo scrive, ' +
+      '**sostituendo** quello del giorno prima — se ne tiene uno solo, perché un briefing è di ' +
+      'stamattina o non è niente. Lo scrive il compito delle cinque sul PC sempre acceso ' +
+      '(docs/briefing-mattina.md), e lo si rilegge da qui, dalla scheda «Briefing» dell\'app o ' +
+      'da «oggi», che ne porta il sunto. Le proposte si scrivono senza esito: approvare è un ' +
+      'gesto che si fa da svegli, nella scheda, e **niente finisce a piano da qui**.',
     sola_lettura: false,
     schema: {
       type: 'object',
       properties: {
-        testo: stringa('Il testo del recap. Senza, lo strumento legge invece di scrivere.'),
-        data: stringa('Giorno di cui parla, YYYY-MM-DD. Default: oggi.'),
-        titolo: stringa('Un titolo per il recap. Default: «Recap del <giorno>».'),
+        data: stringa('Giorno di cui parla, YYYY-MM-DD. Default: oggi. Da solo, legge.'),
+        giornata: stringa(
+          "Com'è fatta la giornata, in prosa: impegni fissi, ore libere, cosa scade. " +
+          'Da 80 a 150 parole, dicibili ad alta voce.'),
+        proposte: {
+          type: 'array',
+          description:
+            'Le cose da mettere a piano oggi, in ordine di importanza. Ognuna porta il suo perché: ' +
+            'è la parte che si legge davvero quando si decide se approvarla.',
+          items: {
+            type: 'object',
+            required: ['titolo', 'perche'],
+            properties: {
+              titolo: stringa('Cosa fare, come lo si direbbe.'),
+              perche: stringa('Perché proprio questa, in una riga: la scadenza, chi sblocca, cosa chiude.'),
+              attivita: stringa("L'id dell'attività vera, quando la proposta ne ha una (da attivita_lista)."),
+              lista: stringa('La sezione o consegna in cui quell\'attività sta.'),
+              ora: stringa("Ora d'inizio suggerita, HH:MM. Se all'approvazione è occupata, si scende al primo buco."),
+              durataMin: { type: 'integer', description: 'Quanto dura. Default: la stima dell\'attività, o 30.' },
+            },
+          },
+        },
+        recap: {
+          type: 'array', items: { type: 'string' },
+          description: 'Gli ultimi giorni: cosa è rimasto indietro, le attese ferme, cosa è stato chiuso. Una riga ciascuno.',
+        },
+        notizie: {
+          type: 'object',
+          description: 'I titoli del giorno, una frase l\'uno, senza commento.',
+          properties: {
+            mondo: { type: 'array', items: { type: 'string' } },
+            europa: { type: 'array', items: { type: 'string' } },
+            italia: { type: 'array', items: { type: 'string' } },
+            friuli: { type: 'array', items: { type: 'string' } },
+          },
+        },
+        curiosita: {
+          type: 'object',
+          description:
+            'Due cose che non sono notizie: quello che vale per il mestiere (software, AI, opere ' +
+            'interessanti) e uno spunto su cui pensare.',
+          properties: {
+            professionali: { type: 'array', items: { type: 'string' } },
+            riflessioni: { type: 'array', items: { type: 'string' } },
+          },
+        },
+        domanda: stringa('La domanda con cui si chiude. Una sola.'),
         fonti: {
           type: 'array', items: { type: 'string' },
-          description: 'Cosa è stato guardato per scriverlo (calendario, posta, attività, piano). ' +
-            'Serve a rileggere un recap sapendo cosa gli mancava.',
+          description: 'Cosa è stato guardato davvero (calendario, posta, attività, piano, notizie). ' +
+            'Quello che ha dato errore non va messo: serve a rileggere un briefing sapendo cosa gli mancava.',
         },
       },
     },
-    run: a => (a?.testo ? mente.recapScrivi(a) : mente.recapLeggi(a)),
+    run: a => {
+      const scrive = a?.giornata || a?.testo || a?.proposte || a?.notizie || a?.curiosita || a?.recap;
+      return scrive ? mente.briefingScrivi(a) : mente.briefingLeggi(a);
+    },
   },
   {
     name: 'posta',
@@ -622,8 +672,17 @@ export const TOOLS = [
 export const NOMI_DA_VOCE = [
   'oggi', 'agenda', 'piano', 'attivita_lista', 'sezioni', 'obiettivi_leggi', 'programma',
   'attivita_crea', 'attivita_stato', 'piano_scrivi', 'programma_ore',
-  'evento_crea', 'diario_scrivi', 'sezione_crea',
+  'evento_crea', 'diario_scrivi', 'briefing',
 ];
+
+// `briefing` è entrato al posto di `sezione_crea`, ed è la regola qui sopra
+// applicata: l'elenco è un conto, e per farne entrare uno se ne toglie un
+// altro. Il briefing è **la** cosa che si chiede al risveglio, cioè col
+// telefono in mano e gli occhi ancora chiusi; creare una sezione vuole
+// commessa, nome e scadenza insieme — tre campi da dettare senza vedere quello
+// che si scrive — e resta dal computer, dove del resto si crea una commessa.
+// Da voce il briefing si legge soltanto: approvare una proposta mette un blocco
+// nel piano, e quello si fa guardando, dalla scheda «Briefing».
 
 // ── Le istruzioni dell'handshake ─────────────────────────────────────────────
 // Il modello le legge una volta sola, all'inizio: è lì che si dice cosa sono
@@ -631,7 +690,7 @@ export const NOMI_DA_VOCE = [
 
 export const ISTRUZIONI =
   'La mente digitale di Michele: attività (file JSON su OneDrive), piano del giorno, calendario, ' +
-  'diario, obiettivi del mese, taccuini OneNote, la posta (in lettura) e il recap del ' +
+  'diario, obiettivi del mese, taccuini OneNote, la posta (in lettura) e il briefing del ' +
   'mattino. Si legge tutto e si scrive quasi ' +
   'ovunque: attività e liste, blocchi del piano, eventi del calendario, pagine OneNote, ' +
   'voci di diario, obiettivi. Niente si cancella davvero: quello che si butta via ' +
@@ -672,8 +731,9 @@ export const ISTRUZIONI_VOCE =
   'cui si dividono, e quante ne fa ciascuno in una settimana. Le ore si sostituiscono, non si ' +
   'sommano.\n' +
   'Da qui non si cancella niente, e OneNote, il diario da rileggere e gli obiettivi da ' +
-  'riscrivere non ci sono: quelli si fanno dal computer, seduti. Il recap del mattino lo porta ' +
-  '«oggi», già scritto stanotte.\n' +
+  'riscrivere non ci sono: quelli si fanno dal computer, seduti. Il briefing del mattino è ' +
+  'già scritto stanotte: «briefing» lo legge tutto, «oggi» ne porta il sunto. Le proposte del ' +
+  'briefing da qui si leggono soltanto — si approvano dalla scheda, guardando.\n' +
   "Una sottoattività è un passo dentro un'attività: non ha uno stato suo, non ha una persona e " +
   "non va a piano da sola — se ne serve una, è un'attività. Si spezza mentre si detta, in passi " +
   "da meno di due ore, e spuntarne uno non chiude l'attività: chiedilo.\n" +

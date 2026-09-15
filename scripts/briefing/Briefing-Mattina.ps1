@@ -10,7 +10,7 @@
 
 <#
 .SYNOPSIS
-  Fa scrivere a Claude Code il recap del mattino, senza che nessuno sia davanti
+  Fa scrivere a Claude Code il briefing del mattino, senza che nessuno sia davanti
   allo schermo.
 
 .DESCRIPTION
@@ -18,11 +18,11 @@
   MCP `mente` è già registrato e Claude Code gira sull'abbonamento: nessuna
   chiamata a consumo, nessuna chiave API da custodire.
 
-  Fa una cosa sola: legge `prompt-recap.md` e lo passa a `claude -p`, cioè alla
+  Fa una cosa sola: legge `prompt-briefing.md` e lo passa a `claude -p`, cioè alla
   modalità non interattiva. Il modello guarda calendario, posta e attività con
   gli strumenti del server MCP, cerca sul web i titoli del giorno, e scrive il
-  risultato con lo strumento `recap`, che sostituisce quello di ieri su
-  OneDrive. Al risveglio la domanda è una sola — «leggimi il recap» — e la
+  risultato con lo strumento `briefing`, che sostituisce quello di ieri su
+  OneDrive. Al risveglio la domanda è una sola — «leggimi il briefing» — e la
   risposta è già pronta.
 
   **Gli strumenti si dichiarano uno per uno** (`-AllowedTools`): in modalità non
@@ -31,8 +31,8 @@
   solo, può fare qualunque cosa. Questo elenco è anche la risposta alla domanda
   «cosa può fare il compito delle cinque?».
 
-  **Se non parte, non si rompe niente.** Il recap di ieri resta dov'è, e chi lo
-  rilegge se ne accorge da solo: `oggi` mostra il recap solo se è di stamattina,
+  **Se non parte, non si rompe niente.** Il briefing di ieri resta dov'è, e chi lo
+  rilegge se ne accorge da solo: `oggi` mostra il briefing solo se è di stamattina,
   e altrimenti dice di che giorno è. È la stessa regola dello specchio del
   calendario di lavoro — un dato che arriva da un PC che può essere spento
   dichiara quanti anni ha.
@@ -51,12 +51,12 @@
   degli strumenti: `mcp__mente__oggi`.
 
 .EXAMPLE
-  powershell -ExecutionPolicy Bypass -File .\Recap-Mattina.ps1
+  powershell -ExecutionPolicy Bypass -File .\Briefing-Mattina.ps1
 
 .NOTES
   Per registrarlo alle cinque: `.\Registra-Compito.ps1`.
-  Il resto — cosa contiene il recap, come si prova, cosa guardare quando non
-  arriva — sta in docs/recap-mattina.md.
+  Il resto — cosa contiene il briefing, come si prova, cosa guardare quando non
+  arriva — sta in docs/briefing-mattina.md.
 #>
 
 [CmdletBinding()]
@@ -65,7 +65,7 @@ param(
   [string]$Claude = 'claude',
   [string]$Server = 'mente',
   [string]$Prompt,
-  [string]$CartellaLog = (Join-Path $env:LOCALAPPDATA 'mente-digitale\recap'),
+  [string]$CartellaLog = (Join-Path $env:LOCALAPPDATA 'mente-digitale\briefing'),
   [int]$LogDaTenere = 14
 )
 
@@ -77,35 +77,36 @@ $ErrorActionPreference = 'Stop'
 # vuota» prima che lo script esista davvero. Nel corpo è valorizzato — è la
 # stessa riga che in Registra-Compito.ps1 funziona da sempre.
 $radice = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Parent $PSCommandPath }
-if (-not $Prompt)   { $Prompt   = Join-Path $radice 'prompt-recap.md' }
+if (-not $Prompt)   { $Prompt   = Join-Path $radice 'prompt-briefing.md' }
 if (-not $Progetto) { $Progetto = (Resolve-Path (Join-Path $radice '..\..')).Path }
 
 if (-not (Test-Path $Prompt)) { throw "Prompt non trovato: $Prompt" }
 if (-not (Test-Path $Progetto)) { throw "Cartella del progetto non trovata: $Progetto" }
 
 # Gli strumenti che il compito può usare. In lettura tutto quello che serve a
-# capire com'è messa la giornata; in scrittura `recap` e basta — è l'unica cosa
+# capire com'è messa la giornata; in scrittura `briefing` e basta — è l'unica cosa
 # che questo compito ha il diritto di cambiare.
 $strumenti = @(
   'oggi', 'agenda', 'piano', 'piano_auto', 'posta',
   'attivita_lista', 'sezioni', 'obiettivi_leggi', 'programma',
-  'recap'
+  'briefing'
 ) | ForEach-Object { "mcp__${Server}__$_" }
 
-# E il web, per i titoli del giorno in coda al recap. Sono di Claude Code, non
+# E il web, per i titoli del giorno in coda al briefing. Sono di Claude Code, non
 # del server MCP, e vanno nominati anche loro: in modalità non interattiva
-# quello che non è dichiarato non si può usare, e il recap uscirebbe senza
+# quello che non è dichiarato non si può usare, e il briefing uscirebbe senza
 # notizie senza che nessuno dica perché.
 $strumenti += @('WebSearch', 'WebFetch')
 
-# E `Read`, perché il prompt non gli viene passato: gli viene *indicato*. Vedi
-# più sotto il perché.
+# E `Read`, perché il prompt non gli viene passato: gli viene *indicato* — e
+# perché il prompt stesso gli fa leggere `briefing.json`, dove stanno le
+# preferenze. Vedi più sotto il perché.
 $strumenti += @('Read')
 
 New-Item -ItemType Directory -Force -Path $CartellaLog | Out-Null
-$log = Join-Path $CartellaLog ("recap-{0:yyyy-MM-dd}.log" -f (Get-Date))
+$log = Join-Path $CartellaLog ("briefing-{0:yyyy-MM-dd}.log" -f (Get-Date))
 
-"=== {0:yyyy-MM-dd HH:mm:ss} — recap del mattino ===" -f (Get-Date) | Out-File $log -Append -Encoding utf8
+"=== {0:yyyy-MM-dd HH:mm:ss} — briefing del mattino ===" -f (Get-Date) | Out-File $log -Append -Encoding utf8
 "progetto: $Progetto" | Out-File $log -Append -Encoding utf8
 
 try {
@@ -114,7 +115,7 @@ try {
   #
   #  - da stdin (`$testo | claude -p`): su Windows non arriva. Claude parte con
   #    una richiesta vuota e risponde «dimmi pure su cosa vuoi lavorare», esce
-  #    con codice 0, e nel log resta un saluto al posto del recap. È esattamente
+  #    con codice 0, e nel log resta un saluto al posto del briefing. È esattamente
   #    come si è rotto la prima volta;
   #  - come argomento (`claude -p "<seimila caratteri>"`): funziona finché il
   #    prompt è corto. Se `claude` è uno shim .cmd si passa da cmd.exe, e lì la
@@ -146,16 +147,16 @@ try {
   $quando = $null
   $verificato = $false
   try {
-    $json = & node (Join-Path $Progetto 'scripts\mente.mjs') recap --json 2>&1 | Out-String
+    $json = & node (Join-Path $Progetto 'scripts\mente.mjs') briefing --json 2>&1 | Out-String
     if ($LASTEXITCODE -eq 0) {
-      $quando = ($json | ConvertFrom-Json).recap.data
+      $quando = ($json | ConvertFrom-Json).briefing.data
       $verificato = $true
     }
   }
   catch { }   # node non c'è, o il token non è raggiungibile da qui: si dirà sotto
 
   if ($verificato -and $quando -ne $oggi) {
-    throw ("claude è uscito senza errori ma su OneDrive il recap non è di oggi " +
+    throw ("claude è uscito senza errori ma su OneDrive il briefing non è di oggi " +
            "(trovato: $(if ($quando) { $quando } else { 'nessuno' })). " +
            'Guarda la sua risposta qui sopra: se è un saluto o una domanda, il prompt non è arrivato.')
   }
@@ -168,14 +169,14 @@ try {
 }
 catch {
   # L'errore finisce nel log e nel codice di uscita, così la colonna «Risultato
-  # ultima esecuzione» dell'Utilità di pianificazione dice la verità. Il recap
+  # ultima esecuzione» dell'Utilità di pianificazione dice la verità. Il briefing
   # di ieri resta dov'è: è quello che rende questo fallimento innocuo.
   "ERRORE: $($_.Exception.Message)" | Out-File $log -Append -Encoding utf8
   exit 1
 }
 finally {
   # I log vecchi si buttano: sono righe di servizio, non un archivio.
-  Get-ChildItem $CartellaLog -Filter 'recap-*.log' |
+  Get-ChildItem $CartellaLog -Filter 'briefing-*.log' |
     Sort-Object LastWriteTime -Descending |
     Select-Object -Skip $LogDaTenere |
     Remove-Item -Force -ErrorAction SilentlyContinue

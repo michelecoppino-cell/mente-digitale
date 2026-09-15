@@ -1322,6 +1322,53 @@ export async function saveCoda(voci) {
 // Un file solo e non uno per mese come il registro: una giornata sono tre
 // righe da poche decine di byte, e dieci anni restano un file che si legge in
 // una richiesta. Si pota comunque a due anni: la motivazione di un martedì di
+// ── Il briefing del mattino ──────────────────────────────────────────────────
+// Lo scrive di notte un Claude Code sul PC sempre acceso (docs/briefing-mattina.md)
+// e lo legge la scheda «Briefing». L'app ci scrive una cosa sola: l'esito delle
+// proposte — approvata, scartata — che vive dentro il documento perché dura
+// quanto lui, cioè un giorno.
+const OD_BRIEFING_FILE = 'mente-digitale-briefing.json';
+
+/** @returns {Promise<any|null>} */
+export async function loadBriefing() {
+  return getDriveJson(OD_BRIEFING_FILE, null);
+}
+
+/**
+ * Riscrive il briefing con gli esiti decisi qui.
+ *
+ * Il `reapply` non è di prammatica: alle cinque di domani il documento viene
+ * sostituito per intero da un'altra macchina, e fra il caricamento della
+ * scheda e il tocco su «Approva» possono passare ore. Se nel frattempo è
+ * arrivato il briefing di un altro giorno, l'esito non ha più un posto dove
+ * stare: si lascia stare il documento fresco invece di riscriverci sopra
+ * quello vecchio.
+ *
+ * @param {any} doc  il briefing come deve restare
+ * @returns {Promise<any>}
+ */
+export async function saveBriefing(doc) {
+  return putDriveJson(OD_BRIEFING_FILE, doc, {
+    reapply: (fresco) => {
+      if (fresco?.data && doc?.data && fresco.data !== doc.data) return fresco;
+      // Stesso giorno: gli esiti di questo dispositivo si rimettono sopra il
+      // documento fresco, uno per uno. Così due telefoni che approvano due
+      // proposte diverse non si cancellano a vicenda.
+      const esiti = new Map((doc?.proposte || [])
+        .filter((/** @type {any} */ p) => p.esito)
+        .map((/** @type {any} */ p) => [p.id, p]));
+      if (!esiti.size) return fresco;
+      return {
+        ...fresco,
+        proposte: (fresco?.proposte || []).map((/** @type {any} */ p) => {
+          const mio = esiti.get(p.id);
+          return mio && !p.esito ? { ...p, esito: mio.esito, esitoIl: mio.esitoIl } : p;
+        }),
+      };
+    },
+  });
+}
+
 // tre anni fa non la rilegge nessuno.
 const OD_RITUALE_FILE = 'mente-digitale-rituale.json';
 

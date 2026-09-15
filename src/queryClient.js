@@ -43,6 +43,9 @@ export const STALE = {
   obiettivi:       15 * MIN,
   coda:            15 * MIN,
   rituale:          5 * MIN,
+  // Il briefing lo riscrive un'altra macchina alle cinque: di giorno non cambia
+  // quasi mai, ma quando cambia è la prima cosa che si guarda.
+  briefing:         5 * MIN,
   movimento:        5 * MIN,
   diarioDate:      15 * MIN,
   calEventiSezioni: 30 * MIN,
@@ -106,6 +109,7 @@ export const qk = {
   obiettivi:        () => /** @type {const} */ (['obiettivi']),
   coda:             () => /** @type {const} */ (['coda']),
   rituale:          () => /** @type {const} */ (['rituale']),
+  briefing:         () => /** @type {const} */ (['briefing']),
   /** @param {string} oggi 'YYYY-MM-DD': il registro tenuto è quello dei due mesi attorno a oggi */
   movimento:        (oggi) => /** @type {const} */ (['movimento', oggi.slice(0, 7)]),
   diarioDate:       () => /** @type {const} */ (['diarioDate']),

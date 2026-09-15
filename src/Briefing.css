@@ -1,0 +1,224 @@
+/* La scheda «Briefing»: una colonna sola, pensata per il telefono appena
+   svegli. Niente griglie a due colonne nemmeno sul portatile — il briefing si
+   legge dall'alto in basso, e una seconda colonna vorrebbe dire scegliere da
+   quale parte cominciare alle sette del mattino. */
+
+.brief {
+  max-width: 62ch;          /* la misura di lettura, non la larghezza dello schermo */
+  margin: 0 auto;
+  padding: var(--sp-6) var(--sp-5) var(--sp-8);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-6);
+}
+
+.brief-attesa { padding: var(--sp-8) var(--sp-5); }
+
+.brief-testa { display: flex; flex-direction: column; gap: var(--sp-2); }
+
+.brief-titolo {
+  margin: 0;
+  font-family: var(--font-title);
+  font-size: 24px;
+  font-weight: 500;
+  color: var(--text);
+  /* Il giorno arriva dal formattatore in minuscolo («lunedì 15 settembre»): la
+     maiuscola la mette il CSS, così il testo resta quello che si direbbe a
+     voce e non una stringa capitalizzata a mano nel JS. */
+  text-transform: capitalize;
+}
+
+/* Un briefing di ieri non si nasconde e non si spaccia per fresco: si mostra
+   con il cartello addosso. Il colore è quello degli avvisi, non degli errori —
+   non è rotto niente, è solo vecchio. */
+.brief-vecchio,
+.brief-avviso {
+  margin: 0;
+  padding: var(--sp-3) var(--sp-4);
+  border: 1px solid var(--accent-line);
+  border-radius: var(--r-lg);
+  background: var(--accent-tint);
+  color: var(--text-2);
+  font-size: var(--fs-meta);
+  line-height: 1.5;
+}
+
+.brief-sez { display: flex; flex-direction: column; gap: var(--sp-3); }
+
+.brief-eyebrow {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  margin: 0;
+}
+
+.brief-conto { text-transform: none; letter-spacing: 0; color: var(--text-3); }
+
+.brief-nota { margin: 0; font-size: var(--fs-micro); color: var(--muted); }
+
+.brief-prosa {
+  margin: 0;
+  font-size: var(--fs-row);
+  line-height: 1.65;
+  color: var(--text-2);
+}
+
+/* ── Le proposte ─────────────────────────────────────────────────────────── */
+
+.brief-proposte {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+
+.brief-prop {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  padding: var(--sp-4);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  background: var(--surface);
+}
+
+/* Decisa: resta a schermo ma smette di chiedere attenzione. Non sparisce,
+   perché «cosa avevo scartato stamattina?» è una domanda che uno si fa. */
+.brief-prop.e-decisa { background: var(--surface-2); border-color: var(--line-soft); }
+.brief-prop.e-decisa .brief-prop-titolo { color: var(--text-3); }
+
+.brief-prop-capo {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  flex-wrap: wrap;
+}
+
+.brief-prop-titolo { font-size: var(--fs-row); color: var(--text); font-weight: 500; }
+
+.brief-prop-quando {
+  flex: 0 0 auto;
+  font-size: var(--fs-micro);
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Il perché è la parte che si legge davvero quando si decide: sta sotto il
+   titolo, in chiaro, e non in un tooltip o dietro un «altro». */
+.brief-prop-perche {
+  margin: 0;
+  font-size: var(--fs-card);
+  line-height: 1.55;
+  color: var(--text-3);
+}
+
+.brief-prop-lista {
+  align-self: flex-start;
+  padding: 2px var(--sp-2);
+  border-radius: var(--r-sm);
+  background: var(--accent-tint);
+  color: var(--accent);
+  font-size: var(--fs-micro);
+}
+
+.brief-prop-azioni,
+.brief-prop-esito {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  margin-top: var(--sp-1);
+}
+
+.brief-prop-esito { justify-content: space-between; font-size: var(--fs-meta); }
+.brief-prop-esito .e-ok { color: var(--ok); }
+.brief-prop-esito .e-no { color: var(--muted); }
+
+/* I bottoni sono alti 44px: è la misura del dito, ed è tutto il punto di una
+   scheda che si usa in piedi, col telefono in una mano. */
+.brief-btn {
+  min-height: 44px;
+  padding: 0 var(--sp-5);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  background: transparent;
+  color: var(--text-2);
+  font-family: var(--font-ui);
+  font-size: var(--fs-card);
+  cursor: pointer;
+  transition: background var(--t), border-color var(--t), color var(--t);
+}
+
+.brief-btn:disabled { opacity: .5; cursor: default; }
+
+@media (hover: hover) {
+  .brief-btn:not(:disabled):hover { border-color: var(--accent-line); color: var(--text); }
+}
+
+/* «Approva» è l'unico bottone che scrive qualcosa in tutta la scheda, ed è
+   l'unico pieno: la differenza di peso fra i due è la differenza fra le due
+   azioni. */
+.brief-btn-si {
+  flex: 1 1 auto;
+  border-color: var(--accent-line);
+  background: var(--accent-tint);
+  color: var(--accent);
+  font-weight: 500;
+}
+
+/* Dopo la decisione il bottone che resta è piccolo: annullare è una via
+   d'uscita, non una cosa da fare. */
+.brief-btn-piano { min-height: 32px; padding: 0 var(--sp-3); font-size: var(--fs-meta); }
+
+/* ── Gli elenchi in sola lettura ─────────────────────────────────────────── */
+
+.brief-righe {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+
+.brief-righe li {
+  position: relative;
+  padding-left: var(--sp-4);
+  font-size: var(--fs-card);
+  line-height: 1.55;
+  color: var(--text-2);
+}
+
+/* Un trattino e non un pallino: sono titoli, non una lista della spesa. */
+.brief-righe li::before {
+  content: '–';
+  position: absolute;
+  left: 0;
+  color: var(--disabled);
+}
+
+.brief-domanda {
+  margin: 0;
+  padding-top: var(--sp-4);
+  border-top: 1px solid var(--line-soft);
+  font-family: var(--font-title);
+  font-size: 17px;
+  line-height: 1.5;
+  color: var(--text);
+}
+
+.brief-piede { font-size: var(--fs-micro); }
+
+.brief-vuoto { gap: var(--sp-4); padding-top: var(--sp-8); }
+.brief-vuoto .brief-btn { align-self: flex-start; }
+
+/* Da telefono: i margini si stringono e i due bottoni di ogni proposta vanno a
+   tutta larghezza, uno accanto all'altro, dove arriva il pollice. */
+@media (max-width: 860px) {
+  .brief { padding: var(--sp-5) var(--sp-4) calc(var(--barra-bassa, 60px) + var(--sp-8)); gap: var(--sp-5); }
+  .brief-titolo { font-size: 21px; }
+  .brief-prop-azioni .brief-btn { flex: 1 1 0; padding: 0 var(--sp-3); }
+}
