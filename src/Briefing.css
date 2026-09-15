@@ -1,18 +1,75 @@
-/* La scheda «Briefing»: una colonna sola, pensata per il telefono appena
-   svegli. Niente griglie a due colonne nemmeno sul portatile — il briefing si
-   legge dall'alto in basso, e una seconda colonna vorrebbe dire scegliere da
-   quale parte cominciare alle sette del mattino. */
+/* La scheda «Briefing».
+
+   **Lo scroll è suo.** La shell tiene il contenuto in `overflow: hidden` e
+   ogni vista si porta il proprio: senza, la pagina cresce oltre lo schermo e
+   la rotella non ha niente da muovere — che è esattamente come si è presentata
+   la prima volta, con l'ultima notizia irraggiungibile.
+
+   **Tre gruppi, non un nastro.** Da telefono è una colonna sola e si legge
+   dall'alto in basso. Da schermo largo la stessa roba diventa due colonne, e
+   da monitor intero tre: a sinistra quello che chiede una decisione (la
+   giornata e le proposte), in mezzo il contesto (gli ultimi giorni, la
+   domanda), a destra la lettura (notizie e curiosità). Una colonna sola su
+   1600px voleva dire scorrere mezzo metro per arrivare in fondo a un
+   documento che, di suo, si guarda tutto in una volta. */
 
 .brief {
-  max-width: 62ch;          /* la misura di lettura, non la larghezza dello schermo */
-  margin: 0 auto;
-  padding: var(--sp-6) var(--sp-5) var(--sp-8);
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--sp-6) var(--sp-6) var(--sp-8);
   display: flex;
   flex-direction: column;
   gap: var(--sp-6);
 }
 
 .brief-attesa { padding: var(--sp-8) var(--sp-5); }
+
+/* La testa e il piede restano su una riga sola, sopra e sotto le colonne: il
+   giorno di cui si parla e l'avviso «questo è di ieri» valgono per tutto. */
+.brief > .brief-testa,
+.brief > .brief-avviso,
+.brief > .brief-piede { max-width: 1280px; width: 100%; margin-inline: auto; }
+
+.brief-colonne {
+  width: 100%;
+  max-width: 1280px;
+  margin-inline: auto;
+  display: grid;
+  grid-template-columns: minmax(0, 62ch);
+  justify-content: center;
+  gap: var(--sp-6);
+}
+
+.brief-col { display: flex; flex-direction: column; gap: var(--sp-6); min-width: 0; }
+
+/* Due colonne: le proposte tengono la sinistra per tutta l'altezza, e le due
+   metà di lettura si impilano a destra. La colonna del lavoro è un filo più
+   larga perché dentro ha dei bottoni, non solo righe di testo. */
+@media (min-width: 1000px) {
+  .brief-colonne {
+    grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
+    grid-template-areas:
+      "lavoro giorni"
+      "lavoro letture";
+    align-items: start;
+    gap: var(--sp-6) var(--sp-8);
+    justify-content: stretch;
+  }
+  .c-lavoro  { grid-area: lavoro; }
+  .c-giorni  { grid-area: giorni; }
+  .c-letture { grid-area: letture; }
+}
+
+/* Tre colonne, quando c'è lo spazio per farle senza stringere le righe sotto
+   la misura di lettura. Sotto i 1340px la terza colonna verrebbe troppo
+   stretta e i titoli delle notizie andrebbero a capo ogni tre parole. */
+@media (min-width: 1340px) {
+  .brief-colonne {
+    grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-areas: "lavoro giorni letture";
+  }
+}
 
 .brief-testa { display: flex; flex-direction: column; gap: var(--sp-2); }
 
@@ -22,11 +79,12 @@
   font-size: 24px;
   font-weight: 500;
   color: var(--text);
-  /* Il giorno arriva dal formattatore in minuscolo («lunedì 15 settembre»): la
-     maiuscola la mette il CSS, così il testo resta quello che si direbbe a
-     voce e non una stringa capitalizzata a mano nel JS. */
-  text-transform: capitalize;
 }
+
+/* Il giorno arriva dal formattatore tutto minuscolo («martedì 15 settembre»):
+   la maiuscola la mette il CSS, e solo la prima. `capitalize` le avrebbe messe
+   a ogni parola — «Martedì 15 Settembre», che in italiano non si scrive. */
+.brief-titolo::first-letter { text-transform: uppercase; }
 
 /* Un briefing di ieri non si nasconde e non si spaccia per fresco: si mostra
    con il cartello addosso. Il colore è quello degli avvisi, non degli errori —
@@ -221,4 +279,5 @@
   .brief { padding: var(--sp-5) var(--sp-4) calc(var(--barra-bassa, 60px) + var(--sp-8)); gap: var(--sp-5); }
   .brief-titolo { font-size: 21px; }
   .brief-prop-azioni .brief-btn { flex: 1 1 0; padding: 0 var(--sp-3); }
+  .brief-colonne, .brief-col { gap: var(--sp-5); }
 }
