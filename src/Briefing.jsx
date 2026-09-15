@@ -204,6 +204,11 @@ export default function Briefing({ plans, onPlansChanged, todoLists }) {
 
       {avviso && <p className="brief-avviso" role="status">{avviso}</p>}
 
+      {/* Tre gruppi, e l'ordine in cui sono scritti è quello in cui si leggono
+          da telefono, dove la griglia diventa una colonna sola: prima quello
+          che chiede una decisione, poi il contesto, in fondo la lettura. */}
+      <div className="brief-colonne">
+      <div className="brief-col c-lavoro">
       {doc.giornata && (
         <section className="brief-sez">
           <p className="brief-prosa">{doc.giornata}</p>
@@ -268,13 +273,13 @@ export default function Briefing({ plans, onPlansChanged, todoLists }) {
         </section>
       )}
 
-      {!!doc.recap.length && <Elenco titolo="Gli ultimi giorni" righe={doc.recap} />}
+      </div>
 
-      {AREE_NOTIZIE.map(a => (
-        doc.notizie[a.chiave].length
-          ? <Elenco key={a.chiave} titolo={a.label} righe={doc.notizie[a.chiave]} />
-          : null
-      ))}
+      {/* Le curiosità stanno col contesto e non con le notizie: sono le cose
+          che uno si segna, non la cronaca, e tenerle qui lascia alle notizie
+          una colonna sola invece di due sbilanciate. */}
+      <div className="brief-col c-giorni">
+      {!!doc.recap.length && <Elenco titolo="Gli ultimi giorni" righe={doc.recap} />}
 
       {AREE_CURIOSITA.map(a => (
         doc.curiosita[a.chiave].length
@@ -282,11 +287,23 @@ export default function Briefing({ plans, onPlansChanged, todoLists }) {
           : null
       ))}
 
+
       {doc.domanda && (
         <section className="brief-sez">
           <p className="brief-domanda">{doc.domanda}</p>
         </section>
       )}
+      </div>
+
+      <div className="brief-col c-letture">
+      {AREE_NOTIZIE.map(a => (
+        doc.notizie[a.chiave].length
+          ? <Elenco key={a.chiave} titolo={a.label} righe={doc.notizie[a.chiave]} />
+          : null
+      ))}
+
+      </div>
+      </div>
 
       <footer className="brief-piede muted">
         {doc.fonti.length
